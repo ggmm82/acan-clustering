@@ -118,6 +118,7 @@ jobs:
           docker run --rm --network=none --entrypoint python \
             --mount "type=bind,src=$PWD/tests,dst=/tests,readonly" \
             --mount "type=bind,src=$PWD/scripts,dst=/app/scripts,readonly" \
+            --mount "type=bind,src=$PWD/config,dst=/app/config,readonly" \
             "$IMAGE" -m unittest discover -s /tests -v
           docker run --rm --network=none --entrypoint python "$IMAGE" -m pip check
       - name: Start a constrained container and exercise HTTP inference
@@ -143,9 +144,13 @@ jobs:
           python scripts/release_pipeline.py seal --image "$digest"
       - name: Validate the sealed deployment Compose
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          TRAEFIK_HOST: ci.hstgr.cloud
+          ACAN_BASIC_AUTH_USERS: ci:configuration-check-only
         run: |
           python scripts/release_pipeline.py validate
           docker compose -f reports/runtime/compose.release.yaml config --quiet
+          docker compose -f reports/runtime/compose.hostinger.yaml config --quiet
       - uses: actions/upload-artifact@v4
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:

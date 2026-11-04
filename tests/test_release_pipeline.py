@@ -16,7 +16,7 @@ IMAGE = f'ghcr.io/{REPO}@sha256:' + '1' * 64
 
 
 def identity():
-    return dict(schema=1, repository=REPO, workflow=pipeline.WORKFLOW,
+    return dict(schema=2, repository=REPO, workflow=pipeline.WORKFLOW,
                 event='pull_request', source_commit=COMMIT, tree=TREE,
                 head_sha='c' * 40, head_repository=REPO, pull_request=1,
                 run_id=23, run_attempt=1)
@@ -74,6 +74,23 @@ class TestReleasePipeline(unittest.TestCase):
         self.assertEqual(pipeline.choose_tag(releases, COMMIT, '8.0.0'), 'v8.0.4')
         self.assertEqual(pipeline.choose_tag(releases, COMMIT, '8.1.0'), 'v8.1.0')
         self.assertEqual(pipeline.choose_tag(releases, 'd' * 40, '8.0.0'), 'v8.0.3')
+
+    def test_hostinger_asset_is_sealed_and_cannot_change_image_or_auth(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pipeline.seal(directory, IMAGE, identity())
+            hostinger = Path(directory) / 'compose.hostinger.yaml'
+            content = hostinger.read_text()
+            self.assertIn(IMAGE, content)
+            self.assertIn('basicauth.users=${ACAN_BASIC_AUTH_USERS:?', content)
+            self.assertNotIn('ports:', content)
+            self.assertNotIn('build:', content)
+            hostinger.write_text(content.replace(IMAGE, 'ghcr.io/other/image:latest'))
+            manifest = Path(directory) / 'runtime-manifest.json'
+            value = json.loads(manifest.read_text())
+            value['hostinger_compose_sha256'] = hashlib.sha256(hostinger.read_bytes()).hexdigest()
+            manifest.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ValueError, 'Hostinger Compose'):
+                pipeline.validate(directory, REPO)
 
     def test_stale_main_never_publishes(self):
         with tempfile.TemporaryDirectory() as directory:

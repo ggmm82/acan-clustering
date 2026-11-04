@@ -35,7 +35,8 @@ els={}
 
 # Signed cookies identify browser sessions; learners stay on the server.
 app.server.secret_key = os.environ.get('ACAN_SESSION_SECRET') or secrets.token_hex(32)
-app.server.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax')
+app.server.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax',
+                         SESSION_COOKIE_SECURE=os.environ.get('ACAN_COOKIE_SECURE', '').lower() == 'true')
 training_jobs = TrainingJobs()
 
 @app.server.get('/healthz')

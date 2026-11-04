@@ -51,6 +51,10 @@ back, run the Compose from the previous release. Export model JSON and predictio
 CSV before replacing a container: training jobs live in memory and do not survive
 restart. Run one server process, as required by the current session job registry.
 
+Hostinger uses the additional **compose.hostinger.yaml** asset, with the same
+sealed image digest, Traefik HTTPS routing and mandatory BasicAuth. See
+[Hostinger deployment](HOSTINGER.md) for setup and environment variables.
+
 The GHCR `latest` alias is a convenience for stable images; sealed Compose files
 always use the tested digest. GHCR packages can initially be private: grant read
 access or change package visibility before expecting anonymous pulls.

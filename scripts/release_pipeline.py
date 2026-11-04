@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 
 WORKFLOW = '.github/workflows/ci.yml'
+ASSETS = ('runtime-manifest.json', 'compose.release.yaml', 'compose.hostinger.yaml')
 
 
 def run(*args):
@@ -36,10 +37,15 @@ def compose(image):
     }}}
 
 
+def hostinger_compose(image):
+    template = Path(__file__).resolve().parents[1] / 'config/compose.hostinger.template.yaml'
+    return template.read_text().replace('__ACAN_IMAGE__', image)
+
+
 def validate(directory, repo, tree=None):
     directory = Path(directory)
     value = json.loads((directory / 'runtime-manifest.json').read_text())
-    if (value.get('schema') != 1 or value.get('repository') != repo
+    if (value.get('schema') != 2 or value.get('repository') != repo
             or value.get('workflow') != WORKFLOW or value.get('verified') is not True
             or value.get('head_repository') != repo
             or value.get('event') not in ('pull_request', 'push', 'workflow_dispatch')):
@@ -63,6 +69,11 @@ def validate(directory, repo, tree=None):
         raise ValueError('Compose checksum mismatch')
     if json.loads(content) != compose(value['image']):
         raise ValueError('Compose differs from the sealed runtime')
+    hostinger = (directory / 'compose.hostinger.yaml').read_bytes()
+    if hashlib.sha256(hostinger).hexdigest() != value.get('hostinger_compose_sha256'):
+        raise ValueError('Hostinger Compose checksum mismatch')
+    if hostinger.decode() != hostinger_compose(value['image']):
+        raise ValueError('Hostinger Compose differs from the sealed runtime')
     return value
 
 
@@ -70,7 +81,7 @@ def metadata():
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
     pr = event.get('pull_request')
     commit = run('git', 'rev-parse', 'HEAD')
-    return dict(schema=1, repository=os.environ['GITHUB_REPOSITORY'], workflow=WORKFLOW,
+    return dict(schema=2, repository=os.environ['GITHUB_REPOSITORY'], workflow=WORKFLOW,
                 event=os.environ['GITHUB_EVENT_NAME'], source_commit=commit,
                 tree=run('git', 'rev-parse', 'HEAD^{tree}'),
                 head_sha=pr['head']['sha'] if pr else commit,
@@ -83,10 +94,12 @@ def metadata():
 def seal(directory, image, identity):
     directory = Path(directory)
     save(directory / 'compose.release.yaml', compose(image))
+    (directory / 'compose.hostinger.yaml').write_text(hostinger_compose(image))
     content = (directory / 'compose.release.yaml').read_bytes()
     save(directory / 'runtime-manifest.json', {
         **identity, 'image': image, 'verified': True,
         'compose_sha256': hashlib.sha256(content).hexdigest(),
+        'hostinger_compose_sha256': hashlib.sha256((directory / 'compose.hostinger.yaml').read_bytes()).hexdigest(),
     })
     return validate(directory, identity['repository'], identity['tree'])
 
@@ -128,7 +141,7 @@ def resolve(repo, commit, directory):
                         continue
                 except (subprocess.CalledProcessError, OSError, ValueError, KeyError, TypeError):
                     continue  # Missing/expired/nonmatching artifacts require a new build.
-                for name in ('runtime-manifest.json', 'compose.release.yaml'):
+                for name in ASSETS:
                     target = Path(directory) / name
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes((Path(temp) / name).read_bytes())
@@ -185,6 +198,8 @@ def publish(directory, repo, commit, floor, main):
              f"Source tree: {value['tree']}\nImage: {value['image']}\n\n"
              "Download compose.release.yaml and runtime-manifest.json. "
              "Run docker compose -f compose.release.yaml up -d. "
+             "For Hostinger use compose.hostinger.yaml, configure TRAEFIK_HOST and "
+             "ACAN_BASIC_AUTH_USERS, and follow docs/HOSTINGER.md. "
              "The Compose pins the exact tested image digest; no rebuild is performed.\n")
     notes_path = Path(directory) / 'release-notes.md'
     notes_path.write_text(notes)
@@ -200,7 +215,8 @@ def publish(directory, repo, commit, floor, main):
         if main:
             with tempfile.TemporaryDirectory() as published:
                 run('gh', 'release', 'download', tag, '--repo', repo, '--dir', published,
-                    '--pattern', 'runtime-manifest.json', '--pattern', 'compose.release.yaml')
+                    '--pattern', 'runtime-manifest.json', '--pattern', 'compose.release.yaml',
+                    '--pattern', 'compose.hostinger.yaml')
                 aliases(validate(published, repo, tree)['image'])
         print('Release already published:', tag)
         return tag
@@ -218,8 +234,7 @@ def publish(directory, repo, commit, floor, main):
             args += ['--prerelease']
         run(*args)
     run('gh', 'release', 'upload', tag, '--repo', repo, '--clobber',
-        str(Path(directory) / 'runtime-manifest.json'),
-        str(Path(directory) / 'compose.release.yaml'))
+        *(str(Path(directory) / name) for name in ASSETS))
     run('gh', 'release', 'edit', tag, '--repo', repo, '--draft=false',
         '--latest=' + ('true' if main else 'false'))
     if main:
