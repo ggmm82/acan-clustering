@@ -166,7 +166,12 @@ def register(app, job_key):
             for field in ('train_nll', 'validation_nll'):
                 figure.add_scatter(x=[h['epoch'] for h in model.history], y=[h[field] for h in model.history], name=field)
             figure.update_layout(xaxis_title='Epoca', yaxis_title='Cross-entropy (nat/token)')
-            return dbc.Table.from_dataframe(pd.DataFrame(rows), striped=True), figure
+            measured = html.Div([
+                dbc.Table.from_dataframe(pd.DataFrame(rows), striped=True),
+                html.Details([html.Summary('Configurazione del modello valutato'),
+                              html.Pre(json.dumps(report.get('configuration', {}), indent=2))]),
+            ])
+            return measured, figure
         except Exception as exc:
             return f'❌ Report non valido: {exc}', go.Figure()
 

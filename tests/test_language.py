@@ -15,6 +15,8 @@ class TestLanguagePrototype(unittest.TestCase):
         report = self.model.report
         self.assertLess(report['test']['perplexity'], report['unigram_perplexity'] * .8)
         self.assertFalse(report['test_used_for_selection'])
+        self.assertEqual(report['configuration']['seed'], 42)
+        self.assertEqual(report['configuration']['context'], 4)
         self.assertNotEqual(report['train_sha256'], report['test_sha256'])
         self.assertGreater(report['test']['tokens'], 0)
         # Repeated grammar windows are disclosed, not described as novel contexts.

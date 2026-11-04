@@ -182,6 +182,10 @@ class ConceptLanguageModel:
         train_sequences = set(map(tuple, np.column_stack((x, y))))
         overlap = sum(tuple(row) in train_sequences for row in np.column_stack((xt, yt))) / len(yt)
         self.report = dict(model=self.FORMAT, objective='next-token cross entropy; not tabular CP',
+                           configuration=dict(context=self.context, slots=self.slots, seed=self.seed,
+                                              beta=self.beta, gamma=self.gamma, learning_rate=float(lr),
+                                              requested_epochs=int(epochs), batch_size=64, patience=8,
+                                              window_limit=4096, vocabulary_size=self.v),
                            split=split, train_tokens=len(y), validation_tokens=len(yv), test=test_score,
                            input_documents=len(docs), unique_documents=len(unique),
                            unigram_perplexity=math.exp(unigram_nll), bigram_perplexity=math.exp(bigram_nll),
