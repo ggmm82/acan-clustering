@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 
 WORKFLOW = '.github/workflows/ci.yml'
-ASSETS = ('runtime-manifest.json', 'compose.release.yaml', 'compose.hostinger.yaml')
+ASSETS = ('runtime-manifest.json', 'compose.release.yaml', 'compose.hostinger.yaml', 'paper-audit.json', 'paper-benchmarks.zip')
 
 
 def run(*args):
@@ -45,7 +45,7 @@ def hostinger_compose(image):
 def validate(directory, repo, tree=None):
     directory = Path(directory)
     value = json.loads((directory / 'runtime-manifest.json').read_text())
-    if (value.get('schema') != 2 or value.get('repository') != repo
+    if (value.get('schema') != 3 or value.get('repository') != repo
             or value.get('workflow') != WORKFLOW or value.get('verified') is not True
             or value.get('head_repository') != repo
             or value.get('event') not in ('pull_request', 'push', 'workflow_dispatch')):
@@ -74,6 +74,21 @@ def validate(directory, repo, tree=None):
         raise ValueError('Hostinger Compose checksum mismatch')
     if hostinger.decode() != hostinger_compose(value['image']):
         raise ValueError('Hostinger Compose differs from the sealed runtime')
+    audit_bytes = (directory / 'paper-audit.json').read_bytes()
+    if hashlib.sha256(audit_bytes).hexdigest() != value.get('audit_sha256'):
+        raise ValueError('Paper audit checksum mismatch')
+    audit = json.loads(audit_bytes)
+    if (audit.get('contract_version') != 1 or audit.get('status') != 'passed'
+            or audit.get('tree') != value['tree'] or audit.get('commit') != value['source_commit']
+            or audit.get('run_id') != value['run_id']
+            or audit.get('source_clean') is not True or audit.get('torch_verified') is not True
+            or audit.get('tests_run', 0) < 13 or any(audit.get(k) != 0 for k in ('failures', 'errors', 'skipped'))
+            or audit.get('conformance') != 'partial' or audit.get('full_paper_conformance') is not False):
+        raise ValueError('Paper audit is missing, failed, skipped, dirty or from another source/run')
+    benchmark = audit.get('benchmarks', {})
+    if (benchmark.get('status') != 'passed' or
+            hashlib.sha256((directory / 'paper-benchmarks.zip').read_bytes()).hexdigest() != benchmark.get('archive_sha256')):
+        raise ValueError('Paper benchmark archive is missing, failed or altered')
     return value
 
 
@@ -81,7 +96,7 @@ def metadata():
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
     pr = event.get('pull_request')
     commit = run('git', 'rev-parse', 'HEAD')
-    return dict(schema=2, repository=os.environ['GITHUB_REPOSITORY'], workflow=WORKFLOW,
+    return dict(schema=3, repository=os.environ['GITHUB_REPOSITORY'], workflow=WORKFLOW,
                 event=os.environ['GITHUB_EVENT_NAME'], source_commit=commit,
                 tree=run('git', 'rev-parse', 'HEAD^{tree}'),
                 head_sha=pr['head']['sha'] if pr else commit,
@@ -100,6 +115,7 @@ def seal(directory, image, identity):
         **identity, 'image': image, 'verified': True,
         'compose_sha256': hashlib.sha256(content).hexdigest(),
         'hostinger_compose_sha256': hashlib.sha256((directory / 'compose.hostinger.yaml').read_bytes()).hexdigest(),
+        'audit_sha256': hashlib.sha256((directory / 'paper-audit.json').read_bytes()).hexdigest(),
     })
     return validate(directory, identity['repository'], identity['tree'])
 
@@ -200,6 +216,8 @@ def publish(directory, repo, commit, floor, main):
              "Run docker compose -f compose.release.yaml up -d. "
              "For Hostinger use compose.hostinger.yaml, configure TRAEFIK_HOST "
              "and follow docs/HOSTINGER.md. "
+             "paper-audit.json records passing software contracts and outstanding paper/code differences; "
+             "it does not certify full paper conformance. "
              "The Compose pins the exact tested image digest; no rebuild is performed.\n")
     notes_path = Path(directory) / 'release-notes.md'
     notes_path.write_text(notes)
@@ -216,7 +234,8 @@ def publish(directory, repo, commit, floor, main):
             with tempfile.TemporaryDirectory() as published:
                 run('gh', 'release', 'download', tag, '--repo', repo, '--dir', published,
                     '--pattern', 'runtime-manifest.json', '--pattern', 'compose.release.yaml',
-                    '--pattern', 'compose.hostinger.yaml')
+                    '--pattern', 'compose.hostinger.yaml', '--pattern', 'paper-audit.json',
+                    '--pattern', 'paper-benchmarks.zip')
                 aliases(validate(published, repo, tree)['image'])
         print('Release already published:', tag)
         return tag
