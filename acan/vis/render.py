@@ -1,10 +1,11 @@
 import os
 import secrets
+import json
 import re
 from flask import session
 from acan.vis.jobs import TrainingJobs
+from acan.vis.training import NativeTraining, graph_stats
 from acan.vis.inference import infer
-from acan.vis.laboratory import layout as lab_layout, register as register_lab
 
 import dash  # pip install dash
 import dash_cytoscape as cyto  # pip install dash-cytoscape==0.2.0 or higher
@@ -28,11 +29,11 @@ import dash_daq as daq
 from warnings import simplefilter
 simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SKETCHY],
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP],
     requests_pathname_prefix='/', #'/proxy/4000/'
     routes_pathname_prefix='/',
     suppress_callback_exceptions=True)  # Permette callback su componenti generati condizionalmente
-app.title='Algebraic Cluster Model'
+app.title='ACAN · Concept Explorer'
 els={}
 
 # Signed cookies identify browser sessions; learners stay on the server.
@@ -315,10 +316,13 @@ def to_elements(gcm: GraphClusterModel, show_leaves=True):
         # Edge dai Groups ai children (se esistono)
         for k, childId in node.children.items():
             group_id = f"{node.id}_G{k}"
+            # Cytoscape edge endpoints are immutable. Different IDs prevent the
+            # React diff from losing edges when their group nodes are removed.
+            edge_id = ('' if show_leaves else 'H') + f'N{node.id}K{k}'
             edgeNode={}
-            edgeNode['data']={'id': "N"+str(node.id)+"K"+str(k),'source': group_id, 'target': str(childId), 'size':1, 'label':color, 'errColor':color}
+            edgeNode['data']={'id': edge_id,'source': group_id if show_leaves else str(node.id), 'target': str(childId), 'size':1, 'label':color, 'errColor':color}
             edgeNode['classes'] = 'directed'
-            elements["N"+str(node.id)+"K"+str(k)]=edgeNode
+            elements[edge_id]=edgeNode
 
     #print(rootId+" "+str(step))
     return elements
@@ -365,10 +369,12 @@ uplModel=dcc.Upload(
 
 orgChartData=cyto.Cytoscape(
     id='org-chart',
-    autoungrabify=True,
+    style={'width': '100%', 'height': '650px', 'border': '1px solid #dee2e6', 'borderRadius': '8px'},
+    responsive=True,
+    autoungrabify=False,
     minZoom=0.1,
     maxZoom=2,
-    layout={'name': 'cose', 'animate': False},
+    layout={'name': 'breadthfirst', 'directed': True, 'animate': False, 'spacingFactor': 1.3},
     #layout={'name': 'cose', 'animate': True},
     elements={},
     #style={'width': '500px', 'height': '500px'},
@@ -583,6 +589,37 @@ model_layout = dbc.Container([
                 ], width="auto", className="mb-2")
             ]),
 
+            dbc.Card(dbc.CardBody([
+                html.H5('Scoperta gerarchica nativa'),
+                html.P('La profondità è un limite massimo: ACAN crea figli soltanto quando i criteri nativi di split sono soddisfatti. Il batch configurabile vale a profondità 1; gLearn usa il proprio batch nativo (300).', className='text-muted'),
+                dbc.Row([
+                    dbc.Col([dbc.Label(label), dbc.Input(id=id, type='number', value=value, min=lo, max=hi, step=step)], md=4, className='mb-2')
+                    for label, id, value, lo, hi, step in [
+                        ('Profondità massima', 'train-depth', 3, 1, 6, 1),
+                        ('Epoche massime alla radice', 'train-epochs', 100, 1, 1000, 1),
+                        ('Campioni minimi per split', 'train-min-samples', 12, 2, 10000, 1),
+                        ('Temperatura τ', 'train-tau', .2, .01, 10, .01),
+                        ('Miscela α', 'train-alpha', .5, 0, 1, .05),
+                        ('Soglia purezza supervisionata', 'train-purity', .92, 0, 1, .01),
+                    ]
+                ]),
+                html.P('Backend NumPy CPU · split train/test riproducibile 80/20 · limite 15 minuti. I figli usano le epoche previste da gLearn: max(40, epoche del padre / 2).', className='small text-muted'),
+            ]), className='my-3'),
+            dbc.Row([
+                dbc.Col([dbc.Label('Vista'), dcc.RadioItems(id='graph-view', options=[{'label': ' Concetti e gruppi', 'value': 'full'}, {'label': ' Solo gerarchia', 'value': 'hierarchy'}], value='full', inline=True)], md=6),
+                dbc.Col([dbc.Label('Layout'), dcc.Dropdown(id='graph-layout', options=['breadthfirst', 'cose', 'concentric'], value='breadthfirst', clearable=False)], md=6),
+            ], className='my-3'),
+            html.Div(id='graph-summary', className='alert alert-info'),
+            dbc.Accordion([
+                dbc.AccordionItem([
+                    dbc.Label('Nodo concetto'), dcc.Dropdown(id='concept-node', clearable=False),
+                    dcc.Graph(id='concept-relevance'),
+                    html.P('Rilevanze salvate nel modello: non sono probabilità di correttezza. Le regole riportano i centroidi e gli attributi ordinati dal metodo nativo extractRules.', className='small text-muted'),
+                    html.Div(id='concept-rules'),
+                    dbc.Button('Esporta regole di tutta la gerarchia', id='export-rules', className='my-2'),
+                    dcc.Download(id='rules-download'),
+                ], title='Laboratorio dei concetti · rilevanze e regole native')
+            ], start_collapsed=True, className='mb-3'),
             # CONTROLLI LEARNING CON THREADING (separati dal grafo per evitare flash)
             dbc.Row([
                 dbc.Col([
@@ -645,7 +682,7 @@ evaluation_layout = dbc.Container([
 
 
 inference_layout = dbc.Container([
-    html.P('Usa il modello caricato o addestrato nella scheda Model. Nessun nuovo training.'),
+    html.P('Predizione: attraversa la gerarchia nativa e mostra il percorso. Completamento: usa predict_masked, che nel core attuale opera sulla radice. Nessun nuovo training.'),
     dcc.Upload(id='inference-upload', children=dbc.Button('Carica CSV per inferenza'), multiple=False),
     dcc.Store(id='inference-input'),
     html.Div(id='inference-upload-status', role='status'),
@@ -662,9 +699,9 @@ inference_layout = dbc.Container([
 ])
 
 _page_layout = dbc.Container([
-    html.H1('Simple Data Mining', style={'textAlign': 'center'}),
+    html.Div([html.H1('ACAN · Concept Explorer'), html.P('Dati → concetti → gerarchia → predizione e completamento', className='text-muted')], className='p-4 mb-3 bg-light border rounded'),
     dcc.Tabs(id='tabs', value='Data', children=[
-        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Laboratory']
+        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference']
     ]),
     # Keep the graph mounted when switching tabs: destroying Cytoscape while
     # asynchronous layout/resize callbacks are pending causes browser errors.
@@ -672,7 +709,6 @@ _page_layout = dbc.Container([
     html.Div([model_layout, dcc.Store(id='test-store')], id='page-model', style={'display': 'none'}),
     html.Div([evaluation_layout, dcc.Store(id='eval-store')], id='page-evaluation', style={'display': 'none'}),
     html.Div(inference_layout, id='page-inference', style={'display': 'none'}),
-    html.Div(lab_layout, id='page-laboratory', style={'display': 'none'}),
 ], fluid=True)
 
 
@@ -691,15 +727,12 @@ def tab_job_key(tab_id):
 
 
 @app.callback([Output('page-data', 'style'), Output('page-model', 'style'),
-               Output('page-evaluation', 'style'), Output('page-inference', 'style'),
-               Output('page-laboratory', 'style')],
+               Output('page-evaluation', 'style'), Output('page-inference', 'style')],
               Input('tabs', 'value'))
 def show_page(tab):
     return [{'display': 'block' if tab == name else 'none'}
-            for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Laboratory']]
+            for name in ['Data', 'Model', 'Evaluation', 'Inference']]
 
-
-register_lab(app, tab_job_key)
 
 # Callback per pulire i dropdown
 @app.callback(
@@ -848,8 +881,7 @@ def update_data(contents, filename, last_modified, labels):
                 balanced=True
                 df = AlgebraicClusterModel.downsample_classes(df, labels)
             
-            df=GraphClusterModel.full_cols(df)
-            df = df.sample(min(10000, len(df)))
+            df = df.sample(min(10000, len(df)), random_state=42)
             return df.to_dict(), balanced, uplData
         except Exception as e:
             print(e)
@@ -896,47 +928,27 @@ def evaluate_model(trigger, data, labels, categories, filters, model):
         df[categories] = df[categories].astype(str)
 
 
-    gcm=GraphClusterModel.loadModel(model)
-    err, Y_test, Y_pred, Y_conf, path=gcm.evaluateError(df, labels)
-    err=err*100
-    df[Y_pred.columns]=Y_pred
-    #sd=dcc.send_data_frame(df.to_excel, "prediction.xlsx", sheet_name="Sheet1")
-    Y_pred2=Y_pred.idxmax(axis=1)
-    Y_test=Y_test.idxmax(axis=1)
-    flbs=gcm.clusterModel[gcm.rootId].fullLabels(labels)
-    predLbs=[]
-    realLbs=[]
-    for pLbl in flbs:
-        predLbs.append(pLbl.replace(labels[0],"Pred"))
-
-    for rLbl in flbs:
-        realLbs.append(rLbl.replace(labels[0],"Real"))
-
-
-    cm = metrics.confusion_matrix(Y_test, Y_pred2, labels=flbs)
-    cm =pd.DataFrame(cm, columns=predLbs, index=realLbs)
-    cm.loc['Pred_Total']= cm.sum(numeric_only=True, axis=0)
-    cm.loc[:,'Real_Total'] = cm.sum(numeric_only=True, axis=1)
-    cmT=dbc.Table.from_dataframe(cm.reset_index(), striped=True, bordered=False, hover=True)
-
-    return go.Figure(go.Indicator(
-                    mode = "gauge+number",
-                    value = err,
-                    title = {'text': "Error"},
-                    domain = {'x': [0, 1], 'y': [0, 1]},
-                    gauge = {
-                            'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                            'bar': {'color': "darkblue"},
-                            'bgcolor': "white",
-                            'borderwidth': 2,
-                            'bordercolor': "gray",
-                            'steps': [
-                                {'range': [0, 25], 'color': 'green'},
-                                {'range': [25, 50], 'color': 'yellow'},
-                                {'range': [50,100], 'color': 'red'}],
-                            }
-                )), cmT, gcm.predictValues(Y_pred, Y_conf, path).to_dict()
-
+    try:
+        gcm = GraphClusterModel.loadModel(model)
+        predictions = infer(model, df, mode='predict')
+        root = gcm.clusterModel[gcm.rootId]
+        scores = []
+        for label in gcm.labels:
+            observed = df[label].notna()
+            if not observed.any():
+                continue
+            truth, pred = df.loc[observed, label], predictions.loc[observed, label]
+            if root.fullLabels([label]) == [label]:
+                scores.append(dict(Target=label, Metrica='MAE', Valore=metrics.mean_absolute_error(truth, pred)))
+                scores.append(dict(Target=label, Metrica='RMSE', Valore=metrics.mean_squared_error(truth, pred) ** .5))
+            else:
+                scores.append(dict(Target=label, Metrica='Accuracy', Valore=metrics.accuracy_score(truth.astype(str), pred.astype(str))))
+        chart = go.Figure()
+        chart.update_layout(title='Metriche per target nelle unità originali (holdout 20%)')
+        table = dbc.Table.from_dataframe(pd.DataFrame(scores), striped=True, bordered=False)
+        return chart, table, predictions.to_dict()
+    except Exception as exc:
+        return go.Figure(), html.Div(f'Valutazione non disponibile: {exc}'), {}
 
 
 @app.callback(
@@ -970,10 +982,16 @@ def download_prediction(n_clicks, pred, data):
               State('dpdnCategory', 'value'),
               State('input-max-batch', 'value'),
               State('input-lr', 'value'),
+              State('train-depth', 'value'),
+              State('train-epochs', 'value'),
+              State('train-min-samples', 'value'),
+              State('train-tau', 'value'),
+              State('train-alpha', 'value'),
+              State('train-purity', 'value'),
               State('tab-session', 'data'),
               prevent_initial_call=True
               )
-def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, tab_id):
+def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, depth, epochs, min_samples, tau, alpha, purity, tab_id):
     if not n_clicks:
         return (dash.no_update,) * 5
     if not data:
@@ -991,10 +1009,25 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, tab
         train = train.drop(filters or [], axis=1, errors='ignore')
         if categories:
             train[categories] = train[categories].astype(str)
-        normalized, minmax = GraphClusterModel.normalizeData(GraphClusterModel.full_dummies(train))
-        learner = AlgebraicClusterLearner(normalized, batch_size=max_batch or 300,
-                                          lr=lr or 0.1, labels=labels or [])
-        training_jobs.start(key, learner, minmax, labels or [])
+        options = dict(max_depth=depth, max_epochs=epochs, min_samples_split=min_samples,
+                       tau=tau, alpha=alpha, similarity_threshold=purity, lr=lr,
+                       batch_size=max_batch, device='numpy')
+        bounds = dict(max_depth=(1, 6), max_epochs=(1, 1000), min_samples_split=(2, 10000),
+                      tau=(.01, 10), alpha=(0, 1), similarity_threshold=(0, 1),
+                      lr=(.001, 1), batch_size=(10, 10000))
+        for name, (lo, hi) in bounds.items():
+            value = options[name]
+            if value is None or not lo <= value <= hi:
+                raise ValueError(f'Parametro {name}: atteso valore tra {lo} e {hi}.')
+        for name in ('max_depth', 'max_epochs', 'min_samples_split', 'batch_size'):
+            if int(options[name]) != options[name]:
+                raise ValueError(f'{name} deve essere intero.')
+            options[name] = int(options[name])
+        encoded = GraphClusterModel.full_dummies(train)
+        if encoded.size > 2_000_000 or len(train) > 10000 or encoded.shape[1] > 1000:
+            raise ValueError('Limite interattivo: 10.000 righe, 1.000 attributi codificati, 2 milioni di celle.')
+        learner = NativeTraining(train, labels or [], options)
+        training_jobs.start(key, learner, {}, labels or [])
         return dash.no_update, test.to_dict(), "🟢 Apprendimento avviato", False, False
     except Exception as exc:
         return dash.no_update, dash.no_update, f"❌ {exc}", True, True
@@ -1022,15 +1055,11 @@ def monitor_learning(n_intervals, tab_id):
                 f"🟡 Iterazione: {learner.iteration}", False, False, dash.no_update)
     if job['error']:
         return dash.no_update, dash.no_update, f"❌ {job['error']}", True, True, dash.no_update
-    gcm = GraphClusterModel()
-    gcm.minMax = job['minmax']
-    gcm.labels = job['labels']
-    gcm.rootId = 0
-    gcm.clusterModel = {0: learner.model}
-    learner.model.id = 0
-    elements = list(to_elements(gcm, show_leaves=learner.k_active < 100).values())
+    gcm = learner.graph
+    stats = graph_stats(gcm)
+    elements = list(to_elements(gcm).values())
     return (gcm.to_json(), elements,
-            f"✅ Completato: {learner.k_active} gruppi | CP: {learner.cp:.4f}",
+            f"✅ Completato: {stats['nodes']} nodi concetto | {stats['depth']} livelli | {stats['groups']} gruppi",
             True, True, secrets.randbits(32))
 
 
@@ -1117,13 +1146,13 @@ def export_inference(n_clicks, csv_text):
 
 
 @app.callback(Output('org-chart', 'elements'),
-              Input("model-store", "data"),
+              Input("model-store", "data"), Input('graph-view', 'value'),
               prevent_initial_call=True)
-def update_graph(model):
+def update_graph(model, view='full'):
     if not model:
         return []
     gcm=GraphClusterModel.loadModel(model)
-    els=to_elements(gcm)
+    els=to_elements(gcm, show_leaves=view != 'hierarchy')
     if model:
         return list(els.values())
     else:
@@ -1171,7 +1200,7 @@ def edge_info(sed, model):
     if model:
         if sed != None and len(sed) > 0:
             edge_id = sed[0]['id']
-            source = int(sed[0]['source'])
+            source = int(str(sed[0]['source']).split('_G')[0])
 
             # Prova a matchare pattern per edge ai children: N{id}K{k}
             match = re.search(r'K(\d+)$', edge_id)
@@ -1446,6 +1475,63 @@ def update_layout(layout_value):
         }"""
 
 
+
+
+
+@app.callback(Output('concept-node', 'options'), Output('concept-node', 'value'),
+              Input('model-store', 'data'))
+def list_concepts(model):
+    if not model:
+        return [], None
+    graph = GraphClusterModel.loadModel(model)
+    return [dict(label=f'Nodo {key} · {node.n} campioni · {node.k()} gruppi', value=key)
+            for key, node in graph.clusterModel.items()], graph.rootId
+
+
+@app.callback(Output('concept-relevance', 'figure'), Output('concept-rules', 'children'),
+              Input('concept-node', 'value'), Input('model-store', 'data'))
+def inspect_concept(node_id, model):
+    if not model or node_id is None:
+        return go.Figure(), []
+    graph = GraphClusterModel.loadModel(model)
+    if int(node_id) not in graph.clusterModel:
+        return go.Figure(), []
+    node = graph.clusterModel[int(node_id)]
+    figure = go.Figure(go.Heatmap(z=node.Relevance, x=node.cols,
+                                 y=[f'G{k}' for k in range(node.k())], colorscale='Viridis'))
+    figure.update_layout(title=f'Rilevanza per gruppo · nodo {node.id}', xaxis_title='Attributi', yaxis_title='Gruppi')
+    rows = []
+    for rule in node.extractRules(graph.minMax):
+        rows.append(dict(Concetto=rule['concept_id'], Campioni=rule['support_count'],
+                         Frequenza=rule['support_freq'], Attributi='; '.join(
+                             f"{item['attribute']} ≈ {item['centroid_value']} (r={item['relevance']})"
+                             for item in rule['top_attributes'])))
+    return figure, dbc.Table.from_dataframe(pd.DataFrame(rows), striped=True, responsive=True)
+
+
+@app.callback(Output('rules-download', 'data'), Input('export-rules', 'n_clicks'),
+              State('model-store', 'data'), prevent_initial_call=True)
+def export_rules(clicks, model):
+    if not model:
+        return dash.no_update
+    graph = GraphClusterModel.loadModel(model)
+    rules = {str(key): node.extractRules(graph.minMax) for key, node in graph.clusterModel.items()}
+    return dict(content=json.dumps(rules, indent=2), filename='acan-concept-rules.json')
+
+@app.callback(Output('graph-summary', 'children'), Output('org-chart', 'layout'),
+              Input('model-store', 'data'), Input('graph-layout', 'value'))
+def describe_graph(model, layout):
+    if not model:
+        return 'Carica un modello o avvia la scoperta dei concetti.', {'name': layout, 'animate': False}
+    graph = GraphClusterModel.loadModel(model)
+    stats = graph_stats(graph)
+    root = graph.clusterModel[graph.rootId]
+    config = dict(name=layout, animate=False)
+    if layout == 'breadthfirst':
+        config.update(directed=True, roots=f'[id = "{graph.rootId}"]', spacingFactor=1.3)
+    return (f"Radice {graph.rootId} · {stats['nodes']} nodi concetto · {stats['depth']} livelli · "
+            f"{stats['groups']} gruppi · {root.n} campioni · {len(root.cols)} attributi. "
+            'Seleziona un nodo o un collegamento per esplorare centroidi, rilevanze e dispersione.'), config
 
 if __name__ == '__main__':
     app.run(debug=True, port=4000)

@@ -78,11 +78,11 @@ def validate(directory, repo, tree=None):
     if hashlib.sha256(audit_bytes).hexdigest() != value.get('audit_sha256'):
         raise ValueError('Paper audit checksum mismatch')
     audit = json.loads(audit_bytes)
-    if (audit.get('contract_version') != 1 or audit.get('status') != 'passed'
+    if (audit.get('contract_version') != 2 or audit.get('status') != 'passed'
             or audit.get('tree') != value['tree'] or audit.get('commit') != value['source_commit']
             or audit.get('run_id') != value['run_id']
             or audit.get('source_clean') is not True or audit.get('torch_verified') is not True
-            or audit.get('tests_run', 0) < 13 or any(audit.get(k) != 0 for k in ('failures', 'errors', 'skipped'))
+            or audit.get('tests_run', 0) < 8 or any(audit.get(k) != 0 for k in ('failures', 'errors', 'skipped'))
             or audit.get('conformance') != 'partial' or audit.get('full_paper_conformance') is not False):
         raise ValueError('Paper audit is missing, failed, skipped, dirty or from another source/run')
     benchmark = audit.get('benchmarks', {})

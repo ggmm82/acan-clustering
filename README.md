@@ -27,7 +27,9 @@ python -m acan.vis.render
 Open `http://localhost:4000` in your browser.
 
 1. Upload a dataset in **Data**, select targets in **Model**, and click **Learn Model**.
-2. Inspect the learned graph and held-out results in **Evaluation**.
+2. Configure native hierarchy depth and training parameters in **Model**. Explore
+   all levels, inspect relevance matrices and export concept rules. **Evaluation**
+   reports held-out metrics separately for each target. See [GUI workflow](docs/GUI.md).
 3. Use **Download Model** to save a JSON model. Later, use **Load Model JSON**
    in **Model** to restore it, including its target labels.
 4. In **Inference**, upload a new UTF-8 CSV and choose **Predici Labels** or
@@ -35,7 +37,8 @@ Open `http://localhost:4000` in your browser.
    and download the complete CSV. No training occurs in this tab.
 
 Prediction ignores any supplied target values and predicts the saved model's
-labels. Completion fills empty cells in columns present in the trained schema,
+labels by traversing the native hierarchy, with path and confidence columns.
+Completion uses the native root-only masked predictor and fills empty cells in columns present in the trained schema,
 preserving observed values; include the columns you want completed in the CSV.
 Each incomplete row needs at least one known attribute. A model without target
 labels can still be used in completion mode.
@@ -58,9 +61,6 @@ python -c "from acan.vis.render import app; app.run(debug=False, port=4000)"
 
 ## Contents
 
-The **Laboratory** tab adds a CPU character language prototype with corpus
-training, held-out metrics, sampling and model/report export. See
-[Generative laboratory](docs/GENERATIVE-LAB.md).
 The [paper audit](docs/PAPER-AUDIT.md) records partial correspondence, corrected
 numerical gradients and outstanding scientific claims. Every release now requires
 the audit, full synthetic benchmark receipts and Docker HTTP checks.
