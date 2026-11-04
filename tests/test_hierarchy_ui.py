@@ -45,6 +45,11 @@ class TestNativeHierarchy(unittest.TestCase):
         from acan.vis.render import to_elements, edge_info, describe_graph
         for show_groups in (True, False):
             elements = list(to_elements(self.graph, show_groups).values())
+            edges = [e for e in elements if 'source' in e['data']]
+            expected = sum(len(node.children) for node in self.graph.clusterModel.values())
+            if show_groups:
+                expected += sum(node.k() for node in self.graph.clusterModel.values())
+            self.assertEqual(len(edges), expected)
             ids = {e['data']['id'] for e in elements if 'source' not in e['data']}
             for edge in elements:
                 if 'source' in edge['data']:

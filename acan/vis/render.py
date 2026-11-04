@@ -316,10 +316,13 @@ def to_elements(gcm: GraphClusterModel, show_leaves=True):
         # Edge dai Groups ai children (se esistono)
         for k, childId in node.children.items():
             group_id = f"{node.id}_G{k}"
+            # Cytoscape edge endpoints are immutable. Different IDs prevent the
+            # React diff from losing edges when their group nodes are removed.
+            edge_id = ('' if show_leaves else 'H') + f'N{node.id}K{k}'
             edgeNode={}
-            edgeNode['data']={'id': "N"+str(node.id)+"K"+str(k),'source': group_id if show_leaves else str(node.id), 'target': str(childId), 'size':1, 'label':color, 'errColor':color}
+            edgeNode['data']={'id': edge_id,'source': group_id if show_leaves else str(node.id), 'target': str(childId), 'size':1, 'label':color, 'errColor':color}
             edgeNode['classes'] = 'directed'
-            elements["N"+str(node.id)+"K"+str(k)]=edgeNode
+            elements[edge_id]=edgeNode
 
     #print(rootId+" "+str(step))
     return elements
