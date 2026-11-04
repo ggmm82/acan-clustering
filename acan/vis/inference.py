@@ -35,4 +35,18 @@ def infer(model_json, dataset, mode='predict'):
         encoded = GraphClusterModel.full_dummies(known)
         if not any(col in root.cols for col in encoded.columns):
             raise ValueError('Ogni riga incompleta richiede almeno un attributo noto al modello.')
+    if mode == 'predict':
+        predicted, confidence, paths = model.predictDataset(
+            data.drop(columns=model.labels, errors='ignore'), model.labels)
+        result = dataset.copy()
+        for label in model.labels:
+            columns = root.fullLabels([label])
+            if columns == [label]:
+                lo, hi = model.minMax[label]
+                result[label] = predicted[label].to_numpy() * (hi - lo) + lo
+            else:
+                result[label] = predicted[columns].idxmax(axis=1).str[len(str(label)) + 1:].to_numpy()
+        result['ACAN_path'] = paths
+        result['ACAN_confidence'] = confidence.mean(axis=1).to_numpy()
+        return result
     return model.predict_masked(data)

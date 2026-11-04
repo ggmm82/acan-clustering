@@ -70,6 +70,9 @@ def check(url):
                     field('label-store', 'data', ['label']),
                     field('dpdnFilter', 'value', []), field('dpdnCategory', 'value', []),
                     field('input-max-batch', 'value', 300), field('input-lr', 'value', .08),
+                    field('train-depth', 'value', 3), field('train-epochs', 'value', 40),
+                    field('train-min-samples', 'value', 12), field('train-tau', 'value', .2),
+                    field('train-alpha', 'value', .5), field('train-purity', 'value', .92),
                     field('tab-session', 'data', tab_id)])
     assert started['learning-monitor']['disabled'] is False, started
     monitor = next(item['output'] for item in dependencies
