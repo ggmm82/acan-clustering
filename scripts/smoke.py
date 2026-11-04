@@ -25,7 +25,20 @@ def check(url):
             if attempt == 29:
                 raise
             time.sleep(1)
-    assert 'Inference' in json.dumps(get('/_dash-layout'))
+    layout = get('/_dash-layout')
+    assert 'Inference' in json.dumps(layout)
+
+    def tab_token(node):
+        if isinstance(node, dict):
+            props = node.get('props', {})
+            if props.get('id') == 'tab-session':
+                return props['data']
+            return tab_token(props.get('children'))
+        if isinstance(node, list):
+            return next((token for child in node if (token := tab_token(child))), None)
+
+    tab_id = tab_token(layout)
+    assert tab_id
     dependencies = get('/_dash-dependencies')
     load = next(item['output'] for item in dependencies
                 if any(i['id'] == 'upload-model' for i in item['inputs']))
@@ -56,7 +69,8 @@ def check(url):
                    [field('data-store', 'data', data.to_dict()),
                     field('label-store', 'data', ['label']),
                     field('dpdnFilter', 'value', []), field('dpdnCategory', 'value', []),
-                    field('input-max-batch', 'value', 300), field('input-lr', 'value', .08)])
+                    field('input-max-batch', 'value', 300), field('input-lr', 'value', .08),
+                    field('tab-session', 'data', tab_id)])
     assert started['learning-monitor']['disabled'] is False, started
     monitor = next(item['output'] for item in dependencies
                    if any(i['id'] == 'learning-monitor' for i in item['inputs']))
@@ -64,7 +78,8 @@ def check(url):
         progress = post(monitor, outputs(('model-store', 'data'), ('org-chart', 'elements'),
                                         ('learning-status', 'children'), ('btn-stop-learn', 'disabled'),
                                         ('learning-monitor', 'disabled'), ('evaluation-trigger', 'data')),
-                        [field('learning-monitor', 'n_intervals', attempt + 1)])
+                        [field('learning-monitor', 'n_intervals', attempt + 1)],
+                        [field('tab-session', 'data', tab_id)])
         if progress['learning-monitor']['disabled']:
             assert 'model-store' in progress, progress
             saved = progress['model-store']['data']
@@ -77,7 +92,8 @@ def check(url):
                                ('dpdnLabel', 'value'), ('learning-status', 'children')),
                   [field('upload-model', 'contents', 'data:application/json;base64,' +
                          base64.b64encode(saved.encode()).decode())],
-                  [field('upload-model', 'filename', 'model.json')])
+                  [field('upload-model', 'filename', 'model.json'),
+                   field('tab-session', 'data', tab_id)])
     assert loaded['dpdnLabel']['value'] == ['label']
     endpoint = next(item['output'] for item in dependencies
                     if item['output'].startswith('..inference-result.data'))

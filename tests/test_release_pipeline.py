@@ -75,13 +75,14 @@ class TestReleasePipeline(unittest.TestCase):
         self.assertEqual(pipeline.choose_tag(releases, COMMIT, '8.1.0'), 'v8.1.0')
         self.assertEqual(pipeline.choose_tag(releases, 'd' * 40, '8.0.0'), 'v8.0.3')
 
-    def test_hostinger_asset_is_sealed_and_cannot_change_image_or_auth(self):
+    def test_hostinger_asset_is_sealed_without_auth_and_cannot_change_image(self):
         with tempfile.TemporaryDirectory() as directory:
             pipeline.seal(directory, IMAGE, identity())
             hostinger = Path(directory) / 'compose.hostinger.yaml'
             content = hostinger.read_text()
             self.assertIn(IMAGE, content)
-            self.assertIn('basicauth.users=${ACAN_BASIC_AUTH_USERS:?', content)
+            self.assertNotIn('basicauth', content)
+            self.assertNotIn('ACAN_BASIC_AUTH_USERS', content)
             self.assertNotIn('ports:', content)
             self.assertNotIn('build:', content)
             hostinger.write_text(content.replace(IMAGE, 'ghcr.io/other/image:latest'))

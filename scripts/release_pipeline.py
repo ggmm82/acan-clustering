@@ -198,8 +198,8 @@ def publish(directory, repo, commit, floor, main):
              f"Source tree: {value['tree']}\nImage: {value['image']}\n\n"
              "Download compose.release.yaml and runtime-manifest.json. "
              "Run docker compose -f compose.release.yaml up -d. "
-             "For Hostinger use compose.hostinger.yaml, configure TRAEFIK_HOST and "
-             "ACAN_BASIC_AUTH_USERS, and follow docs/HOSTINGER.md. "
+             "For Hostinger use compose.hostinger.yaml, configure TRAEFIK_HOST "
+             "and follow docs/HOSTINGER.md. "
              "The Compose pins the exact tested image digest; no rebuild is performed.\n")
     notes_path = Path(directory) / 'release-notes.md'
     notes_path.write_text(notes)

@@ -146,7 +146,6 @@ jobs:
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         env:
           TRAEFIK_HOST: ci.hstgr.cloud
-          ACAN_BASIC_AUTH_USERS: ci:configuration-check-only
         run: |
           python scripts/release_pipeline.py validate
           docker compose -f reports/runtime/compose.release.yaml config --quiet

@@ -25,6 +25,3 @@ services:
       - traefik.http.routers.${COMPOSE_PROJECT_NAME}-acan.tls.certresolver=letsencrypt
       - traefik.http.routers.${COMPOSE_PROJECT_NAME}-acan.service=${COMPOSE_PROJECT_NAME}-acan
       - traefik.http.services.${COMPOSE_PROJECT_NAME}-acan.loadbalancer.server.port=4000
-      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-acan.middlewares=${COMPOSE_PROJECT_NAME}-acan-auth
-      - traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-acan-auth.basicauth.users=${ACAN_BASIC_AUTH_USERS:?Set ACAN_BASIC_AUTH_USERS to a htpasswd bcrypt entry}
-      - traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-acan-auth.basicauth.removeheader=true

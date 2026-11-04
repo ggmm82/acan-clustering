@@ -11,8 +11,10 @@ have the `websecure` entrypoint, `letsencrypt` certificate resolver, and access 
 the Compose project's Docker network. This Compose reuses that reverse proxy;
 it does not create another Traefik or publish port 4000 on the VPS.
 
-ACAN has no native login. This deployment adds mandatory Traefik BasicAuth in
-front of the application. Browser sessions isolate training jobs, not accounts.
+This deployment has no authentication. Each page receives a distinct session
+identifier; training jobs are keyed by both the browser session and that page
+identifier. Dataset, model and prediction stores are local to the page, so two
+tabs can train on different datasets independently.
 
 ## Install
 
@@ -23,17 +25,9 @@ front of the application. Browser sessions isolate training jobs, not accounts.
    hostname suffix used by RigHaven, for example `srv-123456.hstgr.cloud`.
    With that example the application URL is `https://acan.srv-123456.hstgr.cloud`.
    DNS must route that hostname to the VPS and ports 80/443 must reach Traefik.
-3. Generate your login entry interactively on your own machine/VPS:
-
-   ```sh
-   docker run --rm -it httpd:2.4-alpine htpasswd -nB acan
-   ```
-
-   Put the complete `username:bcrypt-hash` output into `ACAN_BASIC_AUTH_USERS`
-   using Hostinger's environment editor. Never put the password into Compose or
-   commit a real hash. For a CLI deployment, copy `config/hostinger.env.example`
-   to `.env` next to the downloaded Compose and put the hash in **single quotes**
-   to preserve dollar signs. Do not double dollar signs in the environment value.
+3. Set these values in Hostinger's environment editor, or copy
+   `config/hostinger.env.example` to `.env` next to the downloaded Compose for
+   CLI deployment. No username, password or authentication hash is required.
 4. Make the GHCR package readable by the VPS (public package or an appropriate
    registry login configured on the VPS/Hostinger). A GitHub release being public
    does not automatically make its GHCR package public.
@@ -46,7 +40,7 @@ front of the application. Browser sessions isolate training jobs, not accounts.
    docker compose -f compose.hostinger.yaml logs --tail 50
    ```
 
-Open the HTTPS URL, enter the BasicAuth login, and use Data → Model → Inference.
+Open the HTTPS URL and use Data → Model → Inference.
 The image healthcheck calls the internal `/healthz` endpoint. The browser session
 cookie is marked Secure in this deployment, so use HTTPS.
 

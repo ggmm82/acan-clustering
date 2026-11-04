@@ -40,11 +40,13 @@ preserving observed values; include the columns you want completed in the CSV.
 Each incomplete row needs at least one known attribute. A model without target
 labels can still be used in completion mode.
 
-Training jobs are isolated by signed browser session and a second concurrent
-training in the same session is rejected. Use one server process: jobs are kept
+Training jobs are isolated by signed browser session and a distinct random page
+identifier. Tabs in the same browser can train on different datasets independently;
+a second concurrent training in the same page is rejected. Use one server process: jobs are kept
 in memory, are lost on restart, and completed jobs expire after one hour when
 new jobs start. Separate browser profiles have separate sessions; tabs sharing
-cookies share a session. This is a local research application, without accounts
+cookies still have distinct page identifiers. Refreshing starts a new page scope
+and does not reattach to an earlier job. This is a local research application, without accounts
 or durable job storage. Inference uses the model held in the current page.
 
 The default development command enables Dash debugging. For local runs without
