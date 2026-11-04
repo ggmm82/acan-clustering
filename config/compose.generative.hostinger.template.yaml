@@ -1,0 +1,29 @@
+# Optional overlay on the sealed compose.hostinger.yaml. CPU verification worker.
+# Enable explicitly with --profile generative. For long training use a remote CUDA worker.
+services:
+  acan:
+    environment:
+      ACAN_LM_URL: http://generative:8000
+      ACAN_LM_SERVICE_TOKEN: ${ACAN_LM_SERVICE_TOKEN:?Set a private service token}
+      NO_PROXY: generative,localhost,127.0.0.1
+  generative:
+    profiles: [generative]
+    image: __ACAN_LM_IMAGE__
+    init: true
+    restart: unless-stopped
+    read_only: true
+    stop_grace_period: 120s
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    volumes:
+      - acan-lm-data:/data
+    environment:
+      ACAN_LM_SERVICE_TOKEN: ${ACAN_LM_SERVICE_TOKEN:?Set a private service token}
+    mem_limit: ${ACAN_LM_MEMORY:-4g}
+    cpus: ${ACAN_LM_CPUS:-2}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  acan-lm-data:
