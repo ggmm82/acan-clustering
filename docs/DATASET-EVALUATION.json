@@ -1,0 +1,1597 @@
+{
+  "options": {
+    "max_depth": 1,
+    "max_epochs": 100,
+    "min_samples_split": 12,
+    "similarity_threshold": 0.92,
+    "lr": 0.08,
+    "tau": 0.2,
+    "alpha": 0.5,
+    "device": "numpy",
+    "batch_size": 300
+  },
+  "results": [
+    {
+      "dataset": "irrilevanti.xlsx",
+      "info": {
+        "raw_rows": 1000,
+        "usable_rows": 1000,
+        "excluded_missing_targets": 0,
+        "excluded_columns": [],
+        "target_types": {
+          "label": "classification"
+        },
+        "stratified": true,
+        "train_rows": 800,
+        "validation_rows": 200,
+        "seed": 42
+      },
+      "encoded": {
+        "rows": 800,
+        "columns": 56,
+        "cells": 44800,
+        "largest": [
+          [
+            "1",
+            4
+          ],
+          [
+            "2",
+            4
+          ],
+          [
+            "3",
+            4
+          ],
+          [
+            "4",
+            4
+          ],
+          [
+            "5",
+            4
+          ],
+          [
+            "6",
+            4
+          ]
+        ]
+      },
+      "training_seconds": 1.261817651000456,
+      "graph": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 4
+      },
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 0.265,
+          "N": 200
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.25,
+          "N": 200
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 0.10474308300395258,
+          "N": 200
+        },
+        {
+          "Modello": "KNN",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 0.805,
+          "N": 200
+        },
+        {
+          "Modello": "KNN",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8053344403799256,
+          "N": 200
+        },
+        {
+          "Modello": "KNN",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 0.8023807941224042,
+          "N": 200
+        },
+        {
+          "Modello": "CART",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "CART",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "CART",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "label",
+          "Training_secondi": 0.002065487002255395,
+          "Inferenza_secondi": 0.023162127999967197,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "label",
+          "Training_secondi": 0.003911743999196915,
+          "Inferenza_secondi": 0.00031909600147628225,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "label",
+          "Training_secondi": 0.3983466320023581,
+          "Inferenza_secondi": 0.01650229400183889,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "label",
+          "Training_secondi": 0.3402666219990351,
+          "Inferenza_secondi": 0.016043870000430616,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "label",
+          "Training_secondi": 0.24615858099787147,
+          "Inferenza_secondi": 0.005771102001745021,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "label",
+          "Training_secondi": 0.04323328099781065,
+          "Inferenza_secondi": 0.0015737180001451634,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "label",
+          "Training_secondi": 0.15161649899891927,
+          "Inferenza_secondi": 0.001906452998809982,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 3.3511251460004132,
+          "Stato": "ok"
+        }
+      ],
+      "protocol": {
+        "seed": 42,
+        "train_rows": 800,
+        "test_rows": 200,
+        "tuned": false,
+        "preprocessing": "training-only imputation, one-hot and min-max",
+        "tree_estimators": 200,
+        "boosting_iterations": 100,
+        "knn_neighbors": 5,
+        "cart_max_depth": 5,
+        "versions": {
+          "scikit-learn": "1.9.1",
+          "xgboost-cpu": "3.4.1",
+          "catboost": "1.2.10"
+        }
+      }
+    },
+    {
+      "dataset": "sonar.xlsx",
+      "info": {
+        "raw_rows": 208,
+        "usable_rows": 208,
+        "excluded_missing_targets": 0,
+        "excluded_columns": [],
+        "target_types": {
+          "Class": "classification"
+        },
+        "stratified": true,
+        "train_rows": 166,
+        "validation_rows": 42,
+        "seed": 42
+      },
+      "encoded": {
+        "rows": 166,
+        "columns": 62,
+        "cells": 10292,
+        "largest": [
+          [
+            "Class",
+            2
+          ],
+          [
+            "1",
+            1
+          ],
+          [
+            "2",
+            1
+          ],
+          [
+            "3",
+            1
+          ],
+          [
+            "4",
+            1
+          ],
+          [
+            "5",
+            1
+          ]
+        ]
+      },
+      "training_seconds": 1.2681909989987616,
+      "graph": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 2
+      },
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Class",
+          "Metrica": "Accuracy",
+          "Valore": 0.7142857142857143,
+          "N": 42
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7136363636363636,
+          "N": 42
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Class",
+          "Metrica": "F1_macro",
+          "Valore": 0.7136363636363636,
+          "N": 42
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Class",
+          "Metrica": "Accuracy",
+          "Valore": 0.5238095238095238,
+          "N": 42
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5,
+          "N": 42
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Class",
+          "Metrica": "F1_macro",
+          "Valore": 0.34375,
+          "N": 42
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Class",
+          "Metrica": "Accuracy",
+          "Valore": 0.7380952380952381,
+          "N": 42
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7363636363636363,
+          "N": 42
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Class",
+          "Metrica": "F1_macro",
+          "Valore": 0.7367521367521368,
+          "N": 42
+        },
+        {
+          "Modello": "CART",
+          "Target": "Class",
+          "Metrica": "Accuracy",
+          "Valore": 0.8095238095238095,
+          "N": 42
+        },
+        {
+          "Modello": "CART",
+          "Target": "Class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8045454545454545,
+          "N": 42
+        },
+        {
+          "Modello": "CART",
+          "Target": "Class",
+          "Metrica": "F1_macro",
+          "Valore": 0.8055555555555556,
+          "N": 42
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Class",
+          "Metrica": "Accuracy",
+          "Valore": 0.8571428571428571,
+          "N": 42
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.85,
+          "N": 42
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Class",
+          "Metrica": "F1_macro",
+          "Valore": 0.851764705882353,
+          "N": 42
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Class",
+          "Metrica": "Accuracy",
+          "Valore": 0.8333333333333334,
+          "N": 42
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.825,
+          "N": 42
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Class",
+          "Metrica": "F1_macro",
+          "Valore": 0.8253119429590018,
+          "N": 42
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Class",
+          "Metrica": "Accuracy",
+          "Valore": 0.8095238095238095,
+          "N": 42
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8022727272727272,
+          "N": 42
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Class",
+          "Metrica": "F1_macro",
+          "Valore": 0.8023529411764705,
+          "N": 42
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Class",
+          "Metrica": "Accuracy",
+          "Valore": 0.9285714285714286,
+          "N": 42
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.925,
+          "N": 42
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Class",
+          "Metrica": "F1_macro",
+          "Valore": 0.9275445658424382,
+          "N": 42
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Class",
+          "Metrica": "Accuracy",
+          "Valore": 0.8809523809523809,
+          "N": 42
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.875,
+          "N": 42
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Class",
+          "Metrica": "F1_macro",
+          "Valore": 0.8775510204081632,
+          "N": 42
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "Class",
+          "Training_secondi": 0.0017704560013953596,
+          "Inferenza_secondi": 0.005575510000198847,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "Class",
+          "Training_secondi": 0.00565157100209035,
+          "Inferenza_secondi": 0.000371458001609426,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Class",
+          "Training_secondi": 0.6171492210014549,
+          "Inferenza_secondi": 0.011416809000365902,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Class",
+          "Training_secondi": 0.38585509000040474,
+          "Inferenza_secondi": 0.02609802699953434,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Class",
+          "Training_secondi": 0.12748942200050806,
+          "Inferenza_secondi": 0.0025194840018230025,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Class",
+          "Training_secondi": 0.20642967599997064,
+          "Inferenza_secondi": 0.008203506000427296,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Class",
+          "Training_secondi": 1.1586193880029896,
+          "Inferenza_secondi": 0.0006549110003106762,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 0.8187934249981481,
+          "Stato": "ok"
+        }
+      ],
+      "protocol": {
+        "seed": 42,
+        "train_rows": 166,
+        "test_rows": 42,
+        "tuned": false,
+        "preprocessing": "training-only imputation, one-hot and min-max",
+        "tree_estimators": 200,
+        "boosting_iterations": 100,
+        "knn_neighbors": 5,
+        "cart_max_depth": 5,
+        "versions": {
+          "scikit-learn": "1.9.1",
+          "xgboost-cpu": "3.4.1",
+          "catboost": "1.2.10"
+        }
+      }
+    },
+    {
+      "dataset": "titanic.csv",
+      "info": {
+        "raw_rows": 891,
+        "usable_rows": 891,
+        "excluded_missing_targets": 0,
+        "excluded_columns": [
+          "PassengerId",
+          "Name",
+          "Ticket",
+          "Cabin"
+        ],
+        "target_types": {
+          "Survived": "classification"
+        },
+        "stratified": true,
+        "train_rows": 712,
+        "validation_rows": 179,
+        "seed": 42
+      },
+      "encoded": {
+        "rows": 712,
+        "columns": 14,
+        "cells": 9968,
+        "largest": [
+          [
+            "Embarked",
+            4
+          ],
+          [
+            "Survived",
+            2
+          ],
+          [
+            "Sex",
+            2
+          ],
+          [
+            "Pclass",
+            1
+          ],
+          [
+            "Age",
+            1
+          ],
+          [
+            "SibSp",
+            1
+          ]
+        ]
+      },
+      "training_seconds": 0.8740708259974781,
+      "graph": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 4
+      },
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.776536312849162,
+          "N": 179
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7533596837944664,
+          "N": 179
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.7584345479082322,
+          "N": 179
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.6145251396648045,
+          "N": 179
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5,
+          "N": 179
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.3806228373702422,
+          "N": 179
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.8100558659217877,
+          "N": 179
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7806324110671936,
+          "N": 179
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.7902536531568789,
+          "N": 179
+        },
+        {
+          "Modello": "CART",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.7653631284916201,
+          "N": 179
+        },
+        {
+          "Modello": "CART",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.730764163372859,
+          "N": 179
+        },
+        {
+          "Modello": "CART",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.7388858016115587,
+          "N": 179
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.8212290502793296,
+          "N": 179
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7978260869565217,
+          "N": 179
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.8054347826086956,
+          "N": 179
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.8044692737430168,
+          "N": 179
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7895915678524374,
+          "N": 179
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.7918950340475004,
+          "N": 179
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.8268156424581006,
+          "N": 179
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8104743083003952,
+          "N": 179
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.8145697577276525,
+          "N": 179
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.7988826815642458,
+          "N": 179
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7850461133069828,
+          "N": 179
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.7865659777424483,
+          "N": 179
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.8044692737430168,
+          "N": 179
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7652832674571806,
+          "N": 179
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.7778132425435329,
+          "N": 179
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "Survived",
+          "Training_secondi": 0.001983363999897847,
+          "Inferenza_secondi": 0.0033729799979482777,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "Survived",
+          "Training_secondi": 0.0017020959967339877,
+          "Inferenza_secondi": 0.0001960620029421989,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Survived",
+          "Training_secondi": 0.4649022169978707,
+          "Inferenza_secondi": 0.020889954997983295,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Survived",
+          "Training_secondi": 0.343376223998348,
+          "Inferenza_secondi": 0.033669358999759424,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Survived",
+          "Training_secondi": 0.16358707000108552,
+          "Inferenza_secondi": 0.0024316720009665005,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Survived",
+          "Training_secondi": 0.0465082219998294,
+          "Inferenza_secondi": 0.0019396909992792644,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Survived",
+          "Training_secondi": 0.05662945600124658,
+          "Inferenza_secondi": 0.0007750279983156361,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 1.3418684209973435,
+          "Stato": "ok"
+        }
+      ],
+      "protocol": {
+        "seed": 42,
+        "train_rows": 712,
+        "test_rows": 179,
+        "tuned": false,
+        "preprocessing": "training-only imputation, one-hot and min-max",
+        "tree_estimators": 200,
+        "boosting_iterations": 100,
+        "knn_neighbors": 5,
+        "cart_max_depth": 5,
+        "versions": {
+          "scikit-learn": "1.9.1",
+          "xgboost-cpu": "3.4.1",
+          "catboost": "1.2.10"
+        }
+      }
+    },
+    {
+      "dataset": "GiocoSet.xlsx",
+      "info": {
+        "raw_rows": 101,
+        "usable_rows": 100,
+        "excluded_missing_targets": 1,
+        "excluded_columns": [],
+        "target_types": {
+          "Gioco": "classification"
+        },
+        "stratified": true,
+        "train_rows": 80,
+        "validation_rows": 20,
+        "seed": 42
+      },
+      "encoded": {
+        "rows": 80,
+        "columns": 9,
+        "cells": 720,
+        "largest": [
+          [
+            "Tempo",
+            2
+          ],
+          [
+            "Luogo",
+            2
+          ],
+          [
+            "Gioco",
+            2
+          ],
+          [
+            "Giorno",
+            1
+          ],
+          [
+            "Mese",
+            1
+          ],
+          [
+            "Anno",
+            1
+          ]
+        ]
+      },
+      "training_seconds": 0.1258177230010915,
+      "graph": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 4
+      },
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 0.55,
+          "N": 20
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5,
+          "N": 20
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 0.3548387096774194,
+          "N": 20
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "CART",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 0.55,
+          "N": 20
+        },
+        {
+          "Modello": "CART",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5303030303030303,
+          "N": 20
+        },
+        {
+          "Modello": "CART",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 0.52,
+          "N": 20
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 0.55,
+          "N": 20
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5303030303030303,
+          "N": 20
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 0.52,
+          "N": 20
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 20
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "Gioco",
+          "Training_secondi": 0.0010158139994018711,
+          "Inferenza_secondi": 0.003425899998546811,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "Gioco",
+          "Training_secondi": 0.0021836260020791087,
+          "Inferenza_secondi": 0.0004406970001582522,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Gioco",
+          "Training_secondi": 0.3083781880013703,
+          "Inferenza_secondi": 0.014220034001482418,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Gioco",
+          "Training_secondi": 0.22499518299810006,
+          "Inferenza_secondi": 0.013081839999358635,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Gioco",
+          "Training_secondi": 0.03416228300193325,
+          "Inferenza_secondi": 0.0010863040006370284,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Gioco",
+          "Training_secondi": 0.015601822000462562,
+          "Inferenza_secondi": 0.0014263339980971068,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Gioco",
+          "Training_secondi": 0.02173464899897226,
+          "Inferenza_secondi": 0.0006879180000396445,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 0.12564908800050034,
+          "Stato": "ok"
+        }
+      ],
+      "protocol": {
+        "seed": 42,
+        "train_rows": 80,
+        "test_rows": 20,
+        "tuned": false,
+        "preprocessing": "training-only imputation, one-hot and min-max",
+        "tree_estimators": 200,
+        "boosting_iterations": 100,
+        "knn_neighbors": 5,
+        "cart_max_depth": 5,
+        "versions": {
+          "scikit-learn": "1.9.1",
+          "xgboost-cpu": "3.4.1",
+          "catboost": "1.2.10"
+        }
+      }
+    },
+    {
+      "dataset": "adultMinimal.xlsx",
+      "info": {
+        "raw_rows": 499,
+        "usable_rows": 499,
+        "excluded_missing_targets": 0,
+        "excluded_columns": [],
+        "target_types": {
+          "income": "classification"
+        },
+        "stratified": true,
+        "train_rows": 399,
+        "validation_rows": 100,
+        "seed": 42
+      },
+      "encoded": {
+        "rows": 399,
+        "columns": 11,
+        "cells": 4389,
+        "largest": [
+          [
+            "marital.status",
+            6
+          ],
+          [
+            "sex",
+            2
+          ],
+          [
+            "income",
+            2
+          ],
+          [
+            "age",
+            1
+          ]
+        ]
+      },
+      "training_seconds": 0.6819255920017895,
+      "graph": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 2
+      },
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.8,
+          "N": 100
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8,
+          "N": 100
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.7999199679871949,
+          "N": 100
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.5,
+          "N": 100
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5,
+          "N": 100
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.3333333333333333,
+          "N": 100
+        },
+        {
+          "Modello": "KNN",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.79,
+          "N": 100
+        },
+        {
+          "Modello": "KNN",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.79,
+          "N": 100
+        },
+        {
+          "Modello": "KNN",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.7898108297467721,
+          "N": 100
+        },
+        {
+          "Modello": "CART",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.78,
+          "N": 100
+        },
+        {
+          "Modello": "CART",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.78,
+          "N": 100
+        },
+        {
+          "Modello": "CART",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.7799119647859143,
+          "N": 100
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.74,
+          "N": 100
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.74,
+          "N": 100
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.7398959583833533,
+          "N": 100
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.73,
+          "N": 100
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.73,
+          "N": 100
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.7293233082706767,
+          "N": 100
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.81,
+          "N": 100
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.81,
+          "N": 100
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.8099809980998101,
+          "N": 100
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.72,
+          "N": 100
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.72,
+          "N": 100
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.72,
+          "N": 100
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.79,
+          "N": 100
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.79,
+          "N": 100
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.7898108297467721,
+          "N": 100
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "income",
+          "Training_secondi": 0.002059393998933956,
+          "Inferenza_secondi": 0.0024305309998453595,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "income",
+          "Training_secondi": 0.0011777649997384287,
+          "Inferenza_secondi": 0.0001613120002730284,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "income",
+          "Training_secondi": 0.35743968799943104,
+          "Inferenza_secondi": 0.018868670998926973,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "income",
+          "Training_secondi": 0.27588443999775336,
+          "Inferenza_secondi": 0.018917778998002177,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "income",
+          "Training_secondi": 0.08793815999888466,
+          "Inferenza_secondi": 0.0016876989975571632,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "income",
+          "Training_secondi": 0.022711929999786662,
+          "Inferenza_secondi": 0.0009968890008167364,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "income",
+          "Training_secondi": 0.01695320900034858,
+          "Inferenza_secondi": 0.0005533129988180008,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 0.5196537429983437,
+          "Stato": "ok"
+        }
+      ],
+      "protocol": {
+        "seed": 42,
+        "train_rows": 399,
+        "test_rows": 100,
+        "tuned": false,
+        "preprocessing": "training-only imputation, one-hot and min-max",
+        "tree_estimators": 200,
+        "boosting_iterations": 100,
+        "knn_neighbors": 5,
+        "cart_max_depth": 5,
+        "versions": {
+          "scikit-learn": "1.9.1",
+          "xgboost-cpu": "3.4.1",
+          "catboost": "1.2.10"
+        }
+      }
+    }
+  ]
+}

@@ -192,7 +192,7 @@ priorità, un solo thread per modello, un benchmark alla volta sul server,
 arresto disponibile e limite di 15 minuti. Le foreste usano 200 alberi e i
 boosting 100 iterazioni: budget fissi, senza tuning automatico.
 
-Evaluation usa **il CSV dell'utente**: holdout 20% con seed 42, ricavato automaticamente dai dati già caricati
+Evaluation usa **il dataset dell'utente (anche Excel)**: holdout 20% con seed 42, stratificato quando possibile, ricavato automaticamente dai dati già caricati
 in Dati, senza altri CSV. Confronta ACAN con maggioranza/media del training, KNN, CART, Random Forest, Extra Trees,
 HistGradientBoosting, XGBoost e CatBoost, usando
 le stesse righe osservate per ogni target. Imputazione, schema categorico e scale
@@ -200,6 +200,12 @@ delle baseline sono appresi solo sul training. Per classificazione mostra
 accuracy, balanced accuracy, F1 macro e matrice di confusione; per regressione MAE, RMSE, $R^2$ e
 reale/predetto. Per modelli senza target nasconde celle note del proprio holdout
 (seed 42, massimo 100 righe) e misura la ricostruzione sulle sole celle nascoste.
+
+I nuovi modelli GUI conservano nel JSON lo schema delle categorie e l’imputazione
+appresi sul training, usati anche in inferenza. Il target suggerito e le esclusioni
+delle colonne restano modificabili; la modalità classificazione/regressione può
+essere scelta nelle impostazioni avanzate. Verifica misurata sui cinque dataset
+forniti: [risultati e limiti](docs/DATASET-EVALUATION.md).
 
 Dopo aver scelto i rami guardando l'holdout, esso è **validazione**, non un test
 indipendente. Il confronto dei rami è uno strumento di selezione, non una

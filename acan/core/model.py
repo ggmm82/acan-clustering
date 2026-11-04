@@ -228,6 +228,7 @@ class GraphClusterModel:
         self.labels = []
         self.rootId = 0
         self.minMax = {}
+        self.preprocessing = None
 
     def to_json(self):
         cd = self.clusterData
@@ -245,6 +246,7 @@ class GraphClusterModel:
             object_hook=lambda d: {int(k) if str(k).isdigit() else k: v for k, v in d.items()},
         )
         gcm.labels = dictsModel["labels"]
+        gcm.preprocessing = dictsModel.get("preprocessing")
         gcm.rootId = dictsModel["rootId"]
         gcm.minMax = {str(k): v for k, v in dictsModel["minMax"].items()}
         for ids, model in dictsModel["clusterModel"].items():

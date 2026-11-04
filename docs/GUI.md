@@ -6,8 +6,11 @@ routing. Paper correspondence remains partial; see [PAPER-AUDIT.md](PAPER-AUDIT.
 
 1. In Model, select targets (clear for unsupervised discovery) and click
    **Scopri concetti**. The default initial depth is one. Parameters are collapsed
-   under **Impostazioni avanzate**. Numeric class codes should be marked as
-   categorical there; numeric targets otherwise use regression metrics.
+   under **Impostazioni avanzate**. Automatic target typing treats text and
+   integer codes with 2–20 distinct values as classification; choose an explicit
+   classification/regression mode there when that suggestion does not match
+   the task. Suggested target and excluded identifier/high-cardinality columns
+   remain editable. Unknown `?`/blank targets are excluded and counted.
 2. Double-click a group to learn one child node on its training samples. The
    model retains one original root; the full graph connects the new groups
    directly below their parent group without rendering an intermediate root.
@@ -57,3 +60,10 @@ undo and masked scoring. Hierarchy/session tests and Docker HTTP smoke checks
 remain part of CI, along with the frozen paper/PDF audit and synthetic historical
 scientific regression suite. Historical benchmarks are separate CI fixtures,
 not replacement datasets for the user's benchmark.
+
+The supervised split is stratified when class counts permit. Saved GUI models
+include a training-fitted feature schema: absent categorical levels become zero
+and numerical missing values use training means and trained missing indicators.
+Retrain older JSON models to acquire this schema. Resource checks run before
+one-hot allocation and report which columns cause expansion. See the measured
+[five-dataset verification](DATASET-EVALUATION.md).
