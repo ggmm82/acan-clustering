@@ -1,10 +1,12 @@
 *
 !Dockerfile
+!Dockerfile.generative
 !pyproject.toml
 !README.md
 !LICENSE
 !requirements/
 !requirements/docker.lock
+!requirements/llm.lock
 !acan/
 !acan/**
 **/__pycache__

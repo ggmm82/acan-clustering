@@ -110,3 +110,13 @@ docker build --secret id=proxy_ca,src=/etc/ssl/certs/ca-certificates.crt \
 
 API access to `api.github.com` is needed for creating PRs, rulesets, releases and
 resolving prior Actions artifacts. Git clone/push access alone is not API access.
+
+
+The generative extension uses runtime schema 4. In addition to the web image,
+`generative-runtime.json` records the tested CPU worker digest and source/run;
+`lm-audit.json` records the causal/resume contracts. The optional sealed
+`compose.generative.hostinger.yaml` standalone stack pins both the web image and
+that worker, without optional profiles. Hostinger validates this file by itself. Missing, stale,
+skipped or altered LM evidence blocks release. Neither the overlay nor opening
+the GUI starts training. CUDA builds/hardware are explicitly separate from the
+CPU mechanics certification; see [GENERATIVE.md](GENERATIVE.md).

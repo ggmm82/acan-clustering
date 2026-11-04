@@ -10,6 +10,8 @@ def train_native(data, labels, options):
     normalized, minmax = GraphClusterModel.normalizeData(GraphClusterModel.full_dummies(data))
     graph = GraphClusterModel()
     graph.minMax, graph.labels = minmax, list(labels)
+    from acan.preprocessing import fit_features
+    graph.preprocessing = fit_features(data, labels)
     common = {k: options[k] for k in ('lr', 'tau', 'alpha', 'device')}
     if options['max_depth'] == 1:
         learner = AlgebraicClusterLearner(normalized, labels=labels,

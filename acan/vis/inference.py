@@ -36,8 +36,11 @@ def infer(model_json, dataset, mode='predict'):
         if not any(col in root.cols for col in encoded.columns):
             raise ValueError('Ogni riga incompleta richiede almeno un attributo noto al modello.')
     if mode == 'predict':
-        predicted, confidence, paths = model.predictDataset(
-            data.drop(columns=model.labels, errors='ignore'), model.labels)
+        features = data.drop(columns=model.labels, errors='ignore')
+        if model.preprocessing:
+            from acan.preprocessing import transform_features
+            features = transform_features(features, model.preprocessing)
+        predicted, confidence, paths = model.predictDataset(features, model.labels)
         result = dataset.copy()
         for label in model.labels:
             columns = root.fullLabels([label])

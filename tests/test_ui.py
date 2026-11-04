@@ -78,6 +78,20 @@ class TestUICallbacks(unittest.TestCase):
         self.assertIsNone(cleared['inference-result']['data'])
         self.assertTrue(cleared['inference-export']['disabled'])
 
+    def test_upload_keeps_row_order_and_reports_suggested_target(self):
+        frame = pd.DataFrame({'PassengerId': range(120), 'Survived': [0, 1]*60,
+                              'measurement': [i/120 for i in range(120)]})
+        contents = 'data:text/csv;base64,' + base64.b64encode(frame.to_csv(index=False).encode()).decode()
+        result = self.invoke('..data-store.data', [('upload-data', 'contents', contents)],
+                             [('upload-data', 'filename', 'sample.csv'),
+                              ('upload-data', 'last_modified', 0), ('label-store', 'data', [])])
+        data = result['data-store']['data']
+        self.assertEqual(data['PassengerId'], list(range(120)))
+        result = self.invoke('..dpdnLabel.options', [('data-store', 'data', data)],
+                             [('label-store', 'data', [])])
+        self.assertEqual(result['dpdnLabel']['value'], ['Survived'])
+        self.assertEqual(result['dpdnFilter']['value'], ['PassengerId'])
+
     def test_sessions_receive_distinct_server_identifiers(self):
         other = self.app.server.test_client()
         other.get('/_dash-layout')

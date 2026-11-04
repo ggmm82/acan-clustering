@@ -1,0 +1,34 @@
+# docker compose -f compose.yaml -f compose.generative.yaml --profile generative up -d --build
+# Set a private random ACAN_LM_SERVICE_TOKEN (e.g. openssl rand -hex 32) first.
+services:
+  acan:
+    environment:
+      ACAN_LM_URL: http://generative:8000
+      ACAN_LM_SERVICE_TOKEN: ${ACAN_LM_SERVICE_TOKEN:?Set a private service token}
+      NO_PROXY: generative,localhost,127.0.0.1
+  generative:
+    profiles: [generative]
+    image: ${ACAN_LM_IMAGE:-acan-generative:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.generative
+      args:
+        TORCH_INDEX_URL: ${ACAN_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 120s
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    volumes:
+      - acan-lm-data:/data
+    environment:
+      ACAN_LM_SERVICE_TOKEN: ${ACAN_LM_SERVICE_TOKEN:?Set a private service token}
+    mem_limit: ${ACAN_LM_MEMORY:-4g}
+    cpus: ${ACAN_LM_CPUS:-2}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  acan-lm-data:

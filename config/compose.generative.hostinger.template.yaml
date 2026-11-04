@@ -1,0 +1,52 @@
+# Complete standalone Hostinger stack: frontend + persistent CPU generative worker.
+# Deploy the sealed compose.generative.hostinger.yaml from a release by itself.
+# Set ACAN_LM_SERVICE_TOKEN to a private random value; it is an internal service key.
+name: ${ACAN_PROJECT_NAME:-acan}
+services:
+  acan:
+    image: __ACAN_IMAGE__
+    init: true
+    restart: unless-stopped
+    mem_limit: 1024m
+    cpus: 2
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      ACAN_COOKIE_SECURE: 'true'
+      ACAN_LM_URL: http://generative:8000
+      ACAN_LM_SERVICE_TOKEN: ${ACAN_LM_SERVICE_TOKEN:?Set a private service token}
+      NO_PROXY: generative,localhost,127.0.0.1
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-acan.rule=Host(`${COMPOSE_PROJECT_NAME}.${TRAEFIK_HOST:?Set TRAEFIK_HOST}`)
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-acan.entrypoints=websecure
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-acan.tls=true
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-acan.tls.certresolver=letsencrypt
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-acan.service=${COMPOSE_PROJECT_NAME}-acan
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}-acan.loadbalancer.server.port=4000
+  generative:
+    image: __ACAN_LM_IMAGE__
+    init: true
+    restart: unless-stopped
+    read_only: true
+    stop_grace_period: 120s
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    volumes:
+      - acan-lm-data:/data
+    environment:
+      ACAN_LM_SERVICE_TOKEN: ${ACAN_LM_SERVICE_TOKEN:?Set a private service token}
+    mem_limit: ${ACAN_LM_MEMORY:-4g}
+    cpus: ${ACAN_LM_CPUS:-2}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  acan-lm-data:
