@@ -58,9 +58,6 @@ python -c "from acan.vis.render import app; app.run(debug=False, port=4000)"
 
 ## Contents
 
-The **Laboratory** tab adds a CPU character language prototype with corpus
-training, held-out metrics, sampling and model/report export. See
-[Generative laboratory](docs/GENERATIVE-LAB.md).
 The [paper audit](docs/PAPER-AUDIT.md) records partial correspondence, corrected
 numerical gradients and outstanding scientific claims. Every release now requires
 the audit, full synthetic benchmark receipts and Docker HTTP checks.

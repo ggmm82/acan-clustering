@@ -13,7 +13,6 @@ import unittest
 import numpy as np
 
 from acan.core.network import HAS_TORCH
-from acan.generative import ConceptLanguageModel, demo_corpus
 from acan.paper_contract import PAPER_SHA256, CONFORMANCE, GAPS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,12 +33,12 @@ def main():
         torch.manual_seed(42)
         torch.set_num_threads(1)
     suite = unittest.TestSuite()
-    for pattern in ('test_paper_contract.py', 'test_acan.py', 'test_language.py'):
+    for pattern in ('test_paper_contract.py', 'test_acan.py'):
         suite.addTests(unittest.defaultTestLoader.discover(str(ROOT / 'tests'), pattern=pattern))
     stream = io.StringIO()
     result = unittest.TextTestRunner(stream=stream, verbosity=2).run(suite)
-    passed = result.wasSuccessful() and result.testsRun >= 13 and (not args.require_torch or not result.skipped)
-    report = dict(contract_version=1, status='passed' if passed else 'failed',
+    passed = result.wasSuccessful() and result.testsRun >= 8 and (not args.require_torch or not result.skipped)
+    report = dict(contract_version=2, status='passed' if passed else 'failed',
                   conformance=CONFORMANCE, full_paper_conformance=False, paper_sha256=PAPER_SHA256,
                   commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
                   tree=subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(),
@@ -51,9 +50,6 @@ def main():
     if HAS_TORCH:
         import torch
         report['torch'] = torch.__version__
-    if passed:
-        model = ConceptLanguageModel(context=4, slots=8).fit(demo_corpus(), epochs=15)
-        report['language_prototype'] = model.report
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, allow_nan=False) + '\n')
