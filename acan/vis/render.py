@@ -1,5 +1,6 @@
 import os
 import secrets
+import re
 from flask import session
 from acan.vis.jobs import TrainingJobs
 from acan.vis.inference import infer
@@ -35,8 +36,13 @@ els={}
 
 # Signed cookies identify browser sessions; learners stay on the server.
 app.server.secret_key = os.environ.get('ACAN_SESSION_SECRET') or secrets.token_hex(32)
-app.server.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax')
+app.server.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax',
+                         SESSION_COOKIE_SECURE=os.environ.get('ACAN_COOKIE_SECURE', '').lower() == 'true')
 training_jobs = TrainingJobs()
+
+@app.server.get('/healthz')
+def health():
+    return {'status': 'ok'}
 
 @app.server.before_request
 def ensure_session():
@@ -654,7 +660,7 @@ inference_layout = dbc.Container([
     dcc.Download(id='inference-download'),
 ])
 
-app.layout = dbc.Container([
+_page_layout = dbc.Container([
     html.H1('Simple Data Mining', style={'textAlign': 'center'}),
     dcc.Tabs(id='tabs', value='Data', children=[
         dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference']
@@ -666,6 +672,20 @@ app.layout = dbc.Container([
     html.Div([evaluation_layout, dcc.Store(id='eval-store')], id='page-evaluation', style={'display': 'none'}),
     html.Div(inference_layout, id='page-inference', style={'display': 'none'}),
 ], fluid=True)
+
+
+def serve_layout():
+    # New for every page load, including tabs sharing the same browser cookie.
+    return html.Div([dcc.Store(id='tab-session', data=secrets.token_urlsafe(24)), _page_layout])
+
+
+app.layout = serve_layout
+
+
+def tab_job_key(tab_id):
+    if not isinstance(tab_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{32}', tab_id):
+        raise ValueError('Sessione della scheda non valida: ricaricare la pagina.')
+    return session['acan_session'], tab_id
 
 
 @app.callback([Output('page-data', 'style'), Output('page-model', 'style'),
@@ -945,17 +965,19 @@ def download_prediction(n_clicks, pred, data):
               State('dpdnCategory', 'value'),
               State('input-max-batch', 'value'),
               State('input-lr', 'value'),
+              State('tab-session', 'data'),
               prevent_initial_call=True
               )
-def update_model(n_clicks, data, labels, filters, categories, max_batch, lr):
+def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, tab_id):
     if not n_clicks:
         return (dash.no_update,) * 5
     if not data:
         return dash.no_update, dash.no_update, "⚠️ Nessun dato caricato!", True, True
-    existing = training_jobs.get(session['acan_session'])
-    if existing and not existing['done'].is_set():
-        return dash.no_update, dash.no_update, "Training già in corso.", False, False
     try:
+        key = tab_job_key(tab_id)
+        existing = training_jobs.get(key)
+        if existing and not existing['done'].is_set():
+            return dash.no_update, dash.no_update, "Training già in corso.", False, False
         df = pd.DataFrame(data)
         if len(df) < 5:
             raise ValueError('Servono almeno 5 righe per lo split train/test.')
@@ -967,7 +989,7 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr):
         normalized, minmax = GraphClusterModel.normalizeData(GraphClusterModel.full_dummies(train))
         learner = AlgebraicClusterLearner(normalized, batch_size=max_batch or 300,
                                           lr=lr or 0.1, labels=labels or [])
-        training_jobs.start(session['acan_session'], learner, minmax, labels or [])
+        training_jobs.start(key, learner, minmax, labels or [])
         return dash.no_update, test.to_dict(), "🟢 Apprendimento avviato", False, False
     except Exception as exc:
         return dash.no_update, dash.no_update, f"❌ {exc}", True, True
@@ -979,9 +1001,13 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr):
             Output('learning-monitor', 'disabled', allow_duplicate=True),
             Output('evaluation-trigger', 'data', allow_duplicate=True)],
             Input('learning-monitor', 'n_intervals'),
+            State('tab-session', 'data'),
             prevent_initial_call=True)
-def monitor_learning(n_intervals):
-    job = training_jobs.get(session['acan_session'])
+def monitor_learning(n_intervals, tab_id):
+    try:
+        job = training_jobs.get(tab_job_key(tab_id))
+    except ValueError as exc:
+        return dash.no_update, dash.no_update, str(exc), True, True, dash.no_update
     if job is None:
         return dash.no_update, dash.no_update, 'Nessun training attivo.', True, True, dash.no_update
     learner = job['learner']
@@ -1007,9 +1033,10 @@ def monitor_learning(n_intervals):
                Output('btn-stop-learn', 'disabled', allow_duplicate=True),
                Output('learning-status', 'children', allow_duplicate=True)],
               Input('btn-stop-learn', 'n_clicks'),
+              State('tab-session', 'data'),
               prevent_initial_call=True)
-def stop_learning(n_clicks):
-    if n_clicks and training_jobs.stop(session['acan_session']):
+def stop_learning(n_clicks, tab_id):
+    if n_clicks and training_jobs.stop(tab_job_key(tab_id)):
         return dash.no_update, dash.no_update, '⏹️ Stop richiesto...'
     return dash.no_update, dash.no_update, dash.no_update
 
@@ -1020,12 +1047,13 @@ def stop_learning(n_clicks):
     Output('dpdnLabel', 'value', allow_duplicate=True),
     Output('learning-status', 'children', allow_duplicate=True),
     Input('upload-model', 'contents'), State('upload-model', 'filename'),
+    State('tab-session', 'data'),
     prevent_initial_call=True)
-def load_model_json(contents, filename):
+def load_model_json(contents, filename, tab_id):
     if not contents:
         return (dash.no_update,) * 4
     try:
-        active = training_jobs.get(session['acan_session'])
+        active = training_jobs.get(tab_job_key(tab_id))
         if active and not active['done'].is_set():
             raise ValueError('Attendere la fine del training prima di caricare un modello.')
         if not filename or not filename.lower().endswith('.json'):
@@ -1126,7 +1154,6 @@ def node_info(snd, model):
                 nId = int(node_id)
                 return graph_info(model, nId)
 
-import re
 import plotly.express as px
 
 
