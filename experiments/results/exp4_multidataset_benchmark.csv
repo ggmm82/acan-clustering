@@ -1,0 +1,7 @@
+Dataset,N_Train,M_Cols,KNN_Acc,CART_Acc,GenTree_v1_Acc,ACM_v7_Acc,ACAN_v8_Acc,ACAN_Active_Slots,Compression_Ratio_pct
+Iris (UCI),140,4,97.5,90.0,92.5,60.0,92.5,2,98.6
+Zoo (UCI),140,16,100.0,82.5,97.5,50.0,95.0,4,97.1
+Wine (UCI),140,8,100.0,97.5,100.0,100.0,100.0,3,97.9
+Wisconsin-BC,140,10,100.0,100.0,100.0,100.0,100.0,3,97.9
+Gioco-XOR,140,16,100.0,86.67,73.33,78.33,100.0,4,97.1
+Irrilevanti-13,140,52,66.67,100.0,33.33,23.33,100.0,4,97.1

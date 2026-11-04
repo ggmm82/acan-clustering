@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "acan-clustering"
+version = "8.0.0"
+description = "Algebraic Concept Attention Network (ACAN): White-Box Differentiable Concept Discovery and Universal Tabular Autocompletion"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+keywords = [
+    "explainable-ai",
+    "slot-attention",
+    "conceptual-clustering",
+    "tabular-learning",
+    "masked-tabular-modeling",
+    "relational-algebra",
+    "pytorch"
+]
+dependencies = [
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+torch = ["torch>=2.0.0", "tensorboard>=2.14.0"]
+ui = ["dash>=2.14.0", "dash-cytoscape>=0.3.0", "dash-bootstrap-components>=1.5.0", "dash-daq>=0.5.0", "plotly>=5.18.0"]
+dev = ["pytest>=7.4.0", "matplotlib>=3.7.0", "seaborn>=0.13.0"]
+
+[tool.setuptools.packages.find]
+include = ["acan", "acan.*"]
+namespaces = false

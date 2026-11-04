@@ -1,0 +1,150 @@
+[
+  {
+    "concept_id": "Node118_G0",
+    "support_count": 43,
+    "support_freq": 0.2688,
+    "top_attributes": [
+      {
+        "attribute": "Luogo_Palazzetto",
+        "centroid_value": 1.0,
+        "normalized_value": 1.0,
+        "relevance": 0.9998
+      },
+      {
+        "attribute": "Luogo_Spiazzale",
+        "centroid_value": 0.0,
+        "normalized_value": 0.0,
+        "relevance": 0.9998
+      },
+      {
+        "attribute": "Tempo_Sole",
+        "centroid_value": 0.9999,
+        "normalized_value": 0.9999,
+        "relevance": 0.9275
+      },
+      {
+        "attribute": "Tempo_Piove",
+        "centroid_value": 0.0001,
+        "normalized_value": 0.0001,
+        "relevance": 0.9274
+      },
+      {
+        "attribute": "Gioco_SI",
+        "centroid_value": 0.0001,
+        "normalized_value": 0.0001,
+        "relevance": 0.8388
+      }
+    ]
+  },
+  {
+    "concept_id": "Node118_G1",
+    "support_count": 33,
+    "support_freq": 0.2062,
+    "top_attributes": [
+      {
+        "attribute": "Luogo_Spiazzale",
+        "centroid_value": 0.0,
+        "normalized_value": 0.0,
+        "relevance": 0.9998
+      },
+      {
+        "attribute": "Gioco_NO",
+        "centroid_value": 0.0,
+        "normalized_value": 0.0,
+        "relevance": 0.9998
+      },
+      {
+        "attribute": "Gioco_SI",
+        "centroid_value": 1.0,
+        "normalized_value": 1.0,
+        "relevance": 0.9998
+      },
+      {
+        "attribute": "Tempo_Piove",
+        "centroid_value": 1.0,
+        "normalized_value": 1.0,
+        "relevance": 0.9998
+      },
+      {
+        "attribute": "Luogo_Palazzetto",
+        "centroid_value": 1.0,
+        "normalized_value": 1.0,
+        "relevance": 0.9998
+      }
+    ]
+  },
+  {
+    "concept_id": "Node118_G2",
+    "support_count": 44,
+    "support_freq": 0.275,
+    "top_attributes": [
+      {
+        "attribute": "Tempo_Piove",
+        "centroid_value": 1.0,
+        "normalized_value": 1.0,
+        "relevance": 0.9998
+      },
+      {
+        "attribute": "Tempo_Sole",
+        "centroid_value": 0.0,
+        "normalized_value": 0.0,
+        "relevance": 0.9998
+      },
+      {
+        "attribute": "Luogo_Palazzetto",
+        "centroid_value": 0.0,
+        "normalized_value": 0.0,
+        "relevance": 0.9046
+      },
+      {
+        "attribute": "Luogo_Spiazzale",
+        "centroid_value": 1.0,
+        "normalized_value": 1.0,
+        "relevance": 0.9045
+      },
+      {
+        "attribute": "Gioco_NO",
+        "centroid_value": 1.0,
+        "normalized_value": 1.0,
+        "relevance": 0.8389
+      }
+    ]
+  },
+  {
+    "concept_id": "Node118_G3",
+    "support_count": 40,
+    "support_freq": 0.25,
+    "top_attributes": [
+      {
+        "attribute": "Gioco_SI",
+        "centroid_value": 1.0,
+        "normalized_value": 1.0,
+        "relevance": 0.9998
+      },
+      {
+        "attribute": "Gioco_NO",
+        "centroid_value": 0.0,
+        "normalized_value": 0.0,
+        "relevance": 0.9997
+      },
+      {
+        "attribute": "Tempo_Sole",
+        "centroid_value": 1.0,
+        "normalized_value": 1.0,
+        "relevance": 0.9275
+      },
+      {
+        "attribute": "Tempo_Piove",
+        "centroid_value": 0.0,
+        "normalized_value": 0.0,
+        "relevance": 0.9274
+      },
+      {
+        "attribute": "Luogo_Palazzetto",
+        "centroid_value": 0.0,
+        "normalized_value": 0.0,
+        "relevance": 0.9045
+      }
+    ]
+  }
+]

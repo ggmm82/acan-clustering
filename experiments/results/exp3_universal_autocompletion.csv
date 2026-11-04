@@ -1,0 +1,5 @@
+masked_attributes_per_row,masked_fraction_pct,Required_Supervised_Trees,ACAN_v8_Models_Needed,Majority_Baseline_Acc,KNN_Imputer_Acc,ACM_v7_Acc,ACAN_v8_Acc
+1,16.7,63,1,37.14,100.0,71.43,94.29
+2,33.3,63,1,40.0,100.0,72.14,92.86
+3,50.0,63,1,40.0,96.19,72.38,90.0
+4,66.7,63,1,35.71,79.29,64.64,85.71
