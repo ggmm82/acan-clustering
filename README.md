@@ -56,6 +56,11 @@ python -c "from acan.vis.render import app; app.run(debug=False, port=4000)"
 
 ## Contents
 
+For Docker deployment and the PR → CI → prerelease → stable release process,
+see [Controlled Docker releases](docs/RELEASING.md) and [Contributing](CONTRIBUTING.md).
+For the VPS deployment, use the sealed `compose.hostinger.yaml` release asset and
+follow [Hostinger deployment](docs/HOSTINGER.md).
+
 - `acan/`: library source
 - `tests/`: unit tests
 - `benchmarks/`: experimental benchmark script
