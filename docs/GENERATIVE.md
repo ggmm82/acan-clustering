@@ -70,7 +70,8 @@ new write fails. Complete checkpoints use safetensors plus `weights_only=True`
 optimizer/RNG loading; uploaded model pickle/code files are never accepted.
 A SQLite WAL with synchronous FULL persists ownership, state, metrics and pointers.
 Incomplete snapshot directories are ignored; a corrupt newest complete snapshot
-is rejected instead of silently resetting the model. The last three complete
+is rejected instead of silently resetting the model. A recorded checkpoint that
+is missing also blocks resume; it never silently starts fresh from the base. The last three complete
 snapshots are retained to bound disk use. All base weights can be reconstructed
 from the recorded Hub commit; checkpoints contain only trainable tensors and
 optimizer/RNG state, not a fresh copy of frozen weights every save.

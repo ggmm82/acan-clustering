@@ -117,7 +117,7 @@ def run_training(root, identifier, stop_event=None):
         identity = checkpoints.fingerprint(dict(config=config, base=base, corpus=corpus['sha256'], tokens=tokens['sha256']))
         checkpoint_root = directory / 'checkpoints'
         checkpoint_root.mkdir(exist_ok=True)
-        previous = checkpoints.latest(checkpoint_root, identity)
+        previous = checkpoints.for_resume(checkpoint_root, identity, job['checkpoint'], job['progress'].get('step',0))
         evaluate_base = None if previous else lambda model: validation_loss(model, blocks, device)
         with threadpool_limits(limits=1):
             model, graft = load_base(path, config, device, evaluate_base)

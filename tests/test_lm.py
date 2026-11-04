@@ -28,6 +28,14 @@ class TestDurableStore(unittest.TestCase):
             with self.assertRaises(KeyError):
                 restarted.job(job['id'], other)
             self.assertEqual(len(ready['sha256']), 64)
+            from acan.lm.checkpoints import for_resume
+            empty=Path(root)/'empty-checkpoints';empty.mkdir()
+            self.assertIsNone(for_resume(empty,'fixture'))
+            with self.assertRaises(ValueError):
+                for_resume(empty,'fixture',saved_name='missing-learned-checkpoint')
+            with self.assertRaises(ValueError):
+                for_resume(empty,'fixture',completed_steps=1)
+
 
 
 @unittest.skipUnless(LM, 'Requires the separate llm extra')

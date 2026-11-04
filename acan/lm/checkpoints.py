@@ -119,3 +119,13 @@ def retain(root, keep=3):
     for directory in directories[keep:]:
         shutil.rmtree(directory)
     sync_directory(root)
+
+
+def for_resume(root, identity, saved_name=None, completed_steps=0):
+    root = Path(root)
+    if saved_name and (Path(saved_name).name != saved_name or not (root / saved_name).is_dir()):
+        raise ValueError('Checkpoint registrato assente: ripristinare il backup. Non avvio un nuovo training da zero.')
+    checkpoint = latest(root, identity)
+    if checkpoint is None and (saved_name or completed_steps):
+        raise ValueError('Stato appreso senza checkpoint disponibile: ripristinare il backup prima di continuare.')
+    return checkpoint
