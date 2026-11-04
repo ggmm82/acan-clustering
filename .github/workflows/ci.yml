@@ -274,7 +274,7 @@ jobs:
           python scripts/release_pipeline.py validate
           docker compose -f reports/runtime/compose.release.yaml config --quiet
           docker compose -f reports/runtime/compose.hostinger.yaml config --quiet
-          ACAN_LM_SERVICE_TOKEN=ci-validation-token docker compose -f reports/runtime/compose.hostinger.yaml -f reports/runtime/compose.generative.hostinger.yaml --profile generative config --quiet
+          ACAN_LM_SERVICE_TOKEN=ci-validation-token docker compose -f reports/runtime/compose.generative.hostinger.yaml config --quiet
       - uses: actions/upload-artifact@v4
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:

@@ -133,9 +133,13 @@ image that created its checkpoint contract.
 ### Controlled releases / Hostinger
 
 CI builds and tests both the web image and a separate CPU worker candidate. The
-release manifest seals both digests, the LM audit and an optional
-`compose.generative.hostinger.yaml` overlay. It is disabled unless explicitly
-used with the `generative` profile and a private service token. This CPU worker
+release manifest seals both digests, the LM audit and the complete standalone
+`compose.generative.hostinger.yaml`. Deploy this single file in Hostinger
+instead of `compose.hostinger.yaml`: it includes both services, with no profile
+to enable. Set a private `ACAN_LM_SERVICE_TOKEN` environment variable in Hostinger;
+the file passes the same internal token to both services. No user login is added.
+Download the raw YAML asset instead of copying formatted text: non-breaking
+spaces are not valid YAML indentation. This CPU worker
 is for the 135M mechanics profile; a long training needs the reviewed code built
 with CUDA on a GPU host. For a remote worker, keep its data volume there and set
 `ACAN_LM_URL=https://your-private-gpu-endpoint` plus the same service token on

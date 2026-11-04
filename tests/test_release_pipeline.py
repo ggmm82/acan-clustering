@@ -50,6 +50,24 @@ class TestReleasePipeline(unittest.TestCase):
             with self.assertRaises(ValueError):
                 pipeline.validate(directory, REPO)
 
+    def test_hostinger_generative_stack_contains_both_pinned_services(self):
+        worker = f'ghcr.io/{REPO}-generative@sha256:' + '2'*64
+        content = pipeline.generative_compose(IMAGE, worker)
+        self.assertIn('    image: '+IMAGE, content)
+        self.assertIn('    image: '+worker, content)
+        self.assertNotIn('profiles:', content)
+        self.assertNotIn('__ACAN_', content)
+        self.assertNotIn('\u00a0', content)
+        self.assertEqual(content.count('${ACAN_LM_SERVICE_TOKEN:?Set a private service token}'), 2)
+        self.assertIn('      - acan-lm-data:/data', content)
+        with tempfile.TemporaryDirectory() as directory:
+            seal(directory, IMAGE, identity())
+            target = Path(directory) / 'compose.generative.hostinger.yaml'
+            self.assertEqual(target.read_text(), content)
+            target.write_text(content.replace(worker, 'ghcr.io/foreign/worker:latest'))
+            with self.assertRaises(ValueError):
+                pipeline.validate(directory, REPO)
+
     def test_reuse_rejects_stale_foreign_or_different_runs(self):
         value = {**identity(), 'verified': True, 'image': IMAGE}
         pull = dict(number=1, merged_at='2026-11-04', head={

@@ -42,9 +42,9 @@ def hostinger_compose(image):
     return template.read_text().replace('__ACAN_IMAGE__', image)
 
 
-def generative_compose(image):
+def generative_compose(web_image, worker_image):
     template = Path(__file__).resolve().parents[1] / 'config/compose.generative.hostinger.template.yaml'
-    return template.read_text().replace('__ACAN_LM_IMAGE__', image)
+    return template.read_text().replace('__ACAN_IMAGE__', web_image).replace('__ACAN_LM_IMAGE__', worker_image)
 
 
 def validate(directory, repo, tree=None):
@@ -106,7 +106,7 @@ def validate(directory, repo, tree=None):
             or lm_audit.get('pretrained_general_quality_verified') is not False
             or lm_audit.get('tree') != value['tree'] or lm_audit.get('commit') != value['source_commit']
             or lm_audit.get('run_id') != value['run_id']
-            or (directory / 'compose.generative.hostinger.yaml').read_text() != generative_compose(generative['image'])):
+            or (directory / 'compose.generative.hostinger.yaml').read_text() != generative_compose(value['image'], generative['image'])):
         raise ValueError('Generative worker or LM audit is missing, incompatible, stale or altered')
     benchmark = audit.get('benchmarks', {})
     if (benchmark.get('status') != 'passed' or
@@ -134,7 +134,7 @@ def seal(directory, image, identity):
     save(directory / 'compose.release.yaml', compose(image))
     (directory / 'compose.hostinger.yaml').write_text(hostinger_compose(image))
     generative = json.loads((directory / 'generative-runtime.json').read_text())
-    (directory / 'compose.generative.hostinger.yaml').write_text(generative_compose(generative['image']))
+    (directory / 'compose.generative.hostinger.yaml').write_text(generative_compose(image, generative['image']))
     content = (directory / 'compose.release.yaml').read_bytes()
     save(directory / 'runtime-manifest.json', {
         **identity, 'image': image, 'verified': True, 'generative_image': generative['image'],
