@@ -5,6 +5,9 @@ import re
 from flask import session
 from acan.vis.jobs import TrainingJobs
 from acan.vis.training import NativeTraining, graph_stats
+from acan.vis.evaluation import evaluate
+from acan.vis.benchmark_job import BenchmarkJob, signature as benchmark_signature
+from acan.vis.refinement import root_signature, remove_branch
 from acan.vis.inference import infer
 
 import dash  # pip install dash
@@ -41,6 +44,7 @@ app.server.secret_key = os.environ.get('ACAN_SESSION_SECRET') or secrets.token_h
 app.server.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax',
                          SESSION_COOKIE_SECURE=os.environ.get('ACAN_COOKIE_SECURE', '').lower() == 'true')
 training_jobs = TrainingJobs()
+benchmark_jobs = TrainingJobs(max_running=1)
 
 @app.server.get('/healthz')
 def health():
@@ -194,7 +198,8 @@ def to_elements(gcm: GraphClusterModel, show_leaves=True):
         show_leaves: Se False, mostra solo la radice senza i gruppi figli
     """
     elements={}
-
+    parents = {child: (node.id, group) for node in gcm.clusterModel.values()
+               for group, child in node.children.items()}
 
     for ids, node in gcm.clusterModel.items():
         color=getColor(gcm, node)
@@ -234,7 +239,8 @@ def to_elements(gcm: GraphClusterModel, show_leaves=True):
         rootNode['data']={'id': str(node.id), 'size':parent_size, 'label':label_text, 'errColor':color}
         rootNode['classes']='node'
         rootNode['grabbable'] = True
-        elements[str(node.id)]=rootNode
+        if node.id == gcm.rootId or not show_leaves:
+            elements[str(node.id)]=rootNode
         #print(str(node.id))
 
         # Crea nodi Group per ogni gruppo (solo se show_leaves=True)
@@ -303,8 +309,9 @@ def to_elements(gcm: GraphClusterModel, show_leaves=True):
                 edgeNode = {
                     'data': {
                         'id': f"N{node.id}G{k}",
-                        'source': str(node.id),
+                        'source': str(node.id) if node.id == gcm.rootId else f'{parents[node.id][0]}_G{parents[node.id][1]}',
                         'target': group_id,
+                        'node_id': node.id, 'group_idx': k,
                         'size': 1,
                         'label': group_color,
                         'errColor': group_color
@@ -315,6 +322,8 @@ def to_elements(gcm: GraphClusterModel, show_leaves=True):
 
         # Edge dai Groups ai children (se esistono)
         for k, childId in node.children.items():
+            if show_leaves:
+                continue  # child groups connect directly to this group, without a second root
             group_id = f"{node.id}_G{k}"
             # Cytoscape edge endpoints are immutable. Different IDs prevent the
             # React diff from losing edges when their group nodes are removed.
@@ -476,209 +485,82 @@ def create_legend():
         ], className="p-2")
     ], className="mb-3", style={"fontSize": "12px"})
 
+def parameter(label, id, value, lo, hi, step):
+    return dbc.Col([dbc.Label(label), dbc.Input(id=id, type='number', value=value,
+                    min=lo, max=hi, step=step)], md=4, className='mb-2')
+
+
 model_layout = dbc.Container([
-       html.Div(children=[
-            # Accordion spiegativo
-            dbc.Accordion([
-                dbc.AccordionItem([
-                    html.P([
-                        "Il modello mostra una gerarchia di cluster. ",
-                        html.B("Clicca su un nodo"), " per vedere:"
-                    ]),
-                    html.Ul([
-                        html.Li([html.B("Centroide Root:"), " Valore medio di ogni attributo nel nodo"]),
-                        html.Li([html.B("Errore (E):"), " Deviazione standard (dispersione dei dati)"]),
-                        html.Li([html.B("Gruppi figli:"), " Clicca sul nodo poi sul cluster figlio per vedere sotto-gruppi"]),
-                    ]),
-                    html.P("Per ogni attributo: valore alto = attributo caratteristico del cluster", className="text-muted mt-2")
-                ], title="📖 Come leggere il modello")
-            ], start_collapsed=True, className="mb-2"),
-
-            # Upload modello JSON
-            dbc.Row([
-                dbc.Col(uplModel, width=12)
-            ], className="mb-2"),
-
-            dbc.Row(
-                [
-                    dbc.Col(
-                            [
-                                dbc.Row(
-                                    [
-                                        dbc.Col(html.P("Class:"), width=2),
-                                        dbc.Col(
-                                            dcc.Dropdown(
-                                            id='dpdnCategory',
-                                            value='',
-                                            clearable=False,
-                                            multi=True,
-                                            options=[]), width=9
-                                        ),
-                                        dbc.Col(
-                                            dbc.Button("✕", id='btn-clear-category', size="sm", color="light", style={'padding': '0px 6px', 'fontSize': '10px'}), width=1
-                                        )
-                                    ]
-                                )
-                            ], width=3),
-                    dbc.Col(
-                            [
-                                dbc.Row(
-                                    [
-                                        dbc.Col(html.P("Filters:"), width=2),
-                                        dbc.Col(
-                                            dcc.Dropdown(
-                                            id='dpdnFilter',
-                                            value='',
-                                            clearable=False,
-                                            multi=True,
-                                            options=[]), width=9
-                                        ),
-                                        dbc.Col(
-                                            dbc.Button("✕", id='btn-clear-filter', size="sm", color="light", style={'padding': '0px 6px', 'fontSize': '10px'}), width=1
-                                        )
-                                    ]
-                                )
-                            ], width=3),
-                    dbc.Col(
-                        [
-                            dbc.Row(
-                                [
-                                    dbc.Col(html.P("Labels:"), width=2),
-                                    dbc.Col(
-                                        dcc.Dropdown(
-                                        id='dpdnLabel',
-                                        value='',
-                                        clearable=False,
-                                        multi=True,
-                                        options=[]), width=9
-                                    ),
-                                    dbc.Col(
-                                        dbc.Button("✕", id='btn-clear-label', size="sm", color="light", style={'padding': '0px 6px', 'fontSize': '10px'}), width=1
-                                    )
-                                ]
-                            )
-                        ], width=3),
-                    dbc.Col(daq.BooleanSwitch(disabled=True, id='bsId', label="balanced", on=False) ,  width=1),
-                    dbc.Col(dbc.Button(
-                                "Learn Model", id="button-learn", className="me-2", n_clicks=0
-                            ) ,  width=1),
-                    dbc.Col([
-                            dbc.Button("Download Model", id="btn-download", className="me-2", n_clicks=0),
-                            dcc.Download(id="download-model")
-                        ] ,  width=1)
-                ]
-), dcc.Store(id="model-store"), dcc.Store(id="label-store"), dcc.Store(id="evaluation-trigger", data=0),
-            
-            # INPUT per batch size (default 300)
-            dbc.Row([
-                dbc.Col([
-                    html.Div([
-                        dbc.InputGroup([
-                            dbc.InputGroupText("Max Batch:"),
-                            dbc.Input(id="input-max-batch", type="number", value=300, min=10, max=10000, step=10)
-                        ], size="sm")
-                    ], style={'width': '200px'})
-                ], width="auto", className="mb-2"),
-                dbc.Col([
-                    html.Div([
-                        dbc.InputGroup([
-                            dbc.InputGroupText("Learning Rate:"),
-                            dbc.Input(id="input-lr", type="number", value=0.1, min=0.001, max=1.0, step=0.01)
-                        ], size="sm")
-                    ], style={'width': '200px'})
-                ], width="auto", className="mb-2")
-            ]),
-
-            dbc.Card(dbc.CardBody([
-                html.H5('Scoperta gerarchica nativa'),
-                html.P('La profondità è un limite massimo: ACAN crea figli soltanto quando i criteri nativi di split sono soddisfatti. Il batch configurabile vale a profondità 1; gLearn usa il proprio batch nativo (300).', className='text-muted'),
-                dbc.Row([
-                    dbc.Col([dbc.Label(label), dbc.Input(id=id, type='number', value=value, min=lo, max=hi, step=step)], md=4, className='mb-2')
-                    for label, id, value, lo, hi, step in [
-                        ('Profondità massima', 'train-depth', 3, 1, 6, 1),
-                        ('Epoche massime alla radice', 'train-epochs', 100, 1, 1000, 1),
-                        ('Campioni minimi per split', 'train-min-samples', 12, 2, 10000, 1),
-                        ('Temperatura τ', 'train-tau', .2, .01, 10, .01),
-                        ('Miscela α', 'train-alpha', .5, 0, 1, .05),
-                        ('Soglia purezza supervisionata', 'train-purity', .92, 0, 1, .01),
-                    ]
-                ]),
-                html.P('Backend NumPy CPU · split train/test riproducibile 80/20 · limite 15 minuti. I figli usano le epoche previste da gLearn: max(40, epoche del padre / 2).', className='small text-muted'),
-            ]), className='my-3'),
-            dbc.Row([
-                dbc.Col([dbc.Label('Vista'), dcc.RadioItems(id='graph-view', options=[{'label': ' Concetti e gruppi', 'value': 'full'}, {'label': ' Solo gerarchia', 'value': 'hierarchy'}], value='full', inline=True)], md=6),
-                dbc.Col([dbc.Label('Layout'), dcc.Dropdown(id='graph-layout', options=['breadthfirst', 'cose', 'concentric'], value='breadthfirst', clearable=False)], md=6),
-            ], className='my-3'),
-            html.Div(id='graph-summary', className='alert alert-info'),
-            dbc.Accordion([
-                dbc.AccordionItem([
-                    dbc.Label('Nodo concetto'), dcc.Dropdown(id='concept-node', clearable=False),
-                    dcc.Graph(id='concept-relevance'),
-                    html.P('Rilevanze salvate nel modello: non sono probabilità di correttezza. Le regole riportano i centroidi e gli attributi ordinati dal metodo nativo extractRules.', className='small text-muted'),
-                    html.Div(id='concept-rules'),
-                    dbc.Button('Esporta regole di tutta la gerarchia', id='export-rules', className='my-2'),
-                    dcc.Download(id='rules-download'),
-                ], title='Laboratorio dei concetti · rilevanze e regole native')
-            ], start_collapsed=True, className='mb-3'),
-            # CONTROLLI LEARNING CON THREADING (separati dal grafo per evitare flash)
-            dbc.Row([
-                dbc.Col([
-                    html.Div([
-                        dbc.Card([
-                            dbc.CardBody([
-                                dbc.Row([
-                                    dbc.Col([
-                                        dbc.Button("⏹️ Stop Learning", id="btn-stop-learn", color="danger", size="sm", disabled=True)
-                                    ], width="auto"),
-                                    dbc.Col([
-                                        html.Div(id="learning-status", children="Pronto - Clicca 'Learn Model' per iniziare", 
-                                                className="fw-bold text-primary mt-1")
-                                    ], width=True)
-                                ], align="center")
-                            ])
-                        ], className="mb-2")
-                    ], style={'position': 'relative'})
-                ], width=12)
-            ]),
-            
-            # Timer nascosto (non nella card che flasha)
-            dcc.Interval(id='learning-monitor', interval=2000, disabled=True),
-            
-            ]),
-
-             dbc.Row(
-                    [
-                        dbc.Col(orgChartData, width=8)
-                        ,
-                        dbc.Col([
-                                html.Div(id='node-detail', children=''),
-                                html.Div(id='edge-detail', children='')
-                                ]
-                            , width=4, align='center')
-                        ])
+    html.H4('Scopri i concetti, poi approfondisci soltanto dove serve', className='mt-3'),
+    html.P('Avvia il modello iniziale. Doppio clic su un gruppo per creare un solo livello aggiuntivo sui suoi campioni. La radice rimane unica. Confronta la validazione in Evaluation e rimuovi i rami senza benefici.'),
+    uplModel,
+    dbc.Row([
+        dbc.Col([dbc.Label('Target (svuota per scoperta non supervisionata)'),
+                 dcc.Dropdown(id='dpdnLabel', value=[], multi=True, options=[]),
+                 dbc.Button('Svuota target', id='btn-clear-label', size='sm', color='link')], md=7),
+        dbc.Col([dbc.Button('Scopri concetti', id='button-learn', n_clicks=0, className='m-1'),
+                 dbc.Button('Salva modello', id='btn-download', n_clicks=0, className='m-1', outline=True),
+                 dcc.Download(id='download-model')], md=5),
+    ], className='my-3'),
+    dbc.Accordion([dbc.AccordionItem([
+        dbc.Row([
+            dbc.Col([dbc.Label('Colonne categoriche'), dcc.Dropdown(id='dpdnCategory', value=[], multi=True),
+                     dbc.Button('Svuota', id='btn-clear-category', color='link', size='sm')], md=6),
+            dbc.Col([dbc.Label('Escludi colonne'), dcc.Dropdown(id='dpdnFilter', value=[], multi=True),
+                     dbc.Button('Svuota', id='btn-clear-filter', color='link', size='sm')], md=6),
+        ]),
+        dbc.Row([parameter(*args) for args in [
+            ('Epoche', 'train-epochs', 100, 1, 1000, 1),
+            ('Learning rate', 'input-lr', .08, .001, 1, .01),
+            ('Batch (solo training iniziale a un livello)', 'input-max-batch', 300, 10, 10000, 10),
+            ('Temperatura τ', 'train-tau', .2, .01, 10, .01),
+            ('Miscela α', 'train-alpha', .5, 0, 1, .05),
+            ('Campioni minimi del ramo', 'train-min-samples', 12, 2, 10000, 1),
+            ('Livelli iniziali automatici (predefinito: 1)', 'train-depth', 1, 1, 6, 1),
+            ('Soglia purezza (solo livelli automatici)', 'train-purity', .92, 0, 1, .01),
+        ]]),
+        html.P('Backend NumPy CPU. gLearn usa il proprio batch nativo di 300; i livelli automatici rispettano i criteri nativi di split e le epoche max(40, epoche padre / 2). Ogni approfondimento richiesto addestra un solo nodo nativo nella normalizzazione originale.', className='small text-muted'),
+        daq.BooleanSwitch(disabled=True, id='bsId', label='Bilanciamento automatico disattivato', on=False),
+    ], title='Impostazioni avanzate')], start_collapsed=True, className='mb-3'),
+    dcc.Store(id='model-store'), dcc.Store(id='label-store'),
+    dcc.Store(id='evaluation-trigger', data=0), dcc.Store(id='refine-request'), dcc.Store(id='graph-viewport'),
+    dbc.Row([
+        dbc.Col(dbc.Button('Approfondisci gruppo selezionato', id='refine-selected', outline=True, className='m-1'), md='auto'),
+        dbc.Col(dbc.Button('Rimuovi approfondimento selezionato', id='remove-branch', color='warning', outline=True, className='m-1'), md='auto'),
+        dbc.Col(dbc.Button('Ferma training', id='btn-stop-learn', color='danger', disabled=True, className='m-1'), md='auto'),
+    ]),
+    html.Div(id='learning-status', children='Pronto: carica i dati e scopri i concetti.', className='alert alert-light my-2', role='status'),
+    dcc.Interval(id='learning-monitor', interval=1000, disabled=True),
+    html.Div(id='graph-summary', className='alert alert-info'),
+    dbc.Row([
+        dbc.Col(dcc.RadioItems(id='graph-view', options=[{'label': ' Concetti e gruppi', 'value': 'full'},
+                   {'label': ' Solo gerarchia', 'value': 'hierarchy'}], value='full', inline=True), md=7),
+        dbc.Col(dcc.Dropdown(id='graph-layout', options=['breadthfirst', 'cose', 'concentric'],
+                   value='breadthfirst', clearable=False), md=5),
+    ], className='mb-3'),
+    dbc.Row([dbc.Col(orgChartData, md=8), dbc.Col([html.Div(id='node-detail'), html.Div(id='edge-detail')], md=4)]),
+    dbc.Accordion([dbc.AccordionItem([
+        dbc.Label('Nodo concetto'), dcc.Dropdown(id='concept-node', clearable=False),
+        dcc.Graph(id='concept-relevance'), html.Div(id='concept-rules'),
+        html.P('Le rilevanze non sono probabilità di correttezza. Le regole sono estratte da extractRules.', className='small text-muted'),
+        dbc.Button('Esporta regole di tutta la gerarchia', id='export-rules'), dcc.Download(id='rules-download'),
+    ], title='Laboratorio dei concetti · rilevanze e regole native')], start_collapsed=True, className='my-3'),
+])
 
 
-    ])
-
-
-
-"""
-dcc.Dropdown(
-    id='dpdn',
-    value='cose',
-    clearable=False,
-    options=[
-        {'label': name.capitalize(), 'value': name}
-        for name in ['breadthfirst' ,'grid', 'random', 'circle', 'cose', 'concentric']
-    ]
-    """
 evaluation_layout = dbc.Container([
-        dbc.Row(dcc.Graph(id='errorIndicator')),
-        dbc.Row(html.Div(id='cm-detail', children=''), justify='center'),
-        dbc.Row([dbc.Button(
-                    "Download prediction", id="button-prediction", className="me-2", n_clicks=0),
-                    dcc.Download(id="download-prediction")], justify='end')
-    ])
+    html.H4('Benchmark sul tuo dataset', className='mt-3'),
+    html.P('Il confronto prima/dopo usa sempre lo stesso holdout 20% (seed 42). Se scegli i rami in base a questi risultati, questo è un set di validazione: le metriche non sono una stima indipendente dopo aver selezionato i rami. Non occorrono altri file: vengono usati i dati già caricati. Metriche per target, senza confondere classificazione e regressione.'),
+    html.P('Confronta ACAN con KNN, CART, Random Forest, Extra Trees, HistGradientBoosting, XGBoost e CatBoost: stessi dati, split e target. Budget CPU predefiniti, senza ricerca degli iperparametri.'),
+    dbc.Button('Confronta con gli altri modelli', id='benchmark-run', className='m-1'),
+    dbc.Button('Ferma confronto', id='benchmark-stop', color='danger', outline=True, className='m-1'),
+    html.Div(id='benchmark-status', role='status'),
+    dcc.Interval(id='benchmark-monitor', interval=1000, disabled=True), dcc.Store(id='benchmark-report'),
+    dcc.Graph(id='errorIndicator'), html.Div(id='cm-detail'),
+    dbc.Button('Scarica predizioni e metriche', id='button-prediction', className='my-2'),
+    dcc.Download(id='download-prediction'),
+
+])
 
 
 inference_layout = dbc.Container([
@@ -718,6 +600,32 @@ def serve_layout():
 
 
 app.layout = serve_layout
+
+
+app.clientside_callback(
+    """function(tab, layout, model) {
+        if (tab !== 'Model') return window.dash_clientside.no_update;
+        let tries = 0;
+        function resize() {
+            const el = document.getElementById('org-chart');
+            if (!el || !el.offsetWidth || !el._cyreg) {
+                if (++tries < 30) setTimeout(resize, 50);
+                return;
+            }
+            const cy = el._cyreg.cy;
+            cy.resize();
+            const config = {name: layout || 'breadthfirst', animate: false, padding: 30};
+            if (config.name === 'breadthfirst') {
+                config.directed = true;
+                if (model) config.roots = '[id="' + JSON.parse(model).rootId + '"]';
+            }
+            cy.layout(config).run();
+        }
+        setTimeout(resize, 150);
+        return Date.now();
+    }""",
+    Output('graph-viewport', 'data'), Input('tabs', 'value'),
+    State('graph-layout', 'value'), State('model-store', 'data'))
 
 
 def tab_job_key(tab_id):
@@ -877,9 +785,6 @@ def update_data(contents, filename, last_modified, labels):
 
             df=df.astype({col: str for col, dtype in df.dtypes.items() if dtype=='object'})
             
-            if labels and len(labels)==1 and labels[0] in df.columns:
-                balanced=True
-                df = AlgebraicClusterModel.downsample_classes(df, labels)
             
             df = df.sample(min(10000, len(df)), random_state=42)
             return df.to_dict(), balanced, uplData
@@ -902,70 +807,74 @@ def update_dataInfo(data):
     return dbc.Table.from_dataframe(df, striped=True, bordered=False, hover=True)
 
 
-@app.callback([Output("errorIndicator", "figure"), Output("cm-detail", "children"), Output("eval-store", "data")],
-              Input("evaluation-trigger", "data"),  # Solo trigger, non model-store
-              State('test-store', 'data'),
-              State('label-store', 'data'),
-              State('dpdnCategory', 'value'),
-              State('dpdnFilter', 'value'),
-              State("model-store", "data"),  # Spostato da Input a State
-              prevent_initial_call=True)
-def evaluate_model(trigger, data, labels, categories, filters, model):
-    #sd=dcc.send_data_frame(pd.DataFrame().to_excel, "prediction.xlsx", sheet_name="Sheet1")
-    cmT=dbc.Table()
-    err=0
-    # Ritorna valori di default se modello caricato da file senza dati di test
-    if model is None:
-        return go.Figure(), html.Div("Nessun modello disponibile"), {}
-
-    # Se non ci sono dati di test (es: modello caricato da file), non fare evaluation
-    if not data or len(data) == 0 or len(labels) == 0:
-        return go.Figure(), html.Div("Caricare dati di test per la valutazione"), {}
-
-    df=pd.DataFrame(data)
-    df = df.drop(filters, axis=1, errors='ignore')
-    if len(categories)>0:
-        df[categories] = df[categories].astype(str)
+def training_context(tab_id, model_json):
+    job = training_jobs.get(tab_job_key(tab_id))
+    if not job or not isinstance(job['learner'], NativeTraining):
+        return None
+    learner = job['learner']
+    reference = learner.graph.to_json() if learner.graph is not None else learner.base_model
+    if reference and root_signature(reference) == root_signature(model_json):
+        return learner
+    return None
 
 
+@app.callback(Output('errorIndicator', 'figure'), Output('cm-detail', 'children'), Output('eval-store', 'data'),
+              Input('model-store', 'data'), Input('benchmark-report', 'data'),
+              State('tab-session', 'data'))
+def evaluate_model(model, benchmark_report, tab_id):
+    if not model:
+        return go.Figure(), 'Carica o addestra un modello.', None
     try:
-        gcm = GraphClusterModel.loadModel(model)
-        predictions = infer(model, df, mode='predict')
-        root = gcm.clusterModel[gcm.rootId]
-        scores = []
-        for label in gcm.labels:
-            observed = df[label].notna()
-            if not observed.any():
-                continue
-            truth, pred = df.loc[observed, label], predictions.loc[observed, label]
-            if root.fullLabels([label]) == [label]:
-                scores.append(dict(Target=label, Metrica='MAE', Valore=metrics.mean_absolute_error(truth, pred)))
-                scores.append(dict(Target=label, Metrica='RMSE', Valore=metrics.mean_squared_error(truth, pred) ** .5))
+        context = training_context(tab_id, model)
+        validation = getattr(context, 'validation', None)
+        test = validation
+        if test is None:
+            return go.Figure(), 'Addestra il modello sul dataset caricato in Dati. Il solo JSON non conserva i campioni per il benchmark.', None
+        if benchmark_report and benchmark_report.get('signature') == benchmark_signature(model, test):
+            report = dict(benchmark_report)
+        else:
+            report = evaluate(model, test, train=context.data if context else None, before_json=context.base_model if context else None, baselines=False)
+        source = 'Validazione 20% del dataset in Dati (riutilizzata per scegliere i rami)'
+        report['source'] = source
+        table = pd.DataFrame(report['scores'])
+        figure = px.bar(table, x='Target', y='Valore', color='Modello', facet_col='Metrica',
+                        barmode='group', title=source)
+        figure.update_yaxes(matches=None)
+        summary = table.pivot(index=['Target', 'Modello'], columns='Metrica', values='Valore').reset_index()
+        stats = graph_stats(GraphClusterModel.loadModel(model))
+        panels = [html.P(f"{source} · {report['rows']} righe · {stats['nodes']} nodi · {stats['groups']} gruppi · {stats['depth']} livelli. Accuracy/F1 in [0,1]; MAE/RMSE nelle unità originali."),
+                  dbc.Table.from_dataframe(summary.round(5), striped=True, responsive=True)]
+        if report.get('comparisons'):
+            panels.insert(0, html.Div([html.H5('Beneficio del cambiamento'),
+                dbc.Table.from_dataframe(pd.DataFrame(report['comparisons']).round(5), striped=True, responsive=True),
+                html.P('MAE/RMSE: meno è meglio. Accuracy/F1/R²: più è meglio. Puoi rimuovere il ramo dal grafo se il confronto non giustifica la complessità aggiunta.')]))
+        if report['mode'] == 'masked-root':
+            panels.insert(0, dbc.Alert(f"Modello non supervisionato: {report['masked_cells']} celle mascherate (seed 42), massimo 100 righe. Completamento sulla radice: approfondire i figli non cambia questa metrica. Per confrontare i predittori supervisionati seleziona un target in Model.", color='info'))
+        if report.get('timings'):
+            panels.append(html.Div([html.H5('Tempi misurati CPU'),
+                html.P('ACAN è già addestrato; il suo tempo indicato riguarda l’inferenza. I tempi di training delle baseline sono misurati ora. Non confrontare un tempo mancante con zero.'),
+                dbc.Table.from_dataframe(pd.DataFrame(report['timings']).round(5), striped=True, responsive=True)]))
+        for item in report['details']:
+            if item['kind'] == 'classification':
+                chart = go.Figure(go.Heatmap(z=item['matrix'], x=item['labels'], y=item['labels'], colorscale='Blues'))
+                chart.update_layout(title=f"Matrice di confusione · {item['target']}", xaxis_title='Predetto', yaxis_title='Reale')
             else:
-                scores.append(dict(Target=label, Metrica='Accuracy', Valore=metrics.accuracy_score(truth.astype(str), pred.astype(str))))
-        chart = go.Figure()
-        chart.update_layout(title='Metriche per target nelle unità originali (holdout 20%)')
-        table = dbc.Table.from_dataframe(pd.DataFrame(scores), striped=True, bordered=False)
-        return chart, table, predictions.to_dict()
+                chart = go.Figure(go.Scatter(x=item['truth'], y=item['prediction'], mode='markers'))
+                chart.update_layout(title=f"Reale / predetto · {item['target']}", xaxis_title='Reale', yaxis_title='Predetto')
+            panels.append(dcc.Graph(figure=chart))
+        return figure, panels, report
     except Exception as exc:
-        return go.Figure(), html.Div(f'Valutazione non disponibile: {exc}'), {}
+        return go.Figure(), dbc.Alert(f'Valutazione non disponibile: {exc}', color='warning'), None
 
 
-@app.callback(
-    Output("download-prediction", "data"),
-    Input("button-prediction", "n_clicks"),
-    State("eval-store", "data"),
-    State('test-store', 'data'),
-    prevent_initial_call=True,
-)
-def download_prediction(n_clicks, pred, data):
-    dfPred=pd.DataFrame(pred)
-    df=pd.DataFrame(data)
-    df[dfPred.columns]=dfPred
-    #sd=dcc.send_data_frame(df.to_excel, "prediction.xlsx", sheet_name="Evaluation")
-    return dict(content=df.to_json(orient="records"), filename="prediction.json")
-    
-    
+@app.callback(Output('download-prediction', 'data'), Input('button-prediction', 'n_clicks'),
+              State('eval-store', 'data'), prevent_initial_call=True)
+def download_prediction(clicks, report):
+    if report:
+        return dict(content=json.dumps(report, indent=2), filename='acan-evaluation.json')
+    return dash.no_update
+
+
 # ============================================================
 # CALLBACK PER THREADING (Apprendimento controllato)
 # ============================================================
@@ -1004,11 +913,19 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, dep
         df = pd.DataFrame(data)
         if len(df) < 5:
             raise ValueError('Servono almeno 5 righe per lo split train/test.')
+        df = df.drop(filters or [], axis=1, errors='ignore')
+        if set(labels or []) - set(df.columns):
+            raise ValueError('Un target è stato escluso: rimuovilo dai filtri o cambia target.')
+        if labels and len(set(df.columns) - set(labels)) == 0:
+            raise ValueError('Serve almeno un attributo di ingresso oltre ai target.')
+        if categories:
+            df[categories] = df[categories].astype(str)
+        if labels:
+            df = df.dropna(subset=labels)
+        if len(df) < 5:
+            raise ValueError('Servono almeno 5 righe con tutti i target osservati.')
         train = df.sample(frac=0.8, random_state=42)
         test = df.loc[~df.index.isin(train.index)].reset_index(drop=True)
-        train = train.drop(filters or [], axis=1, errors='ignore')
-        if categories:
-            train[categories] = train[categories].astype(str)
         options = dict(max_depth=depth, max_epochs=epochs, min_samples_split=min_samples,
                        tau=tau, alpha=alpha, similarity_threshold=purity, lr=lr,
                        batch_size=max_batch, device='numpy')
@@ -1027,6 +944,7 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, dep
         if encoded.size > 2_000_000 or len(train) > 10000 or encoded.shape[1] > 1000:
             raise ValueError('Limite interattivo: 10.000 righe, 1.000 attributi codificati, 2 milioni di celle.')
         learner = NativeTraining(train, labels or [], options)
+        learner.validation = test
         training_jobs.start(key, learner, {}, labels or [])
         return dash.no_update, test.to_dict(), "🟢 Apprendimento avviato", False, False
     except Exception as exc:
@@ -1058,7 +976,7 @@ def monitor_learning(n_intervals, tab_id):
     gcm = learner.graph
     stats = graph_stats(gcm)
     elements = list(to_elements(gcm).values())
-    return (gcm.to_json(), elements,
+    return (gcm.to_json(), dash.no_update,
             f"✅ Completato: {stats['nodes']} nodi concetto | {stats['depth']} livelli | {stats['groups']} gruppi",
             True, True, secrets.randbits(32))
 
@@ -1200,7 +1118,9 @@ def edge_info(sed, model):
     if model:
         if sed != None and len(sed) > 0:
             edge_id = sed[0]['id']
-            source = int(str(sed[0]['source']).split('_G')[0])
+            source = int(sed[0].get('node_id', str(sed[0]['source']).split('_G')[0]))
+            if 'group_idx' in sed[0]:
+                return eInfo(model, source, int(sed[0]['group_idx']))
 
             # Prova a matchare pattern per edge ai children: N{id}K{k}
             match = re.search(r'K(\d+)$', edge_id)
@@ -1477,6 +1397,89 @@ def update_layout(layout_value):
 
 
 
+
+
+
+@app.callback(Output('benchmark-run', 'disabled'), Input('model-store', 'data'))
+def benchmark_available(model):
+    return not model or not GraphClusterModel.loadModel(model).labels
+
+
+@app.callback(Output('benchmark-status', 'children'), Output('benchmark-monitor', 'disabled'),
+              Output('benchmark-report', 'data'), Input('benchmark-run', 'n_clicks'),
+              Input('benchmark-stop', 'n_clicks'), Input('model-store', 'data'),
+              State('tab-session', 'data'), prevent_initial_call=True)
+def start_benchmark(run, stop, model, tab_id):
+    key = tab_job_key(tab_id)
+    if dash.ctx.triggered_id != 'benchmark-run':
+        benchmark_jobs.stop(key)
+        message = 'Arresto richiesto.' if dash.ctx.triggered_id == 'benchmark-stop' else 'Confronto pronto sui dati correnti.'
+        return message, True, None
+    try:
+        context = training_context(tab_id, model) if model else None
+        if context is None:
+            raise ValueError('Addestra ACAN sul dataset della pagina per confrontare tutti i modelli sullo stesso training.')
+        test = context.validation
+        job = BenchmarkJob(model, test, context.data, context.base_model)
+        benchmark_jobs.start(key, job, {}, context.labels)
+        return 'Confronto in corso in un processo CPU separato; puoi fermarlo.', False, None
+    except Exception as exc:
+        return str(exc), True, None
+
+
+@app.callback(Output('benchmark-status', 'children', allow_duplicate=True),
+              Output('benchmark-monitor', 'disabled', allow_duplicate=True),
+              Output('benchmark-report', 'data', allow_duplicate=True),
+              Input('benchmark-monitor', 'n_intervals'), State('tab-session', 'data'), prevent_initial_call=True)
+def monitor_benchmark(interval, tab_id):
+    job = benchmark_jobs.get(tab_job_key(tab_id))
+    if not job:
+        return 'Nessun confronto attivo.', True, None
+    if not job['done'].is_set():
+        return 'Benchmark KNN, ensemble e boosting in corso sui dati della pagina…', False, dash.no_update
+    if job['error']:
+        return f"Confronto non disponibile: {job['error']}", True, None
+    return 'Confronto completato: metriche e tempi misurati sono riportati sotto.', True, job['learner'].report
+
+@app.callback(Output('model-store', 'data', allow_duplicate=True),
+              Output('learning-status', 'children', allow_duplicate=True),
+              Output('btn-stop-learn', 'disabled', allow_duplicate=True),
+              Output('learning-monitor', 'disabled', allow_duplicate=True),
+              Input('refine-request', 'data'), Input('refine-selected', 'n_clicks'), Input('remove-branch', 'n_clicks'),
+              State('org-chart', 'selectedNodeData'), State('model-store', 'data'),
+              State('tab-session', 'data'), prevent_initial_call=True)
+def edit_hierarchy(request, refine_clicks, remove_clicks, selected, model_json, tab_id):
+    try:
+        if not model_json:
+            raise ValueError('Addestra prima il modello sul tuo dataset.')
+        key = tab_job_key(tab_id)
+        active = training_jobs.get(key)
+        if active and not active['done'].is_set():
+            return dash.no_update, 'Attendi la fine del training corrente.', False, False
+        context = training_context(tab_id, model_json)
+        if dash.ctx.triggered_id == 'refine-request':
+            node_id = request['node_id']
+        else:
+            if not selected:
+                raise ValueError('Seleziona un gruppo o un nodo nel grafo.')
+            node_id = selected[0]['id']
+        if dash.ctx.triggered_id == 'remove-branch':
+            graph = remove_branch(model_json, node_id)
+            if context:
+                context.base_model = model_json
+                context.graph = graph
+            return graph.to_json(), 'Ramo rimosso. Evaluation confronta ora prima e dopo la rimozione.', True, True
+        if context is None:
+            raise ValueError('Per approfondire servono i dati di training di questa pagina. Un JSON caricato da solo non li contiene: addestra il modello sul tuo CSV.')
+        from acan.vis.refinement import parse_group
+        parse_group(node_id)
+        learner = NativeTraining(context.data, context.labels, context.options,
+                                 base_model=model_json, branch=node_id)
+        learner.validation = context.validation
+        training_jobs.start(key, learner, {}, context.labels)
+        return dash.no_update, f'Approfondimento di {node_id} in corso: solo un nuovo nodo, radice invariata.', False, False
+    except Exception as exc:
+        return dash.no_update, str(exc), True, True
 
 @app.callback(Output('concept-node', 'options'), Output('concept-node', 'value'),
               Input('model-store', 'data'))

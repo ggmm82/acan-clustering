@@ -27,9 +27,14 @@ def train_native(data, labels, options):
     return graph
 
 
-def _worker(sender, data, labels, options):
+def _worker(sender, data, labels, options, base_model=None, branch=None):
     try:
-        sender.send(('ok', train_native(data, labels, options).to_json()))
+        if branch is not None:
+            from .refinement import refine
+            graph = refine(base_model, data, branch, options)
+        else:
+            graph = train_native(data, labels, options)
+        sender.send(('ok', graph.to_json()))
     except Exception as exc:
         sender.send(('error', str(exc)))
     finally:
@@ -40,8 +45,9 @@ class NativeTraining:
     """An owned subprocess makes native recursive training cancellable per tab."""
     iteration = 'training nativo in corso'
 
-    def __init__(self, data, labels, options):
+    def __init__(self, data, labels, options, base_model=None, branch=None):
         self.data, self.labels, self.options = data, labels, options
+        self.base_model, self.branch = base_model, branch
         self._stop = threading.Event()
         self.graph = None
 
@@ -49,40 +55,48 @@ class NativeTraining:
         self._stop.set()
 
     def nLearn(self, **unused):
-        context = mp.get_context('spawn')
-        receiver, sender = context.Pipe(duplex=False)
-        process = context.Process(target=_worker, args=(sender, self.data, self.labels, self.options), daemon=True)
-        started = False
+        payload = run_isolated(_worker, (self.data, self.labels, self.options, self.base_model, self.branch), self._stop)
+        self.graph = GraphClusterModel.loadModel(payload)
+
+
+def run_isolated(target, arguments, stop, timeout=900):
+    context = mp.get_context('spawn')
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(target=target, args=(sender, *arguments), daemon=True)
+    started = False
+    try:
+        if stop.is_set():
+            raise ValueError('Operazione annullata; modello precedente conservato.')
+        process.start()
+        started = True
+        sender.close()
+        deadline = time.monotonic() + timeout
+        while not receiver.poll(.1):
+            if stop.is_set():
+                raise ValueError('Operazione annullata; modello precedente conservato.')
+            if time.monotonic() > deadline:
+                raise ValueError('Limite di 15 minuti raggiunto.')
+            if not process.is_alive():
+                raise ValueError('Processo terminato senza risultato.')
         try:
-            if self._stop.is_set():
-                raise ValueError('Training annullato; modello precedente conservato.')
-            process.start()
-            started = True
-            sender.close()
-            deadline = time.monotonic() + 900
-            while not receiver.poll(0.1):
-                if self._stop.is_set():
-                    raise ValueError('Training annullato; modello precedente conservato.')
-                if time.monotonic() > deadline:
-                    raise ValueError('Limite di training di 15 minuti raggiunto.')
-                if not process.is_alive():
-                    raise ValueError('Processo di training terminato senza risultato.')
             status, payload = receiver.recv()
-            if self._stop.is_set():
-                raise ValueError('Training annullato; modello precedente conservato.')
-            if status != 'ok':
-                raise ValueError(payload)
-            self.graph = GraphClusterModel.loadModel(payload)
-        finally:
-            sender.close()
-            receiver.close()
-            if started:
-                if process.is_alive():
-                    process.terminate()
-                process.join(timeout=5)
-                if process.is_alive():
-                    process.kill()
-                    process.join()
+        except EOFError:
+            raise ValueError('Processo terminato senza risultato.') from None
+        if stop.is_set():
+            raise ValueError('Operazione annullata; modello precedente conservato.')
+        if status != 'ok':
+            raise ValueError(payload)
+        return payload
+    finally:
+        sender.close()
+        receiver.close()
+        if started:
+            if process.is_alive():
+                process.terminate()
+            process.join(timeout=5)
+            if process.is_alive():
+                process.kill()
+                process.join()
 
 
 def graph_stats(graph):

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acan-clustering"
-version = "8.1.0"
+version = "8.2.0"
 description = "Algebraic Concept Attention Network (ACAN): White-Box Differentiable Concept Discovery and Universal Tabular Autocompletion"
 readme = "README.md"
 license = {text = "MIT"}
@@ -27,9 +27,12 @@ dependencies = [
 [project.optional-dependencies]
 torch = ["torch>=2.0.0", "tensorboard>=2.14.0"]
 docker = ["gunicorn>=23.0.0", "setuptools>=77.0.0", "wheel"]
-ui = ["dash>=2.14.0", "dash-cytoscape>=0.3.0", "dash-bootstrap-components>=1.5.0", "dash-daq>=0.5.0", "plotly>=5.18.0", "matplotlib>=3.7.0", "scikit-learn>=1.3.0", "pyarrow>=12.0.0", "openpyxl>=3.1.0"]
+ui = ["dash>=2.16.0", "dash-cytoscape>=0.3.0", "dash-bootstrap-components>=1.5.0", "dash-daq>=0.5.0", "plotly>=5.18.0", "matplotlib>=3.7.0", "scikit-learn>=1.3.0", "xgboost-cpu>=3.0,<4", "catboost>=1.2,<2", "pyarrow>=12.0.0", "openpyxl>=3.1.0"]
 dev = ["pytest>=7.4.0", "matplotlib>=3.7.0", "seaborn>=0.13.0"]
 
 [tool.setuptools.packages.find]
 include = ["acan", "acan.*"]
 namespaces = false
+
+[tool.setuptools.package-data]
+"acan.vis" = ["assets/*.js"]

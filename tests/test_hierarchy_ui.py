@@ -48,7 +48,7 @@ class TestNativeHierarchy(unittest.TestCase):
             edges = [e for e in elements if 'source' in e['data']]
             expected = sum(len(node.children) for node in self.graph.clusterModel.values())
             if show_groups:
-                expected += sum(node.k() for node in self.graph.clusterModel.values())
+                expected = sum(node.k() for node in self.graph.clusterModel.values())
             self.assertEqual(len(edges), expected)
             ids = {e['data']['id'] for e in elements if 'source' not in e['data']}
             for edge in elements:
