@@ -267,58 +267,50 @@ class _AnalyticalClusterNet:
         return self.forward(X)
 
     def backward(self):
+        """Exact derivative of the returned neg_cp (including metric routing).
+
+        omega is a data-derived fixed coupling, not an optimized parameter.
+        Derivatives at absolute-value kinks use the zero subgradient.
+        """
         c = self._cache
-        X = c["X"]
-        T = c["T"]
-        G_sig = c["G_sig"]
-        G_eff = c["G_eff"]
-        R = c["R"]
-        safe_den = c["safe_den"]
-        valid_den = c["valid_den"]
-        C_soft = c["C_soft"]
-        F_post = c["F_post"].T
-        real_R = c["real_R"]
-        g_pr_sq = c["g_pr_sq"]
-        cp = c["cp"]
-        n_curr = float(X.shape[0])
-
-        inv_2cp = -1.0 / (2.0 * max(cp, 1e-6))
-
-        dTerm_dR = float(self.m) * F_post * (
-            (2.0 * R / real_R) - (g_pr_sq / (real_R ** 2))
-        )
-        dL_dR = inv_2cp * dTerm_dR
-
-        dL_dF_post = inv_2cp * (float(self.m) * g_pr_sq / real_R)
-        dL_dC_soft = dL_dF_post / n_curr - 0.015 * (F_post / n_curr)
-
-        sign_diff = np.sign(G_eff - self.Root)
-        dL_dG_eff = dL_dR * (sign_diff / safe_den) * valid_den * self.omega
-        dL_dG_post = 0.5 * dL_dG_eff
-        dL_dG_sig = 0.5 * dL_dG_eff
-
-        scaled_dG = dL_dG_post / C_soft
-        dG_post_term = np.matmul(scaled_dG, X.T) - np.sum(scaled_dG * c["G_post"], axis=1, keepdims=True)
-        dL_dT = dG_post_term + dL_dC_soft
-
-        eff_tau = max(self.tau, 1e-4) if self.alpha > 0 else 1.0
-        sum_T_dL = np.sum(T * dL_dT, axis=0, keepdims=True)
-        dL_dLogits = T * (dL_dT - sum_T_dL) / eff_tau
-
-        sim_total = c["sim_total"]
-        C_prior = c["C_prior"]
-        dL_dC_prior = np.sum(dL_dLogits * sim_total, axis=1, keepdims=True)
-        dL_dSim = dL_dLogits * C_prior
-
-        dL_dG_sig += (np.matmul(dL_dSim, X) * self.omega) / max(np.sqrt(self.m), 1.0)
-        sig_deriv = G_sig * (1.0 - G_sig)
-        self.grads["G"] = dL_dG_sig * sig_deriv
-
-        F_prior = c["F_prior"]
-        dL_dF_prior = dL_dC_prior * n_curr - 0.12 * F_prior
-        sum_F_dL = float(np.sum(F_prior * dL_dF_prior))
-        self.grads["F"] = F_prior * (dL_dF_prior - sum_F_dL)
-
+        X, T, G = c['X'], c['T'], c['G_sig']
+        R, F = c['R'], c['F_post'].T
+        n = float(len(X))
+        raw_r = R.sum(axis=1, keepdims=True)
+        denom = np.clip(c['real_R'] / self.m, 1e-6, None)
+        objective = float(np.sum(F * c['g_pr_sq'] / denom))
+        scale = -0.5 / c['cp'] if objective > 1e-12 else 0.0
+        dR = scale * F * (2 * R / denom - c['g_pr_sq'] / denom**2 *
+                          (raw_r > self.m * 1e-6) / self.m)
+        dF = scale * c['g_pr_sq'] / denom
+        coupling = self.omega if self.alpha > 0 else 1.0
+        d_eff = dR * np.sign(c['G_eff'] - self.Root) / c['safe_den'] * c['valid_den'] * coupling
+        d_post, dG = 0.5 * d_eff, 0.5 * d_eff
+        dC = dF / n - np.sum(d_post * c['G_post'], axis=1, keepdims=True) / c['C_soft']
+        dT = (d_post / c['C_soft']) @ X.T + dC * (T.sum(axis=1, keepdims=True) > 1e-6)
+        d_logits = T * (dT - np.sum(T * dT, axis=0, keepdims=True))
+        d_logits /= max(self.tau, 1e-4) if self.alpha > 0 else 1.0
+        d_prior = np.sum(d_logits * c['sim_total'], axis=1, keepdims=True) * n
+        dS = d_logits * c['C_prior']
+        if self.alpha > 0:
+            R_lat, den, valid = self._compute_relevance(G)
+            H = np.power(np.clip(R_lat, 0, None), self.gamma) + 1e-4 * self.omega
+            hsum = H.sum(axis=1, keepdims=True)
+            Q = c['R_norm']
+            raw_dist = (Q * G**2).sum(axis=1, keepdims=True) - 2 * (Q * G) @ X.T + Q @ (X**2).T
+            dD = -self.alpha * dS / (2 * np.sqrt(np.clip(raw_dist, 0, None) + 1e-8))
+            dD *= raw_dist >= 0
+            dG += (1 - self.alpha) * (dS @ X) * self.omega / max(float(self.omega.sum()), 1.0)
+            dG += 2 * Q * (G * dD.sum(axis=1, keepdims=True) - dD @ X)
+            dQ = G**2 * dD.sum(axis=1, keepdims=True) - 2 * G * (dD @ X) + dD @ (X**2)
+            dH = (dQ - np.sum(dQ * Q, axis=1, keepdims=True) * (hsum > 1e-8)) / np.clip(hsum, 1e-8, None)
+            d_lat = dH * self.gamma * np.power(np.clip(R_lat, 1e-30, None), self.gamma - 1) * (R_lat > 0)
+            dG += d_lat * np.sign(G - self.Root) / den * valid * self.omega
+        else:
+            dG += (dS @ X) * self.omega
+        self.grads['G'] = dG * G * (1 - G) * (np.abs(self.matrices['G']) < 30)
+        prior = c['F_prior']
+        self.grads['F'] = prior * (d_prior - np.sum(prior * d_prior))
         return self.grads
 
 
@@ -356,7 +348,7 @@ if HAS_TORCH:
                 lbl_np = self.label_mask.detach().cpu().numpy() if self.label_mask is not None else None
                 if self.alpha > 0:
                     omega_np = compute_group_behavior_coupling(X_np, lbl_np)
-                    self.omega.copy_(torch.tensor(omega_np, dtype=torch.float32, device=self.device))
+                    self.omega.copy_(torch.tensor(omega_np, dtype=self.omega.dtype, device=self.device))
                 if not isinstance(X, torch.Tensor):
                     X = torch.tensor(X, dtype=torch.float32, device=self.device)
                 base = torch.clamp(X[: self.k], 0.03, 0.97)
@@ -365,9 +357,9 @@ if HAS_TORCH:
                 self.matrices["F"].zero_()
 
         def set_root_statistics(self, root, root_min, root_max):
-            self.Root.copy_(torch.as_tensor(root, dtype=torch.float32, device=self.device).view(1, self.m))
-            self.RootMin.copy_(torch.as_tensor(root_min, dtype=torch.float32, device=self.device).view(1, self.m))
-            self.RootMax.copy_(torch.as_tensor(root_max, dtype=torch.float32, device=self.device).view(1, self.m))
+            self.Root.copy_(torch.as_tensor(root, dtype=self.Root.dtype, device=self.device).view(1, self.m))
+            self.RootMin.copy_(torch.as_tensor(root_min, dtype=self.RootMin.dtype, device=self.device).view(1, self.m))
+            self.RootMax.copy_(torch.as_tensor(root_max, dtype=self.RootMax.dtype, device=self.device).view(1, self.m))
 
         def _compute_relevance(self, G):
             root_int = self.RootMax - self.RootMin
@@ -375,8 +367,8 @@ if HAS_TORCH:
             num = torch.abs(self.Root - G)
             den = (root_int / 2.0) + torch.abs(self.Root - root_center)
             eps = 1e-8
-            safe_den = torch.where(den != 0, den, torch.ones_like(den) * eps)
-            R = (num / safe_den) * (den != 0).float()
+            safe_den = torch.where(den > eps, den, torch.ones_like(den))
+            R = (num / safe_den) * (den > eps).to(G.dtype)
             if self.alpha > 0:
                 R = R * self.omega
             return R
@@ -384,19 +376,19 @@ if HAS_TORCH:
         def _compute_cluster_probability(self, F, R):
             real_R = torch.clamp(R.sum(dim=1, keepdim=True), min=1e-6)
             mF = real_R / float(self.m)
-            g_pr = torch.sqrt((R * R).sum(dim=1, keepdim=True) + 1e-12)
+            g_pr_sq = (R * R).sum(dim=1, keepdim=True)
             F_sq = F / torch.clamp(mF.t(), min=1e-6)
-            g_pr_sq = g_pr * g_pr
             pra2 = torch.matmul(F_sq, g_pr_sq)
-            cp = torch.sqrt(pra2 + 1e-8)
+            cp = torch.sqrt(torch.clamp(pra2, min=1e-12))
             return cp.squeeze()
 
         def forward(self, X):
+            X = torch.as_tensor(X, dtype=self.matrices['G'].dtype, device=self.matrices['G'].device)
             n_curr = X.shape[0]
             self.n = n_curr
             F_prior = torch.softmax(self.matrices["F"], dim=0)
             C_prior = F_prior * n_curr
-            G_sig = torch.sigmoid(self.matrices["G"])
+            G_sig = torch.sigmoid(torch.clamp(self.matrices["G"], -30, 30))
 
             sim_dot = torch.matmul(G_sig * self.omega, X.t())
             if self.alpha > 0:

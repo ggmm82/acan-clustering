@@ -7,13 +7,15 @@ real runtime, seal its immutable digest, and promote that same image.
 ## Lifecycle
 
 1. Open a PR into `main`. Python 3.10, 3.11 and 3.12 tests and package builds run.
+   A dedicated CPU PyTorch job audits numerical gradients/backend parity and
+   reruns the historical synthetic benchmark suite. See [Paper audit](PAPER-AUDIT.md).
 2. Build the CPU UI container using a digest-pinned official Python base and a
    hash-verified dependency lock. Test its installed package as a non-root user.
 3. Start the image with a read-only filesystem and exercise model reload,
    prediction and completion through the actual Dash HTTP callbacks.
 4. **CI gate** succeeds only if resolution, all tests and Docker checks succeed.
 5. Internal PRs publish a candidate to GHCR and a prerelease named
-   `v8.0.0-rc.pr.NUMBER.RUN.ATTEMPT`. Fork PRs run the same tests and local image
+   `v8.1.0-rc.pr.NUMBER.RUN.ATTEMPT`. Fork PRs run the same tests and local image
    checks without logging into GHCR, pushing images or publishing releases.
 6. After merge, CI looks for the successful PR's `verified-runtime` artifact.
    Reuse requires the exact same Git tree, current PR head, repository, workflow,
@@ -58,6 +60,11 @@ sealed image digest and Traefik HTTPS routing, without authentication. See
 The GHCR `latest` alias is a convenience for stable images; sealed Compose files
 always use the tested digest. GHCR packages can initially be private: grant read
 access or change package visibility before expecting anonymous pulls.
+
+Releases also attach `paper-audit.json` and `paper-benchmarks.zip`. The runtime
+manifest binds their checksums and rejects missing, skipped, failed or mismatched
+evidence. These receipts explicitly record **partial** paper correspondence and
+synthetic benchmark provenance; they are not a full scientific certification.
 
 For a local source build use `docker compose up --build -d`. The production
 command uses Gunicorn with one worker and threads, not Dash's development server.

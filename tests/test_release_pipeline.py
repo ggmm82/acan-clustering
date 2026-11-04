@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 from scripts import release_pipeline as pipeline
@@ -16,7 +17,7 @@ IMAGE = f'ghcr.io/{REPO}@sha256:' + '1' * 64
 
 
 def identity():
-    return dict(schema=2, repository=REPO, workflow=pipeline.WORKFLOW,
+    return dict(schema=3, repository=REPO, workflow=pipeline.WORKFLOW,
                 event='pull_request', source_commit=COMMIT, tree=TREE,
                 head_sha='c' * 40, head_repository=REPO, pull_request=1,
                 run_id=23, run_attempt=1)
@@ -25,7 +26,7 @@ def identity():
 class TestReleasePipeline(unittest.TestCase):
     def test_sealed_digest_tree_and_compose_are_checked(self):
         with tempfile.TemporaryDirectory() as directory:
-            pipeline.seal(directory, IMAGE, identity())
+            seal(directory, IMAGE, identity())
             self.assertEqual(pipeline.validate(directory, REPO, TREE)['image'], IMAGE)
             with self.assertRaises(ValueError):
                 pipeline.validate(directory, REPO, 'd' * 40)
@@ -35,7 +36,7 @@ class TestReleasePipeline(unittest.TestCase):
             manifest.write_text(json.dumps(value))
             with self.assertRaises(ValueError):
                 pipeline.validate(directory, REPO)
-            pipeline.seal(directory, IMAGE, identity())
+            seal(directory, IMAGE, identity())
             compose = Path(directory) / 'compose.release.yaml'
             content = json.loads(compose.read_text())
             content['services']['acan']['privileged'] = True
@@ -77,7 +78,7 @@ class TestReleasePipeline(unittest.TestCase):
 
     def test_hostinger_asset_is_sealed_without_auth_and_cannot_change_image(self):
         with tempfile.TemporaryDirectory() as directory:
-            pipeline.seal(directory, IMAGE, identity())
+            seal(directory, IMAGE, identity())
             hostinger = Path(directory) / 'compose.hostinger.yaml'
             content = hostinger.read_text()
             self.assertIn(IMAGE, content)
@@ -95,7 +96,7 @@ class TestReleasePipeline(unittest.TestCase):
 
     def test_stale_main_never_publishes(self):
         with tempfile.TemporaryDirectory() as directory:
-            pipeline.seal(directory, IMAGE, identity())
+            seal(directory, IMAGE, identity())
             with patch.object(pipeline, 'run', return_value=TREE), patch.object(
                     pipeline, 'api', return_value={'object': {'sha': 'd' * 40}}):
                 with self.assertRaisesRegex(ValueError, 'Main advanced'):
@@ -103,7 +104,7 @@ class TestReleasePipeline(unittest.TestCase):
 
     def test_release_uploads_assets_before_publishing_without_build(self):
         with tempfile.TemporaryDirectory() as directory:
-            pipeline.seal(directory, IMAGE, identity())
+            seal(directory, IMAGE, identity())
             calls = []
 
             def command(*args):
@@ -138,7 +139,7 @@ class TestReleasePipeline(unittest.TestCase):
         original = f'ghcr.io/{REPO}@sha256:' + '2' * 64
         calls = []
         with tempfile.TemporaryDirectory() as directory:
-            pipeline.seal(directory, IMAGE, identity())
+            seal(directory, IMAGE, identity())
 
             def command(*args):
                 calls.append(args)
@@ -148,7 +149,7 @@ class TestReleasePipeline(unittest.TestCase):
                     return json.dumps([[dict(tag_name='v8.0.0', target_commitish=COMMIT,
                                              draft=False, prerelease=False)]])
                 if args[:3] == ('gh', 'release', 'download'):
-                    pipeline.seal(args[args.index('--dir') + 1], original, identity())
+                    seal(args[args.index('--dir') + 1], original, identity())
                 return ''
 
             with patch.object(pipeline, 'run', side_effect=command), patch.object(
@@ -160,7 +161,7 @@ class TestReleasePipeline(unittest.TestCase):
 
     def test_conflicting_remote_tag_cannot_be_republished(self):
         with tempfile.TemporaryDirectory() as directory:
-            pipeline.seal(directory, IMAGE, identity())
+            seal(directory, IMAGE, identity())
 
             def command(*args):
                 if args[:2] == ('git', 'rev-parse'):
@@ -173,3 +174,35 @@ class TestReleasePipeline(unittest.TestCase):
                     pipeline, 'api', return_value={'object': {'sha': COMMIT}}):
                 with self.assertRaisesRegex(ValueError, 'Existing Git tag'):
                     pipeline.publish(directory, REPO, COMMIT, '8.0.0', True)
+
+    def test_audit_and_benchmark_evidence_cannot_be_skipped_or_changed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            seal(directory, IMAGE, identity())
+            path = Path(directory) / 'paper-audit.json'
+            audit = json.loads(path.read_text())
+            audit['torch_verified'] = False
+            path.write_text(json.dumps(audit))
+            manifest_path = Path(directory) / 'runtime-manifest.json'
+            manifest = json.loads(manifest_path.read_text())
+            manifest['audit_sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+            manifest_path.write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError, 'Paper audit'):
+                pipeline.validate(directory, REPO)
+            seal(directory, IMAGE, identity())
+            (Path(directory) / 'paper-benchmarks.zip').write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError, 'benchmark archive'):
+                pipeline.validate(directory, REPO)
+
+
+def seal(directory, image, metadata):
+    # Synthetic receipt is only used to exercise release-integrity validation.
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(directory / 'paper-benchmarks.zip', 'w') as archive:
+        archive.writestr('fixture.txt', 'Unit-test fixture, not an executed benchmark.')
+    (directory / 'paper-audit.json').write_text(json.dumps(dict(
+        contract_version=1, status='passed', conformance='partial', full_paper_conformance=False,
+        tree=metadata['tree'], commit=metadata['source_commit'], run_id=metadata['run_id'], source_clean=True,
+        torch_verified=True, tests_run=13, failures=0, errors=0, skipped=0,
+        benchmarks=dict(status='passed', archive_sha256=hashlib.sha256((directory / 'paper-benchmarks.zip').read_bytes()).hexdigest()))))
+    return pipeline.seal(directory, image, metadata)

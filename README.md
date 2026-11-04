@@ -58,6 +58,13 @@ python -c "from acan.vis.render import app; app.run(debug=False, port=4000)"
 
 ## Contents
 
+The **Laboratory** tab adds a CPU character language prototype with corpus
+training, held-out metrics, sampling and model/report export. See
+[Generative laboratory](docs/GENERATIVE-LAB.md).
+The [paper audit](docs/PAPER-AUDIT.md) records partial correspondence, corrected
+numerical gradients and outstanding scientific claims. Every release now requires
+the audit, full synthetic benchmark receipts and Docker HTTP checks.
+
 For Docker deployment and the PR → CI → prerelease → stable release process,
 see [Controlled Docker releases](docs/RELEASING.md) and [Contributing](CONTRIBUTING.md).
 For the VPS deployment, use the sealed `compose.hostinger.yaml` release asset and
@@ -69,8 +76,13 @@ follow [Hostinger deployment](docs/HOSTINGER.md).
 - `experiments/`: archived results and figures
 - `paper/`: paper source
 
-The benchmark script currently contains absolute paths from its original
-environment and requires path configuration before use elsewhere.
+Run the historical synthetic suite without changing the archived paper outputs:
+
+```sh
+OPENBLAS_NUM_THREADS=1 python benchmarks/run_benchmarks.py --output-dir .runs/paper-benchmark
+```
+
+The UCI-like cases in that script are synthetic, not the real UCI datasets.
 
 ## License
 

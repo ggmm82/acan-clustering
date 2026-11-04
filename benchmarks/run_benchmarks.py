@@ -21,15 +21,20 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import sys
-REPO_DIR = "/working_dir/c_15f0296cba6f8a5f/acan_repo"
+import argparse
+from pathlib import Path
+REPO_DIR = str(Path(__file__).resolve().parents[1])
 if REPO_DIR not in sys.path:
     sys.path.insert(0, REPO_DIR)
 
 from acan import AlgebraicClusterLearner, GraphClusterModel, ACANPredictor
 
-RESULTS_DIR = os.path.join(REPO_DIR, "experiments", "results")
-FIGURES_DIR = os.path.join(REPO_DIR, "experiments", "figures")
-INTERMEDIATE_DIR = "/working_dir/c_15f0296cba6f8a5f/artifacts/file_generation/ttl=63d/intermediate"
+parser = argparse.ArgumentParser(description='Historical synthetic benchmark suite; does not load real UCI datasets.')
+parser.add_argument('--output-dir', default=os.path.join(REPO_DIR, '.runs', 'paper-benchmark'))
+args = parser.parse_args()
+RESULTS_DIR = os.path.join(args.output_dir, 'results')
+FIGURES_DIR = os.path.join(args.output_dir, 'figures')
+INTERMEDIATE_DIR = os.path.join(args.output_dir, 'intermediate')
 os.makedirs(RESULTS_DIR, exist_ok=True)
 os.makedirs(FIGURES_DIR, exist_ok=True)
 os.makedirs(INTERMEDIATE_DIR, exist_ok=True)
@@ -64,14 +69,19 @@ PALETTE = {
 
 
 def encode_features_and_target(train_df, test_df, target_col):
-    full_df = pd.concat([train_df, test_df], axis=0, ignore_index=True)
-    X_full = GraphClusterModel.full_dummies(full_df.drop(columns=[target_col]))
-    X_norm, _ = GraphClusterModel.normalizeData(X_full)
-    n_train = len(train_df)
-    X_tr = X_norm.iloc[:n_train].to_numpy(dtype=np.float64)
-    X_te = X_norm.iloc[n_train:].to_numpy(dtype=np.float64)
-    y_tr = train_df[target_col].astype(str).to_numpy()
-    y_te = test_df[target_col].astype(str).to_numpy()
+    X_full = GraphClusterModel.full_dummies(train_df.drop(columns=[target_col]))
+    X_norm, minmax = GraphClusterModel.normalizeData(X_full)
+    adapter = GraphClusterModel()
+    adapter.minMax = minmax
+    test_encoded = GraphClusterModel.full_dummies(test_df.drop(columns=[target_col]))
+    for col in X_norm.columns:
+        if col not in test_encoded:
+            test_encoded[col] = 0.0
+    X_test = adapter.alignData(test_encoded, list(X_norm.columns))
+    X_tr = X_norm.to_numpy(dtype=np.float64, copy=True)
+    X_te = X_test.to_numpy(dtype=np.float64, copy=True)
+    y_tr = train_df[target_col].astype(str).to_numpy(copy=True)
+    y_te = test_df[target_col].astype(str).to_numpy(copy=True)
     return X_tr, y_tr, X_te, y_te, list(X_norm.columns)
 
 
@@ -295,14 +305,14 @@ for n_irr in irr_counts:
 
         # 4. ACM v7 (dot-product attention without Group-Behavior Coupling omega)
         gcm_v7 = AlgebraicClusterLearner.learn(
-            train_df, labels=["label"], max_depth=1, max_epochs=65, lr=0.08, tau=0.22, alpha=0.0
+            train_df, device="numpy", labels=["label"], max_depth=1, max_epochs=65, lr=0.08, tau=0.22, alpha=0.0
         )
         _, Y_t7, Y_p7, _, _ = gcm_v7.evaluateError(test_df, ["label"], use_soft_attention=True)
         accs["ACM_v7"].append(float((Y_t7.idxmax(axis=1) == Y_p7.idxmax(axis=1)).mean() * 100.0))
 
         # 5. ACAN v8 (Dual Slot + Relevance Attention + Group-Behavior Coupling omega)
         gcm_v8 = AlgebraicClusterLearner.learn(
-            train_df, labels=["label"], max_depth=1, max_epochs=75, lr=0.09, tau=0.15, alpha=0.65
+            train_df, device="numpy", labels=["label"], max_depth=1, max_epochs=75, lr=0.09, tau=0.15, alpha=0.65
         )
         _, Y_t8, Y_p8, _, _ = gcm_v8.evaluateError(test_df, ["label"], use_soft_attention=True)
         accs["ACAN_v8"].append(float((Y_t8.idxmax(axis=1) == Y_p8.idxmax(axis=1)).mean() * 100.0))
@@ -369,13 +379,13 @@ for n_irr_gioco in [3, 6, 12, 20]:
         accs["GenTree_v1"].append(np.mean(gt1.predict(X_te) == y_te) * 100.0)
 
         gcm_v7 = AlgebraicClusterLearner.learn(
-            tr_g, labels=["Gioco"], max_depth=1, max_epochs=60, lr=0.08, tau=0.25, alpha=0.0
+            tr_g, device="numpy", labels=["Gioco"], max_depth=1, max_epochs=60, lr=0.08, tau=0.25, alpha=0.0
         )
         _, Y_t7, Y_p7, _, _ = gcm_v7.evaluateError(te_g, ["Gioco"], use_soft_attention=True)
         accs["ACM_v7"].append(float((Y_t7.idxmax(axis=1) == Y_p7.idxmax(axis=1)).mean() * 100.0))
 
         gcm_v8 = AlgebraicClusterLearner.learn(
-            tr_g, labels=["Gioco"], max_depth=2, max_epochs=80, lr=0.09, tau=0.15, alpha=0.65
+            tr_g, device="numpy", labels=["Gioco"], max_depth=2, max_epochs=80, lr=0.09, tau=0.15, alpha=0.65
         )
         _, Y_t8, Y_p8, _, _ = gcm_v8.evaluateError(te_g, ["Gioco"], use_soft_attention=True)
         accs["ACAN_v8"].append(float((Y_t8.idxmax(axis=1) == Y_p8.idxmax(axis=1)).mean() * 100.0))
@@ -419,10 +429,10 @@ form_test = df_form.iloc[150:].reset_index(drop=True)
 semantic_cols = ["Genere", "Reparto", "Prodotto1", "Prodotto2", "FasciaPrezzo", "Consegna"]
 
 gcm_form_v8 = AlgebraicClusterLearner.learn(
-    form_train, labels=[], max_depth=1, max_epochs=85, lr=0.09, tau=0.15, alpha=0.65
+    form_train, device="numpy", labels=[], max_depth=1, max_epochs=85, lr=0.09, tau=0.15, alpha=0.65
 )
 gcm_form_v7 = AlgebraicClusterLearner.learn(
-    form_train, labels=[], max_depth=1, max_epochs=60, lr=0.08, tau=0.25, alpha=0.0
+    form_train, device="numpy", labels=[], max_depth=1, max_epochs=60, lr=0.08, tau=0.25, alpha=0.0
 )
 
 exp3_rows = []
@@ -444,10 +454,7 @@ for n_masked in [1, 2, 3, 4]:
         known_cols = [c for c in form_train.columns if c not in m_cols]
         sub_tr = GraphClusterModel.full_dummies(form_train[known_cols])
         sub_te = GraphClusterModel.full_dummies(form_test.iloc[[idx]][known_cols])
-        for c in sub_tr.columns:
-            if c not in sub_te.columns:
-                sub_te[c] = 0.0
-        sub_te = sub_te[sub_tr.columns]
+        sub_te = sub_te.reindex(columns=sub_tr.columns, fill_value=0.0)
         sub_tr_norm, mm = GraphClusterModel.normalizeData(sub_tr)
         sub_te_norm = pd.DataFrame(
             {c: (0.0 if mm[c][1] == mm[c][0] else (sub_te[c] - mm[c][0]) / (mm[c][1] - mm[c][0])) for c in sub_tr.columns},
@@ -515,13 +522,13 @@ for nl in noise_levels:
         )
 
         gcm_v7 = AlgebraicClusterLearner.learn(
-            tr_df, labels=["Gioco"], max_depth=1, max_epochs=55, lr=0.08, tau=0.25, alpha=0.0
+            tr_df, device="numpy", labels=["Gioco"], max_depth=1, max_epochs=55, lr=0.08, tau=0.25, alpha=0.0
         )
         _, Y_t7, Y_p7, _, _ = gcm_v7.evaluateError(te_df, ["Gioco"], use_soft_attention=True)
         accs["ACM_v7"].append(float((Y_t7.idxmax(axis=1) == Y_p7.idxmax(axis=1)).mean() * 100.0))
 
         gcm_v8 = AlgebraicClusterLearner.learn(
-            tr_df, labels=["Gioco"], max_depth=1, max_epochs=80, lr=0.09, tau=0.15, alpha=0.65
+            tr_df, device="numpy", labels=["Gioco"], max_depth=1, max_epochs=80, lr=0.09, tau=0.15, alpha=0.65
         )
         _, Y_t8, Y_p8, _, _ = gcm_v8.evaluateError(te_df, ["Gioco"], use_soft_attention=True)
         accs["ACAN_v8"].append(float((Y_t8.idxmax(axis=1) == Y_p8.idxmax(axis=1)).mean() * 100.0))
@@ -544,7 +551,7 @@ def build_benchmark_datasets():
     datasets = {}
     rng = np.random.default_rng(42)
 
-    # 1. Iris (UCI)
+    # 1. Iris-like (synthetic)
     centers_iris = [[5.0, 3.4, 1.5, 0.2], [5.9, 2.8, 4.3, 1.3], [6.6, 3.0, 5.5, 2.0]]
     stds_iris = [[0.35, 0.38, 0.17, 0.10], [0.51, 0.31, 0.47, 0.20], [0.63, 0.32, 0.55, 0.27]]
     names_iris = ["setosa", "versicolor", "virginica"]
@@ -553,9 +560,9 @@ def build_benchmark_datasets():
         pts = rng.normal(centers_iris[c_i], stds_iris[c_i], size=(60, 4))
         for p in pts:
             rows.append({"sepal_len": p[0], "sepal_wid": p[1], "petal_len": p[2], "petal_wid": p[3], "class": names_iris[c_i]})
-    datasets["Iris (UCI)"] = pd.DataFrame(rows).sample(frac=1.0, random_state=42).reset_index(drop=True)
+    datasets["Iris-like (synthetic)"] = pd.DataFrame(rows).sample(frac=1.0, random_state=42).reset_index(drop=True)
 
-    # 2. Zoo (UCI)
+    # 2. Zoo-like (synthetic)
     zoo_profiles = [
         ("Mammal",    [1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1]),
         ("Bird",      [0, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0]),
@@ -571,7 +578,7 @@ def build_benchmark_datasets():
         row = {f"trait_{idx}": float(val) for idx, val in enumerate(noisy_traits)}
         row["class"] = cls_name
         rows.append(row)
-    datasets["Zoo (UCI)"] = pd.DataFrame(rows)
+    datasets["Zoo-like (synthetic)"] = pd.DataFrame(rows)
 
     # 3. Wine-Chem (UCI style, 3 cultivars, 8 chemical attributes)
     wine_centers = [
@@ -586,7 +593,7 @@ def build_benchmark_datasets():
             row = {f"chem_{j}": float(p[j]) for j in range(8)}
             row["class"] = c_name
             rows.append(row)
-    datasets["Wine (UCI)"] = pd.DataFrame(rows).sample(frac=1.0, random_state=42).reset_index(drop=True)
+    datasets["Wine-like (synthetic)"] = pd.DataFrame(rows).sample(frac=1.0, random_state=42).reset_index(drop=True)
 
     # 4. Breast-Cancer Wisconsin Diagnostic
     rows = []
@@ -596,7 +603,7 @@ def build_benchmark_datasets():
         row = {f"cyto_{i}": float(base[i]) for i in range(10)}
         row["class"] = "Malignant" if is_mal else "Benign"
         rows.append(row)
-    datasets["Wisconsin-BC"] = pd.DataFrame(rows)
+    datasets["Wisconsin-like (synthetic)"] = pd.DataFrame(rows)
 
     # 5. Gioco-XOR (5 features, strong XOR + 3 irrelevant)
     datasets["Gioco-XOR"] = generate_gioco_dataset(200, n_irrelevant=3, categorical_noise=True, seed=101).rename(columns={"Gioco": "class"})
@@ -626,13 +633,13 @@ for d_name, df_d in benchmark_datasets.items():
     acc_gt1 = float(np.mean(ThesisGeneralizationTreeV1(rotation_budget=8, random_state=42).fit(X_tr, y_tr).predict(X_te) == y_te) * 100.0)
 
     gcm_v7 = AlgebraicClusterLearner.learn(
-        tr_d, labels=["class"], max_depth=1, max_epochs=60, lr=0.08, tau=0.25, alpha=0.0
+        tr_d, device="numpy", labels=["class"], max_depth=1, max_epochs=60, lr=0.08, tau=0.25, alpha=0.0
     )
     _, Y_t7, Y_p7, _, _ = gcm_v7.evaluateError(te_d, ["class"], use_soft_attention=True)
     acc_v7 = float((Y_t7.idxmax(axis=1) == Y_p7.idxmax(axis=1)).mean() * 100.0)
 
     gcm_v8 = AlgebraicClusterLearner.learn(
-        tr_d, labels=["class"], max_depth=2, max_epochs=85, lr=0.09, tau=0.15, alpha=0.65
+        tr_d, device="numpy", labels=["class"], max_depth=2, max_epochs=85, lr=0.09, tau=0.15, alpha=0.65
     )
     _, Y_t8, Y_p8, _, _ = gcm_v8.evaluateError(te_d, ["class"], use_soft_attention=True)
     acc_v8 = float((Y_t8.idxmax(axis=1) == Y_p8.idxmax(axis=1)).mean() * 100.0)
@@ -662,7 +669,7 @@ df_multi.to_csv(os.path.join(RESULTS_DIR, "exp4_multidataset_benchmark.csv"), in
 print("Running Experiment 5: Concept Collapse & Training Convergence Dynamics...")
 df_dyn = generate_gioco_dataset(160, n_irrelevant=3, categorical_noise=False, seed=777)
 norm_dyn, mm_dyn = GraphClusterModel.normalizeData(GraphClusterModel.full_dummies(df_dyn))
-learner_dyn = AlgebraicClusterLearner(norm_dyn, labels=["Gioco"], lr=0.09, tau=0.16, alpha=0.65)
+learner_dyn = AlgebraicClusterLearner(norm_dyn, device="numpy", labels=["Gioco"], lr=0.09, tau=0.16, alpha=0.65)
 learner_dyn.nLearn(max_epochs=80, patience=80)
 df_history = pd.DataFrame(learner_dyn.history)
 df_history.to_csv(os.path.join(RESULTS_DIR, "exp5_convergence_dynamics.csv"), index=False)
