@@ -13,7 +13,7 @@ import unittest
 import numpy as np
 
 from acan.core.network import HAS_TORCH
-from acan.paper_contract import PAPER_SHA256, CONFORMANCE, GAPS
+from acan.paper_contract import PAPER_SHA256, PDF_SHA256, CONFORMANCE, GAPS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,6 +26,9 @@ def main():
     paper = ROOT / 'paper/Algebraic_Concept_Attention_Paper.tex'
     if hashlib.sha256(paper.read_bytes()).hexdigest() != PAPER_SHA256:
         raise SystemExit('Paper changed: review and update the correspondence contract before deployment.')
+    pdf = ROOT / 'paper/Algebraic_Concept_Attention_Scientific_Paper.pdf'
+    if hashlib.sha256(pdf.read_bytes()).hexdigest() != PDF_SHA256:
+        raise SystemExit('Reference PDF changed: review paper/code correspondence before deployment.')
     if args.require_torch and not HAS_TORCH:
         raise SystemExit('Required CPU PyTorch backend is missing; audit cannot pass by skipping it.')
     if HAS_TORCH:
@@ -39,7 +42,7 @@ def main():
     result = unittest.TextTestRunner(stream=stream, verbosity=2).run(suite)
     passed = result.wasSuccessful() and result.testsRun >= 8 and (not args.require_torch or not result.skipped)
     report = dict(contract_version=2, status='passed' if passed else 'failed',
-                  conformance=CONFORMANCE, full_paper_conformance=False, paper_sha256=PAPER_SHA256,
+                  conformance=CONFORMANCE, full_paper_conformance=False, paper_sha256=PAPER_SHA256, paper_pdf_sha256=PDF_SHA256,
                   commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
                   tree=subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(),
                   source_clean=not bool(subprocess.check_output(['git', 'status', '--porcelain'], text=True).strip()),

@@ -9,11 +9,12 @@ import time
 
 
 class TrainingJobs:
-    def __init__(self, capacity=32, ttl=3600):
+    def __init__(self, capacity=32, ttl=3600, max_running=None):
         self._jobs = {}
         self._lock = threading.Lock()
         self.capacity = capacity
         self.ttl = ttl
+        self.max_running = max_running
 
     def start(self, session_id, learner, minmax, labels):
         with self._lock:
@@ -24,6 +25,8 @@ class TrainingJobs:
             old = self._jobs.get(session_id)
             if old and not old['done'].is_set():
                 raise ValueError('Un training è già in corso in questa sessione.')
+            if self.max_running is not None and sum(not job['done'].is_set() for job in self._jobs.values()) >= self.max_running:
+                raise ValueError('Un benchmark è già in corso sul server: attendere o fermare il proprio confronto.')
             if old is None and len(self._jobs) >= self.capacity:
                 raise ValueError('Server occupato: riprovare più tardi.')
             job = dict(learner=learner, minmax=minmax, labels=list(labels),

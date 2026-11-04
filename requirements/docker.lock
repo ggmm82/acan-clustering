@@ -8,6 +8,37 @@ blinker==1.9.0 \
     --hash=sha256:b4ce2265a7abece45e7cc896e98dbebe6cead56bcf805a3d23136d145f5445bf \
     --hash=sha256:ba0efaa9080b619ff2f3459d1d500c57bddea4a6b424b60a91141db6fd2f08bc
     # via flask
+catboost==1.2.10 \
+    --hash=sha256:19de3cb267be3ddb8fd667a87f9e7d3c9ee31783c61ea9e6e6f036f666bddcc3 \
+    --hash=sha256:21deaef3f6f49e70b320ec48f4741133287e888297c42af8bd677ac636e8fc64 \
+    --hash=sha256:22aa943cc6f7839ca5d3d66d4f8763d8c799fcf43d64d209e14e2e66016fdae6 \
+    --hash=sha256:25c9b0dd9afb464efe7ccabf7567241aa566f70e7f77893218cb9fa21663e5d5 \
+    --hash=sha256:26ae6d423acaf0e9d8160f2477a990431057ed04522d993c2f42dac62743b4f7 \
+    --hash=sha256:2a19c1a9e92c76fb5dc75cf6a5b0d03127f3a36359e1e02e5d139e27581e2d57 \
+    --hash=sha256:39234b3692b6c9002b4a2ac529025fc210dd72feb9b621b27d17c65b7d3e9f92 \
+    --hash=sha256:3efc5e4d414b7c13bff6dd0d6c938cf09bb1445097283c7790e54b8ee461820b \
+    --hash=sha256:41bbe16cab0695978c325a20fa300f92831ed78e9cc8c5fe8047538b4055e98e \
+    --hash=sha256:42c1b6c7ae5c18cdbe00c8b9493987cc13338fe328baaf1a0b98ddaf58db96a2 \
+    --hash=sha256:4debc33c278e431681d47d90818c15ec58407c8ea028b3060953dd29a6246946 \
+    --hash=sha256:5319c7f9a7764d7dba04c218fd28383b7267553f83232e8ce8737d6b8d38534d \
+    --hash=sha256:56c2c0ec0c16874b83d39f892b7f8a026bbd7404d59b23a34ce53f6b4b87b26a \
+    --hash=sha256:5819a880af6b314f4980e6c26ad0f7552eafcf247d521bc884fe726347fdd87d \
+    --hash=sha256:59aa166f075f0a5ea57b0ba46e5060bd6a22e849e91e4142f16c2df11295b184 \
+    --hash=sha256:5ede858e634d6d0f521bf6dd6fad9374f23d37049ee48e0779ccd2a372632cb1 \
+    --hash=sha256:5ffe85f53092219cf65c73c2946426a289ef6f62c119c2bfda52815250d9bcef \
+    --hash=sha256:6b8a7ef11d7a89fc547760cfafeee895011a4b92cc1f60d00235ef80a71158ed \
+    --hash=sha256:7b8cc4ea3a6ac4a8d05f3a79c8ee5454360a0a710fa12444963865ad3f0ddfec \
+    --hash=sha256:951c5bdf27b8edb6ca624f41134888c666ae68275488803d3c91ce83e154f0c5 \
+    --hash=sha256:a1eea0b556d1c154907a6896eb865e1bb39c9b974e0765d879a41fbf87d4639d \
+    --hash=sha256:ab2e84237308d62bae236b1ecba2e3867697f96bdbaf0ca68dafc2c886946406 \
+    --hash=sha256:b27115d5b443048f710001c8ac666892dfe03498492310b00466203c91cc30a5 \
+    --hash=sha256:b28f763776e62f50da90dddf73b36399583295032667a7e46fc5c1f2593eb80f \
+    --hash=sha256:bad9a70890cdc591080a908d54a3cd70002ab1e48b2017adff84726da0b3e16d \
+    --hash=sha256:bd3d3b344894f61b5f70124658f302148bb9a51c41d0d5b6c453a72e9dfefc49 \
+    --hash=sha256:c20dbca7fb73458e7f017faf091b91faf3f106e113d6019e8ecb99c452169426 \
+    --hash=sha256:cf54c216f6b3b102e06a5fc42deeb7a2497d622e6bc2e222f586e7e357a942f1 \
+    --hash=sha256:fc040b85d06588bc0d22bc4941208f43b4a56fccd4ff78b738ee823956b89370
+    # via acan-clustering (pyproject.toml)
 certifi==2026.10.23 \
     --hash=sha256:a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd \
     --hash=sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
@@ -368,6 +399,10 @@ fonttools==4.68.0 \
     --hash=sha256:fe80d05dd85e6ac58d0cd4fa10ddb96252a6f1046ee0fd00cd1d48f0c25921ac \
     --hash=sha256:fedc183bdbc3fdbfbdca26e0e04566d089cbb404712509a4e824608e9304cc77
     # via matplotlib
+graphviz==0.21 \
+    --hash=sha256:20743e7183be82aaaa8ad6c93f8893c923bd6658a04c32ee115edb3c8a835f78 \
+    --hash=sha256:54f33de9f4f911d7e84e4191749cac8cc5653f815b06738c54db9a15ab8b1e42
+    # via catboost
 gunicorn==26.2.0 \
     --hash=sha256:62b864895d9ebff0b2f9867ba04fe811c93121596540830c9c916d0769668447 \
     --hash=sha256:bd249d0b3f7972f7432f0a6b6ff3b3ee2d129f70cd1ff6c09a9dd9e29a2b88e3
@@ -749,7 +784,9 @@ matplotlib==3.11.2 \
     --hash=sha256:f25446b2981717dca9786bac841cb3fd7efb568e3e3c755dd980481c5cb9228d \
     --hash=sha256:f2ac30cf5eb5dff1b584627ae0b0e1186551a4f69ae3c75073911da497a29170 \
     --hash=sha256:fea03cf56568cc1cba08b470be6a0559e71c3a5b688d54b7179bb35ba23d0821
-    # via acan-clustering (pyproject.toml)
+    # via
+    #   acan-clustering (pyproject.toml)
+    #   catboost
 narwhals==2.28.0 \
     --hash=sha256:1f69d6385ec30e2fa6e1fdeb37c562ecabd0f713f6f3e3b58a668c5c9df9567f \
     --hash=sha256:2d9860c80d6610820826e94c6e42ce4b1d92d89cdd479586e652a8d211dab345
@@ -829,11 +866,13 @@ numpy==2.5.4 \
     --hash=sha256:ffa6ce09a1c6a08e9667dd9c97aa0b14184e8d18f2a14b78b2a2328c9147f076
     # via
     #   acan-clustering (pyproject.toml)
+    #   catboost
     #   contourpy
     #   matplotlib
     #   pandas
     #   scikit-learn
     #   scipy
+    #   xgboost-cpu
 openpyxl==3.1.5 \
     --hash=sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2 \
     --hash=sha256:cf0e3cf56142039133628b5acffe8ef0c12bc902d2aadd3e0fe5878dc08d1050
@@ -904,7 +943,9 @@ pandas==3.1.0 \
     --hash=sha256:eee72bba8a72f0bf9522132e5c87cd10fce9d77440b50f65326b093ec9fb8d43 \
     --hash=sha256:f1a93c24175129bfc9922ef748ddae1d8137c743ed835e2615be329f606fed4d \
     --hash=sha256:f4772320b7735d96dbbef437129f840dec4175f8a18a2391bd1222ed8943825c
-    # via acan-clustering (pyproject.toml)
+    # via
+    #   acan-clustering (pyproject.toml)
+    #   catboost
 pillow==13.0.0 \
     --hash=sha256:02464da86f561f410e13b061ec37c3068a9cb557a095494157742d07b3c24a27 \
     --hash=sha256:04a63720f79e22fd54d897c233a68314c50ca0603360f54ce2bd5db8f0f43782 \
@@ -995,6 +1036,7 @@ plotly==7.1.0 \
     --hash=sha256:f860166a4a3d78c69cb1f4a15f28a5c8283eade98a282a698f3bb853a449ace5
     # via
     #   acan-clustering (pyproject.toml)
+    #   catboost
     #   dash
 pyarrow==26.0.1 \
     --hash=sha256:0044cb9303c3ae082cc52a2493312109c955bcfa84e87be768736f7d6d8f6257 \
@@ -1322,13 +1364,19 @@ scipy==1.18.1 \
     --hash=sha256:fdaf5ea890a6183d0565f51a61799d67081bd5b1cf03c5f4b3fd3732108625c9
     # via
     #   acan-clustering (pyproject.toml)
+    #   catboost
     #   scikit-learn
+    #   xgboost-cpu
 setuptools==84.2.1 \
     --hash=sha256:3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc \
     --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2
     # via
     #   acan-clustering (pyproject.toml)
     #   dash
+six==1.17.0 \
+    --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
+    --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81
+    # via catboost
 threadpoolctl==3.7.0 \
     --hash=sha256:61348cfb77d53b9242e0017029244b559b810c142ced65b4e21eeca1843959a7 \
     --hash=sha256:cd8b60b5641b45c67bbf73c64c843235fc2d8a480c87389f52f5dbee893b86be
@@ -1362,6 +1410,13 @@ werkzeug==3.1.9 \
 wheel==0.48.0 \
     --hash=sha256:3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab \
     --hash=sha256:94800765601e9171bf5d58d066e640662842bcedcbab982b2c90787a2c987322
+    # via acan-clustering (pyproject.toml)
+xgboost-cpu==3.4.1 \
+    --hash=sha256:1f16331f5c6beb2b40fbd4bf2834333062d93c9eb38b76186a5c206841dc1809 \
+    --hash=sha256:24347f435ba6e9919c9102684f8b353bf43d9951184ef0e71b148673ed14306d \
+    --hash=sha256:47b81860b18056f9425b34fe2905343bc7ee0118122ae09cf2e31c305ed49877 \
+    --hash=sha256:ceb0f7c786511e1876df6ca83a6f837a3187159bde51d8dcc5cdf5e2de76e366 \
+    --hash=sha256:ee0b249eaa962837cdc4e67adfec54567bfe7386337f3c3a3ce5d68909492e81
     # via acan-clustering (pyproject.toml)
 zipp==4.1.2 \
     --hash=sha256:b30cb6cd253122169c47de245ca24a86bac2a5d3802ba15bf7ba6414eb9e144d \
