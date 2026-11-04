@@ -1,3 +1,9 @@
+import os
+import secrets
+from flask import session
+from acan.vis.jobs import TrainingJobs
+from acan.vis.inference import infer
+
 import dash  # pip install dash
 import dash_cytoscape as cyto  # pip install dash-cytoscape==0.2.0 or higher
 from dash import html
@@ -27,11 +33,16 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SKETCHY],
 app.title='Algebraic Cluster Model'
 els={}
 
-# Stato globale per il learning con threading
-_global_acl = None
-_global_minMax = None
-_global_labels = []
-_stop_requested = False
+# Signed cookies identify browser sessions; learners stay on the server.
+app.server.secret_key = os.environ.get('ACAN_SESSION_SECRET') or secrets.token_hex(32)
+app.server.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax')
+training_jobs = TrainingJobs()
+
+@app.server.before_request
+def ensure_session():
+    if 'acan_session' not in session:
+        session['acan_session'] = secrets.token_urlsafe(32)
+
 
 def parse_contents(contents, filename, date):
     content_type, content_string = contents.split(',')
@@ -350,7 +361,7 @@ orgChartData=cyto.Cytoscape(
     autoungrabify=True,
     minZoom=0.1,
     maxZoom=2,
-    layout={'name': 'cose'},  # ✅ Permette il drag manuale
+    layout={'name': 'cose', 'animate': False},
     #layout={'name': 'cose', 'animate': True},
     elements={},
     #style={'width': '500px', 'height': '500px'},
@@ -626,16 +637,43 @@ evaluation_layout = dbc.Container([
     ])
 
 
-app.layout = dbc.Container([
-        dbc.Row(dbc.Col( html.H1('Simple Data Mining', style={'text-align':'center'}), width=12), justify="center"),
-        dbc.Row(dcc.Tabs(id="tabs", value='Data', children=[
-            dcc.Tab(label='Data', value='Data', children=dcc.Loading(children=[data_layout, dcc.Store(id="data-store")])),
-            dcc.Tab(label='Model', value='Model', children=[model_layout, dcc.Store(id="test-store")]),
-            dcc.Tab(label='Evaluation', value='Evaluation', children=dcc.Loading(children=[evaluation_layout, dcc.Store(id="eval-store")]))
-        ]))
+inference_layout = dbc.Container([
+    html.P('Usa il modello caricato o addestrato nella scheda Model. Nessun nuovo training.'),
+    dcc.Upload(id='inference-upload', children=dbc.Button('Carica CSV per inferenza'), multiple=False),
+    dcc.Store(id='inference-input'),
+    html.Div(id='inference-upload-status', role='status'),
+    dcc.RadioItems(id='inference-mode', options=[
+        {'label': 'Predici Labels (ignora eventuali valori target nel CSV)', 'value': 'predict'},
+        {'label': 'Completa campi vuoti (mantiene i valori presenti)', 'value': 'complete'},
+    ], value='predict'),
+    dbc.Button('Esegui inferenza', id='inference-run', className='my-2'),
+    html.Div(id='inference-status', role='status'),
+    html.Div(id='inference-table', style={'overflowX': 'auto'}),
+    dcc.Store(id='inference-result'),
+    dbc.Button('Scarica risultati CSV', id='inference-export', disabled=True),
+    dcc.Download(id='inference-download'),
+])
 
+app.layout = dbc.Container([
+    html.H1('Simple Data Mining', style={'textAlign': 'center'}),
+    dcc.Tabs(id='tabs', value='Data', children=[
+        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference']
+    ]),
+    # Keep the graph mounted when switching tabs: destroying Cytoscape while
+    # asynchronous layout/resize callbacks are pending causes browser errors.
+    html.Div([data_layout, dcc.Store(id='data-store')], id='page-data'),
+    html.Div([model_layout, dcc.Store(id='test-store')], id='page-model', style={'display': 'none'}),
+    html.Div([evaluation_layout, dcc.Store(id='eval-store')], id='page-evaluation', style={'display': 'none'}),
+    html.Div(inference_layout, id='page-inference', style={'display': 'none'}),
 ], fluid=True)
 
+
+@app.callback([Output('page-data', 'style'), Output('page-model', 'style'),
+               Output('page-evaluation', 'style'), Output('page-inference', 'style')],
+              Input('tabs', 'value'))
+def show_page(tab):
+    return [{'display': 'block' if tab == name else 'none'}
+            for name in ['Data', 'Model', 'Evaluation', 'Inference']]
 
 
 # Callback per pulire i dropdown
@@ -667,9 +705,6 @@ def clear_filter(n_clicks):
 )
 def clear_label(n_clicks, options):
     if n_clicks:
-        # Per Labels, lascia almeno una opzione selezionata se ci sono opzioni disponibili
-        if options and len(options) > 0:
-            return [options[0]['value']]
         return []
     return dash.no_update
 
@@ -783,9 +818,8 @@ def update_data(contents, filename, last_modified, labels):
             df.columns = df.columns.map(str)
 
             df=df.astype({col: str for col, dtype in df.dtypes.items() if dtype=='object'})
-            df.columns = df.columns.str.replace('_', '')
             
-            if len(labels)==1 and labels[0] in df.columns:
+            if labels and len(labels)==1 and labels[0] in df.columns:
                 balanced=True
                 df = AlgebraicClusterModel.downsample_classes(df, labels)
             
@@ -914,53 +948,29 @@ def download_prediction(n_clicks, pred, data):
               prevent_initial_call=True
               )
 def update_model(n_clicks, data, labels, filters, categories, max_batch, lr):
-    global _global_acl, _global_minMax, _global_labels, _stop_requested
-    
-    if not n_clicks or n_clicks == 0:
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
-    
+    if not n_clicks:
+        return (dash.no_update,) * 5
     if not data:
         return dash.no_update, dash.no_update, "⚠️ Nessun dato caricato!", True, True
-    
-    # Default a 300 se non specificato
-    if max_batch is None or max_batch < 10:
-        max_batch = 300
-    
-    # Default learning rate
-    if lr is None or lr <= 0:
-        lr = 0.1
-    
+    existing = training_jobs.get(session['acan_session'])
+    if existing and not existing['done'].is_set():
+        return dash.no_update, dash.no_update, "Training già in corso.", False, False
     try:
         df = pd.DataFrame(data)
-        
-        # Split train/test (80/20)
-        train = df.sample(frac=0.8)
-        test = df[df.index.isin(train.index)==False].reset_index()
-        
-        train = train.drop(filters, axis=1, errors='ignore')
-        if len(categories) > 0:
+        if len(df) < 5:
+            raise ValueError('Servono almeno 5 righe per lo split train/test.')
+        train = df.sample(frac=0.8, random_state=42)
+        test = df.loc[~df.index.isin(train.index)].reset_index(drop=True)
+        train = train.drop(filters or [], axis=1, errors='ignore')
+        if categories:
             train[categories] = train[categories].astype(str)
-        
-        # Normalizza come fa learn()
-        trainDataset, minMax = GraphClusterModel.normalizeData(GraphClusterModel.full_dummies(train))
-        
-        # Salva stato globale
-        _global_minMax = minMax
-        _global_labels = labels
-        _stop_requested = False
-        
-        # Crea learner con batch size personalizzato e avvia nLearn in thread
-        # Passa le labels per bloccare la maschera a 1 per le variabili target
-        _global_acl = AlgebraicClusterLearner(trainDataset, batch_size=max_batch, lr=lr, labels=labels)
-        _global_acl.start_nLearn_thread()
-        
-        return dash.no_update, test.to_dict(), f"🟢 Apprendimento avviato (batch={max_batch}, lr={lr})", False, False
-        
-    except Exception as e:
-        print(f"[ERROR] update_model: {e}")
-        import traceback
-        traceback.print_exc()
-        return dash.no_update, dash.no_update, f"❌ Errore: {str(e)}", True, True
+        normalized, minmax = GraphClusterModel.normalizeData(GraphClusterModel.full_dummies(train))
+        learner = AlgebraicClusterLearner(normalized, batch_size=max_batch or 300,
+                                          lr=lr or 0.1, labels=labels or [])
+        training_jobs.start(session['acan_session'], learner, minmax, labels or [])
+        return dash.no_update, test.to_dict(), "🟢 Apprendimento avviato", False, False
+    except Exception as exc:
+        return dash.no_update, dash.no_update, f"❌ {exc}", True, True
 
 @app.callback([Output('model-store', 'data', allow_duplicate=True),
             Output('org-chart', 'elements', allow_duplicate=True),
@@ -971,58 +981,26 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr):
             Input('learning-monitor', 'n_intervals'),
             prevent_initial_call=True)
 def monitor_learning(n_intervals):
-    global _global_acl, _global_minMax, _global_labels, _stop_requested
-    
-    if _global_acl is None:
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
-    
-    # Controlla se nLearn è ancora in esecuzione
-    is_running = _global_acl.is_nLearn_running()
-    
-    # Ottieni stato corrente
-    state = _global_acl.get_current_state()
-    status_text = f"🟡 Iterazione: {state['iteration']} | Clusters: {state['clusters']} | CP: {state['cp']:.4f}"
-    
-    if _stop_requested and is_running:
-        status_text += " | ⏹️ Stop richiesto..."
-    
-    # Crea grafo dal modello corrente
-    try:
-        current_model = _global_acl.get_current_model()
-        if current_model is not None:
-            
-            gcm = GraphClusterModel()
-            gcm.minMax = _global_minMax
-            gcm.labels = _global_labels
-            gcm.rootId = 0
-            gcm.clusterModel = {0: current_model}
-            gcm.clusterModel[0].id = 0
-            
-            # Mostra le foglie solo quando K < 100 (altrimenti solo radice)
-            k_clusters = state['clusters']
-            show_leaves = k_clusters < 100
-            
-            els = to_elements(gcm, show_leaves=show_leaves)
-            elements = list(els.values())
-            model_json = gcm.to_json()
-        else:
-            elements = dash.no_update
-            model_json = dash.no_update
-    except Exception as e:
-        print(f"[ERROR] monitor_learning: {e}")
-        elements = dash.no_update
-        model_json = dash.no_update
-    
-    # Se nLearn è finito, disabilita il monitoraggio e triggera evaluation
-    if not is_running:
-        import random
-        trigger_value = random.random()  # Valore casuale per forzare il trigger
-        # Quando finisce, disabilitiamo sia il bottone stop che l'interval
-        return model_json, elements, status_text + " | ✅ Completato!", True, True, trigger_value
-    
-    # Durante il learning: il bottone stop rimane ABILITATO (no update)
-    # così non scompare/flashing
-    return model_json, elements, status_text, dash.no_update, dash.no_update, dash.no_update
+    job = training_jobs.get(session['acan_session'])
+    if job is None:
+        return dash.no_update, dash.no_update, 'Nessun training attivo.', True, True, dash.no_update
+    learner = job['learner']
+    if not job['done'].is_set():
+        # Do not run forward_pass/setModel on parameters being updated by training.
+        return (dash.no_update, dash.no_update,
+                f"🟡 Iterazione: {learner.iteration}", False, False, dash.no_update)
+    if job['error']:
+        return dash.no_update, dash.no_update, f"❌ {job['error']}", True, True, dash.no_update
+    gcm = GraphClusterModel()
+    gcm.minMax = job['minmax']
+    gcm.labels = job['labels']
+    gcm.rootId = 0
+    gcm.clusterModel = {0: learner.model}
+    learner.model.id = 0
+    elements = list(to_elements(gcm, show_leaves=learner.k_active < 100).values())
+    return (gcm.to_json(), elements,
+            f"✅ Completato: {learner.k_active} gruppi | CP: {learner.cp:.4f}",
+            True, True, secrets.randbits(32))
 
 
 @app.callback([Output('learning-monitor', 'disabled', allow_duplicate=True),
@@ -1031,82 +1009,86 @@ def monitor_learning(n_intervals):
               Input('btn-stop-learn', 'n_clicks'),
               prevent_initial_call=True)
 def stop_learning(n_clicks):
-    global _global_acl
-    
-    if n_clicks and n_clicks > 0 and _global_acl is not None:
-        # Chiama il metodo request_stop() sul learner
-        _global_acl.request_stop()
-        
-        return dash.no_update, dash.no_update, "⏹️ Stop richiesto - completamento iterazione in corso..."
-    
+    if n_clicks and training_jobs.stop(session['acan_session']):
+        return dash.no_update, dash.no_update, '⏹️ Stop richiesto...'
     return dash.no_update, dash.no_update, dash.no_update
 
-# ============================================================
-# FINE CALLBACK THREADING
-# ============================================================
-
-# Callback originale disabilitato (sostituito da threading)
-# @app.callback([Output("model-store", "data"), Output('test-store', 'data')], ...
-
-# @app.callback([Output("model-store", "data"), Output('test-store', 'data')],
-#               Input('button-learn', 'n_clicks'),
-#               State('data-store', 'data'),
-#               State('label-store', 'data'),
-#               State('dpdnFilter', 'value'),
-#               State('dpdnCategory', 'value'),
-#               prevent_initial_call=True
-#               )
-# def update_model(n_clicks, data, labels, filters, categories):
-#     df=pd.DataFrame(data)
-#     
-#     
-#     train=df.sample(min(1000, int(len(df)*0.8)))
-#     test = df[df.index.isin(train.index)==False].reset_index()
-#     
-#     train = train.drop(filters, axis=1, errors='ignore')
-#     if len(categories)>0:
-#         train[categories] = train[categories].astype(str)
-#
-#     if n_clicks and len(train)>0:
-#         root=AlgebraicClusterLearner.learn(train, labels=labels)
-#         return root.to_json(),test.to_dict()
-
-
-
-
-
-
-
-
-# Callback per caricare un modello JSON
+# Restore target controls with the saved model, even before a dataset is uploaded.
 @app.callback(
-    Output("model-store", "data", allow_duplicate=True),
-    Input('upload-model', 'contents'),
-    State('upload-model', 'filename'),
-    prevent_initial_call=True
-)
+    Output('model-store', 'data', allow_duplicate=True),
+    Output('dpdnLabel', 'options', allow_duplicate=True),
+    Output('dpdnLabel', 'value', allow_duplicate=True),
+    Output('learning-status', 'children', allow_duplicate=True),
+    Input('upload-model', 'contents'), State('upload-model', 'filename'),
+    prevent_initial_call=True)
 def load_model_json(contents, filename):
-    if contents is not None and filename is not None and filename.endswith('.json'):
-        try:
-            content_type, content_string = contents.split(',')
-            decoded = base64.b64decode(content_string)
-            json_str = decoded.decode('utf-8')
+    if not contents:
+        return (dash.no_update,) * 4
+    try:
+        active = training_jobs.get(session['acan_session'])
+        if active and not active['done'].is_set():
+            raise ValueError('Attendere la fine del training prima di caricare un modello.')
+        if not filename or not filename.lower().endswith('.json'):
+            raise ValueError('Selezionare un modello JSON.')
+        model_json = base64.b64decode(contents.split(',', 1)[1]).decode('utf-8')
+        model = GraphClusterModel.loadModel(model_json)
+        if model.rootId not in model.clusterModel:
+            raise ValueError('Il modello non contiene un nodo radice valido.')
+        options = [{'label': label, 'value': label} for label in model.labels]
+        return model_json, options, model.labels, '✅ Modello caricato: pronto per Inference.'
+    except Exception as exc:
+        return dash.no_update, dash.no_update, dash.no_update, f'❌ Modello non valido: {exc}'
 
-            # Carica il modello usando GraphClusterModel.loadModel
-            gcm = GraphClusterModel.loadModel(json_str)
 
-            # Salva il modello nel store
-            return json_str
-        except Exception as e:
-            print(f"Errore nel caricamento del modello: {e}")
-            return None
-    return None
+@app.callback(Output('inference-input', 'data'), Output('inference-upload-status', 'children'),
+              Input('inference-upload', 'contents'), State('inference-upload', 'filename'),
+              prevent_initial_call=True)
+def upload_inference(contents, filename):
+    try:
+        if not filename or not filename.lower().endswith('.csv'):
+            raise ValueError('Selezionare un CSV UTF-8.')
+        text = base64.b64decode(contents.split(',', 1)[1]).decode('utf-8-sig')
+        data = pd.read_csv(io.StringIO(text))
+        if data.empty:
+            raise ValueError('Il CSV non contiene righe.')
+        return text, f'{len(data)} righe caricate: {filename}'
+    except Exception as exc:
+        return None, f'❌ {exc}'
+
+
+@app.callback(Output('inference-result', 'data'), Output('inference-table', 'children'),
+              Output('inference-status', 'children'), Output('inference-export', 'disabled'),
+              Input('inference-run', 'n_clicks'), Input('model-store', 'data'),
+              Input('inference-input', 'data'), Input('inference-mode', 'value'),
+              prevent_initial_call=True)
+def run_inference(n_clicks, model_json, csv_text, mode):
+    if dash.ctx.triggered_id != 'inference-run':
+        return None, [], 'Pronto: premere Esegui inferenza.', True
+    try:
+        if not csv_text:
+            raise ValueError('Caricare prima un CSV nella scheda Inference.')
+        result = infer(model_json, pd.read_csv(io.StringIO(csv_text)), mode)
+        table = dbc.Table.from_dataframe(result.head(100).fillna(''), striped=True, bordered=True)
+        return (result.to_csv(index=False), table,
+                f'✅ Inferenza completata: {len(result)} righe. Anteprima delle prime 100.', False)
+    except Exception as exc:
+        return None, [], f'❌ {exc}', True
+
+
+@app.callback(Output('inference-download', 'data'), Input('inference-export', 'n_clicks'),
+              State('inference-result', 'data'), prevent_initial_call=True)
+def export_inference(n_clicks, csv_text):
+    if not csv_text:
+        return dash.no_update
+    return dict(content=csv_text, filename='acan_predictions.csv')
 
 
 @app.callback(Output('org-chart', 'elements'),
               Input("model-store", "data"),
               prevent_initial_call=True)
 def update_graph(model):
+    if not model:
+        return []
     gcm=GraphClusterModel.loadModel(model)
     els=to_elements(gcm)
     if model:

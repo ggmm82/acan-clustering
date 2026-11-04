@@ -328,6 +328,16 @@ class GraphClusterModel:
         root = self.clusterModel[self.rootId]
         completed_df = incomplete_df.copy()
 
+        # A CSV column containing only blanks is normally inferred as float64.
+        # Convert according to the trained schema before inserting predictions.
+        for col in completed_df.columns:
+            targets = root.fullLabels([col])
+            if completed_df[col].isna().any() and targets:
+                if targets != [col]:
+                    completed_df[col] = completed_df[col].astype(object)
+                else:
+                    completed_df[col] = completed_df[col].astype(float)
+
         for idx, row in incomplete_df.iterrows():
             missing_cols = [c for c in incomplete_df.columns if pd.isna(row[c])]
             if not missing_cols:
@@ -352,7 +362,7 @@ class GraphClusterModel:
                 if len(m_dummies) == 1 and m_dummies[0] == mcol:
                     vmin, vmax = self.minMax.get(mcol, (0.0, 1.0))
                     completed_df.loc[idx, mcol] = inferred_series[mcol] * (vmax - vmin) + vmin
-                elif len(m_dummies) > 1:
+                elif m_dummies:
                     best_cat_col = inferred_series[m_dummies].idxmax()
                     cat_val = best_cat_col[len(str(mcol)) + 1 :]
                     completed_df.loc[idx, mcol] = cat_val
