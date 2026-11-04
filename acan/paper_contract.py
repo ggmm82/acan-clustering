@@ -21,5 +21,5 @@ GAPS = [
     {'id': 'published-percentages', 'status': 'unverified',
      'detail': 'Selected contract fixtures are regressions, not certification of every published percentage, dataset size or baseline. See docs/PAPER-AUDIT.md.'},
     {'id': 'modalities', 'status': 'out-of-scope',
-     'detail': 'No LLM, audio, video or multimodal training is demonstrated by the paper. The character language model is a separately evaluated extension.'},
+     'detail': 'No LLM, audio, video or multimodal training is demonstrated by the paper. No additional language/audio/video model is supplied by this audit.'},
 ]

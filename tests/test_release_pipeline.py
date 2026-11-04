@@ -201,8 +201,8 @@ def seal(directory, image, metadata):
     with zipfile.ZipFile(directory / 'paper-benchmarks.zip', 'w') as archive:
         archive.writestr('fixture.txt', 'Unit-test fixture, not an executed benchmark.')
     (directory / 'paper-audit.json').write_text(json.dumps(dict(
-        contract_version=1, status='passed', conformance='partial', full_paper_conformance=False,
+        contract_version=2, status='passed', conformance='partial', full_paper_conformance=False,
         tree=metadata['tree'], commit=metadata['source_commit'], run_id=metadata['run_id'], source_clean=True,
-        torch_verified=True, tests_run=13, failures=0, errors=0, skipped=0,
+        torch_verified=True, tests_run=8, failures=0, errors=0, skipped=0,
         benchmarks=dict(status='passed', archive_sha256=hashlib.sha256((directory / 'paper-benchmarks.zip').read_bytes()).hexdigest()))))
     return pipeline.seal(directory, image, metadata)

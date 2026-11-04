@@ -41,8 +41,6 @@ tabs can train on different datasets independently.
    ```
 
 Open the HTTPS URL and use Data → Model → Inference.
-The **Laboratory** tab trains the local CPU character prototype and keeps its
-corpus/model separate for every page. It has its own bounded background job pool.
 The image healthcheck calls the internal `/healthz` endpoint. The browser session
 cookie is marked Secure in this deployment, so use HTTPS.
 

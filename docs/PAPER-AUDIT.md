@@ -17,7 +17,6 @@ paper invalidates the audit gate until its claim mapping is reviewed explicitly.
 | Dual backend | NumPy and PyTorch CPU forward values and gradients agree for identical parameters, in float64. |
 | Runtime completion | Arbitrary-column missing-value completion, JSON round trip and rule extraction. |
 | Behavioral fixtures | Compression/classification, XOR and irrelevant-attribute fixtures, masked completion. |
-| Language extension | Causal context, normalized token distributions, finite-difference gradients, held-out metrics and seeded generation round trip. |
 
 The former NumPy backward pass omitted derivatives through metric relevance
 normalization and weighted distances, used a different dot-product scaling, and
@@ -39,7 +38,7 @@ equivalence, identical native random initialization, or universal convergence.
 | Global convergence and asymptotic theorems | Early stopping bounds iterations. Adam usage and finite tests do not prove global convergence or the stated noise/collapse theorems. Independent mathematical review is required. |
 | Real UCI benchmark interpretation | The historical script synthesizes Iris/Zoo/Wine/Wisconsin-like data. Those experiments are not real UCI dataset evaluations. New output labels and provenance state this explicitly. |
 | Full published percentage reproduction | Selected synthetic checks pass, but dataset sizes/noise grids and baseline preprocessing differ from the prose in places. This is not an independent reproduction of every table. |
-| LLM/audio/video/multimodal capability | Neither the paper's experiments nor the tabular code demonstrate it. The new character LM is an experimental extension with its own loss and evaluation. |
+| LLM/audio/video/multimodal capability | Neither the paper's experiments nor the tabular code demonstrate it. This audit does not add an alternative generative architecture. |
 
 `acan/paper_contract.py` contains the machine-readable version of these findings.
 No theorem or published table was rewritten to make a test green.
@@ -82,10 +81,10 @@ Every PR, main verification and manually requested stable release must pass:
    99% on clean/noisy XOR and irrelevant-attribute fixtures; masked completion
    within two percentage points of the audited synthetic values. Other tables
    must be complete and finite and are reported without fabricated guarantees.
-4. Tests against the installed Docker image and HTTP tabular/language workflows.
+4. Tests against the installed Docker image and HTTP tabular workflows.
 
 `paper-audit.json` records the paper hash, source tree, run ID, clean checkout,
-versions, test outcomes, language measurements and known gaps.
+versions, test outcomes and known gaps.
 `paper-benchmarks.zip` contains the freshly generated CSVs and their provenance.
 Both are attached to preview/stable releases. The sealed runtime rejects missing,
 failed, skipped, dirty, mismatched or modified audit evidence. Reusing a verified
@@ -103,3 +102,10 @@ Run the first command in an environment with CPU PyTorch installed; the official
 CPU wheel index is `https://download.pytorch.org/whl/cpu`. CI currently verifies
 PyTorch 2.15.0. Docker stays a CPU NumPy distribution and does not bundle Torch.
 Local dirty-tree checks can help development but cannot seal a deployment.
+
+## Scope correction
+
+The proposed character language model and its cross-entropy objective were
+withdrawn: they were an additional architecture, not the tabular model described
+by the manuscript. This branch retains audit/numerical fixes only. GUI work must
+call the existing ACAN APIs and must not introduce a different model or objective.
