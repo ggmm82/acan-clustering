@@ -86,6 +86,18 @@ class TestUICallbacks(unittest.TestCase):
         with other.session_transaction() as second:
             self.assertNotEqual(first_id, second['acan_session'])
 
+    def test_model_change_never_starts_benchmark(self):
+        from unittest.mock import patch
+        from acan.vis.render import benchmark_jobs
+        with patch.object(benchmark_jobs, 'start') as start:
+            result = self.invoke('..benchmark-status.children', [
+                ('benchmark-run', 'n_clicks', 0), ('benchmark-stop', 'n_clicks', 0),
+                ('model-store', 'data', self.model)], [('tab-session', 'data', self.tab_id)],
+                changed='model-store.data')
+        start.assert_not_called()
+        self.assertTrue(result['benchmark-monitor']['disabled'])
+        self.assertIsNone(result['benchmark-report']['data'])
+
     def test_same_browser_tabs_do_not_share_training_or_stop(self):
         from acan.vis.render import training_jobs
         second_tab = find_tab(self.client.get('/_dash-layout').get_json())

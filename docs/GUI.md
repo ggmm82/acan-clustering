@@ -1,44 +1,59 @@
-# Native ACAN concept workspace
+# Dataset benchmarks and on-demand concept discovery
 
-The GUI invokes the existing `AlgebraicClusterLearner` APIs without adding a new
-objective, routing rule or generative architecture. This exposes the current
-implementation; correspondence to the paper remains **partial**, as described in
-[PAPER-AUDIT.md](PAPER-AUDIT.md).
+The UI uses the dataset uploaded once in **Data**. No separate CSV is requested
+for evaluation. It exposes native ACAN APIs without changing its objective or
+routing. Paper correspondence remains partial; see [PAPER-AUDIT.md](PAPER-AUDIT.md).
 
-## Workflow
+1. In Model, select targets (clear for unsupervised discovery) and click
+   **Scopri concetti**. The default initial depth is one. Parameters are collapsed
+   under **Impostazioni avanzate**. Numeric class codes should be marked as
+   categorical there; numeric targets otherwise use regression metrics.
+2. Double-click a group to learn one child node on its training samples. The
+   model retains one original root; the full graph connects the new groups
+   directly below their parent group without rendering an intermediate root.
+   A button provides an accessible alternative to double-clicking. Global
+   normalization and the parent parameters are retained; only this new node is
+   trained with native `gLearn(max_depth=1)`. Existing descendants are retained.
+3. Evaluation automatically recomputes ACAN metrics and the before/after delta
+   on the identical 20% validation holdout (seed 42). Select a branch and use
+   **Rimuovi approfondimento selezionato** to delete it and its descendants.
+   Removing a terminal child group removes its level. The global root cannot
+   be deleted. Predictions and evaluation update after deletion.
+4. **Confronta con gli altri modelli** explicitly starts the benchmark. It never
+   starts when training finishes or a graph is clicked. It fits majority/mean,
+   KNN, CART, Random Forest, Extra Trees, HistGradientBoosting, XGBoost CPU and
+   CatBoost on the same training rows and evaluates the same holdout targets.
+   It runs in a cancellable, low-priority owned process, one thread per model;
+   at most one benchmark runs on the server, with a 15-minute limit. Sessions
+   retain separate datasets/results. Stop terminates only the requesting page's
+   benchmark. Model changes clear stale benchmark rankings.
+5. Classification reports accuracy, balanced accuracy, F1 macro and confusion
+   matrices. Regression reports MAE, RMSE, R² and actual/predicted plots per
+   target in original units. Models use fixed CPU budgets, not hyperparameter
+   tuning: k≤5, CART depth≤5, forests 200 trees, boosting 100 iterations; boosting
+   trees have depth 6 where configured. No best-in-class claim is implied.
+   Imputation, one-hot schema and scales are fitted on training rows only for
+   baselines. Failed estimators are reported, never silently replaced.
+6. Without targets, Evaluation measures root-only masked completion on up to
+   100 validation rows, seed 42, at least one known cell per row. Adding children
+   cannot change root-only completion. Supervised comparisons require a target.
+7. The concept laboratory exposes relevance matrices and native `extractRules`.
+   Model, predictions, metrics, protocol/library versions and rules can be saved.
+   Prediction paths use native `predictDataset`; confidence is not calibrated.
 
-1. Upload Data. Choose categorical columns, excluded columns and target Labels in
-   Model; clear Labels for unsupervised discovery.
-2. Configure maximum depth, root epochs, learning rate, tau, alpha, minimum split
-   samples and supervised purity threshold. Depth 1 uses `nLearn`; greater depths
-   use recursive `gLearn`. The latter keeps its native batch of 300. A depth limit
-   does not force splitting: purity, variance and sample criteria decide it.
-   Child epochs follow native `max(40, parent_epochs // 2)` semantics.
-3. Explore the full graph or just the concept hierarchy. All node IDs and child
-   links survive download/reload. Select nodes, groups or child links for details.
-   Choose a tree, force or concentric layout.
-4. Open the concept laboratory. Choose any node to inspect its relevance matrix,
-   native centroid rules and support counts. Export all rules as JSON. Relevance
-   and dispersion are model statistics, not calibrated probabilities of accuracy.
-5. Evaluation uses the held-out 20%, reports accuracy independently per categorical
-   target, and MAE/RMSE in original units independently per numeric target.
-6. Prediction calls native `predictDataset`, follows child nodes and exports
-   `ACAN_path` plus mean native target confidence (`ACAN_confidence`, not calibrated).
-   Masked completion calls the existing root-only `predict_masked`; it does not
-   claim recursive completion or text/audio/video generation.
+The holdout becomes a validation set when used to select branches; its reused
+scores are not an independent estimate of generalization. CP is a training
+objective, not accuracy. Timing tables distinguish previously trained ACAN
+inference from newly fitted baseline training; a missing duration is not zero.
 
-Training runs in one owned subprocess per page job. Stop terminates that job and
-preserves the previous model. The existing signed cookie plus random page token
-isolates browsers and tabs without authentication. A job is limited to 15 minutes;
-interactive inputs are limited to 10,000 training rows, 1,000 encoded attributes
-and 2 million encoded cells. No durable jobs or multi-worker registry is added.
-Native core validation/preprocessing rules still apply; this is a research GUI.
+Browser cookies plus random page tokens isolate jobs without authentication.
+Data stay in memory; reloading starts a new page. A saved model JSON contains
+no training records, so resuming training-data benchmarks/refinement requires
+training in the current page. Existing interactive input/time limits still apply.
 
-## Regression gates
-
-`tests/test_hierarchy_ui.py` trains an actual multilevel native model, checks JSON
-round trips, every rendered edge endpoint in both views, child-edge inspection,
-hierarchical predictions and cancellation of the isolated worker. These tests run
-in the existing PR/Python and installed Docker suites. `scripts/smoke.py` exercises
-HTTP training, reload, prediction and completion. The paper hash, numerical audit,
-CPU backend parity and synthetic benchmark receipts remain mandatory release gates.
+`test_evaluation_refinement.py` checks real modern classifiers and regressors,
+training-only transforms, identical comparison rows, root preservation, branch
+undo and masked scoring. Hierarchy/session tests and Docker HTTP smoke checks
+remain part of CI, along with the frozen paper/PDF audit and synthetic historical
+scientific regression suite. Historical benchmarks are separate CI fixtures,
+not replacement datasets for the user's benchmark.

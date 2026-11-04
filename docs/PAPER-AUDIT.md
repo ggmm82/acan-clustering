@@ -3,7 +3,9 @@
 **Result: partial conformance, not a certification of the whole paper.**
 The reviewed source is `paper/Algebraic_Concept_Attention_Paper.tex`, SHA-256
 `314e7cb016b4de2c986b591f2e601ac4e844ee836ff2db621a74efe180320671`.
-The paper and archived results/figures are preserved unchanged. An edit to the
+The supplied PDF `paper/Algebraic_Concept_Attention_Scientific_Paper.pdf` is also frozen
+(SHA-256 `1fdd1a5f6e235d291c29364cae2dd1bd138df74db42256bb9ec36dd528f40396`).
+The existing TeX and archived results/figures are preserved unchanged. An edit to the
 paper invalidates the audit gate until its claim mapping is reviewed explicitly.
 
 ## Verified software contracts

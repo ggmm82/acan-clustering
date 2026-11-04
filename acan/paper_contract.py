@@ -1,5 +1,6 @@
 """Reviewed paper/code correspondence. A passing software audit is not a theorem proof."""
 PAPER_SHA256 = '314e7cb016b4de2c986b591f2e601ac4e844ee836ff2db621a74efe180320671'
+PDF_SHA256 = '1fdd1a5f6e235d291c29364cae2dd1bd138df74db42256bb9ec36dd528f40396'
 CONFORMANCE = 'partial'
 GAPS = [
     {'id': 'backend-initialization', 'status': 'qualified',
