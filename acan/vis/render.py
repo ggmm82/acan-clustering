@@ -4,6 +4,7 @@ import re
 from flask import session
 from acan.vis.jobs import TrainingJobs
 from acan.vis.inference import infer
+from acan.vis.laboratory import layout as lab_layout, register as register_lab
 
 import dash  # pip install dash
 import dash_cytoscape as cyto  # pip install dash-cytoscape==0.2.0 or higher
@@ -663,7 +664,7 @@ inference_layout = dbc.Container([
 _page_layout = dbc.Container([
     html.H1('Simple Data Mining', style={'textAlign': 'center'}),
     dcc.Tabs(id='tabs', value='Data', children=[
-        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference']
+        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Laboratory']
     ]),
     # Keep the graph mounted when switching tabs: destroying Cytoscape while
     # asynchronous layout/resize callbacks are pending causes browser errors.
@@ -671,6 +672,7 @@ _page_layout = dbc.Container([
     html.Div([model_layout, dcc.Store(id='test-store')], id='page-model', style={'display': 'none'}),
     html.Div([evaluation_layout, dcc.Store(id='eval-store')], id='page-evaluation', style={'display': 'none'}),
     html.Div(inference_layout, id='page-inference', style={'display': 'none'}),
+    html.Div(lab_layout, id='page-laboratory', style={'display': 'none'}),
 ], fluid=True)
 
 
@@ -689,12 +691,15 @@ def tab_job_key(tab_id):
 
 
 @app.callback([Output('page-data', 'style'), Output('page-model', 'style'),
-               Output('page-evaluation', 'style'), Output('page-inference', 'style')],
+               Output('page-evaluation', 'style'), Output('page-inference', 'style'),
+               Output('page-laboratory', 'style')],
               Input('tabs', 'value'))
 def show_page(tab):
     return [{'display': 'block' if tab == name else 'none'}
-            for name in ['Data', 'Model', 'Evaluation', 'Inference']]
+            for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Laboratory']]
 
+
+register_lab(app, tab_job_key)
 
 # Callback per pulire i dropdown
 @app.callback(
