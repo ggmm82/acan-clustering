@@ -28,9 +28,11 @@ class TestACANFramework(unittest.TestCase):
         self.assertEqual(res["G"].shape, (n, m))
         self.assertEqual(res["R"].shape, (n, m))
         # Verify competitive slot attention: columns of T sum to 1.0 along dim=0
-        col_sums = np.sum(np.asarray(res["T"]), axis=0)
+        attention = res['T'].detach().cpu().numpy() if hasattr(res['T'], 'detach') else res['T']
+        col_sums = np.sum(np.asarray(attention), axis=0)
         np.testing.assert_allclose(col_sums, np.ones(n), atol=1e-5)
-        self.assertGreater(float(res["cp"]), 0.0)
+        cp = res['cp'].detach().item() if hasattr(res['cp'], 'detach') else float(res['cp'])
+        self.assertGreater(cp, 0.0)
 
     def test_02_concept_compression_and_training(self):
         # Create dataset with 2 distinct behavioral clusters and 4 irrelevant noise columns
