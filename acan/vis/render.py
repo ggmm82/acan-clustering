@@ -38,6 +38,10 @@ app.server.secret_key = os.environ.get('ACAN_SESSION_SECRET') or secrets.token_h
 app.server.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax')
 training_jobs = TrainingJobs()
 
+@app.server.get('/healthz')
+def health():
+    return {'status': 'ok'}
+
 @app.server.before_request
 def ensure_session():
     if 'acan_session' not in session:

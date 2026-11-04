@@ -56,6 +56,9 @@ python -c "from acan.vis.render import app; app.run(debug=False, port=4000)"
 
 ## Contents
 
+For Docker deployment and the PR → CI → prerelease → stable release process,
+see [Controlled Docker releases](docs/RELEASING.md) and [Contributing](CONTRIBUTING.md).
+
 - `acan/`: library source
 - `tests/`: unit tests
 - `benchmarks/`: experimental benchmark script

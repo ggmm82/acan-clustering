@@ -1,0 +1,15 @@
+services:
+  acan:
+    image: ${ACAN_IMAGE:-acan-clustering:local}
+    build: .
+    ports:
+      - "127.0.0.1:4000:4000"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
