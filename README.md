@@ -192,7 +192,7 @@ priorità, un solo thread per modello, un benchmark alla volta sul server,
 arresto disponibile e limite di 15 minuti. Le foreste usano 200 alberi e i
 boosting 100 iterazioni: budget fissi, senza tuning automatico.
 
-Evaluation usa **il CSV dell'utente**: holdout 20% con seed 42, ricavato automaticamente dai dati già caricati
+Evaluation usa **il dataset dell'utente (anche Excel)**: holdout 20% con seed 42, stratificato quando possibile, ricavato automaticamente dai dati già caricati
 in Dati, senza altri CSV. Confronta ACAN con maggioranza/media del training, KNN, CART, Random Forest, Extra Trees,
 HistGradientBoosting, XGBoost e CatBoost, usando
 le stesse righe osservate per ogni target. Imputazione, schema categorico e scale
@@ -201,12 +201,34 @@ accuracy, balanced accuracy, F1 macro e matrice di confusione; per regressione M
 reale/predetto. Per modelli senza target nasconde celle note del proprio holdout
 (seed 42, massimo 100 righe) e misura la ricostruzione sulle sole celle nascoste.
 
+I nuovi modelli GUI conservano nel JSON lo schema delle categorie e l’imputazione
+appresi sul training, usati anche in inferenza. Il target suggerito e le esclusioni
+delle colonne restano modificabili; la modalità classificazione/regressione può
+essere scelta nelle impostazioni avanzate. Verifica misurata sui cinque dataset
+forniti: [risultati e limiti](docs/DATASET-EVALUATION.md).
+
 Dopo aver scelto i rami guardando l'holdout, esso è **validazione**, non un test
 indipendente. Il confronto dei rami è uno strumento di selezione, non una
 certificazione della generalizzazione. I benchmark
 sintetici storici restano controlli scientifici della CI e non sostituiscono la
 valutazione sui propri dati; le percentuali del paper non sono risultati attesi
 per un dataset diverso.
+
+## Generative workbench (PR #5)
+
+The **Generative** tab supports the newly supplied ACAN-LM paper through a
+separate persistent worker: pretrained SmolLM2 upper-half attention grafting,
+LoRA/WSD continued pre-training, streamed text corpora, explicit start,
+checkpointed pause/resume and generation from saved snapshots. The original
+package had future-token leakage; the user-authorized PyTorch prefix-causal
+correction is documented and tested, with the reference source preserved.
+
+See [Generative operation and persistence](docs/GENERATIVE.md) and the
+[LM paper/package audit](docs/LM-AUDIT.md). Remaining dense layers retain their
+KV cache: 98% whole-model compression and unchanged language quality are not
+assumed. The regular web image needs a configured LM worker; it does not launch
+training or download weights merely by opening the tab. A sudden interruption
+can lose steps since the latest complete checkpoint, not earlier saved learning.
 
 ## License
 

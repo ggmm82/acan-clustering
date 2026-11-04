@@ -17,7 +17,7 @@ IMAGE = f'ghcr.io/{REPO}@sha256:' + '1' * 64
 
 
 def identity():
-    return dict(schema=3, repository=REPO, workflow=pipeline.WORKFLOW,
+    return dict(schema=4, repository=REPO, workflow=pipeline.WORKFLOW,
                 event='pull_request', source_commit=COMMIT, tree=TREE,
                 head_sha='c' * 40, head_repository=REPO, pull_request=1,
                 run_id=23, run_attempt=1)
@@ -47,6 +47,24 @@ class TestReleasePipeline(unittest.TestCase):
             value = json.loads(manifest.read_text())
             value['compose_sha256'] = hashlib.sha256(compose.read_bytes()).hexdigest()
             manifest.write_text(json.dumps(value))
+            with self.assertRaises(ValueError):
+                pipeline.validate(directory, REPO)
+
+    def test_hostinger_generative_stack_contains_both_pinned_services(self):
+        worker = f'ghcr.io/{REPO}-generative@sha256:' + '2'*64
+        content = pipeline.generative_compose(IMAGE, worker)
+        self.assertIn('    image: '+IMAGE, content)
+        self.assertIn('    image: '+worker, content)
+        self.assertNotIn('profiles:', content)
+        self.assertNotIn('__ACAN_', content)
+        self.assertNotIn('\u00a0', content)
+        self.assertEqual(content.count('${ACAN_LM_SERVICE_TOKEN:?Set a private service token}'), 2)
+        self.assertIn('      - acan-lm-data:/data', content)
+        with tempfile.TemporaryDirectory() as directory:
+            seal(directory, IMAGE, identity())
+            target = Path(directory) / 'compose.generative.hostinger.yaml'
+            self.assertEqual(target.read_text(), content)
+            target.write_text(content.replace(worker, 'ghcr.io/foreign/worker:latest'))
             with self.assertRaises(ValueError):
                 pipeline.validate(directory, REPO)
 
@@ -205,4 +223,10 @@ def seal(directory, image, metadata):
         tree=metadata['tree'], commit=metadata['source_commit'], run_id=metadata['run_id'], source_clean=True,
         torch_verified=True, tests_run=8, failures=0, errors=0, skipped=0,
         benchmarks=dict(status='passed', archive_sha256=hashlib.sha256((directory / 'paper-benchmarks.zip').read_bytes()).hexdigest()))))
+    (directory / 'lm-audit.json').write_text(json.dumps(dict(status='passed', skipped=0, tests_run=8,
+        profile='acan-lm-causal-prefix-v1', gpu_verified=False, full_paper_conformance=False,
+        pretrained_general_quality_verified=False, tree=metadata['tree'], commit=metadata['source_commit'], run_id=metadata['run_id'])))
+    (directory / 'generative-runtime.json').write_text(json.dumps(dict(image=f'ghcr.io/{REPO}-generative@sha256:'+'2'*64,
+        tree=metadata['tree'], source_commit=metadata['source_commit'], run_id=metadata['run_id'],run_attempt=metadata['run_attempt'],
+        audit_sha256=hashlib.sha256((directory / 'lm-audit.json').read_bytes()).hexdigest())))
     return pipeline.seal(directory, image, metadata)

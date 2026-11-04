@@ -1,0 +1,17 @@
+# Overlay on compose.yaml + compose.generative.yaml on a CUDA training host.
+# Set ACAN_TORCH_INDEX_URL to an official CUDA index providing torch 2.15.0.
+# Build that variant: mounting a GPU into a CPU-only Torch image is insufficient.
+services:
+  generative:
+    image: ${ACAN_LM_GPU_IMAGE:-acan-generative-gpu:local}
+    build:
+      args:
+        TORCH_INDEX_URL: ${ACAN_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu132}
+    mem_limit: ${ACAN_LM_MEMORY:-16g}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

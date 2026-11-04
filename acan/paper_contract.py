@@ -22,5 +22,5 @@ GAPS = [
     {'id': 'published-percentages', 'status': 'unverified',
      'detail': 'Selected contract fixtures are regressions, not certification of every published percentage, dataset size or baseline. See docs/PAPER-AUDIT.md.'},
     {'id': 'modalities', 'status': 'out-of-scope',
-     'detail': 'No LLM, audio, video or multimodal training is demonstrated by the paper. No additional language/audio/video model is supplied by this audit.'},
+     'detail': 'No LLM, audio, video or multimodal training is demonstrated by the paper. The separate newly supplied LM paper has an explicitly corrected causal PyTorch port and its own audit; this does not certify that paper’s generalization claims.'},
 ]

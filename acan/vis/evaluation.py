@@ -41,8 +41,8 @@ def evaluate(model_json, test, train=None, before_json=None, baselines=True):
     if absent:
         raise ValueError(f'Target assenti dal CSV: {sorted(absent)}')
     prepared = test.copy()
-    if train is not None:
-        # Native inference otherwise imputes a batch's own missing features.
+    if train is not None and not graph.preprocessing:
+        # Legacy native inference otherwise imputes a batch's own missing features.
         # Fit this UI preprocessing only on training observations instead.
         for col in train.columns:
             if col in graph.labels or col not in prepared:

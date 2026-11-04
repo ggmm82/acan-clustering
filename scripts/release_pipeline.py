@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 
 WORKFLOW = '.github/workflows/ci.yml'
-ASSETS = ('runtime-manifest.json', 'compose.release.yaml', 'compose.hostinger.yaml', 'paper-audit.json', 'paper-benchmarks.zip')
+ASSETS = ('runtime-manifest.json', 'compose.release.yaml', 'compose.hostinger.yaml', 'paper-audit.json', 'paper-benchmarks.zip', 'generative-runtime.json', 'lm-audit.json', 'compose.generative.hostinger.yaml')
 
 
 def run(*args):
@@ -42,10 +42,15 @@ def hostinger_compose(image):
     return template.read_text().replace('__ACAN_IMAGE__', image)
 
 
+def generative_compose(web_image, worker_image):
+    template = Path(__file__).resolve().parents[1] / 'config/compose.generative.hostinger.template.yaml'
+    return template.read_text().replace('__ACAN_IMAGE__', web_image).replace('__ACAN_LM_IMAGE__', worker_image)
+
+
 def validate(directory, repo, tree=None):
     directory = Path(directory)
     value = json.loads((directory / 'runtime-manifest.json').read_text())
-    if (value.get('schema') != 3 or value.get('repository') != repo
+    if (value.get('schema') != 4 or value.get('repository') != repo
             or value.get('workflow') != WORKFLOW or value.get('verified') is not True
             or value.get('head_repository') != repo
             or value.get('event') not in ('pull_request', 'push', 'workflow_dispatch')):
@@ -85,6 +90,24 @@ def validate(directory, repo, tree=None):
             or audit.get('tests_run', 0) < 8 or any(audit.get(k) != 0 for k in ('failures', 'errors', 'skipped'))
             or audit.get('conformance') != 'partial' or audit.get('full_paper_conformance') is not False):
         raise ValueError('Paper audit is missing, failed, skipped, dirty or from another source/run')
+    for filename in ('generative-runtime.json', 'lm-audit.json', 'compose.generative.hostinger.yaml'):
+        if hashlib.sha256((directory / filename).read_bytes()).hexdigest() != value.get('generative_sha256', {}).get(filename):
+            raise ValueError('Generative deployment evidence checksum mismatch')
+    generative = json.loads((directory / 'generative-runtime.json').read_text())
+    lm_audit = json.loads((directory / 'lm-audit.json').read_text())
+    worker_prefix = 'ghcr.io/' + repo.lower() + '-generative@sha256:'
+    if (not re.fullmatch(re.escape(worker_prefix) + r'[0-9a-f]{64}', generative.get('image', ''))
+            or generative.get('image') != value.get('generative_image')
+            or any(generative.get(k) != value[k] for k in ('tree', 'source_commit', 'run_id', 'run_attempt'))
+            or generative.get('audit_sha256') != hashlib.sha256((directory / 'lm-audit.json').read_bytes()).hexdigest()
+            or lm_audit.get('status') != 'passed' or lm_audit.get('skipped') != 0 or lm_audit.get('tests_run',0) < 8
+            or lm_audit.get('profile') != 'acan-lm-causal-prefix-v1'
+            or lm_audit.get('gpu_verified') is not False or lm_audit.get('full_paper_conformance') is not False
+            or lm_audit.get('pretrained_general_quality_verified') is not False
+            or lm_audit.get('tree') != value['tree'] or lm_audit.get('commit') != value['source_commit']
+            or lm_audit.get('run_id') != value['run_id']
+            or (directory / 'compose.generative.hostinger.yaml').read_text() != generative_compose(value['image'], generative['image'])):
+        raise ValueError('Generative worker or LM audit is missing, incompatible, stale or altered')
     benchmark = audit.get('benchmarks', {})
     if (benchmark.get('status') != 'passed' or
             hashlib.sha256((directory / 'paper-benchmarks.zip').read_bytes()).hexdigest() != benchmark.get('archive_sha256')):
@@ -96,7 +119,7 @@ def metadata():
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
     pr = event.get('pull_request')
     commit = run('git', 'rev-parse', 'HEAD')
-    return dict(schema=3, repository=os.environ['GITHUB_REPOSITORY'], workflow=WORKFLOW,
+    return dict(schema=4, repository=os.environ['GITHUB_REPOSITORY'], workflow=WORKFLOW,
                 event=os.environ['GITHUB_EVENT_NAME'], source_commit=commit,
                 tree=run('git', 'rev-parse', 'HEAD^{tree}'),
                 head_sha=pr['head']['sha'] if pr else commit,
@@ -110,9 +133,13 @@ def seal(directory, image, identity):
     directory = Path(directory)
     save(directory / 'compose.release.yaml', compose(image))
     (directory / 'compose.hostinger.yaml').write_text(hostinger_compose(image))
+    generative = json.loads((directory / 'generative-runtime.json').read_text())
+    (directory / 'compose.generative.hostinger.yaml').write_text(generative_compose(image, generative['image']))
     content = (directory / 'compose.release.yaml').read_bytes()
     save(directory / 'runtime-manifest.json', {
-        **identity, 'image': image, 'verified': True,
+        **identity, 'image': image, 'verified': True, 'generative_image': generative['image'],
+        'generative_sha256': {name: hashlib.sha256((directory / name).read_bytes()).hexdigest()
+            for name in ('generative-runtime.json','lm-audit.json','compose.generative.hostinger.yaml')},
         'compose_sha256': hashlib.sha256(content).hexdigest(),
         'hostinger_compose_sha256': hashlib.sha256((directory / 'compose.hostinger.yaml').read_bytes()).hexdigest(),
         'audit_sha256': hashlib.sha256((directory / 'paper-audit.json').read_bytes()).hexdigest(),
@@ -235,8 +262,11 @@ def publish(directory, repo, commit, floor, main):
                 run('gh', 'release', 'download', tag, '--repo', repo, '--dir', published,
                     '--pattern', 'runtime-manifest.json', '--pattern', 'compose.release.yaml',
                     '--pattern', 'compose.hostinger.yaml', '--pattern', 'paper-audit.json',
-                    '--pattern', 'paper-benchmarks.zip')
-                aliases(validate(published, repo, tree)['image'])
+                    '--pattern', 'paper-benchmarks.zip', '--pattern', 'generative-runtime.json',
+                    '--pattern', 'lm-audit.json', '--pattern', 'compose.generative.hostinger.yaml')
+                published_value = validate(published, repo, tree)
+                aliases(published_value['image'])
+                aliases(published_value['generative_image'])
         print('Release already published:', tag)
         return tag
     remote = run('git', 'ls-remote', '--tags', 'origin',
@@ -259,6 +289,7 @@ def publish(directory, repo, commit, floor, main):
     if main:
         # latest is only a convenience alias. Deployments use the sealed digest.
         aliases(value['image'])
+        aliases(value['generative_image'])
     return tag
 
 

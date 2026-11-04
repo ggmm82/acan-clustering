@@ -4,11 +4,13 @@ import json
 import re
 from flask import session
 from acan.vis.jobs import TrainingJobs
+from acan.vis import generative
 from acan.vis.training import NativeTraining, graph_stats
 from acan.vis.evaluation import evaluate
 from acan.vis.benchmark_job import BenchmarkJob, signature as benchmark_signature
 from acan.vis.refinement import root_signature, remove_branch
 from acan.vis.inference import infer
+from acan.vis.datasets import clean_frame, target_and_filters, split_for_training, check_budget
 
 import dash  # pip install dash
 import dash_cytoscape as cyto  # pip install dash-cytoscape==0.2.0 or higher
@@ -509,6 +511,8 @@ model_layout = dbc.Container([
             dbc.Col([dbc.Label('Escludi colonne'), dcc.Dropdown(id='dpdnFilter', value=[], multi=True),
                      dbc.Button('Svuota', id='btn-clear-filter', color='link', size='sm')], md=6),
         ]),
+        dbc.Label('Tipo di previsione del target'),
+        dcc.Dropdown(id='target-task', value='auto', clearable=False, options=[{'label':'Automatico (codici interi fino a 20 classi: classificazione)', 'value':'auto'}, {'label':'Classificazione', 'value':'classification'}, {'label':'Regressione numerica', 'value':'regression'}]),
         dbc.Row([parameter(*args) for args in [
             ('Epoche', 'train-epochs', 100, 1, 1000, 1),
             ('Learning rate', 'input-lr', .08, .001, 1, .01),
@@ -583,7 +587,7 @@ inference_layout = dbc.Container([
 _page_layout = dbc.Container([
     html.Div([html.H1('ACAN · Concept Explorer'), html.P('Dati → concetti → gerarchia → predizione e completamento', className='text-muted')], className='p-4 mb-3 bg-light border rounded'),
     dcc.Tabs(id='tabs', value='Data', children=[
-        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference']
+        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative']
     ]),
     # Keep the graph mounted when switching tabs: destroying Cytoscape while
     # asynchronous layout/resize callbacks are pending causes browser errors.
@@ -591,6 +595,7 @@ _page_layout = dbc.Container([
     html.Div([model_layout, dcc.Store(id='test-store')], id='page-model', style={'display': 'none'}),
     html.Div([evaluation_layout, dcc.Store(id='eval-store')], id='page-evaluation', style={'display': 'none'}),
     html.Div(inference_layout, id='page-inference', style={'display': 'none'}),
+    html.Div(generative.layout, id='page-generative', style={'display': 'none'}),
 ], fluid=True)
 
 
@@ -635,11 +640,11 @@ def tab_job_key(tab_id):
 
 
 @app.callback([Output('page-data', 'style'), Output('page-model', 'style'),
-               Output('page-evaluation', 'style'), Output('page-inference', 'style')],
+               Output('page-evaluation', 'style'), Output('page-inference', 'style'), Output('page-generative', 'style')],
               Input('tabs', 'value'))
 def show_page(tab):
     return [{'display': 'block' if tab == name else 'none'}
-            for name in ['Data', 'Model', 'Evaluation', 'Inference']]
+            for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative']]
 
 
 # Callback per pulire i dropdown
@@ -692,39 +697,12 @@ def set_labels(labels, opts):
     prevent_initial_call=True,
 )
 def update_labels(data, lbs):
-    df=pd.DataFrame(data)
-    if len(df)>0:
-        filters=[]
-        n=len(df)
-        for col in df.columns:
-            unq=len(df[col].unique())
-            if  df[col].dtype == object and (unq==1 or (unq/n)>0.9 or unq>1000):
-                filters.append(col)
-            if  (df[col].dtype == 'int64' or df[col].dtype == 'float64') and df[col].max()-df[col].min()==0:
-                filters.append(col)
-
-        options=[
-            {'label': name, 'value': name}
-            for name in df.columns
-        ]
-        lblList=['class', 'label']
-        
-        labels=[]
-        
-        if len(lbs)>0 and lbs[0] in df.columns:
-            labels.append(lbs[0])
-        else:
-            for col in df.columns:
-                if col.lower() in lblList:
-                    labels.append(col)
-                    break
-        
-        if len(labels)==0:
-            labels.append(list(df.columns)[len(df.columns)-1])
-
-        return options, labels, options, filters
-
-    return [],[], [], []
+    df = clean_frame(pd.DataFrame(data))
+    if df.empty:
+        return [], [], [], []
+    labels, filters = target_and_filters(df, lbs)
+    options = [{'label': name, 'value': name} for name in df.columns]
+    return options, labels, options, filters
 
 
 
@@ -781,16 +759,18 @@ def update_data(contents, filename, last_modified, labels):
                 ndata = {n: mdata[n][0, 0] for n in mdtype.names}
                 df=pd.DataFrame(ndata['data'])
 
-            df.columns = df.columns.map(str)
-
-            df=df.astype({col: str for col, dtype in df.dtypes.items() if dtype=='object'})
-            
-            
-            df = df.sample(min(10000, len(df)), random_state=42)
-            return df.to_dict(), balanced, uplData
+            df = clean_frame(df)
+            original_rows = len(df)
+            if original_rows > 10000:
+                df = df.sample(10000, random_state=42)
+            detected, excluded = target_and_filters(df)
+            message = f'{filename}: {original_rows} righe, {len(df.columns)} colonne. Target suggerito: {", ".join(detected)}. Colonne escluse modificabili: {", ".join(excluded) or "nessuna"}.'
+            if original_rows > 10000:
+                message += ' Campione interattivo di 10.000 righe (seed 42).'
+            return df.to_dict(orient='list'), balanced, html.Div([uplData, dbc.Alert(message, color='info')])
         except Exception as e:
             print(e)
-            return pd.DataFrame().to_dict(), balanced, uplData
+            return pd.DataFrame().to_dict(), balanced, html.Div([uplData, dbc.Alert(f'File non elaborabile: {e}', color='danger')])
 
     
 
@@ -842,8 +822,13 @@ def evaluate_model(model, benchmark_report, tab_id):
         figure.update_yaxes(matches=None)
         summary = table.pivot(index=['Target', 'Modello'], columns='Metrica', values='Valore').reset_index()
         stats = graph_stats(GraphClusterModel.loadModel(model))
+        dataset_info = getattr(context, 'dataset_info', None)
+        if dataset_info:
+            report['dataset'] = dataset_info
         panels = [html.P(f"{source} · {report['rows']} righe · {stats['nodes']} nodi · {stats['groups']} gruppi · {stats['depth']} livelli. Accuracy/F1 in [0,1]; MAE/RMSE nelle unità originali."),
                   dbc.Table.from_dataframe(summary.round(5), striped=True, responsive=True)]
+        if dataset_info:
+            panels.append(html.P(f"Training: {dataset_info['train_rows']} righe; validazione: {dataset_info['validation_rows']}; righe senza target escluse: {dataset_info['excluded_missing_targets']}; split stratificato: {'sì' if dataset_info['stratified'] else 'no'}. Target: {dataset_info['target_types']}."))
         if report.get('comparisons'):
             panels.insert(0, html.Div([html.H5('Beneficio del cambiamento'),
                 dbc.Table.from_dataframe(pd.DataFrame(report['comparisons']).round(5), striped=True, responsive=True),
@@ -897,10 +882,11 @@ def download_prediction(clicks, report):
               State('train-tau', 'value'),
               State('train-alpha', 'value'),
               State('train-purity', 'value'),
+              State('target-task', 'value'),
               State('tab-session', 'data'),
               prevent_initial_call=True
               )
-def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, depth, epochs, min_samples, tau, alpha, purity, tab_id):
+def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, depth, epochs, min_samples, tau, alpha, purity, task, tab_id):
     if not n_clicks:
         return (dash.no_update,) * 5
     if not data:
@@ -910,22 +896,8 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, dep
         existing = training_jobs.get(key)
         if existing and not existing['done'].is_set():
             return dash.no_update, dash.no_update, "Training già in corso.", False, False
-        df = pd.DataFrame(data)
-        if len(df) < 5:
-            raise ValueError('Servono almeno 5 righe per lo split train/test.')
-        df = df.drop(filters or [], axis=1, errors='ignore')
-        if set(labels or []) - set(df.columns):
-            raise ValueError('Un target è stato escluso: rimuovilo dai filtri o cambia target.')
-        if labels and len(set(df.columns) - set(labels)) == 0:
-            raise ValueError('Serve almeno un attributo di ingresso oltre ai target.')
-        if categories:
-            df[categories] = df[categories].astype(str)
-        if labels:
-            df = df.dropna(subset=labels)
-        if len(df) < 5:
-            raise ValueError('Servono almeno 5 righe con tutti i target osservati.')
-        train = df.sample(frac=0.8, random_state=42)
-        test = df.loc[~df.index.isin(train.index)].reset_index(drop=True)
+        train, test, dataset_info = split_for_training(data, labels or [], filters, categories, task)
+        check_budget(train)
         options = dict(max_depth=depth, max_epochs=epochs, min_samples_split=min_samples,
                        tau=tau, alpha=alpha, similarity_threshold=purity, lr=lr,
                        batch_size=max_batch, device='numpy')
@@ -940,13 +912,11 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, dep
             if int(options[name]) != options[name]:
                 raise ValueError(f'{name} deve essere intero.')
             options[name] = int(options[name])
-        encoded = GraphClusterModel.full_dummies(train)
-        if encoded.size > 2_000_000 or len(train) > 10000 or encoded.shape[1] > 1000:
-            raise ValueError('Limite interattivo: 10.000 righe, 1.000 attributi codificati, 2 milioni di celle.')
         learner = NativeTraining(train, labels or [], options)
         learner.validation = test
+        learner.dataset_info = dataset_info
         training_jobs.start(key, learner, {}, labels or [])
-        return dash.no_update, test.to_dict(), "🟢 Apprendimento avviato", False, False
+        return dash.no_update, test.to_dict(), f"🟢 Apprendimento avviato: {len(train)} training, {len(test)} validazione; {dataset_info['excluded_missing_targets']} righe senza target escluse.", False, False
     except Exception as exc:
         return dash.no_update, dash.no_update, f"❌ {exc}", True, True
 
@@ -1476,6 +1446,7 @@ def edit_hierarchy(request, refine_clicks, remove_clicks, selected, model_json, 
         learner = NativeTraining(context.data, context.labels, context.options,
                                  base_model=model_json, branch=node_id)
         learner.validation = context.validation
+        learner.dataset_info = getattr(context, 'dataset_info', None)
         training_jobs.start(key, learner, {}, context.labels)
         return dash.no_update, f'Approfondimento di {node_id} in corso: solo un nuovo nodo, radice invariata.', False, False
     except Exception as exc:
@@ -1535,6 +1506,9 @@ def describe_graph(model, layout):
     return (f"Radice {graph.rootId} · {stats['nodes']} nodi concetto · {stats['depth']} livelli · "
             f"{stats['groups']} gruppi · {root.n} campioni · {len(root.cols)} attributi. "
             'Seleziona un nodo o un collegamento per esplorare centroidi, rilevanze e dispersione.'), config
+
+generative.register(app)
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=4000)
