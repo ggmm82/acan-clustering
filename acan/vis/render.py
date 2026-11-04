@@ -4,6 +4,7 @@ import json
 import re
 from flask import session
 from acan.vis.jobs import TrainingJobs
+from acan.vis import generative
 from acan.vis.training import NativeTraining, graph_stats
 from acan.vis.evaluation import evaluate
 from acan.vis.benchmark_job import BenchmarkJob, signature as benchmark_signature
@@ -583,7 +584,7 @@ inference_layout = dbc.Container([
 _page_layout = dbc.Container([
     html.Div([html.H1('ACAN · Concept Explorer'), html.P('Dati → concetti → gerarchia → predizione e completamento', className='text-muted')], className='p-4 mb-3 bg-light border rounded'),
     dcc.Tabs(id='tabs', value='Data', children=[
-        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference']
+        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative']
     ]),
     # Keep the graph mounted when switching tabs: destroying Cytoscape while
     # asynchronous layout/resize callbacks are pending causes browser errors.
@@ -591,6 +592,7 @@ _page_layout = dbc.Container([
     html.Div([model_layout, dcc.Store(id='test-store')], id='page-model', style={'display': 'none'}),
     html.Div([evaluation_layout, dcc.Store(id='eval-store')], id='page-evaluation', style={'display': 'none'}),
     html.Div(inference_layout, id='page-inference', style={'display': 'none'}),
+    html.Div(generative.layout, id='page-generative', style={'display': 'none'}),
 ], fluid=True)
 
 
@@ -635,11 +637,11 @@ def tab_job_key(tab_id):
 
 
 @app.callback([Output('page-data', 'style'), Output('page-model', 'style'),
-               Output('page-evaluation', 'style'), Output('page-inference', 'style')],
+               Output('page-evaluation', 'style'), Output('page-inference', 'style'), Output('page-generative', 'style')],
               Input('tabs', 'value'))
 def show_page(tab):
     return [{'display': 'block' if tab == name else 'none'}
-            for name in ['Data', 'Model', 'Evaluation', 'Inference']]
+            for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative']]
 
 
 # Callback per pulire i dropdown
@@ -1535,6 +1537,9 @@ def describe_graph(model, layout):
     return (f"Radice {graph.rootId} · {stats['nodes']} nodi concetto · {stats['depth']} livelli · "
             f"{stats['groups']} gruppi · {root.n} campioni · {len(root.cols)} attributi. "
             'Seleziona un nodo o un collegamento per esplorare centroidi, rilevanze e dispersione.'), config
+
+generative.register(app)
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=4000)

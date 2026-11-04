@@ -65,3 +65,11 @@ cookie is marked Secure in this deployment, so use HTTPS.
 CI checks the Compose interpolation, sealed digest and checksum. The actual VPS,
 DNS, certificate issuance and Hostinger routing must be validated after deployment;
 repository CI does not have access to that infrastructure.
+
+
+For the optional Generative tab, retain the normal frontend deployment and
+configure a separate durable worker. The sealed CPU-worker overlay is opt-in;
+for long training connect a private HTTPS GPU worker using `ACAN_LM_URL` and
+`ACAN_LM_SERVICE_TOKEN`. The frontend does not store optimizer state. Keep the
+worker's named data volume and exact image pinned, and do not remove volumes
+on deploy. See [Generative setup and recovery](GENERATIVE.md).

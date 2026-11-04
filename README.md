@@ -208,6 +208,22 @@ sintetici storici restano controlli scientifici della CI e non sostituiscono la
 valutazione sui propri dati; le percentuali del paper non sono risultati attesi
 per un dataset diverso.
 
+## Generative workbench (PR #5)
+
+The **Generative** tab supports the newly supplied ACAN-LM paper through a
+separate persistent worker: pretrained SmolLM2 upper-half attention grafting,
+LoRA/WSD continued pre-training, streamed text corpora, explicit start,
+checkpointed pause/resume and generation from saved snapshots. The original
+package had future-token leakage; the user-authorized PyTorch prefix-causal
+correction is documented and tested, with the reference source preserved.
+
+See [Generative operation and persistence](docs/GENERATIVE.md) and the
+[LM paper/package audit](docs/LM-AUDIT.md). Remaining dense layers retain their
+KV cache: 98% whole-model compression and unchanged language quality are not
+assumed. The regular web image needs a configured LM worker; it does not launch
+training or download weights merely by opening the tab. A sudden interruption
+can lose steps since the latest complete checkpoint, not earlier saved learning.
+
 ## License
 
 MIT; see [LICENSE](LICENSE).

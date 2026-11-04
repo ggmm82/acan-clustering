@@ -17,7 +17,7 @@ IMAGE = f'ghcr.io/{REPO}@sha256:' + '1' * 64
 
 
 def identity():
-    return dict(schema=3, repository=REPO, workflow=pipeline.WORKFLOW,
+    return dict(schema=4, repository=REPO, workflow=pipeline.WORKFLOW,
                 event='pull_request', source_commit=COMMIT, tree=TREE,
                 head_sha='c' * 40, head_repository=REPO, pull_request=1,
                 run_id=23, run_attempt=1)
@@ -205,4 +205,10 @@ def seal(directory, image, metadata):
         tree=metadata['tree'], commit=metadata['source_commit'], run_id=metadata['run_id'], source_clean=True,
         torch_verified=True, tests_run=8, failures=0, errors=0, skipped=0,
         benchmarks=dict(status='passed', archive_sha256=hashlib.sha256((directory / 'paper-benchmarks.zip').read_bytes()).hexdigest()))))
+    (directory / 'lm-audit.json').write_text(json.dumps(dict(status='passed', skipped=0, tests_run=8,
+        profile='acan-lm-causal-prefix-v1', gpu_verified=False, full_paper_conformance=False,
+        pretrained_general_quality_verified=False, tree=metadata['tree'], commit=metadata['source_commit'], run_id=metadata['run_id'])))
+    (directory / 'generative-runtime.json').write_text(json.dumps(dict(image=f'ghcr.io/{REPO}-generative@sha256:'+'2'*64,
+        tree=metadata['tree'], source_commit=metadata['source_commit'], run_id=metadata['run_id'],run_attempt=metadata['run_attempt'],
+        audit_sha256=hashlib.sha256((directory / 'lm-audit.json').read_bytes()).hexdigest())))
     return pipeline.seal(directory, image, metadata)

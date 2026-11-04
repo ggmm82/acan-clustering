@@ -1,0 +1,7 @@
+{
+  "references/generative/run_llm_benchmarks.py": "b036440a5f8996e4ebdb60d36c01f308f1c704e794b1cb797dedf5dd6ad1a779",
+  "references/generative/acan_lm/__init__.py": "40540e383c5b6eb96bca081289ce41bcb1fed3caf6ba573bbd88a47678a41d26",
+  "references/generative/acan_lm/configuration_acan_lm.py": "93d781c1f7f7ca45e5079be121ad89b379a686c38a695fa085ea3e289bb2b8c9",
+  "references/generative/acan_lm/modeling_acan_lm.py": "364f6fc6bfd409ac57b395c7c9af2bda86ca34ebc9d2b26925f3ffc9457a2084",
+  "paper/ACAN_LM_vs_MiniCPM_Scientific_Paper.pdf": "22df94993bdd71d03616375990ef8a4c05d1c1aa52f0d0711d07225dc3f5d65f"
+}
