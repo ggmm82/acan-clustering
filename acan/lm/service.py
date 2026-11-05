@@ -58,6 +58,19 @@ def create_app(root=None, token=None):
         return jsonify(cuda=torch.cuda.is_available(), torch=torch.__version__, base_models=BASE_MODELS,
                        profile='acan-lm-causal-prefix-v1', minicpm_supported=False)
 
+    @app.get('/public-corpora')
+    def public_catalog():
+        from .public_corpus import catalog
+        return jsonify(catalog())
+
+    @app.post('/public-experiments')
+    def public_experiment():
+        from .public_corpus import experiment
+        body = request.get_json()
+        if not isinstance(body, dict) or set(body) != {'dataset', 'preset'}:
+            raise ValueError('Specificare soltanto dataset e profilo della prova pubblica.')
+        return jsonify(experiment(store, request.workspace, body['dataset'], body['preset']))
+
     @app.post('/corpora')
     def begin_upload():
         body = request.get_json()

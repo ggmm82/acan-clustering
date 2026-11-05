@@ -233,3 +233,10 @@ can lose steps since the latest complete checkpoint, not earlier saved learning.
 ## License
 
 MIT; see [LICENSE](LICENSE).
+
+The Generative tab also provides a **guided public-corpus experiment**: choose
+Dante (Italian) or Tiny Shakespeare (English) and a 20/200-step budget. One
+explicit action downloads and verifies the source, prepares a separate persistent
+project and starts training; pause/resume and checkpoint generation remain
+available. These are bounded mechanics experiments, not certified assistant
+training. See [source provenance, budgets and limitations](docs/GENERATIVE.md#guided-public-corpus-experiments).

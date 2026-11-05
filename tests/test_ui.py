@@ -121,6 +121,47 @@ class TestUICallbacks(unittest.TestCase):
                              [('data-store', 'data', data), ('label-store', 'data', ['Survived'])])
         self.assertEqual(set(result['dpdnFilter']['value']), {'PassengerId','Name','Ticket'})
 
+    def test_public_experiment_requires_explicit_click_and_passes_only_preset(self):
+        from unittest.mock import patch
+        with patch('acan.vis.generative.backend', return_value=dict(job={'id':'new-public-job'},
+                message='Training avviato', prompt='Nel mezzo del cammin')) as backend:
+            result = self.invoke('..lm-active-job.data', [('lm-public-start', 'n_clicks', 1)],
+                [('lm-workspace', 'data', 'a'*64), ('lm-public-dataset', 'value', 'dante-it'),
+                 ('lm-public-preset', 'value', 'check')])
+        backend.assert_called_once_with('a'*64, '/public-experiments', 'POST', dict(dataset='dante-it', preset='check'))
+        self.assertEqual(result['lm-active-job']['data'], 'new-public-job')
+        self.assertEqual(result['lm-prompt']['value'], 'Nel mezzo del cammin')
+
+    def test_lm_chart_explains_baseline_and_repeated_validation(self):
+        job = dict(id='job', progress=dict(step=12, tokens_trained=12288, baseline_nll=4.683,
+                   validation_nll=6.62), history=[dict(step=12, training_nll=6.69, validation_nll=6.62)],
+                   snapshots=[dict(step=7, name='saved')], status='running',
+                   config=dict(total_steps=1000), checkpoint='saved', error=None)
+        result = self.invoke('..lm-progress.children', [('lm-state', 'data', {'jobs':[job]}),
+                             ('lm-job', 'value', 'job')], [('lm-checkpoint', 'value', None)])
+        figure = result['lm-loss']['figure']
+        self.assertEqual(figure['layout']['shapes'][0]['y0'], 4.683)
+        text = str(result['lm-progress']['children'])
+        self.assertIn('ancora peggiore', text)
+        self.assertIn('checkpoint passo 7', text)
+        self.assertIn('token elaborati', text)
+
+    def test_public_defaults_survive_worker_catalog_loading(self):
+        result = self.invoke('..lm-public-dataset.options', [('lm-state', 'data', None),
+                             ('lm-public-dataset', 'value', 'dante-it')])
+        self.assertNotIn('lm-public-dataset', result)
+        self.assertNotIn('lm-public-preset', result)
+        self.assertTrue(result['lm-public-start']['disabled'])
+
+    def test_new_public_project_is_selected_over_previous_project(self):
+        state = dict(jobs=[dict(id='old', config={'name':'Old'}, status='paused', progress={}),
+                           dict(id='new', config={'name':'New'}, status='created', progress={})],
+                     corpora=[], select_job='new')
+        result = self.invoke('..lm-corpus.options', [('lm-state', 'data', state)],
+            [('lm-active-job', 'data', 'new'), ('lm-upload-state', 'data', None),
+             ('lm-corpus', 'value', None), ('lm-job', 'value', 'old')])
+        self.assertEqual(result['lm-job']['value'], 'new')
+
     def test_sessions_receive_distinct_server_identifiers(self):
         other = self.app.server.test_client()
         other.get('/_dash-layout')
