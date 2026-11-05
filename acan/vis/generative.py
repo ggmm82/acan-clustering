@@ -50,6 +50,24 @@ layout = dbc.Container([
     dbc.Button('Salva chiave di recupero', id='lm-export-key', color='link'),
     html.Div(id='lm-recovery-input'), dcc.Download(id='lm-key-download'),
     html.P('Il workspace resta nel browser dopo refresh e riavvii del servizio. Salva la chiave per recuperare i progetti da un altro browser; chi possiede la chiave può gestirli. Nessun account richiesto.', className='small text-muted'),
+    dbc.Card(dbc.CardBody([
+        html.H5('Avvio guidato · dati pubblici'),
+        html.P('Non serve caricare file: scegli un testo pubblico e un budget. Scarichiamo e verifichiamo il corpus, prepariamo SmolLM2-135M con ACAN e avviamo il training. Non modifica il progetto già esistente.'),
+        dbc.Row([
+            dbc.Col([dbc.Label('Corpus pubblico'), dcc.Dropdown(id='lm-public-dataset', value='dante-it', clearable=False, options=[{'label':'Divina Commedia · italiano letterario', 'value':'dante-it'}, {'label':'Tiny Shakespeare · inglese', 'value':'tiny-shakespeare'}])], md=6),
+            dbc.Col([dbc.Label('Budget di apprendimento'), dcc.Dropdown(id='lm-public-preset', value='check', clearable=False, options=[{'label':'Prova breve · 20 passi', 'value':'check'}, {'label':'Esercizio · 200 passi', 'value':'practice'}])], md=6),
+        ]),
+        html.Div(id='lm-public-info', className='my-2'),
+        dbc.Button('Scarica e avvia la prova', id='lm-public-start', disabled=True),
+        html.Div(id='lm-public-status', role='status', className='my-2'),
+        html.P('Il primo avvio scarica anche i pesi del modello. La durata dipende dalla macchina: pochi passi non equivalgono a pochi secondi. Nessun ciclo illimitato, nessun benchmark tabellare automatico.', className='small text-muted'),
+        html.Ol([
+            html.Li('Attendi lo stato running: ogni passo legge testo e aggiorna i pesi addestrabili.'),
+            html.Li('Osserva la validazione ai checkpoint: un valore più basso è migliore; confrontalo con il modello originale.'),
+            html.Li('Premi Pausa e salva, attendi paused, seleziona l’ultimo checkpoint e prova il prompt suggerito.'),
+            html.Li('Riprendi lo stesso progetto oppure attendi completed: il budget scelto termina automaticamente.'),
+        ]),
+    ]), className='my-3'),
     dbc.Row([
         dbc.Col([html.H5('1 · Corpus'), html.Div(id='lm-file-upload'),
                  html.Div(id='lm-upload-status', role='status'), dcc.Dropdown(id='lm-corpus', placeholder='Seleziona corpus caricato')], md=6),
@@ -121,13 +139,19 @@ def register(app):
        Input('tabs','value'), State('lm-workspace','data'))
 
     @app.callback(Output('lm-state','data'), Output('lm-connection','children'),
-                  Input('lm-poll','n_intervals'), Input('lm-refresh','n_clicks'), Input('lm-workspace','data'), Input('lm-upload-state','data'),
+                  Input('lm-poll','n_intervals'), Input('lm-refresh','n_clicks'), Input('lm-workspace','data'), Input('lm-upload-state','data'), Input('lm-active-job','data'),
                   State('tabs','value'))
-    def poll(interval, refresh, workspace, upload, tab):
+    def poll(interval, refresh, workspace, upload, active, tab):
         if tab != 'Generative' or not workspace:
             return dash.no_update, dash.no_update
         try:
             state = backend(workspace, '/state')
+            try:
+                state['public_catalog'] = backend(workspace, '/public-corpora')
+            except ValueError:
+                state['public_catalog'] = {}
+            if dash.ctx.triggered_id == 'lm-active-job':
+                state['select_job'] = active
             capabilities = backend(workspace, '/capabilities')
             hardware = 'CUDA disponibile' if capabilities['cuda'] else 'CPU · profilo di verifica 135M'
             return state, f'Worker collegato · {hardware} · persistenza attiva · una sola operazione alla volta.'
@@ -136,7 +160,7 @@ def register(app):
 
     @app.callback(Output('lm-corpus','options'), Output('lm-job','options'),
                   Output('lm-corpus','value'), Output('lm-job','value'),
-                  Input('lm-state','data'), Input('lm-active-job','data'),
+                  Input('lm-state','data'), State('lm-active-job','data'),
                   State('lm-upload-state','data'), State('lm-corpus','value'), State('lm-job','value'))
     def options(state, active, upload, corpus, selected):
         if not state:
@@ -146,10 +170,44 @@ def register(app):
         uploaded = (upload or {}).get('id')
         chosen_corpus = corpus if corpus in corpus_ids else uploaded if uploaded in corpus_ids else None
         job_ids = {item['id'] for item in state['jobs']}
-        chosen_job = selected if selected in job_ids else active if active in job_ids else None
+        chosen_job = state.get('select_job')
+        if chosen_job not in job_ids:
+            chosen_job = selected if selected in job_ids else active if active in job_ids else None
         return ([dict(label=f"{item['name']} ({item['received']/1048576:.1f} MiB)", value=item['id']) for item in corpora],
                 [dict(label=f"{item['config']['name']} · {item['status']} · passo {item['progress'].get('step',0)}",value=item['id']) for item in state['jobs']],
                 chosen_corpus, chosen_job)
+
+    @app.callback(Output('lm-public-dataset', 'options'), Output('lm-public-preset', 'options'),
+                  Output('lm-public-info', 'children'), Output('lm-public-start', 'disabled'),
+                  Input('lm-state', 'data'), Input('lm-public-dataset', 'value'))
+    def public_info(state, selected):
+        catalog = (state or {}).get('public_catalog', {})
+        datasets, presets = catalog.get('datasets', []), catalog.get('presets', [])
+        item = next((item for item in datasets if item['id'] == selected), None)
+        description = 'Collega il worker aggiornato per usare i corpus pubblici.'
+        if item:
+            description = html.Div([html.P(item['note']),
+                html.A('Fonte del testo', href=item['source'], target='_blank', rel='noopener noreferrer'),
+                html.Span(' · '), html.A(item['license'], href=item['license_url'], target='_blank', rel='noopener noreferrer'),
+                html.P(f"Download: {item['bytes']/1048576:.2f} MiB; integrità verificata con SHA-256. La prova breve verifica il percorso, non certifica la qualità linguistica."),
+                html.P('Worker occupato: metti in pausa il progetto attivo prima di avviare questa prova.') if state.get('busy') else None])
+        return ([dict(label=item['title'], value=item['id']) for item in datasets] if datasets else dash.no_update,
+                [dict(label=item['title'], value=item['id']) for item in presets] if presets else dash.no_update,
+                description, not item or bool((state or {}).get('busy')))
+
+    @app.callback(Output('lm-active-job', 'data', allow_duplicate=True),
+                  Output('lm-public-status', 'children'), Output('lm-prompt', 'value'),
+                  Input('lm-public-start', 'n_clicks'), State('lm-workspace', 'data'),
+                  State('lm-public-dataset', 'value'), State('lm-public-preset', 'value'),
+                  prevent_initial_call=True)
+    def public_start(clicks, workspace, dataset, preset):
+        if not clicks:
+            return dash.no_update, dash.no_update, dash.no_update
+        try:
+            result = backend(workspace, '/public-experiments', 'POST', dict(dataset=dataset, preset=preset))
+            return result['job']['id'], result['message'], result['prompt']
+        except ValueError as exc:
+            return dash.no_update, dbc.Alert(str(exc), color='warning'), dash.no_update
 
     @app.callback(Output('lm-active-job','data'), Output('lm-action-status','children'),
                   Input('lm-start','n_clicks'), Input('lm-pause','n_clicks'), Input('lm-resume','n_clicks'),
@@ -187,13 +245,22 @@ def register(app):
         for key, label in [('training_nll','Training NLL'),('validation_nll','Validation NLL')]:
             rows = [row for row in job['history'] if key in row]
             figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows], mode='lines', name=label)
-        figure.update_layout(title='Loss next-token misurata (non CP)', xaxis_title='Passi', yaxis_title='NLL')
-        text = f"{job['status']} · passo {metrics.get('step',0)}/{job['config']['total_steps']} · token appresi {metrics.get('tokens_trained',0):,} · ultimo checkpoint {job['checkpoint'] or 'ancora nessuno'}"
+        figure.update_layout(title='Errore di previsione · più basso è meglio', xaxis_title='Passi', yaxis_title='NLL')
+        baseline = metrics.get('baseline_nll')
+        if baseline is not None:
+            figure.add_hline(y=baseline, line_dash='dash', line_color='green', annotation_text='Modello originale sullo stesso corpus')
+        text = f"{job['status']} · passo {metrics.get('step',0)}/{job['config']['total_steps']} · token elaborati {metrics.get('tokens_trained',0):,} · ultimo checkpoint {job['checkpoint'] or 'ancora nessuno'}"
         detail = [html.P(text), html.P(job['error'], className='text-danger') if job['error'] else None]
         for key,label in [('training_nll','NLL training'),('validation_nll','NLL validazione'),('validation_perplexity','Perplessità validazione'),
                           ('baseline_nll','NLL base prima del graft'),('tokens_per_second','Token/s misurati'),('trainable_parameters','Parametri trainabili')]:
             if metrics.get(key) is not None:
                 detail.append(html.P(f"{label}: {metrics[key]:,.5g}"))
+        validation = metrics.get('validation_nll')
+        if validation is not None and baseline is not None:
+            meaning = 'ancora peggiore del modello originale' if validation > baseline else 'uguale o migliore del modello originale su questo campione'
+            detail.append(dbc.Alert(f'Validazione {validation:.3f}; modello originale {baseline:.3f}: {meaning}. Non esiste una soglia universale di qualità. Controlla anche testi nuovi e generazioni.', color='info'))
+        last_step = max((s['step'] for s in job['snapshots']), default=0)
+        detail.append(html.P(f'La linea blu varia con i pezzi di testo. La rossa riporta l’ultima validazione disponibile (checkpoint passo {last_step}) e la ripete fino al prossimo salvataggio. I token elaborati possono includere ripetizioni del corpus.', className='small text-muted'))
         available = [dict(label=f"Passo {s['step']}",value=s['name']) for s in job['snapshots']]
         selected_snapshot = checkpoint if checkpoint in {s['value'] for s in available} else available[0]['value'] if available else None
         return detail, figure, available, selected_snapshot

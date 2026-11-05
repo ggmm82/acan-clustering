@@ -1,0 +1,57 @@
+{
+  "description": "Local bounded public-corpus mechanics smoke, not broad language quality certification",
+  "status": "completed",
+  "config": {
+    "base_model": "HuggingFaceTB/SmolLM2-135M",
+    "total_steps": 20,
+    "sequence_length": 64,
+    "batch_size": 1,
+    "accumulation": 1,
+    "learning_rate": 0.0001,
+    "slots": 16,
+    "window": 16,
+    "lora_rank": 8,
+    "save_steps": 5,
+    "save_seconds": 300,
+    "seed": 42,
+    "device": "auto",
+    "gradient_checkpointing": true,
+    "name": "Divina Commedia \u00b7 italiano letterario \u00b7 Prova breve \u00b7 20 passi \u00b7 1.280 token elaborati"
+  },
+  "source": {
+    "dataset": "dante-it",
+    "title": "Divina Commedia \u00b7 italiano letterario",
+    "source": "https://www.gutenberg.org/ebooks/1000",
+    "url": "https://www.gutenberg.org/cache/epub/1000/pg1000.txt",
+    "license": "Opera originale di pubblico dominio; edizione Project Gutenberg",
+    "license_url": "https://www.gutenberg.org/policy/license.html",
+    "source_sha256": "4669dcc00ee61ceffe92d871e61ea430cec87b35cbab24f19a4c0b1c7da521b2",
+    "prepared_sha256": "807d223287131588e7bff0d5da1554efb957ed3a121cfef5c1d9a6dcbd867f37",
+    "source_bytes": 597903,
+    "prepared_bytes": 558211,
+    "preprocessing": "utf8-newlines-v1; Gutenberg header/footer removed when present",
+    "imported_at": 1793822957.234662
+  },
+  "base": {
+    "repo": "HuggingFaceTB/SmolLM2-135M",
+    "revision": "93efa2f097d58c2a74874c7e644dbc9b0cee75a2"
+  },
+  "metrics": {
+    "step": 20,
+    "tokens_trained": 1280,
+    "training_nll": 5.283882141113281,
+    "validation_nll": 5.606512665748596,
+    "validation_perplexity": 272.19335174079134,
+    "baseline_nll": 5.738391578197479,
+    "tokens_per_second": 4.759016593396046,
+    "device": "cpu",
+    "trainable_parameters": 2681280
+  },
+  "gpu_verified": false,
+  "pretrained_general_quality_verified": false,
+  "validation": "Existing held-out tail, at most 8 blocks; source may overlap base pretraining",
+  "files_sha256": {
+    "acan/lm/public_corpus.py": "82d1bb12f24271ca6c167ffcecd93959620654494a461c5d7c6b34a364a3835a",
+    "acan/lm/service.py": "d683d8a4bca7fab9bc18a94db64eeca666b14fe7a1246c7bc4466cf8e3e103e4"
+  }
+}
