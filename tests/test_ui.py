@@ -92,6 +92,35 @@ class TestUICallbacks(unittest.TestCase):
         self.assertEqual(result['dpdnLabel']['value'], ['Survived'])
         self.assertEqual(result['dpdnFilter']['value'], ['PassengerId'])
 
+    def test_loaded_model_target_options_keep_uploaded_feature_filters(self):
+        # Loading a JSON model restores only its target dropdown options.
+        data = {'Name':['A','B'], 'Ticket':['X','Y'], 'Cabin':['C1','C2'],
+                'PassengerId':[1,2], 'Age':[20,30], 'Survived':[0,1]}
+        result = self.invoke('..label-store.data', [('dpdnLabel', 'value', ['Survived'])],
+            [('dpdnLabel', 'options', [{'label':'Survived', 'value':'Survived'}]),
+             ('data-store', 'data', data)])
+        self.assertEqual({item['value'] for item in result['dpdnFilter']['options']},
+                         {'Name','Ticket','Cabin','PassengerId','Age'})
+        self.assertNotIn('value', result['dpdnFilter'])
+
+    def test_upload_sends_filter_options_and_values_together(self):
+        data = {'PassengerId':list(range(100)), 'Name':[f'person{i}' for i in range(100)],
+                'Ticket':[f'ticket{i}' for i in range(100)], 'Age':list(range(100)),
+                'Survived':[0,1]*50}
+        result = self.invoke('..dpdnLabel.options', [('data-store', 'data', data)],
+                             [('label-store', 'data', [])])
+        options = {item['value'] for item in result['dpdnFilter']['options']}
+        self.assertTrue(set(result['dpdnFilter']['value']).issubset(options))
+        self.assertEqual(set(result['dpdnFilter']['value']), {'PassengerId','Name','Ticket'})
+        self.assertNotIn('Survived', options)
+
+    def test_restore_suggested_filters_after_clearing(self):
+        data = {'PassengerId':list(range(100)), 'Name':[f'person{i}' for i in range(100)],
+                'Ticket':[f'ticket{i}' for i in range(100)], 'Age':list(range(100)), 'Survived':[0,1]*50}
+        result = self.invoke('dpdnFilter.value', [('btn-suggest-filter', 'n_clicks', 1)],
+                             [('data-store', 'data', data), ('label-store', 'data', ['Survived'])])
+        self.assertEqual(set(result['dpdnFilter']['value']), {'PassengerId','Name','Ticket'})
+
     def test_sessions_receive_distinct_server_identifiers(self):
         other = self.app.server.test_client()
         other.get('/_dash-layout')

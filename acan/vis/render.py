@@ -508,8 +508,9 @@ model_layout = dbc.Container([
         dbc.Row([
             dbc.Col([dbc.Label('Colonne categoriche'), dcc.Dropdown(id='dpdnCategory', value=[], multi=True),
                      dbc.Button('Svuota', id='btn-clear-category', color='link', size='sm')], md=6),
-            dbc.Col([dbc.Label('Escludi colonne'), dcc.Dropdown(id='dpdnFilter', value=[], multi=True),
-                     dbc.Button('Svuota', id='btn-clear-filter', color='link', size='sm')], md=6),
+            dbc.Col([dbc.Label('Escludi colonne'), dbc.Checklist(id='dpdnFilter', value=[], options=[], style={'maxHeight':'180px', 'overflowY':'auto'}),
+                     dbc.Button('Svuota', id='btn-clear-filter', color='link', size='sm'),
+                     dbc.Button('Ripristina filtri suggeriti', id='btn-suggest-filter', color='link', size='sm')], md=6),
         ]),
         dbc.Label('Tipo di previsione del target'),
         dcc.Dropdown(id='target-task', value='auto', clearable=False, options=[{'label':'Automatico (codici interi fino a 20 classi: classificazione)', 'value':'auto'}, {'label':'Classificazione', 'value':'classification'}, {'label':'Regressione numerica', 'value':'regression'}]),
@@ -668,6 +669,18 @@ def clear_filter(n_clicks):
         return []
     return dash.no_update
 
+@app.callback(Output('dpdnFilter', 'value', allow_duplicate=True),
+              Input('btn-suggest-filter', 'n_clicks'), State('data-store', 'data'),
+              State('label-store', 'data'), prevent_initial_call=True)
+def suggest_filters(clicks, data, labels):
+    if not clicks or not data:
+        return dash.no_update
+    frame = clean_frame(pd.DataFrame(data))
+    if frame.empty:
+        return []
+    return target_and_filters(frame, labels)[1]
+
+
 @app.callback(
     Output('dpdnLabel', 'value', allow_duplicate=True),
     Input('btn-clear-label', 'n_clicks'),
@@ -682,16 +695,18 @@ def clear_label(n_clicks, options):
 
 @app.callback([Output('label-store', 'data'), Output("dpdnFilter", "options")],
               Input('dpdnLabel', 'value'),
-              State("dpdnLabel", "options"))
-def set_labels(labels, opts):
-    newOps=[]
-    for opt in opts:
-        if opt['value'] not in labels:
-            newOps.append(opt)
-    return labels, newOps
+              State("dpdnLabel", "options"),
+              State('data-store', 'data'))
+def set_labels(labels, opts, data):
+    labels = labels or []
+    # A loaded model restores target options only. Feature filters must continue
+    # to describe the uploaded table, otherwise the dropdown discards selections.
+    columns = list(pd.DataFrame(data).columns) if data else [item['value'] for item in (opts or [])]
+    return labels, [{'label': name, 'value': name} for name in columns if name not in labels]
 
 @app.callback(
-    [Output("dpdnLabel", "options"),Output("dpdnLabel", "value"), Output("dpdnCategory", "options"), Output("dpdnFilter", "value")] ,
+    [Output("dpdnLabel", "options"),Output("dpdnLabel", "value"), Output("dpdnCategory", "options"), Output("dpdnFilter", "value"),
+     Output("dpdnFilter", "options", allow_duplicate=True)] ,
     Input('data-store', 'data'),
     State('label-store', 'data'),
     prevent_initial_call=True,
@@ -699,10 +714,11 @@ def set_labels(labels, opts):
 def update_labels(data, lbs):
     df = clean_frame(pd.DataFrame(data))
     if df.empty:
-        return [], [], [], []
+        return [], [], [], [], []
     labels, filters = target_and_filters(df, lbs)
     options = [{'label': name, 'value': name} for name in df.columns]
-    return options, labels, options, filters
+    filter_options = [item for item in options if item['value'] not in labels]
+    return options, labels, options, filters, filter_options
 
 
 
