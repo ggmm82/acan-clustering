@@ -17,6 +17,8 @@ def training_identity(values, config, checkpoint_root, selected, current):
     candidates = [current]
     if 'routing_profile' not in config:
         candidates.extend(LEGACY_TRAINING)
+    if config.get('routing_profile') in ('shared-algebra-v1','legacy-causal-v1'):
+        candidates.append('c4abb615a710d213ef096ba2dc0600da59bda81f5dc458429198124a1e3c1462')
     if selected and Path(selected).name == selected and selected.startswith('step-'):
         path = checkpoint_root / selected
         if path.is_dir():

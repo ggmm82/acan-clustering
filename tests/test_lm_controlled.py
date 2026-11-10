@@ -19,7 +19,7 @@ class Tokenizer:
 
 @unittest.skipUnless(LM,'Requires LM dependencies')
 class ControlledTrainingTests(unittest.TestCase):
-    def fixture(self,root,patience=0,distillation=.5,steps=4,base_path=None,architecture='hybrid',fraction=.5):
+    def fixture(self,root,patience=0,distillation=.5,steps=4,base_path=None,architecture='hybrid',fraction=.5,routing='shared-algebra-v1'):
         import torch
         from transformers import LlamaConfig,LlamaForCausalLM
         from acan.lm.store import Store,owner_key
@@ -32,7 +32,7 @@ class ControlledTrainingTests(unittest.TestCase):
         store.append_corpus(corpus['id'],owner,0,raw);store.finish_corpus(corpus['id'],owner)
         options=validate_options(dict(corpus_id=corpus['id'],total_steps=steps,sequence_length=16,batch_size=1,
             accumulation=1,lora_rank=2,slots=2,window=4,save_steps=1,device='cpu',validation_batches=1,
-            early_stop_patience=patience,distillation_weight=distillation,architecture=architecture,graft_fraction=fraction))
+            early_stop_patience=patience,distillation_weight=distillation,architecture=architecture,graft_fraction=fraction,routing_profile=routing))
         job=store.create_job(owner,options)
         if base_path is None:
             base_path=Path(root)/'fixture-base'
@@ -93,6 +93,26 @@ class ControlledTrainingTests(unittest.TestCase):
         from acan.lm.store import Store
         with tempfile.TemporaryDirectory() as one,tempfile.TemporaryDirectory() as two:
             s1,j1,path,base=self.fixture(one);s2,j2,_,_=self.fixture(two,base_path=path)
+            self.run_job(s1,j1,path,base)
+            stop=threading.Event();original=Store.record
+            def record(store,id,step,values):
+                original(store,id,step,values)
+                if str(store.root)==str(s2.root) and step==2:stop.set()
+            with patch.object(Store,'record',record):self.run_job(s2,j2,path,base,stop)
+            self.assertEqual(s2.job(j2['id'])['status'],'paused')
+            s2.update(j2['id'],pause=0);self.run_job(s2,j2,path,base)
+            import torch
+            a=load_file(s1.directory('jobs',j1['id'])/'checkpoints'/s1.job(j1['id'])['checkpoint']/'trainables.safetensors')
+            b=load_file(s2.directory('jobs',j2['id'])/'checkpoints'/s2.job(j2['id'])['checkpoint']/'trainables.safetensors')
+            self.assertEqual(set(a),set(b))
+            for key in a:self.assertTrue(torch.equal(a[key],b[key]),key)
+
+    def test_cp_routing_resume_preserves_exact_parameters(self):
+        from safetensors.torch import load_file
+        from acan.lm import research_trainer as trainer
+        from acan.lm.store import Store
+        with tempfile.TemporaryDirectory() as one,tempfile.TemporaryDirectory() as two:
+            s1,j1,path,base=self.fixture(one,routing='cp-routing-v1',distillation=0);s2,j2,_,_=self.fixture(two,base_path=path,routing='cp-routing-v1',distillation=0)
             self.run_job(s1,j1,path,base)
             stop=threading.Event();original=Store.record
             def record(store,id,step,values):

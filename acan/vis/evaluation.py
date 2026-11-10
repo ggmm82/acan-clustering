@@ -69,6 +69,11 @@ def evaluate(model_json, test, train=None, before_json=None, baselines=True):
         if not numeric:
             distinct = predicted.loc[valid, target].astype(str).nunique()
             observed = truth.astype(str).nunique()
+            if 1 < distinct < observed:
+                diagnostics.append(dict(target=target,predicted_classes=int(distinct),observed_classes=int(observed),
+                    warning=f'Target {target}: {distinct} classi previste su {observed} osservate. '
+                            f'Radice con {root.k()} gruppi; grafo con {len(graph.clusterModel)} nodi. '
+                            'Controlla copertura delle classi, gerarchia e criterio di predizione; la sola CP non misura la separazione delle classi.'))
             if distinct == 1 and observed > 1:
                 diagnostics.append(dict(target=target, predicted_classes=int(distinct), observed_classes=int(observed),
                     warning=f'Target {target}: ACAN predice una sola classe su {observed} presenti nella validazione. '

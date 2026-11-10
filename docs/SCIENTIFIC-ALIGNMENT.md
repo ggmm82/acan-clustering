@@ -1,5 +1,10 @@
 # Verifica dei due paper e dei dataset caricati
 
+Approfondimento successivo: [routing come ottimizzazione comune della CP e delle
+assegnazioni](VARIATIONAL-ROUTING.md), con derivazione, analisi dell'instabilità
+della massa e probe CPU riproducibile. È una proposta di ricerca verificata su
+problemi sintetici, non un terzo profilo attivo o un nuovo benchmark sui dataset.
+
 I due PDF allegati coincidono byte per byte con quelli congelati nel repository:
 `Algebraic_Concept_Attention_Scientific_Paper.pdf` (SHA-256
 `1fdd1a5f6e235d291c29364cae2dd1bd138df74db42256bb9ec36dd528f40396`) e

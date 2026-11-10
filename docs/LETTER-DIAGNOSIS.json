@@ -1,0 +1,266 @@
+{
+  "file_sha256": "a31f2d9ad119a53e182e7371d48981982dbb2b0a5e9f0aa7b73f373857b64e2e",
+  "split": {
+    "raw_rows": 20000,
+    "usable_rows": 20000,
+    "excluded_missing_targets": 0,
+    "excluded_columns": [],
+    "target_types": {
+      "class": "classification"
+    },
+    "stratified": true,
+    "train_rows": 16000,
+    "validation_rows": 4000,
+    "seed": 42
+  },
+  "results": [
+    {
+      "profile": "legacy-v8",
+      "rows": 20000,
+      "train_rows": 16000,
+      "validation_rows": 4000,
+      "targets": [
+        "class"
+      ],
+      "filters": [],
+      "groups": 5,
+      "seconds": 19.348164071998326,
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.08325,
+          "N": 4000
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.0829725344312513,
+          "N": 4000
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.04840886425321388,
+          "N": 4000
+        }
+      ]
+    },
+    {
+      "profile": "paper-routing-v1",
+      "rows": 20000,
+      "train_rows": 16000,
+      "validation_rows": 4000,
+      "targets": [
+        "class"
+      ],
+      "filters": [],
+      "groups": 7,
+      "seconds": 21.855689588999667,
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.04925,
+          "N": 4000
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.04875061244487996,
+          "N": 4000
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.007207308102771418,
+          "N": 4000
+        }
+      ]
+    },
+    {
+      "profile": "cp-routing-v1",
+      "rows": 20000,
+      "train_rows": 16000,
+      "validation_rows": 4000,
+      "targets": [
+        "class"
+      ],
+      "filters": [],
+      "groups": 32,
+      "seconds": 91.96626329299761,
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.1235,
+          "N": 4000
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.12217992232744941,
+          "N": 4000
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.04983011593363878,
+          "N": 4000
+        }
+      ]
+    }
+  ],
+  "protocol_notes": [
+    "Full file, 20,000 rows; 80/20 stratified split seed 42; not GUI upload, which samples 10,000 rows before splitting.",
+    "Single exploratory validation split; no parameter search or independent final test.",
+    "100 epochs for old profiles; CP direct capped at 30 assignment steps, 32 slots, 300 sampled training rows. Budgets and objectives differ; not a proof of superiority."
+  ],
+  "original_zip_sha256": "37cfcffafbdda55366994d95adcd9c8b18a631f3f4f30855b3607375f7434ddc",
+  "original_numpy": {
+    "source": "original uploaded ZIP, NumPy",
+    "train_rows": 16000,
+    "test_rows": 4000,
+    "groups": 3,
+    "accuracy": 0.0915,
+    "balanced_accuracy": 0.09135680933370086,
+    "seconds": 0.7216511570004513
+  },
+  "original_torch": {
+    "source": "original uploaded ZIP, Torch CPU",
+    "train_rows": 16000,
+    "test_rows": 4000,
+    "groups": 7,
+    "accuracy": 0.09225,
+    "balanced_accuracy": 0.09256256542780959,
+    "seconds": 6.222406349996163
+  },
+  "hierarchy_and_prediction": [
+    {
+      "depth": 1,
+      "soft": true,
+      "graph": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 5
+      },
+      "accuracy": 0.08325,
+      "balanced_accuracy": 0.0829725344312513,
+      "seconds": 1.3756087309957366
+    },
+    {
+      "depth": 1,
+      "soft": false,
+      "graph": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 5
+      },
+      "accuracy": 0.094,
+      "balanced_accuracy": 0.09396751625281086,
+      "seconds": 1.6664578279960551
+    },
+    {
+      "depth": 3,
+      "soft": true,
+      "graph": {
+        "nodes": 6,
+        "depth": 3,
+        "groups": 24
+      },
+      "accuracy": 0.119,
+      "balanced_accuracy": 0.11791411215803695,
+      "seconds": 4.255479018000187
+    },
+    {
+      "depth": 3,
+      "soft": false,
+      "graph": {
+        "nodes": 6,
+        "depth": 3,
+        "groups": 24
+      },
+      "accuracy": 0.1165,
+      "balanced_accuracy": 0.11541364576556412,
+      "seconds": 4.577921010000864
+    }
+  ],
+  "baselines": [
+    {
+      "model": "KNN-5",
+      "accuracy": 0.95625,
+      "seconds": 0.2938513760018395
+    },
+    {
+      "model": "ExtraTrees-200",
+      "accuracy": 0.97375,
+      "seconds": 4.086901998001849
+    }
+  ],
+  "gui_protocol": {
+    "upload_sample_rows": 10000,
+    "upload_sample_seed": 42,
+    "train_rows": 8000,
+    "validation_rows": 2000,
+    "split_seed": 42,
+    "comparisons": [
+      {
+        "depth": 1,
+        "soft": true,
+        "graph": {
+          "nodes": 1,
+          "depth": 1,
+          "groups": 5
+        },
+        "accuracy": 0.131,
+        "balanced_accuracy": 0.1339763400955035,
+        "seconds": 1.2582420639955672
+      },
+      {
+        "depth": 1,
+        "soft": false,
+        "graph": {
+          "nodes": 1,
+          "depth": 1,
+          "groups": 5
+        },
+        "accuracy": 0.138,
+        "balanced_accuracy": 0.14137955057845566,
+        "seconds": 1.3956552639938309
+      },
+      {
+        "depth": 3,
+        "soft": true,
+        "graph": {
+          "nodes": 9,
+          "depth": 3,
+          "groups": 29
+        },
+        "accuracy": 0.172,
+        "balanced_accuracy": 0.17454134084783363,
+        "seconds": 3.8443281579966424
+      },
+      {
+        "depth": 3,
+        "soft": false,
+        "graph": {
+          "nodes": 9,
+          "depth": 3,
+          "groups": 29
+        },
+        "accuracy": 0.1735,
+        "balanced_accuracy": 0.17599095973695192,
+        "seconds": 4.026585311999952
+      }
+    ]
+  }
+}
