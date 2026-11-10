@@ -60,12 +60,14 @@ class AlgebraicClusterLearner:
         random_state=42,
         routing_profile="legacy-v8",
     ):
-        if routing_profile not in ('legacy-v8','paper-routing-v1'):
+        if routing_profile not in ('legacy-v8','paper-routing-v1','cp-routing-v1'):
             raise ValueError('Profilo matematico non riconosciuto.')
         self.routing_profile = routing_profile
         self.full_dataset = ds.copy()
         self.total_n = len(self.full_dataset)
         actual_batch_size = min(batch_size, self.total_n)
+        if routing_profile == "cp-routing-v1":
+            actual_batch_size = min(actual_batch_size, 300)
         self.batch_size = actual_batch_size
         self.random_state = random_state
 
@@ -88,6 +90,9 @@ class AlgebraicClusterLearner:
 
         label_mask = self._create_label_mask(labels)
         self.k = min(max_k, self.n) if max_k is not None else self.n
+        if routing_profile == 'cp-routing-v1':
+            self.k = min(self.k, 32)
+            device = "numpy"
 
         numpy_class, torch_class = _AnalyticalClusterNet, ModularClusterNet
         if routing_profile == 'paper-routing-v1':
@@ -178,6 +183,9 @@ class AlgebraicClusterLearner:
         Differentiable training loop optimizing Cluster Probability (cp) via Adam
         with automatic early stopping.
         """
+        if self.routing_profile == "cp-routing-v1":
+            from .variational import train
+            return train(self, max_epochs)
         if self._use_torch:
             optimizer = optim.Adam(self.model_net.parameters(), lr=self.lr)
         else:
@@ -243,6 +251,8 @@ class AlgebraicClusterLearner:
             pd.DataFrame(self.NormDataset, columns=self.cols)
         )
         transformation_row_mask = self.Transformation_hard.sum(axis=1) > 0
+        if self.routing_profile == "cp-routing-v1":
+            transformation_row_mask[:] = True
         if not np.any(transformation_row_mask):
             transformation_row_mask[0] = True
 
@@ -257,6 +267,8 @@ class AlgebraicClusterLearner:
         if self.routing_profile == 'paper-routing-v1':
             self.model.routing_parameters = dict(alpha=self.model_net.relevance_alpha,
                 beta=self.model_net.beta, gamma=self.model_net.mass_gamma)
+        if self.routing_profile == "cp-routing-v1":
+            self.model.routing_parameters = self.variational_state
         self.model.Freqs = self.Freqs.T[transformation_row_mask]
         self.model.n = int(max(self.model.Counts.sum(), len(self.NormDataset)))
         return self.model
@@ -290,6 +302,8 @@ class AlgebraicClusterLearner:
         }
 
     def get_current_model(self):
+        if self.routing_profile == "cp-routing-v1" and hasattr(self,"model"):
+            return self.model
         self.forward_pass()
         return self.setModel()
 

@@ -87,7 +87,7 @@ def validate(directory, repo, tree=None):
             or audit.get('tree') != value['tree'] or audit.get('commit') != value['source_commit']
             or audit.get('run_id') != value['run_id']
             or audit.get('source_clean') is not True or audit.get('torch_verified') is not True or audit.get('shared_algebra_verified') is not True
-            or audit.get('tests_run', 0) < 13 or any(audit.get(k) != 0 for k in ('failures', 'errors', 'skipped'))
+            or audit.get('tests_run', 0) < 17 or any(audit.get(k) != 0 for k in ('failures', 'errors', 'skipped'))
             or audit.get('conformance') != 'partial' or audit.get('full_paper_conformance') is not False):
         raise ValueError('Paper audit is missing, failed, skipped, dirty or from another source/run')
     for filename in ('generative-runtime.json', 'lm-audit.json', 'compose.generative.hostinger.yaml'):
@@ -100,7 +100,7 @@ def validate(directory, repo, tree=None):
             or generative.get('image') != value.get('generative_image')
             or any(generative.get(k) != value[k] for k in ('tree', 'source_commit', 'run_id', 'run_attempt'))
             or generative.get('audit_sha256') != hashlib.sha256((directory / 'lm-audit.json').read_bytes()).hexdigest()
-            or lm_audit.get('status') != 'passed' or lm_audit.get('skipped') != 0 or lm_audit.get('tests_run',0) < 32
+            or lm_audit.get('status') != 'passed' or lm_audit.get('skipped') != 0 or lm_audit.get('tests_run',0) < 36
             or lm_audit.get('controlled_protocol') != 'controlled-v1' or lm_audit.get('controls_verified') is not True
             or lm_audit.get('profile') != 'acan-lm-causal-prefix-v1'
             or lm_audit.get('gpu_verified') is not False or lm_audit.get('full_paper_conformance') is not False

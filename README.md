@@ -256,3 +256,17 @@ Il routing sperimentale del paper non sostituisce automaticamente il profilo
 attuale: sui dati reali non emerge un vincitore generale. I risultati completi,
 compresi regressioni e baseline, sono conservati senza pubblicare le righe dei
 file utente.
+
+### Routing CP comune e spiegazione nell’app
+
+La scheda **Matematica** spiega G, T, R, CP, routing, gerarchia e NLL.
+Per usare il nuovo solver sperimentale scegli **Model → Impostazioni avanzate →
+Routing ACAN → CP diretta**; nei nuovi progetti **Generative** scegli lo stesso
+profilo. NumPy e Torch condividono l’obiettivo, con adattatori per statistiche
+congelate o prefissi causali. Budget CPU generativo: 32 token e 8 slot.
+I progetti precedenti conservano il profilo originale.
+
+L’unificazione non garantisce un miglioramento di accuracy: su Letter i risultati
+restano insufficienti anche con più livelli. Diagnosi e confronti misurati in
+[LETTER-DIAGNOSIS.md](docs/LETTER-DIAGNOSIS.md); formulazione e limiti in
+[VARIATIONAL-ROUTING.md](docs/VARIATIONAL-ROUTING.md).

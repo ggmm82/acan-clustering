@@ -263,13 +263,14 @@ b,?,no
             ('lm-length','value',64),('lm-batch','value',1),('lm-accum','value',1),('lm-lr','value',.0001),
             ('lm-slots','value',16),('lm-window','value',16),('lm-rank','value',8),('lm-save','value',5),
             ('lm-device','value','cpu'),('lm-distill','value',True),('lm-fraction','value',1.),
-            ('lm-patience','value',5),('lm-min-delta','value',.001)]
+            ('lm-patience','value',5),('lm-min-delta','value',.001),('lm-routing','value','shared-algebra-v1')]
         with patch('acan.vis.generative.backend',side_effect=[{'id':'new-job'},{}]) as backend:
             result=self.invoke('..lm-active-job.data',[('lm-start','n_clicks',1),('lm-pause','n_clicks',0),('lm-resume','n_clicks',0)],states)
         options=backend.call_args_list[0].args[3]
         self.assertEqual(options['protocol'],'controlled-v1');self.assertEqual(options['distillation_weight'],.5)
         self.assertEqual(options['graft_fraction'],1.);self.assertEqual(options['early_stop_patience'],5)
         self.assertEqual(options['early_stop_min_delta'],.001)
+        self.assertEqual(options['routing_profile'],'shared-algebra-v1')
         self.assertEqual(result['lm-active-job']['data'],'new-job')
 
     def test_sessions_receive_distinct_server_identifiers(self):

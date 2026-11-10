@@ -10,6 +10,13 @@ paper invalidates the audit gate until its claim mapping is reviewed explicitly.
 
 ## Verified software contracts
 
+The dedicated audit now requires 17 checks, including four checks of the
+[variational routing proposal](VARIATIONAL-ROUTING.md): fixed-prior KL identity,
+direct CP gradients, slot permutation and controlled ascent/mass stability.
+These persist in the deployment gate; they do not activate a new router or
+certify downstream predictive quality. The collapse theorem's gamma=1 boundary
+is qualified explicitly in that analysis.
+
 | Contract | Repeated verification |
 | --- | --- |
 | Competitive assignment | Each tuple's attention weights sum to one over concepts. |
