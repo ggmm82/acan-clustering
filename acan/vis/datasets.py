@@ -1,11 +1,62 @@
 """Dataset typing and actionable resource preflight for the research UI."""
 import math
+import io
+import csv
+import re
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 from sklearn.model_selection import train_test_split
 
 TARGET_NAMES = ('class','label','target','survived','income','gioco','outcome','response')
+
+
+def _arff_tokens(text):
+    values, current, quote, escaped = [], [], None, False
+    for char in text:
+        if escaped:
+            current.append(char); escaped = False
+        elif char == '\\' and quote:
+            current.append(char); escaped = True
+        elif quote:
+            current.append(char)
+            if char == quote:
+                quote = None
+        elif char in ("'", '"'):
+            quote = char; current.append(char)
+        elif char == ',':
+            values.append(''.join(current).strip()); current = []
+        else:
+            current.append(char)
+    if quote:
+        raise ValueError('Valore ARFF con virgolette non chiuse.')
+    values.append(''.join(current).strip())
+    return values
+
+
+def read_arff(content):
+    """Normalize lexical spacing/quoting for SciPy's numeric/nominal ARFF reader."""
+    from scipy.io import arff
+    lines, data = [], False
+    for line in content.decode('utf-8-sig').splitlines():
+        match = re.match(r'^(\s*@attribute\s+.*?)\{(.*)\}(\s*(?:%.*)?)$', line, re.I)
+        if not data and match:
+            line = match[1] + '{' + ','.join(_arff_tokens(match[2])) + '}' + match[3]
+        elif data and line.strip() and not line.lstrip().startswith(('%', '{')):
+            values = []
+            for token in _arff_tokens(line):
+                if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
+                    quote = token[0]
+                    token = token[1:-1].replace('\\'+quote, quote).replace('\\\\', '\\')
+                values.append(token)
+            stream = io.StringIO()
+            csv.writer(stream, quoting=csv.QUOTE_ALL, lineterminator='').writerow(values)
+            line = stream.getvalue()
+        lines.append(line)
+        if line.strip().casefold() == '@data':
+            data = True
+    values, _ = arff.loadarff(io.StringIO('\n'.join(lines)))
+    return clean_frame(pd.DataFrame(values))
 
 
 def clean_frame(frame):
@@ -15,7 +66,8 @@ def clean_frame(frame):
         raise ValueError('Nomi colonna duplicati dopo la normalizzazione.')
     for column in frame:
         if not is_numeric_dtype(frame[column]):
-            frame[column] = frame[column].map(lambda value: value.strip() if isinstance(value,str) else value)
+            frame[column] = frame[column].map(lambda value: value.decode('utf-8').strip() if isinstance(value,bytes)
+                                               else value.strip() if isinstance(value,str) else value)
             frame[column] = frame[column].replace({'?': np.nan, '': np.nan})
     return frame
 
@@ -34,7 +86,8 @@ def target_and_filters(frame, previous=None):
         observed = max(int(values.notna().sum()),1)
         identifier = name.casefold().replace(' ','').replace('.','') in {'id','passengerid','rowid','recordid','index'} or name.casefold().endswith('_id')
         text = not is_numeric_dtype(values)
-        if unique <= 1 or (identifier and unique / observed > .95) or (text and unique > max(32,.5*observed)):
+        constant = unique == 0 or (unique == 1 and not values.isna().any())
+        if constant or (identifier and unique / observed > .95) or (text and unique > max(32,.5*observed)):
             filters.append(name)
     return labels, filters
 

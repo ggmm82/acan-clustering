@@ -10,7 +10,7 @@ from acan.vis.evaluation import evaluate
 from acan.vis.benchmark_job import BenchmarkJob, signature as benchmark_signature
 from acan.vis.refinement import root_signature, remove_branch
 from acan.vis.inference import infer
-from acan.vis.datasets import clean_frame, target_and_filters, split_for_training, check_budget
+from acan.vis.datasets import clean_frame, target_and_filters, split_for_training, check_budget, read_arff
 
 import dash  # pip install dash
 import dash_cytoscape as cyto  # pip install dash-cytoscape==0.2.0 or higher
@@ -24,7 +24,6 @@ import matplotlib.pyplot as plt
 import io
 import gzip
 import base64
-from scipy.io import arff
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from sklearn import metrics
@@ -500,7 +499,7 @@ model_layout = dbc.Container([
         dbc.Col([dbc.Label('Target (svuota per scoperta non supervisionata)'),
                  dcc.Dropdown(id='dpdnLabel', value=[], multi=True, options=[]),
                  dbc.Button('Svuota target', id='btn-clear-label', size='sm', color='link')], md=7),
-        dbc.Col([dbc.Button('Scopri concetti', id='button-learn', n_clicks=0, className='m-1'),
+        dbc.Col([dbc.Button('Scopri concetti', id='button-learn', n_clicks=0, disabled=True, className='m-1'),
                  dbc.Button('Salva modello', id='btn-download', n_clicks=0, className='m-1', outline=True),
                  dcc.Download(id='download-model')], md=5),
     ], className='my-3'),
@@ -725,6 +724,18 @@ def update_labels(data, lbs):
 
 
 
+@app.callback(Output('button-learn','disabled'), Input('data-store','data'),
+              Input('label-store','data'), Input('dpdnLabel','value'), Input('dpdnLabel','options'),
+              Input('dpdnFilter','value'), Input('dpdnFilter','options'))
+def training_controls_pending(data, labels, selected, options, filters, filter_options):
+    if not data or not options or list(labels or []) != list(selected or []):
+        return True
+    columns = set(data)
+    available = {item['value'] for item in (filter_options or [])}
+    return not (set(labels or []).issubset(columns) and available == columns-set(labels or [])
+                and set(filters or []).issubset(available))
+
+
 @app.callback(
     Output("download-model", "data"),
     Input("btn-download", "n_clicks"),
@@ -747,36 +758,37 @@ def update_data(contents, filename, last_modified, labels):
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
         try:
-            if 'csv' in filename:
+            extension = filename.rsplit('.', 1)[-1].casefold()
+            if extension == 'csv':
                 # Assume that the user uploaded a CSV file
                 df = pd.read_csv(
                     io.StringIO(decoded.decode('utf-8')))
                 
-            if 'json' in filename:
+            elif extension == 'json':
                 # Assume that the user uploaded a CSV file
                 df = pd.read_json(
                     io.StringIO(decoded.decode('utf-8')))
                 
-            elif 'xlsx' in filename:
+            elif extension == 'xlsx':
                 # Assume that the user uploaded an excel file
                 df = pd.read_excel(io.BytesIO(decoded), engine='openpyxl')
 
-            elif 'parquet' in filename:
+            elif extension == 'parquet':
                 arrTb=pq.read_table(io.BytesIO(decoded))
                 df=arrTb.to_pandas(date_as_object=False)
 
-            elif 'arff' in filename:
-                # Assume that the user uploaded an excel file
-                data = arff.loadarff(io.StringIO(decoded.decode('utf-8')))
-                df = pd.DataFrame(data[0])
+            elif extension == 'arff':
+                df = read_arff(decoded)
 
-            elif 'mat' in filename:
+            elif extension == 'mat':
                 mat = loadmat(io.BytesIO(decoded))
                 mat = {k:v for k, v in mat.items() if k[0] != '_'}
                 mdata = mat[next(iter(mat))]  # variable in mat file
                 mdtype = mdata.dtype  # dtypes of structures are "unsized objects"
                 ndata = {n: mdata[n][0, 0] for n in mdtype.names}
                 df=pd.DataFrame(ndata['data'])
+            else:
+                raise ValueError('Formato non supportato: usa CSV, JSON, XLSX, Parquet, ARFF o MAT.')
 
             df = clean_frame(df)
             original_rows = len(df)
@@ -872,6 +884,7 @@ def evaluate_model(model, benchmark_report, tab_id):
             report['dataset'] = dataset_info
         panels = [html.P(f"{source} · {report['rows']} righe · {stats['nodes']} nodi · {stats['groups']} gruppi · {stats['depth']} livelli. Accuracy/F1 in [0,1]; MAE/RMSE nelle unità originali."),
                   dbc.Table.from_dataframe(summary.round(5), striped=True, responsive=True)]
+        panels.extend(dbc.Alert(item['warning'], color='warning') for item in report.get('diagnostics', []))
         if dataset_info:
             panels.append(html.P(f"Training: {dataset_info['train_rows']} righe; validazione: {dataset_info['validation_rows']}; righe senza target escluse: {dataset_info['excluded_missing_targets']}; split stratificato: {'sì' if dataset_info['stratified'] else 'no'}. Target: {dataset_info['target_types']}."))
         if report.get('comparisons'):

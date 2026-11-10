@@ -55,6 +55,49 @@ class TestUICallbacks(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()['response']
 
+    def test_training_waits_for_target_and_filter_synchronization(self):
+        inputs=[('data-store','data',{'x':[0,1],'class':['a','b']}),('label-store','data',[]),
+            ('dpdnLabel','value',['class']),('dpdnLabel','options',[dict(label='class',value='class')]),
+            ('dpdnFilter','value',[]),('dpdnFilter','options',[dict(label='x',value='x')])]
+        result=self.invoke('button-learn.disabled',inputs)
+        self.assertTrue(result['button-learn']['disabled'])
+        inputs[1]=('label-store','data',['class'])
+        self.assertFalse(self.invoke('button-learn.disabled',inputs)['button-learn']['disabled'])
+        # Explicitly clearing the target still permits unsupervised discovery.
+        inputs[1]=('label-store','data',[]);inputs[2]=('dpdnLabel','value',[])
+        inputs[-1]=('dpdnFilter','options',[dict(label=x,value=x) for x in ('x','class')])
+        self.assertFalse(self.invoke('button-learn.disabled',inputs)['button-learn']['disabled'])
+
+    def test_arff_upload_returns_json_strings_and_can_start_native_training(self):
+        raw=b"""@relation fixture
+@attribute feature { a , b }
+@attribute flag { Y }
+@attribute class { yes , no }
+@data
+a,Y,yes
+b,?,no
+a,Y,yes
+b,?,no
+a,Y,yes
+b,?,no
+a,Y,yes
+b,?,no
+a,Y,yes
+b,?,no
+"""
+        result=self.invoke('..data-store.data',[('upload-data','contents','data:;base64,'+base64.b64encode(raw).decode())],
+            [('upload-data','filename','fixture.ARFF'),('upload-data','last_modified',0),('label-store','data',[])])
+        data=result['data-store']['data']
+        self.assertEqual(data['feature'][0],'a')
+        self.assertIsNone(data['flag'][1])
+        from acan.vis.datasets import target_and_filters,split_for_training
+        from acan.vis.training import train_native
+        labels,filters=target_and_filters(pd.DataFrame(data))
+        self.assertNotIn('flag',filters)
+        train,_,_=split_for_training(data,labels,filters)
+        graph=train_native(train,labels,dict(max_depth=1,max_epochs=25,min_samples_split=5,similarity_threshold=.92,lr=.08,tau=.2,alpha=.5,device='numpy',batch_size=300))
+        self.assertIn(graph.rootId,graph.clusterModel)
+
     def test_layer_inspection_generation_is_explicit_and_renders_results(self):
         from unittest.mock import patch
         from acan.vis.generative import inspection_panel

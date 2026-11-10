@@ -33,3 +33,38 @@ streaming and bounded-cache CPU checks. Exported new models carry an inference
 contract. None of this changes the partial-conformance status or validates the
 paper’s reported 1.89M synthetic results, 1B language quality, GPU speedups or
 98–99% whole-model compression. See [controlled workflow](CONTROLLED-LM.md).
+
+## Tabular graph versus one generative attention layer
+
+These are related model profiles, not the same numerical function. A single
+ACAN-LM layer is not a tabular graph node with a different visualization.
+
+| Property | Interactive tabular graph | Causal ACAN-LM layer |
+| --- | --- | --- |
+| Input | Encoded, normalized dataset rows and attributes | Contextual token vectors from a Transformer block |
+| Statistics | Dataset/root statistics | Prefix-only statistics; future tokens excluded |
+| Routing | Prior mass times blended dot/metric similarity, divided by temperature | Relevance-weighted squared distance plus bilinear coupling, then a cumulative log-mass prior |
+| Prototypes | Sigmoid latent G blended with posterior centroids for relevance | Learned unconstrained G used for routing; separate dynamic value/moment accumulators |
+| Relevance | Root-shift relevance weighted by fixed omega | Initial shift/inverse-distance blend and final shift/tightness gate |
+| Omega | Fixed data-derived coupling | Trainable channel vector |
+| Learning objective | Maximize CP | Next-token cross-entropy, optionally teacher KL in controlled training; no separate CP loss |
+| Output | Groups/relevance and prediction or completion through the graph | Hidden-state update combining concept memory and local attention; vocabulary probabilities are produced by the parent LM head |
+| Hierarchy | Explicit child nodes, refined on selected samples | Stacked Transformer blocks; no parent–child graph between slot IDs |
+
+The tabular differences from the paper are already enumerated in
+[PAPER-AUDIT.md](PAPER-AUDIT.md) and `acan/paper_contract.py`. The LM source
+correspondence and authorized causal corrections are listed above. Passing either
+software gate does not establish equivalence between profiles or full paper
+conformance. This PR does not change either set of equations to make them appear
+identical.
+
+## ARFF upload regression
+
+Weka nominal attributes previously remained Python bytes and failed Dash JSON
+serialization; whitespace in nominal declarations could also make SciPy reject
+`anneal.ORIG`. The upload path now normalizes lexical spacing/quoting and decodes
+nominal values before returning JSON. The existing application convention that
+`?` denotes missing data remains in use. A column with one observed value **and**
+missing rows is no longer suggested as constant: its presence/missingness may be
+informative. Truly constant and entirely missing columns remain suggestions.
+These are input/GUI fixes; CP, routing, relevance and prediction are unchanged.

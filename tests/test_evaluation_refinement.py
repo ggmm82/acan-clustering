@@ -74,6 +74,20 @@ class TestUserDataEvaluation(unittest.TestCase):
         cls.train, cls.test = cls.data.iloc[:80], cls.data.iloc[80:]
         cls.graph = train_native(cls.train, ['class', 'number'], OPTIONS)
 
+    def test_single_predicted_class_is_reported_without_starting_benchmarks(self):
+        from unittest.mock import patch
+        from acan.vis.evaluation import evaluate
+        predictions=self.test[['class','number']].copy()
+        predictions['class']='low'
+        with patch('acan.vis.evaluation.infer',return_value=predictions), patch('acan.vis.evaluation.KNeighborsClassifier.fit') as fit:
+            report=evaluate(self.graph.to_json(),self.test,self.train,baselines=False)
+            fit.assert_not_called()
+        self.assertEqual(len(report['diagnostics']),1)
+        self.assertEqual(report['diagnostics'][0]['target'],'class')
+        self.assertEqual(report['diagnostics'][0]['predicted_classes'],1)
+        self.assertEqual(report['diagnostics'][0]['observed_classes'],2)
+        self.assertIn('balanced accuracy',report['diagnostics'][0]['warning'])
+
     def test_current_and_previous_same_rows_independent_targets(self):
         from acan.vis.evaluation import evaluate, encode
         report = evaluate(self.graph.to_json(), self.test, before_json=self.graph.to_json(), baselines=False)
