@@ -193,6 +193,7 @@ class AlgebraicClusterLearner:
 
         best_cp = -np.inf
         best_state = None
+        best_data = None
         wait = 0
 
         for epoch in range(max_epochs):
@@ -200,6 +201,11 @@ class AlgebraicClusterLearner:
                 break
             self.iteration = epoch
             self._sample_new_batch(epoch)
+            # The reported objective belongs to the pre-update weights and this
+            # exact batch. Preserve both as one candidate checkpoint.
+            candidate_state = ({k: v.detach().clone() for k,v in self.model_net.matrices.items()}
+                               if self._use_torch else
+                               {k: v.copy() for k,v in self.model_net.matrices.items()})
 
             if self._use_torch:
                 optimizer.zero_grad()
@@ -221,10 +227,8 @@ class AlgebraicClusterLearner:
             if curr_cp > best_cp + min_delta:
                 best_cp = curr_cp
                 wait = 0
-                if self._use_torch:
-                    best_state = {k: v.detach().clone() for k, v in self.model_net.matrices.items()}
-                else:
-                    best_state = {k: v.copy() for k, v in self.model_net.matrices.items()}
+                best_state = candidate_state
+                best_data = self.NormDataset.copy()
             else:
                 wait += 1
                 if wait >= patience and epoch >= 20:
@@ -234,6 +238,10 @@ class AlgebraicClusterLearner:
                 print(f"[Epoch {epoch:03d}] cp={curr_cp:.5f}, k_active={k_act}")
 
         if best_state is not None:
+            self.NormDataset = best_data
+            self.n = len(best_data)
+            self.X = (torch.tensor(best_data,dtype=self.X.dtype,device=self.device)
+                      if self._use_torch else best_data)
             if self._use_torch:
                 with torch.no_grad():
                     for k, v in best_state.items():
