@@ -146,3 +146,55 @@ applica limiti cgroup: il flag `--memory=4g` non certifica un tetto effettivamen
 imposto. Su Hostinger vanno controllati il picco RAM del training e la memoria
 del worker, includendo gli altri processi; il consumo di una prova breve non
 garantisce il consumo massimo di ogni configurazione o addestramento lungo.
+
+## Guardare dentro i layer dal web
+
+I 30 layer di SmolLM2-135M sono una scelta dell'architettura originale. Sostituire
+il 50% superiore con ACAN è un'ipotesi sperimentale, non un risultato che stabilisce
+il numero ottimale. I layer non sono i livelli dell'albero ACAN tabellare: non
+esistono collegamenti padre–figlio fra i loro slot. Per valutare il graft confronta
+originale, controllo denso-LoRA e ibrido sugli stessi split e budget; il profilo
+100% ACAN è un ulteriore esperimento, non una garanzia di miglioramento.
+
+1. Nel progetto controllato in esecuzione apri **Dentro il modello · layer, slot e
+   gradienti** e premi **Cattura il prossimo passo di training**. La richiesta è
+   consumata una sola volta al passo successivo, senza avviare un altro training.
+   Se metti in pausa prima che sia acquisita, rimane in attesa della ripresa.
+2. La tabella mostra l'ampiezza RMS delle attivazioni in ingresso/uscita, quanto
+   cambia il segnale e la norma dei gradienti prima del clipping. Le attivazioni
+   riguardano l'ultima posizione del primo elemento del primo microbatch; i
+   gradienti comprendono l'accumulo dell'intero passo. Non sono medie dell'intero
+   corpus e non provano l'utilità causale di un layer.
+3. La mappa mostra la frazione di massa accumulata in ciascuno slot ACAN. Il numero
+   di slot effettivi è l'esponenziale dell'entropia delle frazioni: circa 1 indica
+   concentrazione, vicino al numero di slot indica distribuzione uniforme. Nessuno
+   dei due estremi è automaticamente buono o cattivo. Uno slot in L15 non ha
+   necessariamente lo stesso significato dello slot con uguale indice in L16.
+4. Per l'inferenza metti in pausa il training, seleziona un checkpoint, scrivi un
+   prompt e abilita **Ispeziona i layer durante la generazione**. Scegli al massimo
+   32 nuovi token, con prompt massimo 256 token. Premi **Genera dal checkpoint**,
+   poi scegli **Ultima generazione ispezionata** nella sezione di ispezione.
+5. Il primo campione è il prefill dell'intero prompt; i successivi leggono un nuovo
+   token ciascuno usando la memoria precedente. La GUI mostra la lunghezza del
+   prefisso, l'ultimo token in ingresso e i cinque candidati successivi con le
+   probabilità. Il campionamento può selezionare un candidato diverso dal primo.
+   Il token finale emesso non ha un forward aggiuntivo, quindi non viene mostrata
+   una sua nuova distribuzione successiva.
+6. Scarica il JSON per confrontare catture e conservare risultati. La cattura di
+   training più recente resta nel volume; le tracce di inferenza restano nel
+   risultato della generazione. Le richieste e i risultati sono isolati per
+   workspace. Il report di training non include il testo del corpus.
+
+Valori non finiti richiedono attenzione alla stabilità numerica. Gradienti sempre
+nulli su più catture possono indicare pesi scollegati, ma un singolo zero può essere
+normale (anche per l'inizializzazione LoRA). Una massa oltre il 95% in uno slot
+viene segnalata come concentrazione da indagare: non è una diagnosi automatica di
+collasso. Il report JSON contiene anche assegnazioni dell'ultimo token, rilevanza
+media, slot attivi e numero di parametri con gradiente per layer.
+
+La cattura non modifica equazioni, output o gradienti e rimuove gli hook anche in
+caso di errore. Introduce però sincronizzazioni e lavoro aggiuntivo: **i tempi di
+una generazione ispezionata non sono benchmark**. Non salva matrici di attenzione
+complete, non etichetta automaticamente i concetti e non applica una loss CP
+aggiuntiva. Il trainer legacy resta invariato: su quei progetti è disponibile
+l'ispezione in generazione, non la cattura del prossimo passo di training.
