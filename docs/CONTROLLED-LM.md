@@ -3,7 +3,10 @@
 Lo scopo è verificare se ACAN può conservare qualità linguistica e offrire vantaggi
 misurabili di memoria o velocità. Avere un training funzionante non dimostra ancora
 quel risultato. Su Hostinger CPU si usa SmolLM2-135M; 360M e 1.7B richiedono un
-worker CUDA in questa applicazione. Non viene acquistata o attivata alcuna GPU.
+worker CUDA in questa applicazione. Il profilo CPU conservativo rifiuta
+prima del caricamento batch maggiori di 1, blocchi oltre 128 token (64 nel
+profilo al 100% ACAN), slot/finestra oltre 16 e rank LoRA oltre 8. Questi limiti
+riducono il rischio di esaurire la RAM; non sostituiscono la verifica del VPS. Non viene acquistata o attivata alcuna GPU.
 
 ## Percorso dalla GUI
 
@@ -66,7 +69,9 @@ esplicito e può essere lento su CPU. Il controllo non altera il progetto ACAN.
   distribuzioni del modello originale congelato. Il peso predefinito è 0,5 e la
   temperatura è 2 quando l'opzione è selezionata. È una scelta ingegneristica
   esplicita, non un valore numerico imposto dal paper. Richiede più RAM e tempo;
-  resta facoltativa su CPU. La loss NLL mostrata rimane cross-entropy; obiettivo
+  resta facoltativa su CPU. Patience e miglioramento minimo sono configurabili
+  prima del nuovo training nelle impostazioni avanzate; patience 0 disattiva
+  la pausa automatica. La loss NLL mostrata rimane cross-entropy; obiettivo
   misto e KL sono riportati separatamente nella diagnostica.
 - **50% ACAN** è il percorso ibrido predefinito. **100% ACAN** è sperimentale:
   usa le stesse equazioni causali negli interi livelli e un adattatore di cache
@@ -133,3 +138,11 @@ cache totale. I report registrano anche questi risultati negativi. Prima di
 scalare a circa 1B servono corpus adeguati, qualità stabile e misure su hardware
 appropriato. Con la sola CPU Hostinger il percorso realistico è validare il 135M,
 non riprodurre un pre-training da centinaia di milioni di token in tempi brevi.
+
+Il [report CPU](CONTROLLED-LM-CPU-SMOKE.json) conserva metriche e protocollo delle
+prove, senza corpus o chiavi. Un passo reale con teacher ha misurato circa
+2,6 GiB di RSS del processo. Il Docker annidato dell’ambiente di sviluppo non
+applica limiti cgroup: il flag `--memory=4g` non certifica un tetto effettivamente
+imposto. Su Hostinger vanno controllati il picco RAM del training e la memoria
+del worker, includendo gli altri processi; il consumo di una prova breve non
+garantisce il consumo massimo di ogni configurazione o addestramento lungo.

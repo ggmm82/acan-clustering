@@ -1,0 +1,158 @@
+{
+  "scope": "CPU mechanics and bounded diagnostics, not general-language certification",
+  "independent_test_and_cache": {
+    "architecture": "hybrid",
+    "base": "HuggingFaceTB/SmolLM2-135M",
+    "comparison": [
+      {
+        "context": 32,
+        "decode_speedup": 0.5511963888688746,
+        "prefill_speedup": 0.4484483336934281,
+        "total_cache_reduction": -1.3208984375
+      },
+      {
+        "context": 128,
+        "decode_speedup": 0.6455114355355221,
+        "prefill_speedup": 0.21348569604635495,
+        "total_cache_reduction": -0.035558363970588314
+      }
+    ],
+    "dataset": {
+      "documents": {
+        "test": 493,
+        "train": 3930,
+        "validation": 497
+      },
+      "duplicates": 0,
+      "tokens": {
+        "test": 21604,
+        "train": 174468,
+        "validation": 22411
+      }
+    },
+    "device": "cpu",
+    "protocol": {
+      "attention_backend": "eager for both arms",
+      "evaluation_sha256": "18e3753460437baa01b9f6fe4f5917a4688035e92ab539710e36a2ca93f8486d",
+      "gpu_verified": false,
+      "max_batches": 4,
+      "scope": "Bounded diagnostic; not a general-language or MMLU certification. Public text may overlap original pretraining.",
+      "seed": 42,
+      "test": "deterministically spread sample of disjoint document test split, never used for checkpoint selection",
+      "tuned": false
+    },
+    "records": {
+      "original": {
+        "performance": [
+          {
+            "cache": {
+              "acan_layers": 0,
+              "dense_layers": 1843200,
+              "total": 1843200
+            },
+            "decode_seconds": 0.6219395290000875,
+            "decode_tokens_per_second": 12.862986877296352,
+            "new_tokens": 8,
+            "prefill_seconds": 0.18012244599992755,
+            "prefill_tokens_per_second": 177.65692566718127,
+            "prompt_tokens": 32
+          },
+          {
+            "cache": {
+              "acan_layers": 0,
+              "dense_layers": 6266880,
+              "total": 6266880
+            },
+            "decode_seconds": 0.6769026560000384,
+            "decode_tokens_per_second": 11.818538351250828,
+            "new_tokens": 8,
+            "prefill_seconds": 0.4519208259999914,
+            "prefill_tokens_per_second": 283.2354532827005,
+            "prompt_tokens": 128
+          }
+        ],
+        "quality": {
+          "batches": 4,
+          "block_indices": [
+            0,
+            110,
+            220,
+            331
+          ],
+          "nll": 5.338778614997864,
+          "perplexity": 208.2581914563775,
+          "token_accuracy": 0.13671875,
+          "tokens": 256
+        }
+      },
+      "selected_checkpoint": {
+        "performance": [
+          {
+            "cache": {
+              "acan_layers": 3356280,
+              "dense_layers": 921600,
+              "total": 4277880
+            },
+            "decode_seconds": 1.1283447089999754,
+            "decode_tokens_per_second": 7.09003191683347,
+            "new_tokens": 8,
+            "prefill_seconds": 0.4016570750000028,
+            "prefill_tokens_per_second": 79.66995228454466,
+            "prompt_tokens": 32
+          },
+          {
+            "cache": {
+              "acan_layers": 3356280,
+              "dense_layers": 3133440,
+              "total": 6489720
+            },
+            "decode_seconds": 1.0486299989998997,
+            "decode_tokens_per_second": 7.629001657047545,
+            "new_tokens": 8,
+            "prefill_seconds": 2.1168670050000173,
+            "prefill_tokens_per_second": 60.46671788906217,
+            "prompt_tokens": 128
+          }
+        ],
+        "quality": {
+          "batches": 4,
+          "block_indices": [
+            0,
+            110,
+            220,
+            331
+          ],
+          "nll": 6.3153462409973145,
+          "perplexity": 552.9934964679063,
+          "token_accuracy": 0.06640625,
+          "tokens": 256
+        }
+      }
+    },
+    "revision": "93efa2f097d58c2a74874c7e644dbc9b0cee75a2",
+    "step": 4
+  },
+  "real_teacher_memory": {
+    "status": "passed",
+    "model": "HuggingFaceTB/SmolLM2-135M",
+    "device": "cpu",
+    "sequence_length": 128,
+    "distillation_weight": 0.5,
+    "steps": 1,
+    "peak_process_rss_kib": 2717552,
+    "cgroup_limit": "34359738368",
+    "trainable_parameters": 2681280,
+    "teacher_kl": 4.763321399688721,
+    "scope": "one actual 135M optimizer step with teacher; synthetic public-style documents, not a quality benchmark",
+    "requested_docker_memory_bytes": 4294967296,
+    "memory_limit_enforced": false,
+    "memory_note": "Managed nested Docker reports MemoryLimit=false; RSS is measured, not a guaranteed four-GiB cgroup cap."
+  },
+  "browser_checks": [
+    "real checkpoint generation",
+    "model delta/architecture ZIP download",
+    "own-project diagnostics download",
+    "independent-test comparison download",
+    "no JavaScript errors"
+  ]
+}

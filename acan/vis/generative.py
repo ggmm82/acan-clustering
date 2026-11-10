@@ -81,9 +81,10 @@ layout = dbc.Container([
                  for label,id,value,lo,hi in [('Token per blocco','lm-length',128,16,2048),('Batch','lm-batch',1,1,8),
                      ('Accumulo gradienti','lm-accum',8,1,256),('Learning rate','lm-lr',.0001,.0000001,.01),
                      ('Slot','lm-slots',16,2,64),('Finestra locale','lm-window',16,1,128),
-                     ('Rank LoRA','lm-rank',8,2,64),('Checkpoint ogni N passi','lm-save',100,1,10000)]]),
+                     ('Rank LoRA','lm-rank',8,2,64),('Checkpoint ogni N passi','lm-save',100,1,10000),
+                     ('Controlli senza miglioramento prima della pausa (0: disattiva)','lm-patience',3,0,20),('Miglioramento minimo NLL','lm-min-delta',.01,0,1)]]),
         dbc.Label('Attenzione ACAN nei nuovi progetti'),
-        dcc.Dropdown(id='lm-fraction',value=.5,clearable=False,options=[{'label':'50% dei livelli · ibrido predefinito','value':.5},{'label':'100% dei livelli · profilo sperimentale, qualità da misurare','value':1.}]),
+        dcc.Dropdown(id='lm-fraction',value=.5,clearable=False,options=[{'label':'50% dei livelli · ibrido predefinito','value':.5},{'label':'100% dei livelli · sperimentale; su CPU massimo 64 token','value':1.}]),
         dbc.Checkbox(id='lm-distill', value=False, label='Distillazione: imita anche il modello originale (più memoria e tempo, facoltativa su CPU)'),
         html.P('Nuovi progetti: documenti separati in training/validazione/test, duplicati esatti rimossi, miglior checkpoint conservato e pausa automatica dopo tre controlli senza miglioramenti sufficienti. Il progetto legacy conserva il metodo originale.', className='small text-muted'),
         dbc.Label('Dispositivo'), dcc.Dropdown(id='lm-device', options=['auto','cuda','cpu'], value='auto', clearable=False),
@@ -242,11 +243,14 @@ def register(app):
                 [dict(label=f"{item['config']['name']} · {item['status']} · passo {item['progress'].get('step',0)}",value=item['id']) for item in state['jobs']],
                 chosen_corpus, chosen_job)
 
-    @app.callback(Output('lm-base','options'),Output('lm-eval-profile','options'),Input('lm-state','data'))
-    def available_models(state):
+    @app.callback(Output('lm-base','options'),Output('lm-eval-profile','options'),
+                  Output('lm-length','max'),Output('lm-batch','max'),Output('lm-slots','max'),Output('lm-window','max'),Output('lm-rank','max'),
+                  Input('lm-state','data'),Input('lm-fraction','value'))
+    def available_models(state,fraction):
         cuda=(state or {}).get('capabilities',{}).get('cuda',False)
         return ([dict(label=name,value=name,disabled=not cuda and index>0) for index,name in enumerate(MODELS)],
-                [dict(label='Rapido CPU: 4 blocchi test, contesti 32/128',value='quick'),dict(label='Contesto lungo CPU: 1 blocco test, 128/1024 (lento)',value='long'),dict(label='GPU: 64 blocchi test, 128/512/2048',value='wide',disabled=not cuda)])
+                [dict(label='Rapido CPU: 4 blocchi test, contesti 32/128',value='quick'),dict(label='Contesto lungo CPU: 1 blocco test, 128/1024 (lento)',value='long'),dict(label='GPU: 64 blocchi test, 128/512/2048',value='wide',disabled=not cuda)],
+                2048 if cuda else (64 if fraction==1. else 128),8 if cuda else 1,64 if cuda else 16,128 if cuda else 16,64 if cuda else 8)
 
     @app.callback(Output('lm-pause','disabled'),Output('lm-resume','disabled'),
                   Output('lm-evaluate','disabled'),Output('lm-dense-control','disabled'),
@@ -299,14 +303,14 @@ def register(app):
                   State('lm-base','value'), State('lm-name','value'), State('lm-steps','value'),
                   State('lm-length','value'), State('lm-batch','value'), State('lm-accum','value'),
                   State('lm-lr','value'), State('lm-slots','value'), State('lm-window','value'),
-                  State('lm-rank','value'), State('lm-save','value'), State('lm-device','value'), State('lm-distill','value'), State('lm-fraction','value'), prevent_initial_call=True)
-    def control(start, pause, resume, workspace, job, corpus, base, name, steps, length, batch, accumulation, lr, slots, window, rank, save_steps, device, distill, fraction):
+                  State('lm-rank','value'), State('lm-save','value'), State('lm-device','value'), State('lm-distill','value'), State('lm-fraction','value'), State('lm-patience','value'), State('lm-min-delta','value'), prevent_initial_call=True)
+    def control(start, pause, resume, workspace, job, corpus, base, name, steps, length, batch, accumulation, lr, slots, window, rank, save_steps, device, distill, fraction, patience, min_delta):
         try:
             action = dash.ctx.triggered_id
             if action == 'lm-start':
                 config = dict(corpus_id=corpus, base_model=base, name=name, total_steps=steps, sequence_length=length,
                               batch_size=batch, accumulation=accumulation, learning_rate=lr, slots=slots, window=window,
-                              lora_rank=rank, save_steps=save_steps, device=device, protocol='controlled-v1', distillation_weight=.5 if distill else 0., graft_fraction=fraction)
+                              lora_rank=rank, save_steps=save_steps, device=device, protocol='controlled-v1', distillation_weight=.5 if distill else 0., graft_fraction=fraction, early_stop_patience=patience, early_stop_min_delta=min_delta)
                 job = backend(workspace, '/jobs', 'POST', config)['id']
                 backend(workspace, f'/jobs/{job}/start', 'POST')
                 return job, 'Training avviato nel worker; puoi chiudere la pagina.'
@@ -339,7 +343,7 @@ def register(app):
         text = f"{job['status']} · passo {metrics.get('step',0)}/{job['config']['total_steps']} · token elaborati {metrics.get('tokens_trained',0):,} · ultimo checkpoint {job['checkpoint'] or 'ancora nessuno'}"
         detail = [html.P(text), html.P(job['error'], className='text-danger') if job['error'] else None]
         for key,label in [('training_nll','NLL training'),('validation_nll','NLL validazione'),('validation_perplexity','Perplessità validazione'),
-                          ('baseline_nll','NLL base prima del graft'),('tokens_per_second','Token/s misurati'),('trainable_parameters','Parametri trainabili'),('total_parameters','Parametri totali del modello innestato')]:
+                          ('baseline_nll','NLL base prima del graft'),('tokens_per_second','Token/s misurati'),('trainable_parameters','Parametri trainabili'),('total_parameters','Parametri totali del modello innestato'),('process_peak_rss_kib','Picco RAM del processo di training (KiB)')]:
             if metrics.get(key) is not None:
                 detail.append(html.P(f"{label}: {metrics[key]:,.5g}"))
         validation = metrics.get('validation_nll')

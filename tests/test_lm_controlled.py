@@ -282,3 +282,16 @@ class ControlledTrainingTests(unittest.TestCase):
             result=prepare(source,'corpus.jsonl',Tokenizer(),root,{})
             self.assertEqual(result['documents'],{'train':1,'validation':1,'test':1})
             self.assertEqual(result['duplicates'],1)
+
+
+class CPUResourceProfileTests(unittest.TestCase):
+    def test_cpu_profile_rejects_oversized_jobs_before_weight_loading(self):
+        from acan.lm.resources import check_profile
+        options=dict(base_model='HuggingFaceTB/SmolLM2-135M',device='auto',batch_size=1,sequence_length=128,
+                     slots=16,window=16,lora_rank=8,graft_fraction=.5)
+        check_profile(options,False)
+        for changes in ({'batch_size':8},{'sequence_length':2048},{'graft_fraction':1.},{'base_model':'HuggingFaceTB/SmolLM2-360M'}):
+            with self.assertRaises(ValueError):check_profile(dict(options,**changes),False)
+        check_profile(dict(options,graft_fraction=1.,sequence_length=64),False)
+        check_profile(dict(options,batch_size=8,sequence_length=2048),True)
+        with self.assertRaises(ValueError):check_profile(dict(options,device='cpu',batch_size=8),True)

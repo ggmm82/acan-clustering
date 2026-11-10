@@ -128,6 +128,8 @@ class Store:
         return self.job(identifier, owner)
 
     def record(self, identifier, step, record):
+        import resource
+        record['process_peak_rss_kib']=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         with self.db() as db:
             db.execute('INSERT OR REPLACE INTO metrics VALUES(?,?,?)', (identifier, step, json.dumps(record, allow_nan=False)))
         self.update(identifier, progress=record)

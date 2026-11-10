@@ -21,6 +21,13 @@ def main():
             from .store import Store
             options=Store(args.root).job(args.job)['config']
             if options.get('protocol')=='controlled-v1':
+                from .resources import check_profile
+                import torch
+                try:
+                    check_profile(options,torch.cuda.is_available())
+                except ValueError as exc:
+                    Store(args.root).update(args.job,status='failed',error=str(exc),pause=0)
+                    raise
                 from .research_trainer import run_training
             else:
                 from .trainer import run_training

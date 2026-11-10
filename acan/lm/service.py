@@ -92,6 +92,9 @@ def create_app(root=None, token=None):
         if options.get('protocol')=='controlled-v1':
             from .research_options import validate_options as controlled_options
             config=controlled_options(options)
+            from .resources import check_profile
+            import torch
+            check_profile(config,torch.cuda.is_available())
         else:
             config=validate_options(options)
         corpus=store.corpus(config['corpus_id'],request.workspace,ready=True)
@@ -105,6 +108,10 @@ def create_app(root=None, token=None):
         job = store.job(identifier, request.workspace)
         if job['status'] in ACTIVE or job['status'] == 'completed':
             raise ValueError('Progetto già attivo o completato.')
+        if job['config'].get('protocol')=='controlled-v1':
+            from .resources import check_profile
+            import torch
+            check_profile(job['config'],torch.cuda.is_available())
         launch(store, job)
         return jsonify(store.job(identifier, request.workspace))
 
