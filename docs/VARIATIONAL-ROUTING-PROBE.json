@@ -1,0 +1,424 @@
+{
+  "status": "passed",
+  "scope": "synthetic mathematical probe; no dataset/LM quality claim",
+  "torch": "2.15.0+cpu",
+  "dtype": "float64",
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19
+  ],
+  "steps_per_run": 30,
+  "joint_coefficients": {
+    "mu": 1.0,
+    "tau": 1.0,
+    "gamma": 0.5,
+    "beta": 8.0,
+    "epsilon": 0.0001
+  },
+  "coefficients_status": "probe settings, not paper defaults or tuned application parameters",
+  "actual_objective_monotone": true,
+  "runs": [
+    {
+      "seed": 0,
+      "mode": "cp-only",
+      "initial_objective": 1.12740783178545,
+      "final_objective": 1.4760935053462299,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 19,
+      "backtracking_reductions": 440
+    },
+    {
+      "seed": 0,
+      "mode": "joint-energy",
+      "initial_objective": -0.36667686099815533,
+      "final_objective": 0.3424183345399383,
+      "minimum_step_gain": 5.71354963341264e-10,
+      "accepted_steps": 30,
+      "backtracking_reductions": 147
+    },
+    {
+      "seed": 1,
+      "mode": "cp-only",
+      "initial_objective": 0.902315466565886,
+      "final_objective": 1.1507424533811452,
+      "minimum_step_gain": 1.7230528115419474e-10,
+      "accepted_steps": 30,
+      "backtracking_reductions": 553
+    },
+    {
+      "seed": 1,
+      "mode": "joint-energy",
+      "initial_objective": -0.2125604601159491,
+      "final_objective": 0.335121316544182,
+      "minimum_step_gain": 1.4973999817868844e-10,
+      "accepted_steps": 30,
+      "backtracking_reductions": 591
+    },
+    {
+      "seed": 2,
+      "mode": "cp-only",
+      "initial_objective": 1.1144892073427188,
+      "final_objective": 1.4499781717598559,
+      "minimum_step_gain": 1.18831611217729e-11,
+      "accepted_steps": 30,
+      "backtracking_reductions": 107
+    },
+    {
+      "seed": 2,
+      "mode": "joint-energy",
+      "initial_objective": 0.2054941036517708,
+      "final_objective": 0.4420977037675291,
+      "minimum_step_gain": 2.601474591301667e-12,
+      "accepted_steps": 30,
+      "backtracking_reductions": 153
+    },
+    {
+      "seed": 3,
+      "mode": "cp-only",
+      "initial_objective": 1.082480067925402,
+      "final_objective": 1.3968248859768722,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 23,
+      "backtracking_reductions": 371
+    },
+    {
+      "seed": 3,
+      "mode": "joint-energy",
+      "initial_objective": 0.20828292342096488,
+      "final_objective": 0.677761915463214,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 30,
+      "backtracking_reductions": 165
+    },
+    {
+      "seed": 4,
+      "mode": "cp-only",
+      "initial_objective": 0.8821982888515092,
+      "final_objective": 1.2234492400264554,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 26,
+      "backtracking_reductions": 584
+    },
+    {
+      "seed": 4,
+      "mode": "joint-energy",
+      "initial_objective": -0.07173479761455126,
+      "final_objective": 0.47837506887844006,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 27,
+      "backtracking_reductions": 642
+    },
+    {
+      "seed": 5,
+      "mode": "cp-only",
+      "initial_objective": 1.15297943968231,
+      "final_objective": 1.272341691386584,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 30,
+      "backtracking_reductions": 66
+    },
+    {
+      "seed": 5,
+      "mode": "joint-energy",
+      "initial_objective": 0.20688990574030064,
+      "final_objective": 0.4691116744485053,
+      "minimum_step_gain": 5.820508519605028e-10,
+      "accepted_steps": 30,
+      "backtracking_reductions": 530
+    },
+    {
+      "seed": 6,
+      "mode": "cp-only",
+      "initial_objective": 0.9701943788207015,
+      "final_objective": 1.3061531417778052,
+      "minimum_step_gain": 3.1086244689504383e-15,
+      "accepted_steps": 30,
+      "backtracking_reductions": 0
+    },
+    {
+      "seed": 6,
+      "mode": "joint-energy",
+      "initial_objective": -0.29256984596556823,
+      "final_objective": 0.35901595202708303,
+      "minimum_step_gain": 2.2767854268579413e-10,
+      "accepted_steps": 30,
+      "backtracking_reductions": 151
+    },
+    {
+      "seed": 7,
+      "mode": "cp-only",
+      "initial_objective": 1.0771900741920293,
+      "final_objective": 1.3773043690189162,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 15,
+      "backtracking_reductions": 688
+    },
+    {
+      "seed": 7,
+      "mode": "joint-energy",
+      "initial_objective": -0.3957628559835139,
+      "final_objective": 0.30747341405560924,
+      "minimum_step_gain": 1.936228954946273e-13,
+      "accepted_steps": 30,
+      "backtracking_reductions": 148
+    },
+    {
+      "seed": 8,
+      "mode": "cp-only",
+      "initial_objective": 0.8724116965026634,
+      "final_objective": 1.1730515862906548,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 30,
+      "backtracking_reductions": 650
+    },
+    {
+      "seed": 8,
+      "mode": "joint-energy",
+      "initial_objective": -0.015953660400224834,
+      "final_objective": 0.38136843361852657,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 18,
+      "backtracking_reductions": 805
+    },
+    {
+      "seed": 9,
+      "mode": "cp-only",
+      "initial_objective": 1.168187948767179,
+      "final_objective": 1.3202918466198301,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 6,
+      "backtracking_reductions": 960
+    },
+    {
+      "seed": 9,
+      "mode": "joint-energy",
+      "initial_objective": -0.16398535309039142,
+      "final_objective": 0.313770516064664,
+      "minimum_step_gain": 7.053585293625986e-07,
+      "accepted_steps": 30,
+      "backtracking_reductions": 150
+    },
+    {
+      "seed": 10,
+      "mode": "cp-only",
+      "initial_objective": 1.3959952928519885,
+      "final_objective": 1.5521892238133523,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 21,
+      "backtracking_reductions": 360
+    },
+    {
+      "seed": 10,
+      "mode": "joint-energy",
+      "initial_objective": -0.25494331840493534,
+      "final_objective": 0.14155011265052675,
+      "minimum_step_gain": 5.1168759451769574e-08,
+      "accepted_steps": 30,
+      "backtracking_reductions": 151
+    },
+    {
+      "seed": 11,
+      "mode": "cp-only",
+      "initial_objective": 1.1412293579860606,
+      "final_objective": 1.7087348036985512,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 3,
+      "backtracking_reductions": 1080
+    },
+    {
+      "seed": 11,
+      "mode": "joint-energy",
+      "initial_objective": -0.49460444616445276,
+      "final_objective": 0.6889278313629013,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 21,
+      "backtracking_reductions": 724
+    },
+    {
+      "seed": 12,
+      "mode": "cp-only",
+      "initial_objective": 0.8747390027301736,
+      "final_objective": 1.330030536374228,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 5,
+      "backtracking_reductions": 1000
+    },
+    {
+      "seed": 12,
+      "mode": "joint-energy",
+      "initial_objective": 0.22060511370037994,
+      "final_objective": 0.6377105435762256,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 30,
+      "backtracking_reductions": 155
+    },
+    {
+      "seed": 13,
+      "mode": "cp-only",
+      "initial_objective": 0.976908407373527,
+      "final_objective": 1.4221545026794653,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 20,
+      "backtracking_reductions": 491
+    },
+    {
+      "seed": 13,
+      "mode": "joint-energy",
+      "initial_objective": -0.3958427205635717,
+      "final_objective": 0.42722304263454425,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 18,
+      "backtracking_reductions": 800
+    },
+    {
+      "seed": 14,
+      "mode": "cp-only",
+      "initial_objective": 0.9671208364286192,
+      "final_objective": 1.248826210659978,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 25,
+      "backtracking_reductions": 655
+    },
+    {
+      "seed": 14,
+      "mode": "joint-energy",
+      "initial_objective": -0.02950786128436278,
+      "final_objective": 0.5454871493281666,
+      "minimum_step_gain": 8.364042791697557e-11,
+      "accepted_steps": 30,
+      "backtracking_reductions": 497
+    },
+    {
+      "seed": 15,
+      "mode": "cp-only",
+      "initial_objective": 1.0700042854116094,
+      "final_objective": 1.3474227959276535,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 25,
+      "backtracking_reductions": 291
+    },
+    {
+      "seed": 15,
+      "mode": "joint-energy",
+      "initial_objective": -0.3184101869783563,
+      "final_objective": 0.5007009555116315,
+      "minimum_step_gain": 2.220446049250313e-16,
+      "accepted_steps": 30,
+      "backtracking_reductions": 149
+    },
+    {
+      "seed": 16,
+      "mode": "cp-only",
+      "initial_objective": 1.0868864709295984,
+      "final_objective": 1.608872614599174,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 19,
+      "backtracking_reductions": 529
+    },
+    {
+      "seed": 16,
+      "mode": "joint-energy",
+      "initial_objective": -0.12034538970973685,
+      "final_objective": 0.5577114357604169,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 18,
+      "backtracking_reductions": 812
+    },
+    {
+      "seed": 17,
+      "mode": "cp-only",
+      "initial_objective": 0.8689304926504526,
+      "final_objective": 1.1599152281639415,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 22,
+      "backtracking_reductions": 386
+    },
+    {
+      "seed": 17,
+      "mode": "joint-energy",
+      "initial_objective": 0.01410681694818594,
+      "final_objective": 0.3435371636639335,
+      "minimum_step_gain": 2.220446049250313e-16,
+      "accepted_steps": 30,
+      "backtracking_reductions": 154
+    },
+    {
+      "seed": 18,
+      "mode": "cp-only",
+      "initial_objective": 1.005462818800267,
+      "final_objective": 1.44455954585883,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 22,
+      "backtracking_reductions": 777
+    },
+    {
+      "seed": 18,
+      "mode": "joint-energy",
+      "initial_objective": -0.1316134945318459,
+      "final_objective": 0.4403703999277073,
+      "minimum_step_gain": 1.2240238298488748e-06,
+      "accepted_steps": 30,
+      "backtracking_reductions": 318
+    },
+    {
+      "seed": 19,
+      "mode": "cp-only",
+      "initial_objective": 0.8996472985965982,
+      "final_objective": 1.3786388073607598,
+      "minimum_step_gain": 0.0,
+      "accepted_steps": 4,
+      "backtracking_reductions": 1040
+    },
+    {
+      "seed": 19,
+      "mode": "joint-energy",
+      "initial_objective": 0.037744506392125565,
+      "final_objective": 0.5459015046677724,
+      "minimum_step_gain": 1.971142480350352e-06,
+      "accepted_steps": 30,
+      "backtracking_reductions": 147
+    }
+  ],
+  "duplicate_slot_stability": [
+    {
+      "gamma": 0.5,
+      "symmetric_gain_analytic": 0.4999000199960008,
+      "symmetric_gain_numeric": 0.4999000200178738,
+      "initial_mass": 0.51,
+      "mass_after_100_iterations": 0.5000000000000001
+    },
+    {
+      "gamma": 1.0,
+      "symmetric_gain_analytic": 0.9998000399920016,
+      "symmetric_gain_numeric": 0.9998000399802365,
+      "initial_mass": 0.51,
+      "mass_after_100_iterations": 0.5098020063344474
+    },
+    {
+      "gamma": 1.15,
+      "symmetric_gain_analytic": 1.1497700459908018,
+      "symmetric_gain_numeric": 1.149770045977272,
+      "initial_mass": 0.51,
+      "mass_after_100_iterations": 0.9999643293324623
+    }
+  ],
+  "note": "100 repeated mass updates are a diagnostic dynamical system, not the current two-stage forward"
+}
