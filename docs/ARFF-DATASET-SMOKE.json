@@ -1,0 +1,446 @@
+{
+  "scope": "Local functional upload/training/evaluation check on supplied files. No hyperparameter search, no guarantee of model quality.",
+  "uploaded_files": 5,
+  "distinct_files": 4,
+  "duplicate": "The two anneal.arff uploads have identical SHA-256.",
+  "protocol": {
+    "seed": 42,
+    "validation_fraction": 0.2,
+    "initial_depth": 1,
+    "max_epochs": 100,
+    "lr": 0.08,
+    "tau": 0.2,
+    "alpha": 0.5,
+    "batch_size": 300,
+    "device": "numpy CPU",
+    "baselines_fitted": false,
+    "majority_reference": "Training majority label scored on the same validation rows; counts only."
+  },
+  "records": [
+    {
+      "file": "anneal.arff",
+      "sha256": "16579283dc5b058fcfe591d72578809307c842414b070548c6550336562e0f52",
+      "before": {
+        "nominal_python_type": "bytes",
+        "failure": "Nominal bytes cannot be serialized in the Dash JSON response."
+      },
+      "rows": 898,
+      "columns": 39,
+      "targets": [
+        "class"
+      ],
+      "filters": [
+        "product-type",
+        "'m'",
+        "marvi",
+        "corr",
+        "jurofm",
+        "'s'",
+        "'p'"
+      ],
+      "split": {
+        "raw_rows": 898,
+        "usable_rows": 898,
+        "excluded_missing_targets": 0,
+        "excluded_columns": [
+          "product-type",
+          "'m'",
+          "marvi",
+          "corr",
+          "jurofm",
+          "'s'",
+          "'p'"
+        ],
+        "target_types": {
+          "class": "classification"
+        },
+        "stratified": true,
+        "train_rows": 718,
+        "validation_rows": 180,
+        "seed": 42
+      },
+      "encoding": {
+        "rows": 718,
+        "columns": 82,
+        "cells": 58876,
+        "largest": [
+          [
+            "steel",
+            8
+          ],
+          [
+            "formability",
+            5
+          ],
+          [
+            "surface-quality",
+            5
+          ],
+          [
+            "class",
+            5
+          ],
+          [
+            "blue/bright/varn/clean",
+            4
+          ],
+          [
+            "family",
+            3
+          ]
+        ]
+      },
+      "training_seconds": 2.001798394998332,
+      "graph": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 1
+      },
+      "evaluation": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.7611111111111111,
+          "N": 180
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.2,
+          "N": 180
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.17287066246056781,
+          "N": 180
+        }
+      ],
+      "diagnostics": [
+        {
+          "target": "class",
+          "predicted_classes": 1,
+          "observed_classes": 5,
+          "warning": "Target class: ACAN predice una sola classe su 5 presenti nella validazione. L’accuracy può essere fuorviante: controlla balanced accuracy e F1 macro."
+        }
+      ],
+      "predicted_classes": {
+        "class": 1
+      },
+      "majority_validation_accuracy": {
+        "class": 0.7611111111111111
+      },
+      "upload_http": 200
+    },
+    {
+      "file": "autos.arff",
+      "sha256": "61335be0bef9805450fbcd82068c452d5af4e51b33e2397cf11816688fa87a3a",
+      "before": {
+        "nominal_python_type": "bytes",
+        "failure": "Nominal bytes cannot be serialized in the Dash JSON response."
+      },
+      "rows": 205,
+      "columns": 26,
+      "targets": [
+        "symboling"
+      ],
+      "filters": [],
+      "split": {
+        "raw_rows": 205,
+        "usable_rows": 205,
+        "excluded_missing_targets": 0,
+        "excluded_columns": [],
+        "target_types": {
+          "symboling": "classification"
+        },
+        "stratified": true,
+        "train_rows": 164,
+        "validation_rows": 41,
+        "seed": 42
+      },
+      "encoding": {
+        "rows": 164,
+        "columns": 86,
+        "cells": 14104,
+        "largest": [
+          [
+            "make",
+            22
+          ],
+          [
+            "engine-type",
+            7
+          ],
+          [
+            "fuel-system",
+            7
+          ],
+          [
+            "num-of-cylinders",
+            6
+          ],
+          [
+            "symboling",
+            6
+          ],
+          [
+            "body-style",
+            5
+          ]
+        ]
+      },
+      "training_seconds": 0.474664962002862,
+      "graph": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 5
+      },
+      "evaluation": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "symboling",
+          "Metrica": "Accuracy",
+          "Valore": 0.2926829268292683,
+          "N": 41
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "symboling",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.2878787878787879,
+          "N": 41
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "symboling",
+          "Metrica": "F1_macro",
+          "Valore": 0.14017094017094017,
+          "N": 41
+        }
+      ],
+      "diagnostics": [],
+      "predicted_classes": {
+        "symboling": 2
+      },
+      "majority_validation_accuracy": {
+        "symboling": 0.3170731707317073
+      },
+      "upload_http": 200
+    },
+    {
+      "file": "anneal.ORIG.arff",
+      "sha256": "d2269d703674b7e8b72a941a1f9f29dad29718f0c153338cc2325a99818d7444",
+      "before": {
+        "failure": "C value not in ('C ', 'H ', 'G')"
+      },
+      "rows": 898,
+      "columns": 39,
+      "targets": [
+        "class"
+      ],
+      "filters": [
+        "product-type",
+        "m",
+        "marvi",
+        "corr",
+        "jurofm",
+        "s",
+        "p"
+      ],
+      "split": {
+        "raw_rows": 898,
+        "usable_rows": 898,
+        "excluded_missing_targets": 0,
+        "excluded_columns": [
+          "product-type",
+          "m",
+          "marvi",
+          "corr",
+          "jurofm",
+          "s",
+          "p"
+        ],
+        "target_types": {
+          "class": "classification"
+        },
+        "stratified": true,
+        "train_rows": 718,
+        "validation_rows": 180,
+        "seed": 42
+      },
+      "encoding": {
+        "rows": 718,
+        "columns": 82,
+        "cells": 58876,
+        "largest": [
+          [
+            "steel",
+            8
+          ],
+          [
+            "formability",
+            5
+          ],
+          [
+            "surface-quality",
+            5
+          ],
+          [
+            "class",
+            5
+          ],
+          [
+            "blue/bright/varn/clean",
+            4
+          ],
+          [
+            "family",
+            3
+          ]
+        ]
+      },
+      "training_seconds": 1.2524477250008204,
+      "graph": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 1
+      },
+      "evaluation": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.7611111111111111,
+          "N": 180
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.2,
+          "N": 180
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.17287066246056781,
+          "N": 180
+        }
+      ],
+      "diagnostics": [
+        {
+          "target": "class",
+          "predicted_classes": 1,
+          "observed_classes": 5,
+          "warning": "Target class: ACAN predice una sola classe su 5 presenti nella validazione. L’accuracy può essere fuorviante: controlla balanced accuracy e F1 macro."
+        }
+      ],
+      "predicted_classes": {
+        "class": 1
+      },
+      "majority_validation_accuracy": {
+        "class": 0.7611111111111111
+      },
+      "upload_http": 200
+    },
+    {
+      "file": "audiology.arff",
+      "sha256": "7c27ff462d6f05d83bf672db88add7621e7da1014eb174a0aac52b3d0a1c5903",
+      "before": {
+        "nominal_python_type": "bytes",
+        "failure": "Nominal bytes cannot be serialized in the Dash JSON response."
+      },
+      "rows": 226,
+      "columns": 70,
+      "targets": [
+        "class"
+      ],
+      "filters": [],
+      "split": {
+        "raw_rows": 226,
+        "usable_rows": 226,
+        "excluded_missing_targets": 0,
+        "excluded_columns": [],
+        "target_types": {
+          "class": "classification"
+        },
+        "stratified": false,
+        "train_rows": 180,
+        "validation_rows": 46,
+        "seed": 42
+      },
+      "encoding": {
+        "rows": 180,
+        "columns": 176,
+        "cells": 31680,
+        "largest": [
+          [
+            "class",
+            21
+          ],
+          [
+            "speech",
+            7
+          ],
+          [
+            "air",
+            5
+          ],
+          [
+            "bone",
+            5
+          ],
+          [
+            "tymp",
+            5
+          ],
+          [
+            "ar_c",
+            4
+          ]
+        ]
+      },
+      "training_seconds": 0.9069978510015062,
+      "graph": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 6
+      },
+      "evaluation": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.5217391304347826,
+          "N": 46
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.23529411764705882,
+          "N": 46
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.194833488951136,
+          "N": 46
+        }
+      ],
+      "diagnostics": [],
+      "predicted_classes": {
+        "class": 4
+      },
+      "majority_validation_accuracy": {
+        "class": 0.21739130434782608
+      },
+      "upload_http": 200
+    }
+  ]
+}

@@ -248,3 +248,11 @@ explicit quality/cache/speed comparisons. Model deltas and architecture can be
 downloaded; own-project diagnostics and redacted logs remain available in the
 web UI. The 100% ACAN profile is experimental and CPU contract-tested, not a
 claim of general-language quality. [Step-by-step workflow and limits](docs/CONTROLLED-LM.md).
+
+
+La verifica dei due paper, gli operatori comuni e il confronto sui dataset
+caricati sono descritti in [SCIENTIFIC-ALIGNMENT.md](docs/SCIENTIFIC-ALIGNMENT.md).
+Il routing sperimentale del paper non sostituisce automaticamente il profilo
+attuale: sui dati reali non emerge un vincitore generale. I risultati completi,
+compresi regressioni e baseline, sono conservati senza pubblicare le righe dei
+file utente.

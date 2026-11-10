@@ -23,8 +23,6 @@ const path = require('node:path');
       await page.locator('#upload-data input[type=file]').setInputFiles(csv);
       await page.locator('#uplColId').filter({hasText: 'Target suggerito'}).waitFor();
       await page.getByText('Model', {exact:true}).click();
-      await page.getByText('Impostazioni avanzate', {exact:true}).first().click();
-      await page.locator('#dpdnLabel').filter({hasText:'Survived'}).waitFor();
 
       async function learn() {
         const sent = page.waitForRequest(request => request.method() === 'POST' &&
@@ -37,6 +35,7 @@ const path = require('node:path');
         const [request, reply] = await Promise.all([sent, response]);
         const payload = request.postDataJSON();
         const filters = payload.state.find(item => item.id === 'dpdnFilter').value;
+        assert.deepEqual(payload.state.find(item => item.id === 'label-store').value, ['Survived']);
         console.log(JSON.stringify({width, filters}));
         assert.deepEqual([...filters].sort(), ['Cabin','Name','PassengerId','Ticket']);
         const body = await reply.json();
@@ -44,7 +43,8 @@ const path = require('node:path');
         await page.waitForFunction(() => /Completato|❌/.test(document.querySelector('#learning-status').innerText), {}, {timeout:60000});
         assert.match(await page.locator('#learning-status').innerText(), /Completato/);
       }
-      await learn();
+      await learn(); // Immediate click waits for synchronized target/filter controls.
+      await page.getByText('Impostazioni avanzate', {exact:true}).first().click();
       const downloadEvent = page.waitForEvent('download');
       await page.locator('#btn-download').click();
       const model = path.join(temporary, `model-${width}.json`);

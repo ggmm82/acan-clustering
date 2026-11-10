@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 from acan import GraphClusterModel
-from acan.vis.datasets import clean_frame, target_and_filters, split_for_training, check_budget
+from acan.vis.datasets import clean_frame, target_and_filters, split_for_training, check_budget, read_arff
 from acan.vis.training import train_native
 from acan.vis.inference import infer
 from acan.preprocessing import fit_features, transform_features
@@ -11,6 +11,34 @@ from acan.preprocessing import fit_features, transform_features
 OPTIONS=dict(max_depth=1,max_epochs=25,min_samples_split=5,similarity_threshold=.92,lr=.08,tau=.2,alpha=.5,device='numpy',batch_size=300)
 
 class DatasetPreparationTests(unittest.TestCase):
+    def test_arff_decodes_categories_accepts_whitespace_and_keeps_missing_indicators(self):
+        import json
+        raw=b"""@relation fixture
+@attribute 'feature name' { first , second , 'a,b' }
+@attribute flag { Y }
+@attribute amount real
+@attribute class { yes , no }
+@data
+first,Y,1,yes
+second,?,2,no
+'a,b',Y,?,yes
+first,?,4,no
+second,Y,5,yes
+first,?,6,no
+"""
+        frame=read_arff(raw)
+        self.assertEqual(frame['feature name'].iloc[2],'a,b')
+        self.assertEqual(frame['class'].iloc[0],'yes')
+        self.assertEqual(frame['flag'].isna().sum(),3)
+        self.assertEqual(frame['amount'].isna().sum(),1)
+        json.dumps(frame.to_dict('list'))
+        labels,filters=target_and_filters(frame)
+        self.assertEqual(labels,['class'])
+        self.assertNotIn('flag',filters)
+        train,test,info=split_for_training(frame,labels,filters)
+        self.assertEqual(info['usable_rows'],6)
+        check_budget(train)
+
     def test_identifiers_and_target_with_pandas_string_dtype(self):
         frame=pd.DataFrame({'PassengerId':range(100),'Name':pd.Series([f'person {i}' for i in range(100)],dtype='str'), 'Ticket':[f'T{i}' for i in range(100)], 'measurement':np.arange(100)/100, 'Survived':[0,1]*50,'Embarked':['A','B']*50})
         labels,filters=target_and_filters(frame)

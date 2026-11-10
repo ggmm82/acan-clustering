@@ -5,8 +5,10 @@ CONFORMANCE = 'partial'
 GAPS = [
     {'id': 'backend-initialization', 'status': 'qualified',
      'detail': 'CPU forward/gradient parity is checked with identical parameters; native initializers differ. GPU execution and bitwise cross-backend training equivalence are not certified.'},
-    {'id': 'routing', 'status': 'different',
-     'detail': 'Tabular code uses mass*blended_similarity/tau; paper Eq. v8_routing uses gamma*log(mass)-beta*distance_squared.'},
+    {'id': 'routing', 'status': 'qualified',
+     'detail': 'Current legacy-v8 retains mass*blended_similarity/tau. Experimental paper-routing-v1 implements squared distance and two-stage log-mass routing through common NumPy/Torch operators; gradients and the unchanged LM equations are checked. This is not full-model conformance.'},
+    {'id': 'objective-and-relevance', 'status': 'different',
+     'detail': 'The experimental tabular routing still uses supplied legacy CP/root-shift relevance. The tabular paper also describes dual relevance, an entropy term with unspecified coefficient and feature expansion without a complete selection protocol. These are not invented or claimed as implemented.'},
     {'id': 'omega', 'status': 'different',
      'detail': 'omega is fixed correlation-based preprocessing; no optimized omega parameter or explicit Phi(X) feature expansion.'},
     {'id': 'masking', 'status': 'different',

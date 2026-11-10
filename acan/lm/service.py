@@ -157,6 +157,14 @@ def create_app(root=None, token=None):
         launch(store,control)
         return jsonify(control)
 
+    @app.route('/jobs/<identifier>/layers', methods=['GET', 'POST'])
+    def inspect_layers(identifier):
+        from .inspection import queue, latest
+        job = store.job(identifier, request.workspace)
+        if request.method == 'POST':
+            queue(store, job)
+        return jsonify(latest(store, job))
+
     @app.get('/jobs/<identifier>/diagnostics')
     def diagnostics(identifier):
         from .diagnostics import report

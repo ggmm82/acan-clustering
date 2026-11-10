@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "scope": "Functional CPU inspection smoke; not quality, memory-limit or paper-conformance evidence.",
+  "base": "HuggingFaceTB/SmolLM2-135M",
+  "revision": "93efa2f097d58c2a74874c7e644dbc9b0cee75a2",
+  "data": "Synthetic documents, separate explicit splits; no user dataset.",
+  "training": {
+    "step": 1,
+    "captured_frames": 1,
+    "layers": 30,
+    "acan_layers": 15,
+    "layers_with_gradients": 30,
+    "all_gradients_finite": true
+  },
+  "inference": {
+    "frames": 3,
+    "input_lengths": [
+      5,
+      1,
+      1
+    ],
+    "prefix_lengths": [
+      5,
+      6,
+      7
+    ],
+    "all_logits_finite": true
+  },
+  "browser": {
+    "training_capture": true,
+    "report_download": true,
+    "slot_heatmap": true,
+    "token_candidates": true,
+    "decoding_frame_selection": true,
+    "javascript_errors": 0
+  },
+  "offline_tests": {
+    "exact_training_weights_unchanged": true,
+    "greedy_generation_unchanged": true,
+    "nonfinite_report_serializable": true,
+    "owner_isolation": true
+  }
+}

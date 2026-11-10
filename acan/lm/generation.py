@@ -3,6 +3,7 @@ import json
 import math
 from pathlib import Path
 import time
+from contextlib import nullcontext
 import torch
 
 from . import checkpoints
@@ -38,6 +39,11 @@ def generate(root, request_id):
         inputs = tokenizer(request['prompt'], return_tensors='pt')['input_ids'].to(device)
         if inputs.shape[1] < 1 or inputs.shape[1] + request['max_new_tokens'] > min(model.config.max_position_embeddings, 4096):
             raise ValueError('Prompt vuoto o contesto oltre il limite supportato.')
+        from .inspection import Capture
+        inspect = request.get('inspect_layers', False)
+        if inspect and inputs.shape[1] > 256:
+            raise ValueError('Ispezione limitata a prompt di 256 token.')
+        capture = Capture(model, 'inference', tokenizer, request['max_new_tokens']) if inspect else None
         torch.manual_seed(request['seed'])
         if device == 'cuda':
             torch.cuda.synchronize(); torch.cuda.reset_peak_memory_stats()
@@ -45,7 +51,7 @@ def generate(root, request_id):
         sampling = dict(do_sample=request['temperature'] > 0)
         if sampling['do_sample']:
             sampling['temperature'] = request['temperature']
-        with torch.inference_mode():
+        with torch.inference_mode(), capture if capture is not None else nullcontext():
             output = model.generate(inputs, attention_mask=torch.ones_like(inputs), max_new_tokens=request['max_new_tokens'], **sampling, use_cache=True, num_beams=1,
                                     pad_token_id=tokenizer.eos_token_id, return_dict_in_generate=True)
         if device == 'cuda':
@@ -77,6 +83,7 @@ def generate(root, request_id):
                       cache_total_bytes=dense_bytes+slots_bytes, dense_gqa_reference_bytes=dense_reference,
                       cache_reduction_fraction=1-(dense_bytes+slots_bytes)/dense_reference if dense_reference else None,
                       cache_tokens=length, explanations=explanations,
+                      layer_inspection=capture.report(state['step']) if capture else None,
                       gpu_peak_bytes=torch.cuda.max_memory_allocated() if device == 'cuda' else None)
         with store.db() as db:
             db.execute("UPDATE generations SET status='completed',result=? WHERE id=?", (json.dumps(result), request_id))

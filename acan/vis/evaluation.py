@@ -59,13 +59,20 @@ def evaluate(model_json, test, train=None, before_json=None, baselines=True):
     if before_json:
         variants['ACAN prima del cambiamento'] = infer(before_json, prepared)
     root = graph.clusterModel[graph.rootId]
-    records, details, timings = [], [], []
+    records, details, timings, diagnostics = [], [], [], []
     for target in graph.labels:
         valid = test[target].notna()
         if not valid.any():
             continue
         truth = test.loc[valid, target]
         numeric = root.fullLabels([target]) == [target]
+        if not numeric:
+            distinct = predicted.loc[valid, target].astype(str).nunique()
+            observed = truth.astype(str).nunique()
+            if distinct == 1 and observed > 1:
+                diagnostics.append(dict(target=target, predicted_classes=int(distinct), observed_classes=int(observed),
+                    warning=f'Target {target}: ACAN predice una sola classe su {observed} presenti nella validazione. '
+                            'L’accuracy può essere fuorviante: controlla balanced accuracy e F1 macro.'))
         candidates = {name: values.loc[valid, target] for name, values in variants.items()}
         if baselines and train is not None and target in train:
             fitted = train.loc[train[target].notna()]
@@ -136,11 +143,12 @@ def evaluate(model_json, test, train=None, before_json=None, baselines=True):
                                     Miglioramento=bool(delta < 0 if record['Metrica'] in ('MAE', 'RMSE') else delta > 0)))
     timings.append(dict(Modello='ACAN attuale', Target='tutti', Inferenza_secondi=prediction_seconds, Stato='ok'))
     protocol = dict(seed=42, train_rows=len(train) if train is not None else None, test_rows=len(test),
+                    routing_profile=getattr(root,'routing_profile','legacy-v8'),routing_parameters=getattr(root,'routing_parameters',None),
                     tuned=False, preprocessing='training-only imputation, one-hot and min-max',
                     tree_estimators=200, boosting_iterations=100, knn_neighbors=5, cart_max_depth=5)
     if baselines and train is not None:
         protocol['versions'] = {name: version(name) for name in ('scikit-learn', 'xgboost-cpu', 'catboost')}
-    return dict(scores=records, details=details, comparisons=comparisons, timings=timings, protocol=protocol,
+    return dict(scores=records, details=details, comparisons=comparisons, timings=timings, protocol=protocol, diagnostics=diagnostics,
                 predictions=predicted.to_dict(), mode='supervised', rows=len(test))
 
 
