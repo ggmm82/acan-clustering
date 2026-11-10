@@ -489,6 +489,12 @@ def register(app):
     def download_debug(clicks,report):
         return dict(content=json.dumps(report,indent=2,ensure_ascii=False),filename='acan-lm-diagnostics.json') if report else dash.no_update
 
+    @app.callback(Output('lm-new-tokens','max'), Output('lm-new-tokens','value'),
+                  Input('lm-inspect-generation','value'), State('lm-new-tokens','value'))
+    def inspection_budget(enabled, count):
+        limit = 32 if enabled else 256
+        return limit, min(count, limit) if isinstance(count, (int,float)) else limit
+
     @app.callback(Output('lm-generation-id','data'), Output('lm-generation-status','children'),
                   Input('lm-generate','n_clicks'), State('lm-workspace','data'), State('lm-job','value'),
                   State('lm-checkpoint','value'), State('lm-prompt','value'), State('lm-new-tokens','value'), State('lm-inspect-generation','value'), prevent_initial_call=True)
@@ -547,11 +553,12 @@ def register(app):
             return None, str(exc)
 
     @app.callback(Output('lm-layer-frame','options'), Output('lm-layer-frame','value'),
-                  Input('lm-layer-source','value'), Input('lm-training-layers','data'), Input('lm-inference-layers','data'))
-    def layer_frames(source, training, inference):
+                  Input('lm-layer-source','value'), Input('lm-training-layers','data'), Input('lm-inference-layers','data'), State('lm-layer-frame','value'))
+    def layer_frames(source, training, inference, selected):
         report = training if source == 'training' else inference
         frames = (report or {}).get('frames', [])
-        return [dict(label=('Prefill · intero prompt' if i == 0 and source == 'inference' else f'Forward {i}'), value=i) for i in range(len(frames))], 0 if frames else None
+        selected = selected if isinstance(selected, int) and 0 <= selected < len(frames) else (0 if frames else None)
+        return [dict(label=('Prefill · intero prompt' if i == 0 and source == 'inference' else f'Forward {i}'), value=i) for i in range(len(frames))], selected
 
     @app.callback(Output('lm-layer-view','children'), Input('lm-layer-frame','value'),
                   Input('lm-layer-source','value'), Input('lm-training-layers','data'), Input('lm-inference-layers','data'))

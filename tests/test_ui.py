@@ -68,6 +68,12 @@ class TestUICallbacks(unittest.TestCase):
             input_tokens=4,prefix_tokens=4,logits_finite=True,next_token_candidates=[dict(token=' cat',token_id=2,probability=.5)],
             layers=[dict(layer=0,kind='ACAN',input=dict(rms=1.,finite=True),output=dict(rms=1.,finite=True),
                          change=dict(rms=.1,finite=True),effective_slots=1.8,mass_fractions=[.6,.4])])])
+        result=self.invoke('..lm-layer-frame.options',
+            [('lm-layer-source','value','inference'),('lm-training-layers','data',None),('lm-inference-layers','data',dict(report,frames=report['frames']*3))],
+            [('lm-layer-frame','value',2)])
+        self.assertEqual(result['lm-layer-frame']['value'],2)
+        result=self.invoke('..lm-new-tokens.max',[('lm-inspect-generation','value',True)],[('lm-new-tokens','value',64)])
+        self.assertEqual(result['lm-new-tokens']['value'],32)
         panel=inspection_panel(report,0)
         self.assertIn('RMS misura',str(panel))
         self.assertIn('Candidati per il token successivo',str(panel))
