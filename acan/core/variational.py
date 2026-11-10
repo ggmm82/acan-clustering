@@ -45,23 +45,25 @@ def solve(x, state, steps=30, base_counts=None, base_sums=None):
     w = h/(h.mean(1,keepdims=True)+1e-6)/m
     scores = -8.*xp.maximum((w*a*a).sum(1,keepdims=True)-2*(w*a)@x.T+w@(x*x).T,0)
     def evaluate(t, gradient=False):
-        mass = bc+t.sum(1,keepdims=True)
-        mass = xp.maximum(mass,1e-6)
+        raw_mass = bc+t.sum(1,keepdims=True)
+        mass = xp.maximum(raw_mass,1e-6)
         centroid = (bs+t@x)/mass
         effective = .5*(centroid+a)
         r = xp.abs(effective-root)/den*omega
         s = xp.maximum(r.sum(1,keepdims=True),1e-6)
         q = (r*r).sum(1,keepdims=True)
         freq = mass/total
-        cp = xp.sqrt(xp.maximum((freq*m*q/s).sum(),1e-12))
+        raw_cp = (freq*m*q/s).sum()
+        cp = xp.sqrt(xp.maximum(raw_cp,1e-12))
         entropy = -(t*xp.log(t)).sum()/total
         prior = ((freq+1e-4)*xp.log(freq+1e-4)-(freq+1e-4)).sum()
         value = cp+(t*scores).sum()/total+entropy+.5*prior
         if not gradient:
             return value, cp, centroid, r, mass
-        dr = .5/cp*freq*m*(2*r/s-q/s**2*(r.sum(1,keepdims=True)>1e-6))
+        scale = .5/cp*(raw_cp>1e-12)
+        dr = scale*freq*m*(2*r/s-q/s**2*(r.sum(1,keepdims=True)>1e-6))
         dg = .5*dr*xp.sign(effective-root)/den*omega
-        dm = .5/cp*m*q/s/total-(dg*centroid).sum(1,keepdims=True)/mass
+        dm = (scale*m*q/s/total-(dg*centroid).sum(1,keepdims=True)/mass)*(raw_mass>1e-6)
         grad = (dg/mass)@x.T+dm
         grad += (scores-xp.log(t)-1+.5*xp.log(freq+1e-4))/total
         return grad

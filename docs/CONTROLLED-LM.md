@@ -218,3 +218,6 @@ riprendere soltanto con i relativi contratti verificati; nessuna conversione dei
 La scheda **Matematica** dell'app spiega formule, coefficienti, limiti e differenza
 fra CP e NLL. La diagnosi Letter (`LETTER-DIAGNOSIS.md`) mostra che il nuovo routing
 non risolve automaticamente la classificazione reale.
+
+Il gate LM richiede 36 test nominati, inclusa la ripresa CP da checkpoint con pesi
+bit per bit uguali al training non interrotto sul modello locale di prova.
