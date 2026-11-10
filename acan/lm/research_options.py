@@ -10,7 +10,7 @@ def validate_options(options):
     extra={key:options.get(key,value) for key,value in EXTRA.items()}
     if isinstance(extra['graft_fraction'],bool) or extra['graft_fraction'] not in (.5,1.):
         raise ValueError('Frazione ACAN ammessa: 0.5 oppure 1.0.')
-    if extra['routing_profile'] not in ('legacy-causal-v1','shared-algebra-v1'):
+    if extra['routing_profile'] not in ('legacy-causal-v1','shared-algebra-v1','cp-routing-v1'):
         raise ValueError('Profilo algebrico non valido.')
     if extra['architecture'] not in ('hybrid','dense-control'):
         raise ValueError('Architettura non supportata.')
@@ -25,5 +25,7 @@ def validate_options(options):
         if isinstance(value,bool) or not isinstance(value,int) or not lo<=value<=hi:
             raise ValueError('Parametro non valido: '+key)
     result=legacy_options({key:value for key,value in options.items() if key not in EXTRA})
+    if extra['routing_profile']=='cp-routing-v1' and result['device']!='cuda' and (result['sequence_length']>32 or result['slots']>8):
+        raise ValueError('CP diretta su CPU: massimo 32 token per blocco e 8 slot. La GUI applica questo budget ai nuovi progetti.')
     result.update(extra)
     return result

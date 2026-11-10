@@ -1,7 +1,10 @@
 """Named CPU checks required before publishing controlled LM tooling."""
 PROTOCOL='controlled-v1'
-MIN_TESTS=32
+MIN_TESTS=35
 REQUIRED_TESTS={
+    'test_numpy_torch_router_parity_and_differentiability',
+    'test_prefix_streaming_and_finite_training_gradients',
+    'test_grafted_model_trains_and_streams_with_both_graft_fractions',
     'test_paper_profile_survives_export_and_uses_the_same_inference_metric',
     'test_known_legacy_controlled_resume_preserves_exact_weights',
     'test_paper_squared_distance_and_log_mass_match_literal_equations',

@@ -1,3 +1,33 @@
+# Disponibilità nell’app (aggiornamento PR8)
+
+Il profilo `cp-routing-v1` è selezionabile in Model e nelle impostazioni Generative.
+Il solver applicativo è condiviso, con backend NumPy per il tabulare e Torch
+per il linguaggio: `acan/core/variational.py`. La derivazione e il probe qui sotto
+precedono questa integrazione; le parti che descrivono il probe come non induttivo
+si riferiscono al solo script di ricerca, non al solver applicativo successivo.
+
+Tabulare: campione di training massimo 300 righe, 32 slot, massimo 30 passi;
+prototipi congelati nel problema di assegnazione. La predizione aggiunge ogni query
+indipendentemente ai riepiloghi congelati e usa solo le colonne osservate.
+I riepiloghi e tutti gli slot morbidi sono salvati nel JSON, anche quelli senza
+assegnazioni hard: eliminarli altererebbe la funzione obiettivo della predizione.
+
+Linguaggio: stesso obiettivo e solver, tre passi per token, riepiloghi causali
+progressivi; nessuna riattribuzione dei token passati. Sigmoid su rappresentazioni
+e prototipi porta il problema nel dominio [0,1]; omega assoluto assicura rilevanza
+non negativa, e le dimensioni costanti sono escluse. Finestra locale e testa di
+output restano adattatori linguistici. L'ottimizzazione esterna usa NLL/KL e propaga
+i gradienti attraverso i passi accettati; le scelte discrete della ricerca del passo
+sono differenziabili soltanto a tratti. Non è implicita una loss CP aggiuntiva.
+
+Il nuovo profilo ha un contratto e checkpoint distinti. I profili precedenti
+restano disponibili per riprendere progetti e per confronti. L'unificazione del
+routing non implica identità del training completo o qualità dimostrata sul testo.
+La ricerca del passo e i cicli causali hanno un costo CPU da misurare: non viene
+promessa la velocità del profilo precedente o del paper.
+
+---
+
 # Un routing comune, derivato da un obiettivo esplicito
 
 Questa è una proposta matematica verificata su piccoli problemi sintetici,

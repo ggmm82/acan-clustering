@@ -198,3 +198,23 @@ una generazione ispezionata non sono benchmark**. Non salva matrici di attenzion
 complete, non etichetta automaticamente i concetti e non applica una loss CP
 aggiuntiva. Il trainer legacy resta invariato: su quei progetti è disponibile
 l'ispezione in generazione, non la cattura del prossimo passo di training.
+
+### Routing CP comune al tabulare (PR8)
+
+Nei nuovi progetti la GUI permette `cp-routing-v1`: la stessa energia e lo stesso
+solver di `Model → Routing ACAN → CP diretta`, con backend Torch differenziabile
+nell'LLM. Su CPU il budget è 32 token per blocco, 8 slot e tre passi per token;
+la GUI aggiorna blocco e slot alla selezione, il worker valida gli stessi limiti.
+Si tratta di un profilo sperimentale più costoso del routing precedente.
+
+Le statistiche sono causali e la cache contiene anche le somme nello spazio
+sigmoid usato dal routing. Le assegnazioni passate rimangono fisse. Sono verificati
+forward completo contro streaming, prefisso invariato al cambio dei token futuri,
+gradienti finiti e un passo di training nei graft al 50% e 100% su un Llama piccolo
+locale. Queste verifiche non misurano qualità linguistica o memoria su un modello
+135M in produzione. I progetti precedenti mantengono il routing originale e possono
+riprendere soltanto con i relativi contratti verificati; nessuna conversione dei pesi.
+
+La scheda **Matematica** dell'app spiega formule, coefficienti, limiti e differenza
+fra CP e NLL. La diagnosi Letter (`LETTER-DIAGNOSIS.md`) mostra che il nuovo routing
+non risolve automaticamente la classificazione reale.

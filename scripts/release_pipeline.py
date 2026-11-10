@@ -100,7 +100,7 @@ def validate(directory, repo, tree=None):
             or generative.get('image') != value.get('generative_image')
             or any(generative.get(k) != value[k] for k in ('tree', 'source_commit', 'run_id', 'run_attempt'))
             or generative.get('audit_sha256') != hashlib.sha256((directory / 'lm-audit.json').read_bytes()).hexdigest()
-            or lm_audit.get('status') != 'passed' or lm_audit.get('skipped') != 0 or lm_audit.get('tests_run',0) < 32
+            or lm_audit.get('status') != 'passed' or lm_audit.get('skipped') != 0 or lm_audit.get('tests_run',0) < 35
             or lm_audit.get('controlled_protocol') != 'controlled-v1' or lm_audit.get('controls_verified') is not True
             or lm_audit.get('profile') != 'acan-lm-causal-prefix-v1'
             or lm_audit.get('gpu_verified') is not False or lm_audit.get('full_paper_conformance') is not False

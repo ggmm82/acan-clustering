@@ -46,13 +46,13 @@ def inference_contract():
     import hashlib
     from pathlib import Path
     root=Path(__file__).parent
-    return hashlib.sha256(b''.join(path.read_bytes() for path in (root/'research_model.py',root/'full_attention.py',root/'shared_attention.py',root.parent/'algebra.py'))).hexdigest()
+    return hashlib.sha256(b''.join(path.read_bytes() for path in (root/'research_model.py',root/'full_attention.py',root/'shared_attention.py',root.parent/'algebra.py',root/'cp_attention.py',root.parent/'core'/'variational.py'))).hexdigest()
 
 
 def check_inference_contract(options,state):
     recorded=state.get('model_contract')
     from .compatibility import LEGACY_INFERENCE
-    legacy = 'routing_profile' not in options and recorded == LEGACY_INFERENCE
+    legacy = ('routing_profile' not in options and recorded == LEGACY_INFERENCE) or (options.get('routing_profile') in ('shared-algebra-v1','legacy-causal-v1') and recorded == 'c823eeaae94de3b650709710cc2f245328a9a693d7b640af3096d6c8ddf6ba8b')
     if recorded is not None and recorded!=inference_contract() and not legacy:
         raise ValueError('Modello di un’altra versione: usare l’immagine worker che lo ha creato.')
     if options.get('graft_fraction',.5)==1. and recorded is None:
@@ -60,8 +60,11 @@ def check_inference_contract(options,state):
 
 
 def shared_adapter(model,report,options):
-    if options.get('routing_profile') == 'shared-algebra-v1':
+    if options.get('routing_profile') in ('shared-algebra-v1','cp-routing-v1'):
         from .shared_attention import SharedAlgebraAttention
+        if options.get("routing_profile") == "cp-routing-v1":
+            from .cp_attention import CPUnifiedAttention
+            SharedAlgebraAttention = CPUnifiedAttention
         from .full_attention import FullConceptAttention
         from .attention import ACANConceptAttentionLayer
         class SharedFullAttention(FullConceptAttention,SharedAlgebraAttention):
@@ -71,5 +74,5 @@ def shared_adapter(model,report,options):
                 module.__class__=SharedFullAttention
             elif isinstance(module,ACANConceptAttentionLayer):
                 module.__class__=SharedAlgebraAttention
-        report=dict(report,algebra='shared-algebra-v1')
+        report=dict(report,algebra=options['routing_profile'])
     return model,report
