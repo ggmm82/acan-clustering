@@ -128,7 +128,7 @@ class TestUICallbacks(unittest.TestCase):
             result = self.invoke('..lm-active-job.data', [('lm-public-start', 'n_clicks', 1)],
                 [('lm-workspace', 'data', 'a'*64), ('lm-public-dataset', 'value', 'dante-it'),
                  ('lm-public-preset', 'value', 'check')])
-        backend.assert_called_once_with('a'*64, '/public-experiments', 'POST', dict(dataset='dante-it', preset='check'))
+        backend.assert_called_once_with('a'*64, '/public-experiments', 'POST', dict(dataset='dante-it', preset='check'), timeout=90)
         self.assertEqual(result['lm-active-job']['data'], 'new-public-job')
         self.assertEqual(result['lm-prompt']['value'], 'Nel mezzo del cammin')
 
@@ -161,6 +161,32 @@ class TestUICallbacks(unittest.TestCase):
             [('lm-active-job', 'data', 'new'), ('lm-upload-state', 'data', None),
              ('lm-corpus', 'value', None), ('lm-job', 'value', 'old')])
         self.assertEqual(result['lm-job']['value'], 'new')
+
+    def test_web_dataset_diagnostics_shows_actual_received_filters_without_rows(self):
+        data={'PassengerId':list(range(100)),'Name':[f'person{i}' for i in range(100)],
+              'Age':list(range(100)),'Survived':[0,1]*50}
+        result=self.invoke('..dataset-debug-view.children', [('data-store','data',data),
+            ('label-store','data',['Survived']),('dpdnFilter','value',['PassengerId','Name']),
+            ('dpdnCategory','value',[]),('target-task','value','auto')])
+        report=result['dataset-debug-data']['data']
+        self.assertEqual(report['received_filters'],['PassengerId','Name'])
+        self.assertEqual(report['budget'],'ok')
+        self.assertNotIn('person0',str(report))
+
+    def test_completed_lm_disables_resume_and_allows_explicit_test_comparison(self):
+        state={'jobs':[dict(id='job',status='completed',config={'protocol':'controlled-v1'},snapshots=[{'name':'saved'}])], 'busy':False}
+        result=self.invoke('..lm-pause.disabled',[('lm-state','data',state),('lm-job','value','job')])
+        self.assertTrue(result['lm-pause']['disabled']);self.assertTrue(result['lm-resume']['disabled'])
+        self.assertFalse(result['lm-evaluate']['disabled'])
+
+    def test_explicit_lm_evaluation_uses_selected_cpu_budget(self):
+        from unittest.mock import patch
+        with patch('acan.vis.generative.backend',return_value={'id':'evaluation'}) as backend:
+            result=self.invoke('..lm-evaluation-id.data',[('lm-evaluate','n_clicks',1)],
+                [('lm-workspace','data','a'*64),('lm-job','value','job'),('lm-checkpoint','value','best-saved'),('lm-eval-profile','value','long')])
+        backend.assert_called_once_with('a'*64,'/jobs/job/evaluate','POST',
+            dict(checkpoint='best-saved',max_batches=1,context_lengths=[128,1024],new_tokens=4))
+        self.assertEqual(result['lm-evaluation-id']['data'],'evaluation')
 
     def test_sessions_receive_distinct_server_identifiers(self):
         other = self.app.server.test_client()

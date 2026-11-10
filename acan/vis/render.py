@@ -50,7 +50,7 @@ benchmark_jobs = TrainingJobs(max_running=1)
 
 @app.server.get('/healthz')
 def health():
-    return {'status': 'ok'}
+    return {'status':'ok','version':'8.3.0','build_revision':os.environ.get('ACAN_BUILD_REVISION','development'),'dataset_filter_control':'checkbox-v1'}
 
 @app.server.before_request
 def ensure_session():
@@ -534,6 +534,9 @@ model_layout = dbc.Container([
         dbc.Col(dbc.Button('Rimuovi approfondimento selezionato', id='remove-branch', color='warning', outline=True, className='m-1'), md='auto'),
         dbc.Col(dbc.Button('Ferma training', id='btn-stop-learn', color='danger', disabled=True, className='m-1'), md='auto'),
     ]),
+    dbc.Accordion([dbc.AccordionItem([html.Pre(id='dataset-debug-view', style={'whiteSpace':'pre-wrap'}),
+        dbc.Button('Scarica diagnostica dati', id='dataset-debug-download'), dcc.Download(id='dataset-debug-file'),
+        dcc.Store(id='dataset-debug-data')], title='Diagnostica dati e filtri ricevuti dal server')], start_collapsed=True),
     html.Div(id='learning-status', children='Pronto: carica i dati e scopri i concetti.', className='alert alert-light my-2', role='status'),
     dcc.Interval(id='learning-monitor', interval=1000, disabled=True),
     html.Div(id='graph-summary', className='alert alert-info'),
@@ -792,6 +795,32 @@ def update_data(contents, filename, last_modified, labels):
 
     return pd.DataFrame().to_dict(), balanced, uplData
 
+
+
+@app.callback(Output('dataset-debug-view','children'),Output('dataset-debug-data','data'),
+              Input('data-store','data'),Input('label-store','data'),Input('dpdnFilter','value'),
+              Input('dpdnCategory','value'),Input('target-task','value'))
+def dataset_debug(data,labels,filters,categories,task):
+    if not data:
+        return 'Carica un dataset.',None
+    report=dict(received_filters=filters or [],received_targets=labels or [],categorical_columns=categories or [],task=task)
+    try:
+        from acan.vis.datasets import encoding_size
+        train,test,info=split_for_training(data,labels or [],filters,categories,task or 'auto')
+        report.update(dataset=info,encoding=encoding_size(train))
+        try:
+            check_budget(train);report['budget']='ok'
+        except ValueError as exc:
+            report['budget']=str(exc)
+    except Exception as exc:
+        report['error']=str(exc)
+    return json.dumps(report,indent=2,ensure_ascii=False),report
+
+
+@app.callback(Output('dataset-debug-file','data'),Input('dataset-debug-download','n_clicks'),
+              State('dataset-debug-data','data'),prevent_initial_call=True)
+def download_dataset_debug(clicks,report):
+    return dict(content=json.dumps(report,indent=2,ensure_ascii=False),filename='acan-dataset-diagnostics.json') if report else dash.no_update
 
 
 @app.callback(Output("data-info", "children"),

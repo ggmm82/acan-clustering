@@ -160,6 +160,7 @@ jobs:
           file: Dockerfile.generative
           load: true
           tags: acan-generative:test
+          build-args: ACAN_BUILD_REVISION=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -254,6 +255,7 @@ jobs:
           context: .
           load: true
           tags: acan-candidate:test
+          build-args: ACAN_BUILD_REVISION=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}

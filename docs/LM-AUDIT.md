@@ -21,3 +21,15 @@ cache, finite trainable gradients, preserved frozen weights, exact CPU next-step
 continuation, WSD/cursor persistence, corruption rejection, workspace isolation,
 and explicit start. These certify implementation properties, not the original
 paper's benchmark percentages or theorems.
+
+## Controlled protocol and all-layer research profile
+
+PR #6 preserves the legacy attention/grafting/trainer/data/checkpoint source
+contract. New `controlled-v1` projects use document-level splits and an explicit
+training identity; distillation combines causal teacher KL and next-token CE,
+without changing the attention equations. The full-layer adapter only supplies
+cache sequence position when no dense layer remains; it is covered by prefix,
+streaming and bounded-cache CPU checks. Exported new models carry an inference
+contract. None of this changes the partial-conformance status or validates the
+paper’s reported 1.89M synthetic results, 1B language quality, GPU speedups or
+98–99% whole-model compression. See [controlled workflow](CONTROLLED-LM.md).

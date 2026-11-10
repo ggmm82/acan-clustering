@@ -10,7 +10,7 @@ change the tabular ACAN objective. See [LM audit](LM-AUDIT.md) for differences.
 
 The supported pretrained family is **SmolLM2** (135M, 360M, 1.7B), loaded from
 Hugging Face using safetensors, native Transformers Llama code and a recorded
-immutable Hub commit. Half of the upper attention modules are replaced by the
+immutable Hub commit. Attention in the upper half of all layers is replaced by the
 corrected `ACANConceptAttentionLayer`; the existing embeddings, layer norms,
 FFNs and lower dense layers remain. GQA K/V projections are expanded by head
 replication for the supplied full-channel local/slot attention. LoRA adapts
@@ -34,7 +34,8 @@ must be measured on the actual hardware/data; no single-GPU speed claim is made.
    like a private project capability. Other workspace keys cannot see the files,
    jobs or generated text. Projects are explicitly selected; unrelated projects
    do not share training state.
-2. Upload UTF-8 TXT (one document per line) or JSONL (`{"text":"..."}` per line).
+2. Upload UTF-8 TXT (blank-line-separated paragraphs for new controlled projects;
+   the legacy protocol retains one document per line) or JSONL (`{"text":"..."}` per line).
    The browser streams 1 MiB chunks; it does not base64 the entire file. Corpus,
    SHA-256 and prepared tokens live on the worker's persistent volume. Tokenization
    is incremental and resumable. Each document is followed by EOS. Individual
@@ -66,7 +67,8 @@ must be measured on the actual hardware/data; no single-GPU speed claim is made.
 
 Checkpoint files are written to a temporary directory, flushed/fsynced, hashed,
 then atomically renamed. The previous complete snapshot remains available if a
-new write fails. Complete checkpoints use safetensors plus `weights_only=True`
+new write fails. The best checkpoint is retained outside the latest-three rolling window.
+Complete checkpoints use safetensors plus `weights_only=True`
 optimizer/RNG loading; uploaded model pickle/code files are never accepted.
 A SQLite WAL with synchronous FULL persists ownership, state, metrics and pointers.
 Incomplete snapshot directories are ignored; a corrupt newest complete snapshot
@@ -167,7 +169,7 @@ CPU runtime is hardware-dependent, not guaranteed to be short.
   every 20 updates: 102,400 processed next-token targets.
 
 No crawling, arbitrary URL fetching, automatic model promotion or unlimited
-training loop is introduced. Source downloads are bounded to 2 MiB and checked
+training loop is introduced. Source downloads are bounded to 8 MiB per file (WikiText prepared data to 32 MiB) and checked
 against a fixed byte count and SHA-256 before use; Gutenberg headers/footers are
 removed from training input. A changed remote source fails closed until reviewed.
 Source URL, edition conditions, raw/prepared hashes and preprocessing are stored
@@ -177,15 +179,24 @@ and jobs. Download failure launches no training. Runtime GET/state polling never
 starts training. Existing checkpoints and the model's code contract are unchanged.
 
 After launch, use the same pause/save, resume and checkpoint generation controls.
-A source-appropriate prompt is prefilled. Validation still uses the existing
+A source-appropriate prompt is prefilled. WikiText-2 additionally preserves its official article splits; new experiments use the controlled document protocol. Validation still uses the existing
 held-out tail (up to eight blocks); it is a small diagnostic sample, not an
 independent broad language benchmark. The original model NLL is shown as a green
 reference line; red validation values are repeated between checkpoint evaluations.
 Public text may already be present in base-model pretraining, so this experiment
 cannot establish unseen-data performance or ACAN superiority.
 
-A local CPU smoke completed all 20 steps on the verified Dante corpus. Its
+A legacy-protocol local CPU smoke completed all 20 steps on the verified Dante corpus. Its
 validation NLL changed from an original-model reference of 5.7384 to 5.6065
 after training. This is one small, potentially pretraining-overlapping sample,
 not evidence of broad language superiority; exact configuration and source
 revision are in [PUBLIC-CORPUS-SMOKE.json](PUBLIC-CORPUS-SMOKE.json).
+
+## Controlled CPU workflow (PR #6)
+
+See the [step-by-step controlled laboratory guide](CONTROLLED-LM.md) for document
+splits, exact deduplication, optional teacher distillation, early stopping,
+best-checkpoint preservation, model export, matched dense-LoRA control, full
+ACAN experiments, independent test/cache/speed measurements and own-project web
+diagnostics. Existing projects retain their legacy trainer and compatible model
+contract. New controlled projects record their own protocol/model code identity.
