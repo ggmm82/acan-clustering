@@ -68,14 +68,18 @@ def snapshots(store, job):
 def request_generation(store, job, owner, options):
     if job['status'] in ACTIVE:
         raise ValueError('Premi Pausa e attendi il salvataggio prima di provare il checkpoint sulla stessa GPU.')
-    allowed = {'prompt','checkpoint','max_new_tokens','temperature','seed'}
+    allowed = {'prompt','checkpoint','max_new_tokens','temperature','seed','inspect_layers'}
     if set(options) - allowed:
         raise ValueError('Opzioni generazione non valide.')
-    request = dict(dict(max_new_tokens=64, temperature=.7, seed=42), **options)
+    request = dict(dict(max_new_tokens=64, temperature=.7, seed=42, inspect_layers=False), **options)
+    if not isinstance(request['inspect_layers'], bool):
+        raise ValueError('Ispezione layer non valida.')
     if not isinstance(request.get('prompt'), str) or not 1 <= len(request['prompt']) <= 32000:
         raise ValueError('Prompt non valido.')
     if not isinstance(request['max_new_tokens'], int) or not 1 <= request['max_new_tokens'] <= 256:
         raise ValueError('Scegli da 1 a 256 nuovi token.')
+    if request['inspect_layers'] and request['max_new_tokens'] > 32:
+        raise ValueError('Per ispezionare i layer scegli al massimo 32 nuovi token.')
     if not isinstance(request['seed'], int) or not 0 <= request['seed'] < 2**31 or not 0 <= request['temperature'] <= 2:
         raise ValueError('Seed o temperatura non validi.')
     if request.get('checkpoint') not in {item['name'] for item in snapshots(store, job)}:

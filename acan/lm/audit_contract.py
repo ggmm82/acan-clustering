@@ -1,7 +1,9 @@
 """Named CPU checks required before publishing controlled LM tooling."""
 PROTOCOL='controlled-v1'
-MIN_TESTS=20
+MIN_TESTS=26
 REQUIRED_TESTS={
+    'test_layer_inspection_preserves_exact_training_and_is_owner_scoped',
+    'test_layer_inspection_tracks_prefill_decoding_and_does_not_change_logits',
     'test_distillation_resume_preserves_exact_parameters',
     'test_document_deduplication_and_pause_recovery_do_not_cross_splits',
     'test_early_stop_preserves_best_after_rolling_prune_and_can_resume',

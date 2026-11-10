@@ -55,6 +55,25 @@ class TestUICallbacks(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()['response']
 
+    def test_layer_inspection_generation_is_explicit_and_renders_results(self):
+        from unittest.mock import patch
+        from acan.vis.generative import inspection_panel
+        with patch('acan.vis.generative.backend',return_value={'id':'request'}) as backend:
+            result=self.invoke('..lm-generation-id.data',[('lm-generate','n_clicks',1)],
+                [('lm-workspace','data','a'*64),('lm-job','value','b'*32),('lm-checkpoint','value','step-1'),
+                 ('lm-prompt','value','The cat'),('lm-new-tokens','value',3),('lm-inspect-generation','value',True)])
+            self.assertEqual(result['lm-generation-id']['data'],'request')
+            self.assertTrue(backend.call_args.args[3]['inspect_layers'])
+        report=dict(step=1,mode='inference',scope='scope',limits='limits',gradients={},frames=[dict(
+            input_tokens=4,prefix_tokens=4,logits_finite=True,next_token_candidates=[dict(token=' cat',token_id=2,probability=.5)],
+            layers=[dict(layer=0,kind='ACAN',input=dict(rms=1.,finite=True),output=dict(rms=1.,finite=True),
+                         change=dict(rms=.1,finite=True),effective_slots=1.8,mass_fractions=[.6,.4])])])
+        panel=inspection_panel(report,0)
+        self.assertIn('RMS misura',str(panel))
+        self.assertIn('Candidati per il token successivo',str(panel))
+        self.assertIn('Quota di massa',str(panel))
+        self.assertIn('Nessuna cattura',str(inspection_panel(report,99)))
+
     def test_load_restores_labels_and_invalid_model_preserves_state(self):
         contents = 'data:application/json;base64,' + base64.b64encode(self.model.encode()).decode()
         result = self.invoke('..model-store.data', [('upload-model', 'contents', contents)],
