@@ -141,7 +141,7 @@ non riprodurre un pre-training da centinaia di milioni di token in tempi brevi.
 
 Il [report CPU](CONTROLLED-LM-CPU-SMOKE.json) conserva metriche e protocollo delle
 prove, senza corpus o chiavi. Un passo reale con teacher ha misurato circa
-2,6 GiB di RSS del processo. Il Docker annidato dell’ambiente di sviluppo non
+2,5–2,6 GiB di RSS del processo. Il Docker annidato dell’ambiente di sviluppo non
 applica limiti cgroup: il flag `--memory=4g` non certifica un tetto effettivamente
 imposto. Su Hostinger vanno controllati il picco RAM del training e la memoria
 del worker, includendo gli altri processi; il consumo di una prova breve non

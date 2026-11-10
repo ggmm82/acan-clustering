@@ -139,7 +139,8 @@
     "sequence_length": 128,
     "distillation_weight": 0.5,
     "steps": 1,
-    "peak_process_rss_kib": 2717552,
+    "reported_training_peak_rss_kib": 2573028,
+    "peak_process_rss_kib": 2573028,
     "cgroup_limit": "34359738368",
     "trainable_parameters": 2681280,
     "teacher_kl": 4.763321399688721,
@@ -154,5 +155,6 @@
     "own-project diagnostics download",
     "independent-test comparison download",
     "no JavaScript errors"
-  ]
+  ],
+  "quality_corpus": "Dante, Project Gutenberg ebook 1000; verified public text, document-level splits"
 }

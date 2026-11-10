@@ -56,6 +56,8 @@ class TestReleasePipeline(unittest.TestCase):
         self.assertIn('    image: '+IMAGE, content)
         self.assertIn('    image: '+worker, content)
         self.assertNotIn('profiles:', content)
+        self.assertIn('      NO_PROXY: generative,localhost,127.0.0.1',content)
+        self.assertIn('      no_proxy: generative,localhost,127.0.0.1',content)
         self.assertNotIn('__ACAN_', content)
         self.assertNotIn('\u00a0', content)
         self.assertEqual(content.count('${ACAN_LM_SERVICE_TOKEN:?Set a private service token}'), 2)

@@ -6,6 +6,7 @@ services:
       ACAN_LM_URL: http://generative:8000
       ACAN_LM_SERVICE_TOKEN: ${ACAN_LM_SERVICE_TOKEN:?Set a private service token}
       NO_PROXY: generative,localhost,127.0.0.1
+      no_proxy: generative,localhost,127.0.0.1
   generative:
     profiles: [generative]
     image: ${ACAN_LM_IMAGE:-acan-generative:local}

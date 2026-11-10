@@ -22,6 +22,7 @@ services:
       ACAN_LM_URL: http://generative:8000
       ACAN_LM_SERVICE_TOKEN: ${ACAN_LM_SERVICE_TOKEN:?Set a private service token}
       NO_PROXY: generative,localhost,127.0.0.1
+      no_proxy: generative,localhost,127.0.0.1
     labels:
       - traefik.enable=true
       - traefik.http.routers.${COMPOSE_PROJECT_NAME}-acan.rule=Host(`${COMPOSE_PROJECT_NAME}.${TRAEFIK_HOST:?Set TRAEFIK_HOST}`)

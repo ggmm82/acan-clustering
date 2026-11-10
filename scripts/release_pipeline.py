@@ -242,8 +242,10 @@ def publish(directory, repo, commit, floor, main):
              f"Source tree: {value['tree']}\nImage: {value['image']}\n\n"
              "Download compose.release.yaml and runtime-manifest.json. "
              "Run docker compose -f compose.release.yaml up -d. "
-             "For Hostinger use compose.hostinger.yaml, configure TRAEFIK_HOST "
-             "and follow docs/HOSTINGER.md. "
+             "For Hostinger with the Generative laboratory use the standalone compose.generative.hostinger.yaml "
+             "(frontend plus persistent CPU worker), configure TRAEFIK_HOST and ACAN_LM_SERVICE_TOKEN, "
+             "and preserve the existing project name and data volume. For frontend-only deployment use compose.hostinger.yaml. "
+             "Follow docs/HOSTINGER.md. "
              "paper-audit.json records passing software contracts and outstanding paper/code differences; "
              "it does not certify full paper conformance. "
              "The Compose pins the exact tested image digest; no rebuild is performed.\n")

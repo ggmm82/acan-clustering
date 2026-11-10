@@ -200,3 +200,7 @@ best-checkpoint preservation, model export, matched dense-LoRA control, full
 ACAN experiments, independent test/cache/speed measurements and own-project web
 diagnostics. Existing projects retain their legacy trainer and compatible model
 contract. New controlled projects record their own protocol/model code identity.
+
+Internal Compose communication sets both `NO_PROXY` and `no_proxy` to the
+worker hostname and loopback. This prevents a Docker client’s lowercase proxy
+default from sending private frontend/worker traffic to an external proxy.
