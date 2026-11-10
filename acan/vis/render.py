@@ -513,12 +513,17 @@ model_layout = dbc.Container([
         ]),
         dbc.Label('Tipo di previsione del target'),
         dcc.Dropdown(id='target-task', value='auto', clearable=False, options=[{'label':'Automatico (codici interi fino a 20 classi: classificazione)', 'value':'auto'}, {'label':'Classificazione', 'value':'classification'}, {'label':'Regressione numerica', 'value':'regression'}]),
+        dbc.Label('Routing ACAN'),
+        dcc.Dropdown(id='tabular-routing-profile',value='legacy-v8',clearable=False,options=[
+            {'label':'Esperimento · sole equazioni di routing del paper','value':'paper-routing-v1'},
+            {'label':'Profilo attuale · compatibilità e confronto','value':'legacy-v8'}]),
+        html.P('Profilo del paper: α=2, β=8, γ=1,15 (default del pacchetto LM, non ottimizzati sui tuoi dati). Sono uniformati gli operatori di distanza e massa; rilevanza, omega e obiettivi conservano i limiti documentati. Il profilo non certifica l’intero paper.',className='small text-muted'),
         dbc.Row([parameter(*args) for args in [
             ('Epoche', 'train-epochs', 100, 1, 1000, 1),
             ('Learning rate', 'input-lr', .08, .001, 1, .01),
             ('Batch (solo training iniziale a un livello)', 'input-max-batch', 300, 10, 10000, 10),
-            ('Temperatura τ', 'train-tau', .2, .01, 10, .01),
-            ('Miscela α', 'train-alpha', .5, 0, 1, .05),
+            ('Temperatura τ (solo versione precedente)', 'train-tau', .2, .01, 10, .01),
+            ('Miscela α (solo versione precedente)', 'train-alpha', .5, 0, 1, .05),
             ('Campioni minimi del ramo', 'train-min-samples', 12, 2, 10000, 1),
             ('Livelli iniziali automatici (predefinito: 1)', 'train-depth', 1, 1, 6, 1),
             ('Soglia purezza (solo livelli automatici)', 'train-purity', .92, 0, 1, .01),
@@ -722,6 +727,11 @@ def update_labels(data, lbs):
     filter_options = [item for item in options if item['value'] not in labels]
     return options, labels, options, filters, filter_options
 
+
+
+@app.callback(Output('train-tau','disabled'),Output('train-alpha','disabled'),Input('tabular-routing-profile','value'))
+def routing_legacy_controls(profile):
+    return profile != 'legacy-v8', profile != 'legacy-v8'
 
 
 @app.callback(Output('button-learn','disabled'), Input('data-store','data'),
@@ -941,10 +951,11 @@ def download_prediction(clicks, report):
               State('train-alpha', 'value'),
               State('train-purity', 'value'),
               State('target-task', 'value'),
+              State('tabular-routing-profile','value'),
               State('tab-session', 'data'),
               prevent_initial_call=True
               )
-def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, depth, epochs, min_samples, tau, alpha, purity, task, tab_id):
+def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, depth, epochs, min_samples, tau, alpha, purity, task, routing_profile, tab_id):
     if not n_clicks:
         return (dash.no_update,) * 5
     if not data:
@@ -956,7 +967,9 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, dep
             return dash.no_update, dash.no_update, "Training già in corso.", False, False
         train, test, dataset_info = split_for_training(data, labels or [], filters, categories, task)
         check_budget(train)
-        options = dict(max_depth=depth, max_epochs=epochs, min_samples_split=min_samples,
+        if routing_profile not in ('legacy-v8','paper-routing-v1'):
+            raise ValueError('Seleziona un profilo di routing ACAN valido.')
+        options = dict(routing_profile=routing_profile,max_depth=depth, max_epochs=epochs, min_samples_split=min_samples,
                        tau=tau, alpha=alpha, similarity_threshold=purity, lr=lr,
                        batch_size=max_batch, device='numpy')
         bounds = dict(max_depth=(1, 6), max_epochs=(1, 1000), min_samples_split=(2, 10000),
@@ -1562,7 +1575,7 @@ def describe_graph(model, layout):
     if layout == 'breadthfirst':
         config.update(directed=True, roots=f'[id = "{graph.rootId}"]', spacingFactor=1.3)
     return (f"Radice {graph.rootId} · {stats['nodes']} nodi concetto · {stats['depth']} livelli · "
-            f"{stats['groups']} gruppi · {root.n} campioni · {len(root.cols)} attributi. "
+            f"{stats['groups']} gruppi · {root.n} campioni · {len(root.cols)} attributi · routing {getattr(root,'routing_profile','legacy-v8')}. "
             'Seleziona un nodo o un collegamento per esplorare centroidi, rilevanze e dispersione.'), config
 
 generative.register(app)

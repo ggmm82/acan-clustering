@@ -10,7 +10,7 @@ from pathlib import Path
 import time
 import pandas as pd
 from threadpoolctl import threadpool_limits
-from acan.vis.datasets import clean_frame, target_and_filters, split_for_training, check_budget
+from acan.vis.datasets import clean_frame, target_and_filters, split_for_training, check_budget, read_arff
 from acan.vis.training import train_native, graph_stats
 from acan.vis.evaluation import evaluate
 
@@ -20,10 +20,11 @@ def main():
     parser.add_argument('files', nargs='+', type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--target', help='Override the suggested target for every file')
+    parser.add_argument('--routing-profile',choices=['paper-routing-v1','legacy-v8'],default='legacy-v8')
     args = parser.parse_args()
     options = dict(max_depth=1, max_epochs=100, min_samples_split=12,
                    similarity_threshold=.92, lr=.08, tau=.2, alpha=.5,
-                   device='numpy', batch_size=300)
+                   device='numpy', batch_size=300,routing_profile=args.routing_profile)
     results = []
     with threadpool_limits(limits=1):
         for path in args.files:
@@ -31,8 +32,10 @@ def main():
                 raw = pd.read_csv(path)
             elif path.suffix.lower() == '.xlsx':
                 raw = pd.read_excel(path, engine='openpyxl')
+            elif path.suffix.lower() == '.arff':
+                raw = read_arff(path.read_bytes())
             else:
-                parser.error(f'Unsupported format: {path.suffix}; use CSV or XLSX')
+                parser.error(f'Unsupported format: {path.suffix}; use CSV, XLSX or ARFF')
             frame = clean_frame(raw)
             labels, filters = target_and_filters(frame, [args.target] if args.target else None)
             if args.target and labels != [args.target]:

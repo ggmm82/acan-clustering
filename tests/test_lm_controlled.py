@@ -269,6 +269,37 @@ class ControlledTrainingTests(unittest.TestCase):
             self.assertEqual(result.status_code,400)
             self.assertIn('split ufficiali',result.get_json()['error'])
 
+    def test_known_legacy_controlled_resume_preserves_exact_weights(self):
+        import torch
+        from safetensors.torch import load_file
+        from acan.lm import research_trainer as trainer
+        from acan.lm.compatibility import LEGACY_TRAINING,LEGACY_INFERENCE
+        from acan.lm.research_model import check_inference_contract
+        from acan.lm.store import Store
+        with tempfile.TemporaryDirectory() as one,tempfile.TemporaryDirectory() as two:
+            a,ja,path,base=self.fixture(one,steps=4)
+            b,jb,_,_=self.fixture(two,steps=4,base_path=path)
+            for store,job in ((a,ja),(b,jb)):
+                config=dict(job['config']);config.pop('routing_profile')
+                with store.db() as db:db.execute('UPDATE jobs SET config=? WHERE id=?',(json.dumps(config),job['id']))
+                job['config']=config
+            with patch.object(trainer,'contract',return_value=LEGACY_TRAINING[0]),patch.object(trainer,'inference_contract',return_value=LEGACY_INFERENCE):
+                self.run_job(a,ja,path,base)
+                stop=threading.Event();original=Store.record
+                def record(store,id,step,values):
+                    original(store,id,step,values)
+                    if str(store.root)==str(b.root) and step==2:stop.set()
+                with patch.object(Store,'record',record):self.run_job(b,jb,path,base,stop)
+            b.update(jb['id'],pause=0);self.run_job(b,jb,path,base)
+            self.assertEqual(b.job(jb['id'])['status'],'completed')
+            outputs=[]
+            for store,job in ((a,ja),(b,jb)):
+                current=store.job(job['id']);check_inference_contract(current['config'],current['progress'])
+                outputs.append(load_file(store.directory('jobs',job['id'])/'checkpoints'/current['checkpoint']/'trainables.safetensors'))
+            for key in outputs[0]:self.assertTrue(torch.equal(outputs[0][key],outputs[1][key]),key)
+            with self.assertRaisesRegex(ValueError,'versione'):
+                check_inference_contract(dict(jb['config'],routing_profile='shared-algebra-v1'),dict(model_contract=LEGACY_INFERENCE))
+
     def test_layer_inspection_preserves_exact_training_and_is_owner_scoped(self):
         import torch
         from safetensors.torch import load_file

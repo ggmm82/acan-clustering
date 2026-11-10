@@ -17,7 +17,7 @@ from .trainer import BASE_MODELS, resolve_base, validation_loss, wsd_lr
 def contract():
     root=Path(__file__).parent
     return hashlib.sha256(b''.join((root/name).read_bytes() for name in
-        ('research_trainer.py','research_data.py','distillation.py','research_options.py','research_model.py','full_attention.py'))).hexdigest()
+        ('research_trainer.py','research_data.py','distillation.py','research_options.py','research_model.py','full_attention.py','shared_attention.py','compatibility.py'))+(root.parent/'algebra.py').read_bytes()).hexdigest()
 
 
 def run_training(root, identifier, stop_event=None):
@@ -54,7 +54,9 @@ def run_training(root, identifier, stop_event=None):
         if should_pause():
             raise PreparationPaused()
         blocks = Blocks(directory, config['sequence_length'], config['seed'], config['validation_batches'])
-        identity = checkpoints.fingerprint(dict(config=config, base=base, corpus=corpus['sha256'], tokens=tokens['sha256'], research_contract=contract()))
+        from .compatibility import training_identity
+        identity = training_identity(dict(config=config, base=base, corpus=corpus['sha256'], tokens=tokens['sha256']),
+                                     config, directory/'checkpoints', job['checkpoint'], contract())
         checkpoint_root = directory / 'checkpoints'
         checkpoint_root.mkdir(exist_ok=True)
         previous = checkpoints.for_resume(checkpoint_root, identity, job['checkpoint'], job['progress'].get('step',0))

@@ -1,7 +1,13 @@
 """Named CPU checks required before publishing controlled LM tooling."""
 PROTOCOL='controlled-v1'
-MIN_TESTS=26
+MIN_TESTS=32
 REQUIRED_TESTS={
+    'test_paper_profile_survives_export_and_uses_the_same_inference_metric',
+    'test_known_legacy_controlled_resume_preserves_exact_weights',
+    'test_paper_squared_distance_and_log_mass_match_literal_equations',
+    'test_paper_routing_numpy_gradient_matches_its_objective',
+    'test_shared_paper_numpy_torch_values_and_gradients_agree',
+    'test_shared_lm_adapter_preserves_legacy_logits_gradients_and_causality',
     'test_layer_inspection_preserves_exact_training_and_is_owner_scoped',
     'test_layer_inspection_tracks_prefill_decoding_and_does_not_change_logits',
     'test_distillation_resume_preserves_exact_parameters',

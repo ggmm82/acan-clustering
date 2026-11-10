@@ -50,7 +50,8 @@ def refine(model_json, training, node_id, options):
     _, child = AlgebraicClusterLearner.gLearn(
         subset, labels=graph.labels, gcm=GraphClusterModel(), max_depth=1,
         max_epochs=options['max_epochs'], lr=options['lr'], tau=options['tau'],
-        alpha=options['alpha'], device=options['device'])
+        alpha=options['alpha'], device=options['device'],
+        routing_profile=getattr(parent,'routing_profile','legacy-v8'))
     child.id = max(graph.clusterModel) + 1
     graph.clusterModel[child.id] = child
     parent.children[group] = child.id

@@ -92,7 +92,9 @@ def target_and_filters(frame, previous=None):
     return labels, filters
 
 
-def split_for_training(data, labels, filters=(), categories=(), task='auto'):
+def split_for_training(data, labels, filters=(), categories=(), task='auto', seed=42):
+    if isinstance(seed,bool) or not isinstance(seed,int) or not 0 <= seed < 2**31:
+        raise ValueError('Seed dello split non valido.')
     if task not in ('auto', 'classification', 'regression'):
         raise ValueError('Tipo di previsione non valido.')
     frame = clean_frame(pd.DataFrame(data))
@@ -127,10 +129,10 @@ def split_for_training(data, labels, filters=(), categories=(), task='auto'):
         counts = frame[labels[0]].value_counts()
         if counts.min() >= 2 and len(counts) <= math.ceil(len(frame)*.2) and len(counts) <= math.floor(len(frame)*.8):
             stratify = frame[labels[0]]
-    train, validation = train_test_split(frame,test_size=.2,random_state=42,stratify=stratify)
+    train, validation = train_test_split(frame,test_size=.2,random_state=seed,stratify=stratify)
     info = dict(raw_rows=raw_rows, usable_rows=len(frame), excluded_missing_targets=raw_rows-len(frame),
                 excluded_columns=list(filters or []), target_types=types, stratified=stratify is not None,
-                train_rows=len(train), validation_rows=len(validation), seed=42)
+                train_rows=len(train), validation_rows=len(validation), seed=seed)
     return train.reset_index(drop=True), validation.reset_index(drop=True), info
 
 

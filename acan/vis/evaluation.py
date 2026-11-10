@@ -143,6 +143,7 @@ def evaluate(model_json, test, train=None, before_json=None, baselines=True):
                                     Miglioramento=bool(delta < 0 if record['Metrica'] in ('MAE', 'RMSE') else delta > 0)))
     timings.append(dict(Modello='ACAN attuale', Target='tutti', Inferenza_secondi=prediction_seconds, Stato='ok'))
     protocol = dict(seed=42, train_rows=len(train) if train is not None else None, test_rows=len(test),
+                    routing_profile=getattr(root,'routing_profile','legacy-v8'),routing_parameters=getattr(root,'routing_parameters',None),
                     tuned=False, preprocessing='training-only imputation, one-hot and min-max',
                     tree_estimators=200, boosting_iterations=100, knn_neighbors=5, cart_max_depth=5)
     if baselines and train is not None:

@@ -13,6 +13,7 @@ def train_native(data, labels, options):
     from acan.preprocessing import fit_features
     graph.preprocessing = fit_features(data, labels)
     common = {k: options[k] for k in ('lr', 'tau', 'alpha', 'device')}
+    common['routing_profile'] = options.get('routing_profile','legacy-v8')
     if options['max_depth'] == 1:
         learner = AlgebraicClusterLearner(normalized, labels=labels,
                                          batch_size=options['batch_size'], **common)

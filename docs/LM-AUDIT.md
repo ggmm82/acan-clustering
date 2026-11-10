@@ -68,3 +68,11 @@ nominal values before returning JSON. The existing application convention that
 missing rows is no longer suggested as constant: its presence/missingness may be
 informative. Truly constant and entirely missing columns remain suggestions.
 These are input/GUI fixes; CP, routing, relevance and prediction are unchanged.
+
+
+The new `shared-algebra-v1` adapter and experimental tabular `paper-routing-v1`
+share the explicit squared-distance/log-mass operators. This corrects one
+previous difference; it does not erase the remaining domain/implementation gaps
+in the table above. The current tabular profile remains the default after the
+matched real-data comparison showed regressions. See
+[measured alignment and limits](SCIENTIFIC-ALIGNMENT.md).
