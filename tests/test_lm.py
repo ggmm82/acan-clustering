@@ -225,5 +225,90 @@ class TestLMService(unittest.TestCase):
             self.assertEqual(fresh.get('/state',headers=headers).get_json()['jobs'][0]['id'],created['id'])
 
 
+@unittest.skipUnless(LM and importlib.util.find_spec('flask'), 'Requires LM service dependencies')
+class TestPublicExperiments(unittest.TestCase):
+    def fixture(self):
+        import hashlib
+        raw = b'The river flows through the valley.\n'*100
+        spec = dict(title='Fixture', language='en', url='https://example.invalid/text',
+                    source='https://example.invalid', license='Test only', license_url='https://example.invalid/license',
+                    bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest(), format='text',
+                    note='Fixture only', prompt='The river')
+        return raw, spec
+
+    def test_explicit_download_start_reuse_provenance_and_isolation(self):
+        from unittest.mock import patch
+        from acan.lm import public_corpus as public
+        from acan.lm.service import create_app
+        raw, spec = self.fixture()
+        token = 'internal-test-token-'+'x'*32
+        headers = {'Authorization':'Bearer '+token, 'X-ACAN-Workspace':'a'*64}
+        other = dict(headers, **{'X-ACAN-Workspace':'b'*64})
+        with tempfile.TemporaryDirectory() as root, patch.dict(public.CATALOG, fixture=spec):
+            app = create_app(root, token); client = app.test_client()
+            with patch.object(public, 'download', return_value=raw) as download, patch.object(public, 'launch') as launch:
+                self.assertEqual(client.get('/public-corpora', headers=headers).status_code, 200)
+                client.get('/state', headers=headers)
+                download.assert_not_called(); launch.assert_not_called()
+                result = client.post('/public-experiments', headers=headers, json=dict(dataset='fixture', preset='check'))
+                self.assertEqual(result.status_code, 200, result.get_data(as_text=True))
+                data = result.get_json(); job = data['job']
+                self.assertEqual(job['config']['total_steps'], 20)
+                self.assertEqual(job['config']['accumulation'], 1)
+                self.assertEqual(job['config']['base_model'], 'HuggingFaceTB/SmolLM2-135M')
+                download.assert_called_once(); launch.assert_called_once()
+                self.assertEqual(client.get('/state', headers=other).get_json()['corpora'], [])
+                self.assertEqual(client.post('/jobs/'+job['id']+'/pause', headers=other).status_code, 404)
+                second = client.post('/public-experiments', headers=headers, json=dict(dataset='fixture', preset='practice')).get_json()
+                self.assertEqual(second['corpus']['id'], data['corpus']['id'])
+                self.assertEqual(second['job']['config']['total_steps'], 200)
+                self.assertEqual(download.call_count, 1)
+                self.assertEqual(data['source']['source_sha256'], spec['sha256'])
+                metadata = app.store.directory('jobs', job['id'])/'public-source.json'
+                self.assertTrue(metadata.exists())
+                fresh = create_app(root, token).test_client()
+                self.assertEqual(len(fresh.get('/state', headers=headers).get_json()['jobs']), 2)
+
+    def test_bad_hash_unknown_source_and_busy_worker_cannot_start(self):
+        import fcntl
+        from unittest.mock import patch
+        from acan.lm import public_corpus as public
+        from acan.lm.service import create_app
+        raw, spec = self.fixture()
+        headers = {'Authorization':'Bearer '+'x'*40, 'X-ACAN-Workspace':'a'*64}
+        with tempfile.TemporaryDirectory() as root, patch.dict(public.CATALOG, fixture=spec):
+            app = create_app(root, 'x'*40); client = app.test_client()
+            with patch.object(public, 'download', return_value=raw+b'corrupt') as download, patch.object(public, 'launch') as launch:
+                result = client.post('/public-experiments', headers=headers, json=dict(dataset='fixture', preset='check'))
+                self.assertEqual(result.status_code, 400)
+                self.assertIn('checksum', result.get_json()['error'])
+                self.assertEqual(client.get('/state', headers=headers).get_json()['jobs'], [])
+                for dataset in ('https://example.invalid/custom', [], None):
+                    self.assertEqual(client.post('/public-experiments', headers=headers,
+                        json=dict(dataset=dataset, preset='check')).status_code, 400)
+                lease = app.store.resource(); fcntl.flock(lease, fcntl.LOCK_EX)
+                try:
+                    self.assertEqual(client.post('/public-experiments', headers=headers,
+                        json=dict(dataset='fixture', preset='check')).status_code, 400)
+                    self.assertEqual(download.call_count, 1)
+                finally:
+                    lease.close()
+                launch.assert_not_called()
+
+    def test_worker_race_keeps_a_resumable_project(self):
+        from unittest.mock import patch
+        from acan.lm import public_corpus as public
+        from acan.lm.store import Store, owner_key
+        raw, spec = self.fixture()
+        with tempfile.TemporaryDirectory() as root, patch.dict(public.CATALOG, fixture=spec), \
+                patch.object(public, 'download', return_value=raw), \
+                patch.object(public, 'launch', side_effect=ValueError('Worker occupato')):
+            store = Store(root)
+            result = public.experiment(store, owner_key('a'*64), 'fixture', 'check')
+            self.assertEqual(result['job']['status'], 'created')
+            self.assertIn('Training non avviato', result['message'])
+            self.assertEqual(result['corpus']['status'], 'ready')
+
+
 if __name__=='__main__':
     unittest.main()

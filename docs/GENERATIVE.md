@@ -10,7 +10,7 @@ change the tabular ACAN objective. See [LM audit](LM-AUDIT.md) for differences.
 
 The supported pretrained family is **SmolLM2** (135M, 360M, 1.7B), loaded from
 Hugging Face using safetensors, native Transformers Llama code and a recorded
-immutable Hub commit. Half of the upper attention modules are replaced by the
+immutable Hub commit. Attention in the upper half of all layers is replaced by the
 corrected `ACANConceptAttentionLayer`; the existing embeddings, layer norms,
 FFNs and lower dense layers remain. GQA K/V projections are expanded by head
 replication for the supplied full-channel local/slot attention. LoRA adapts
@@ -34,7 +34,8 @@ must be measured on the actual hardware/data; no single-GPU speed claim is made.
    like a private project capability. Other workspace keys cannot see the files,
    jobs or generated text. Projects are explicitly selected; unrelated projects
    do not share training state.
-2. Upload UTF-8 TXT (one document per line) or JSONL (`{"text":"..."}` per line).
+2. Upload UTF-8 TXT (blank-line-separated paragraphs for new controlled projects;
+   the legacy protocol retains one document per line) or JSONL (`{"text":"..."}` per line).
    The browser streams 1 MiB chunks; it does not base64 the entire file. Corpus,
    SHA-256 and prepared tokens live on the worker's persistent volume. Tokenization
    is incremental and resumable. Each document is followed by EOS. Individual
@@ -66,7 +67,8 @@ must be measured on the actual hardware/data; no single-GPU speed claim is made.
 
 Checkpoint files are written to a temporary directory, flushed/fsynced, hashed,
 then atomically renamed. The previous complete snapshot remains available if a
-new write fails. Complete checkpoints use safetensors plus `weights_only=True`
+new write fails. The best checkpoint is retained outside the latest-three rolling window.
+Complete checkpoints use safetensors plus `weights_only=True`
 optimizer/RNG loading; uploaded model pickle/code files are never accepted.
 A SQLite WAL with synchronous FULL persists ownership, state, metrics and pointers.
 Incomplete snapshot directories are ignored; a corrupt newest complete snapshot
@@ -144,3 +146,61 @@ is for the 135M mechanics profile; a long training needs the reviewed code built
 with CUDA on a GPU host. For a remote worker, keep its data volume there and set
 `ACAN_LM_URL=https://your-private-gpu-endpoint` plus the same service token on
 the Hostinger frontend. No human login is added to the GUI.
+
+## Guided public-corpus experiments
+
+The Generative tab now offers **Avvio guidato · dati pubblici**. Choose a source
+and a bounded preset, then explicitly click **Scarica e avvia la prova**. No user
+file or training parameters are required. The action verifies/downloads text,
+creates a separate workspace-local corpus/project and launches the existing
+durable SmolLM2-135M–ACAN training worker. It never replaces an existing project
+or interrupts a busy worker. A race for the worker leaves a created project that
+can be started later with **Riprendi**. First use also downloads base weights;
+CPU runtime is hardware-dependent, not guaranteed to be short.
+
+- **Divina Commedia**: Italian medieval poetry, Project Gutenberg ebook 1000.
+  Original work is public domain; edition terms are linked in the UI. This is
+  a mechanics experiment, not modern Italian assistant training.
+- **Tiny Shakespeare**: English theatrical text from the char-rnn collection,
+  pinned to commit `370cbcd448eb7daf32f21a6be560b70e0b33c4e3`.
+- **Prova breve**: 20 updates, sequence length 64, batch 1, accumulation 1,
+  checkpoints every 5 updates: 1,280 processed next-token targets.
+- **Esercizio**: 200 updates, length 128, batch 1, accumulation 4, checkpoints
+  every 20 updates: 102,400 processed next-token targets.
+
+No crawling, arbitrary URL fetching, automatic model promotion or unlimited
+training loop is introduced. Source downloads are bounded to 8 MiB per file (WikiText prepared data to 32 MiB) and checked
+against a fixed byte count and SHA-256 before use; Gutenberg headers/footers are
+removed from training input. A changed remote source fails closed until reviewed.
+Source URL, edition conditions, raw/prepared hashes and preprocessing are stored
+in `public-source.json` alongside both the corpus and project. Verified corpora
+are reused within the same workspace; other workspaces receive distinct corpora
+and jobs. Download failure launches no training. Runtime GET/state polling never
+starts training. Existing checkpoints and the model's code contract are unchanged.
+
+After launch, use the same pause/save, resume and checkpoint generation controls.
+A source-appropriate prompt is prefilled. WikiText-2 additionally preserves its official article splits; new experiments use the controlled document protocol. Validation still uses the existing
+held-out tail (up to eight blocks); it is a small diagnostic sample, not an
+independent broad language benchmark. The original model NLL is shown as a green
+reference line; red validation values are repeated between checkpoint evaluations.
+Public text may already be present in base-model pretraining, so this experiment
+cannot establish unseen-data performance or ACAN superiority.
+
+A legacy-protocol local CPU smoke completed all 20 steps on the verified Dante corpus. Its
+validation NLL changed from an original-model reference of 5.7384 to 5.6065
+after training. This is one small, potentially pretraining-overlapping sample,
+not evidence of broad language superiority; exact configuration and source
+revision are in [PUBLIC-CORPUS-SMOKE.json](PUBLIC-CORPUS-SMOKE.json).
+
+## Controlled CPU workflow (PR #6)
+
+See the [step-by-step controlled laboratory guide](CONTROLLED-LM.md) for document
+splits, exact deduplication, optional teacher distillation, early stopping,
+best-checkpoint preservation, model export, matched dense-LoRA control, full
+ACAN experiments, independent test/cache/speed measurements and own-project web
+diagnostics. Existing projects retain their legacy trainer and compatible model
+contract. New controlled projects record their own protocol/model code identity.
+
+Internal Compose communication sets both `NO_PROXY` and `no_proxy` to the
+worker hostname and loopback. This prevents a Docker client’s lowercase proxy
+default from sending private frontend/worker traffic to an external proxy.

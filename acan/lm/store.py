@@ -59,6 +59,8 @@ class Store:
                     name TEXT NOT NULL, expected INTEGER NOT NULL, received INTEGER NOT NULL DEFAULT 0,
                     status TEXT NOT NULL, sha256 TEXT);
                 CREATE TABLE IF NOT EXISTS metrics (job TEXT, step INTEGER, record TEXT, PRIMARY KEY(job,step));
+                CREATE TABLE IF NOT EXISTS evaluations (id TEXT PRIMARY KEY, job TEXT, owner TEXT,
+                    status TEXT, request TEXT, result TEXT, error TEXT);
                 CREATE TABLE IF NOT EXISTS generations (id TEXT PRIMARY KEY, job TEXT, owner TEXT,
                     status TEXT, request TEXT, result TEXT, error TEXT);
             ''')
@@ -115,6 +117,9 @@ class Store:
         with self.db() as db:
             db.execute('UPDATE jobs SET ' + ','.join(key+'=?' for key in changes) + ' WHERE id=?',
                        (*changes.values(), identifier))
+        if changes.get('checkpoint'):
+            from .retention import protect
+            protect(self.directory('jobs', identifier)/'checkpoints', changes['checkpoint'])
 
     def pause(self, identifier, owner):
         job = self.job(identifier, owner)
@@ -123,6 +128,8 @@ class Store:
         return self.job(identifier, owner)
 
     def record(self, identifier, step, record):
+        import resource
+        record['process_peak_rss_kib']=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         with self.db() as db:
             db.execute('INSERT OR REPLACE INTO metrics VALUES(?,?,?)', (identifier, step, json.dumps(record, allow_nan=False)))
         self.update(identifier, progress=record)
@@ -210,3 +217,4 @@ class Store:
         with self.db() as db:
             db.execute("UPDATE jobs SET status='interrupted',error='Worker interrotto: riprendi dall’ultimo checkpoint verificato.' WHERE status IN ('queued','preparing','running','pausing')")
             db.execute("UPDATE generations SET status='failed',error='Worker interrotto.' WHERE status='running'")
+            db.execute("UPDATE evaluations SET status='failed',error='Worker interrotto.' WHERE status IN ('running','cancelling')")

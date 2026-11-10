@@ -14,6 +14,8 @@ RUN python -m pip install --no-cache-dir --no-deps --no-build-isolation . \
     && rm -rf /app/acan /app/build /app/*.egg-info \
     && useradd --uid 10001 --create-home acan
 USER 10001
+ARG ACAN_BUILD_REVISION=development
+ENV ACAN_BUILD_REVISION=$ACAN_BUILD_REVISION
 EXPOSE 4000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/healthz', timeout=3)"
