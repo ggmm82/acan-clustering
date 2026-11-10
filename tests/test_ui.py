@@ -92,6 +92,102 @@ class TestUICallbacks(unittest.TestCase):
         self.assertEqual(result['dpdnLabel']['value'], ['Survived'])
         self.assertEqual(result['dpdnFilter']['value'], ['PassengerId'])
 
+    def test_loaded_model_target_options_keep_uploaded_feature_filters(self):
+        # Loading a JSON model restores only its target dropdown options.
+        data = {'Name':['A','B'], 'Ticket':['X','Y'], 'Cabin':['C1','C2'],
+                'PassengerId':[1,2], 'Age':[20,30], 'Survived':[0,1]}
+        result = self.invoke('..label-store.data', [('dpdnLabel', 'value', ['Survived'])],
+            [('dpdnLabel', 'options', [{'label':'Survived', 'value':'Survived'}]),
+             ('data-store', 'data', data)])
+        self.assertEqual({item['value'] for item in result['dpdnFilter']['options']},
+                         {'Name','Ticket','Cabin','PassengerId','Age'})
+        self.assertNotIn('value', result['dpdnFilter'])
+
+    def test_upload_sends_filter_options_and_values_together(self):
+        data = {'PassengerId':list(range(100)), 'Name':[f'person{i}' for i in range(100)],
+                'Ticket':[f'ticket{i}' for i in range(100)], 'Age':list(range(100)),
+                'Survived':[0,1]*50}
+        result = self.invoke('..dpdnLabel.options', [('data-store', 'data', data)],
+                             [('label-store', 'data', [])])
+        options = {item['value'] for item in result['dpdnFilter']['options']}
+        self.assertTrue(set(result['dpdnFilter']['value']).issubset(options))
+        self.assertEqual(set(result['dpdnFilter']['value']), {'PassengerId','Name','Ticket'})
+        self.assertNotIn('Survived', options)
+
+    def test_restore_suggested_filters_after_clearing(self):
+        data = {'PassengerId':list(range(100)), 'Name':[f'person{i}' for i in range(100)],
+                'Ticket':[f'ticket{i}' for i in range(100)], 'Age':list(range(100)), 'Survived':[0,1]*50}
+        result = self.invoke('dpdnFilter.value', [('btn-suggest-filter', 'n_clicks', 1)],
+                             [('data-store', 'data', data), ('label-store', 'data', ['Survived'])])
+        self.assertEqual(set(result['dpdnFilter']['value']), {'PassengerId','Name','Ticket'})
+
+    def test_public_experiment_requires_explicit_click_and_passes_only_preset(self):
+        from unittest.mock import patch
+        with patch('acan.vis.generative.backend', return_value=dict(job={'id':'new-public-job'},
+                message='Training avviato', prompt='Nel mezzo del cammin')) as backend:
+            result = self.invoke('..lm-active-job.data', [('lm-public-start', 'n_clicks', 1)],
+                [('lm-workspace', 'data', 'a'*64), ('lm-public-dataset', 'value', 'dante-it'),
+                 ('lm-public-preset', 'value', 'check')])
+        backend.assert_called_once_with('a'*64, '/public-experiments', 'POST', dict(dataset='dante-it', preset='check'), timeout=90)
+        self.assertEqual(result['lm-active-job']['data'], 'new-public-job')
+        self.assertEqual(result['lm-prompt']['value'], 'Nel mezzo del cammin')
+
+    def test_lm_chart_explains_baseline_and_repeated_validation(self):
+        job = dict(id='job', progress=dict(step=12, tokens_trained=12288, baseline_nll=4.683,
+                   validation_nll=6.62), history=[dict(step=12, training_nll=6.69, validation_nll=6.62)],
+                   snapshots=[dict(step=7, name='saved')], status='running',
+                   config=dict(total_steps=1000), checkpoint='saved', error=None)
+        result = self.invoke('..lm-progress.children', [('lm-state', 'data', {'jobs':[job]}),
+                             ('lm-job', 'value', 'job')], [('lm-checkpoint', 'value', None)])
+        figure = result['lm-loss']['figure']
+        self.assertEqual(figure['layout']['shapes'][0]['y0'], 4.683)
+        text = str(result['lm-progress']['children'])
+        self.assertIn('ancora peggiore', text)
+        self.assertIn('checkpoint passo 7', text)
+        self.assertIn('token elaborati', text)
+
+    def test_public_defaults_survive_worker_catalog_loading(self):
+        result = self.invoke('..lm-public-dataset.options', [('lm-state', 'data', None),
+                             ('lm-public-dataset', 'value', 'dante-it')])
+        self.assertNotIn('lm-public-dataset', result)
+        self.assertNotIn('lm-public-preset', result)
+        self.assertTrue(result['lm-public-start']['disabled'])
+
+    def test_new_public_project_is_selected_over_previous_project(self):
+        state = dict(jobs=[dict(id='old', config={'name':'Old'}, status='paused', progress={}),
+                           dict(id='new', config={'name':'New'}, status='created', progress={})],
+                     corpora=[], select_job='new')
+        result = self.invoke('..lm-corpus.options', [('lm-state', 'data', state)],
+            [('lm-active-job', 'data', 'new'), ('lm-upload-state', 'data', None),
+             ('lm-corpus', 'value', None), ('lm-job', 'value', 'old')])
+        self.assertEqual(result['lm-job']['value'], 'new')
+
+    def test_web_dataset_diagnostics_shows_actual_received_filters_without_rows(self):
+        data={'PassengerId':list(range(100)),'Name':[f'person{i}' for i in range(100)],
+              'Age':list(range(100)),'Survived':[0,1]*50}
+        result=self.invoke('..dataset-debug-view.children', [('data-store','data',data),
+            ('label-store','data',['Survived']),('dpdnFilter','value',['PassengerId','Name']),
+            ('dpdnCategory','value',[]),('target-task','value','auto')])
+        report=result['dataset-debug-data']['data']
+        self.assertEqual(report['received_filters'],['PassengerId','Name'])
+        self.assertEqual(report['budget'],'ok')
+        self.assertNotIn('person0',str(report))
+
+    def test_completed_lm_disables_resume_and_allows_explicit_test_comparison(self):
+        state={'jobs':[dict(id='job',status='completed',config={'protocol':'controlled-v1'},snapshots=[{'name':'saved'}])], 'busy':False}
+        result=self.invoke('..lm-pause.disabled',[('lm-state','data',state),('lm-job','value','job')])
+        self.assertTrue(result['lm-pause']['disabled']);self.assertTrue(result['lm-resume']['disabled'])
+        self.assertFalse(result['lm-evaluate']['disabled'])
+
+    def test_explicit_lm_evaluation_uses_selected_cpu_budget(self):
+        from unittest.mock import patch
+        with patch('acan.vis.generative.backend',return_value={'id':'evaluation'}) as backend:
+            result=self.invoke('..lm-evaluation-id.data',[('lm-evaluate','n_clicks',1)],
+                [('lm-workspace','data','a'*64),('lm-job','value','job'),('lm-checkpoint','value','best-saved'),('lm-eval-profile','value','long')])
+        backend.assert_called_once_with('a'*64,'/jobs/job/evaluate','POST',
+            dict(checkpoint='best-saved',max_batches=1,context_lengths=[128,1024],new_tokens=4))
+        self.assertEqual(result['lm-evaluation-id']['data'],'evaluation')
+
     def test_sessions_receive_distinct_server_identifiers(self):
         other = self.app.server.test_client()
         other.get('/_dash-layout')

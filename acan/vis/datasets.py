@@ -96,7 +96,7 @@ def check_budget(frame):
     if size['rows']>10000 or size['columns']>1000 or size['cells']>2_000_000:
         drivers = ', '.join(f'{name}: {count}' for name,count in size['largest'] if count>1)
         raise ValueError(f"Dopo la codifica: {size['rows']:,} righe, {size['columns']:,} attributi, {size['cells']:,} celle. "
-                         f"Espansioni maggiori: {drivers or 'nessuna'}. Escludi identificativi/testo ad alta cardinalità nei filtri "
+                         f"Espansioni maggiori: {drivers or 'nessuna'}. Usa «Ripristina filtri suggeriti» in Model → Impostazioni avanzate, oppure escludi identificativi/testo ad alta cardinalità nei filtri "
                          "o rimuovi colonne numeriche selezionate per errore come categoriche. "
                          "Limiti: 10.000 righe, 1.000 attributi codificati, 2 milioni di celle.")
     return size

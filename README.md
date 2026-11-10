@@ -233,3 +233,18 @@ can lose steps since the latest complete checkpoint, not earlier saved learning.
 ## License
 
 MIT; see [LICENSE](LICENSE).
+
+The Generative tab also provides a **guided public-corpus experiment**: choose
+Dante (Italian) or Tiny Shakespeare (English) and a 20/200-step budget. One
+explicit action downloads and verifies the source, prepares a separate persistent
+project and starts training; pause/resume and checkpoint generation remain
+available. These are bounded mechanics experiments, not certified assistant
+training. See [source provenance, budgets and limitations](docs/GENERATIVE.md#guided-public-corpus-experiments).
+
+The PR #6 controlled laboratory adds best-checkpoint preservation and early
+stopping for new projects, optional frozen-teacher distillation, disjoint
+document splits, WikiText-2 official splits, a matched dense-LoRA control and
+explicit quality/cache/speed comparisons. Model deltas and architecture can be
+downloaded; own-project diagnostics and redacted logs remain available in the
+web UI. The 100% ACAN profile is experimental and CPU contract-tested, not a
+claim of general-language quality. [Step-by-step workflow and limits](docs/CONTROLLED-LM.md).

@@ -5,7 +5,7 @@ import os
 import signal
 import threading
 import time
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 
 from .manager import launch, request_generation, snapshots
 from .store import ACTIVE, Store, owner_key
@@ -41,7 +41,7 @@ def create_app(root=None, token=None):
 
     @app.get('/healthz')
     def health():
-        return jsonify(status='ok')
+        return jsonify(status='ok',version='8.3.0',build_revision=os.environ.get('ACAN_BUILD_REVISION','development'))
 
     @app.get('/state')
     def state():
@@ -56,7 +56,20 @@ def create_app(root=None, token=None):
     def capabilities():
         import torch
         return jsonify(cuda=torch.cuda.is_available(), torch=torch.__version__, base_models=BASE_MODELS,
-                       profile='acan-lm-causal-prefix-v1', minicpm_supported=False)
+                       profile='acan-lm-causal-prefix-v1', minicpm_supported=False, controlled_training=True, distillation=True, best_checkpoint=True, model_export=True,attention_fractions=[.5,1.],build_revision=os.environ.get('ACAN_BUILD_REVISION','development'))
+
+    @app.get('/public-corpora')
+    def public_catalog():
+        from .public_corpus import catalog
+        return jsonify(catalog())
+
+    @app.post('/public-experiments')
+    def public_experiment():
+        from .public_corpus import experiment
+        body = request.get_json()
+        if not isinstance(body, dict) or set(body) != {'dataset', 'preset'}:
+            raise ValueError('Specificare soltanto dataset e profilo della prova pubblica.')
+        return jsonify(experiment(store, request.workspace, body['dataset'], body['preset']))
 
     @app.post('/corpora')
     def begin_upload():
@@ -73,7 +86,18 @@ def create_app(root=None, token=None):
 
     @app.post('/jobs')
     def create_job():
-        config = validate_options(request.get_json())
+        options=request.get_json()
+        if not isinstance(options,dict):
+            raise ValueError('Configurazione di training non valida.')
+        if options.get('protocol')=='controlled-v1':
+            from .research_options import validate_options as controlled_options
+            config=controlled_options(options)
+        else:
+            config=validate_options(options)
+        corpus=store.corpus(config['corpus_id'],request.workspace,ready=True)
+        origin=store.directory('corpora',corpus['id'])/'public-source.json'
+        if origin.exists() and json.loads(origin.read_text()).get('preprocessing')=='wikitext-articles-official-splits-v1' and config.get('protocol')!='controlled-v1':
+            raise ValueError('Questo corpus contiene split ufficiali: usa il protocollo controllato per tenere il test fuori dal training.')
         return jsonify(store.create_job(request.workspace, config))
 
     @app.post('/jobs/<identifier>/start')
@@ -87,6 +111,59 @@ def create_app(root=None, token=None):
     @app.post('/jobs/<identifier>/pause')
     def pause(identifier):
         return jsonify(store.pause(identifier, request.workspace))
+
+    @app.post('/jobs/<identifier>/evaluate')
+    def evaluate_model(identifier):
+        from .manager import request_evaluation
+        job=store.job(identifier,request.workspace)
+        return jsonify(id=request_evaluation(store,job,request.workspace,request.get_json()))
+
+    @app.post('/evaluations/<identifier>/cancel')
+    def cancel_evaluation(identifier):
+        with store.db() as db:
+            row=db.execute('SELECT * FROM evaluations WHERE id=? AND owner=?',(identifier,request.workspace)).fetchone()
+            if row is None:raise KeyError(identifier)
+            if row['status']=='running':db.execute("UPDATE evaluations SET status='cancelling' WHERE id=?",(identifier,))
+        return jsonify(status='cancellation requested')
+
+    @app.get('/evaluations/<identifier>')
+    def evaluation_result(identifier):
+        with store.db() as db:
+            row=db.execute('SELECT * FROM evaluations WHERE id=? AND owner=?',(identifier,request.workspace)).fetchone()
+        if row is None:
+            raise KeyError(identifier)
+        value=dict(row)
+        if value['result']:value['result']=json.loads(value['result'])
+        value.pop('request')
+        return jsonify(value)
+
+    @app.post('/jobs/<identifier>/dense-control')
+    def dense_control(identifier):
+        job=store.job(identifier,request.workspace)
+        if job['config'].get('protocol')!='controlled-v1':
+            raise ValueError('Il controllo richiede un progetto con split train/validazione/test separati.')
+        if store.busy():
+            raise ValueError('Metti in pausa il progetto attivo prima di avviare il controllo.')
+        from .research_options import validate_options as controlled_options
+        config=controlled_options(dict(job['config'],architecture='dense-control',name='Controllo denso · '+job['config']['name']))
+        control=store.create_job(request.workspace,config)
+        launch(store,control)
+        return jsonify(control)
+
+    @app.get('/jobs/<identifier>/diagnostics')
+    def diagnostics(identifier):
+        from .diagnostics import report
+        return jsonify(report(store,store.job(identifier,request.workspace),token))
+
+    @app.get('/jobs/<identifier>/export')
+    def export_model(identifier):
+        from .exporting import export_bundle
+        job = store.job(identifier, request.workspace)
+        path = export_bundle(store, job, request.args.get('checkpoint', ''))
+        response = send_file(path, mimetype='application/zip', as_attachment=True,
+                             download_name='acan-model-'+path.name)
+        response.headers['Cache-Control'] = 'no-store'
+        return response
 
     @app.post('/jobs/<identifier>/generate')
     def generation(identifier):

@@ -6,7 +6,8 @@ import time
 import torch
 
 from . import checkpoints
-from .grafting import load_base, reset_streams
+from .research_model import load_model as load_base,check_inference_contract
+from .grafting import reset_streams
 from .attention import ACANConceptAttentionLayer
 from .store import Store
 from .trainer import resolve_base
@@ -27,6 +28,7 @@ def generate(root, request_id):
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=False)
         state = json.loads((directory / 'state.json').read_text())
+        check_inference_contract(options,state)
         device = state['device']
         if device == 'cuda' and not torch.cuda.is_available():
             raise ValueError('Questo checkpoint richiede il worker CUDA originale.')
