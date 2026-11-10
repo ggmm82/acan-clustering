@@ -10,7 +10,7 @@ def main():
     parser.add_argument('--root', required=True)
     parser.add_argument('--job', required=True)
     parser.add_argument('--lease-fd', type=int, required=True)
-    parser.add_argument('--kind', choices=['train','generate'], default='train')
+    parser.add_argument('--kind', choices=['train','generate','evaluate'], default='train')
     parser.add_argument('--generation')
     args = parser.parse_args()
     stop = threading.Event()
@@ -18,8 +18,23 @@ def main():
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     try:
         if args.kind == 'train':
-            from .trainer import run_training
+            from .store import Store
+            options=Store(args.root).job(args.job)['config']
+            if options.get('protocol')=='controlled-v1':
+                from .resources import check_profile
+                import torch
+                try:
+                    check_profile(options,torch.cuda.is_available())
+                except ValueError as exc:
+                    Store(args.root).update(args.job,status='failed',error=str(exc),pause=0)
+                    raise
+                from .research_trainer import run_training
+            else:
+                from .trainer import run_training
             run_training(args.root, args.job, stop)
+        elif args.kind=='evaluate':
+            from .evaluation import evaluate_checkpoint
+            evaluate_checkpoint(args.root,args.generation,stop)
         else:
             from .generation import generate
             generate(args.root, args.generation)

@@ -24,10 +24,18 @@ def main():
     from acan.lm.checkpoints import contract
     torch.set_num_threads(1)
     suite=unittest.defaultTestLoader.discover(str(ROOT/'tests'),pattern='test_lm*.py')
+    from acan.lm.audit_contract import REQUIRED_TESTS,MIN_TESTS,PROTOCOL
+    def cases(suite):
+        for item in suite:
+            if isinstance(item,unittest.TestSuite):yield from cases(item)
+            else:yield item.id().rsplit('.',1)[-1]
+    present=set(cases(suite))
     stream=io.StringIO()
     result=unittest.TextTestRunner(stream=stream,verbosity=2).run(suite)
-    passed=result.wasSuccessful() and not result.skipped and result.testsRun>=8
+    verified=result.wasSuccessful() and not result.skipped and REQUIRED_TESTS.issubset(present)
+    passed=verified and result.testsRun>=MIN_TESTS
     report=dict(status='passed' if passed else 'failed', profile=PROFILE, contract=contract(),
+                controlled_protocol=PROTOCOL,controls_verified=verified,required_controls=sorted(REQUIRED_TESTS),
                 reference_sha256=source, full_paper_conformance=False, gpu_verified=False,
                 pretrained_general_quality_verified=False, tests_run=result.testsRun, skipped=len(result.skipped),
                 torch=torch.__version__,transformers=transformers.__version__,peft=peft.__version__,
