@@ -2,7 +2,7 @@
 import math
 from .trainer import validate_options as legacy_options
 
-EXTRA=dict(protocol='controlled-v1',architecture='hybrid',graft_fraction=.5,distillation_weight=0.,distillation_temperature=2.,
+EXTRA=dict(protocol='controlled-v1',routing_profile='shared-algebra-v1',architecture='hybrid',graft_fraction=.5,distillation_weight=0.,distillation_temperature=2.,
            early_stop_patience=3,early_stop_min_delta=.01,validation_batches=8)
 
 
@@ -10,6 +10,8 @@ def validate_options(options):
     extra={key:options.get(key,value) for key,value in EXTRA.items()}
     if isinstance(extra['graft_fraction'],bool) or extra['graft_fraction'] not in (.5,1.):
         raise ValueError('Frazione ACAN ammessa: 0.5 oppure 1.0.')
+    if extra['routing_profile'] not in ('legacy-causal-v1','shared-algebra-v1'):
+        raise ValueError('Profilo algebrico non valido.')
     if extra['architecture'] not in ('hybrid','dense-control'):
         raise ValueError('Architettura non supportata.')
     if extra['protocol']!='controlled-v1':

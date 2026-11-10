@@ -61,6 +61,7 @@ class Store:
                 CREATE TABLE IF NOT EXISTS metrics (job TEXT, step INTEGER, record TEXT, PRIMARY KEY(job,step));
                 CREATE TABLE IF NOT EXISTS evaluations (id TEXT PRIMARY KEY, job TEXT, owner TEXT,
                     status TEXT, request TEXT, result TEXT, error TEXT);
+                CREATE TABLE IF NOT EXISTS layer_inspections (job TEXT PRIMARY KEY, pending INTEGER NOT NULL DEFAULT 0, result TEXT);
                 CREATE TABLE IF NOT EXISTS generations (id TEXT PRIMARY KEY, job TEXT, owner TEXT,
                     status TEXT, request TEXT, result TEXT, error TEXT);
             ''')

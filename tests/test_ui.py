@@ -55,6 +55,74 @@ class TestUICallbacks(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()['response']
 
+    def test_training_waits_for_target_and_filter_synchronization(self):
+        inputs=[('data-store','data',{'x':[0,1],'class':['a','b']}),('label-store','data',[]),
+            ('dpdnLabel','value',['class']),('dpdnLabel','options',[dict(label='class',value='class')]),
+            ('dpdnFilter','value',[]),('dpdnFilter','options',[dict(label='x',value='x')])]
+        result=self.invoke('button-learn.disabled',inputs)
+        self.assertTrue(result['button-learn']['disabled'])
+        inputs[1]=('label-store','data',['class'])
+        self.assertFalse(self.invoke('button-learn.disabled',inputs)['button-learn']['disabled'])
+        # Explicitly clearing the target still permits unsupervised discovery.
+        inputs[1]=('label-store','data',[]);inputs[2]=('dpdnLabel','value',[])
+        inputs[-1]=('dpdnFilter','options',[dict(label=x,value=x) for x in ('x','class')])
+        self.assertFalse(self.invoke('button-learn.disabled',inputs)['button-learn']['disabled'])
+
+    def test_arff_upload_returns_json_strings_and_can_start_native_training(self):
+        raw=b"""@relation fixture
+@attribute feature { a , b }
+@attribute flag { Y }
+@attribute class { yes , no }
+@data
+a,Y,yes
+b,?,no
+a,Y,yes
+b,?,no
+a,Y,yes
+b,?,no
+a,Y,yes
+b,?,no
+a,Y,yes
+b,?,no
+"""
+        result=self.invoke('..data-store.data',[('upload-data','contents','data:;base64,'+base64.b64encode(raw).decode())],
+            [('upload-data','filename','fixture.ARFF'),('upload-data','last_modified',0),('label-store','data',[])])
+        data=result['data-store']['data']
+        self.assertEqual(data['feature'][0],'a')
+        self.assertIsNone(data['flag'][1])
+        from acan.vis.datasets import target_and_filters,split_for_training
+        from acan.vis.training import train_native
+        labels,filters=target_and_filters(pd.DataFrame(data))
+        self.assertNotIn('flag',filters)
+        train,_,_=split_for_training(data,labels,filters)
+        graph=train_native(train,labels,dict(max_depth=1,max_epochs=25,min_samples_split=5,similarity_threshold=.92,lr=.08,tau=.2,alpha=.5,device='numpy',batch_size=300))
+        self.assertIn(graph.rootId,graph.clusterModel)
+
+    def test_layer_inspection_generation_is_explicit_and_renders_results(self):
+        from unittest.mock import patch
+        from acan.vis.generative import inspection_panel
+        with patch('acan.vis.generative.backend',return_value={'id':'request'}) as backend:
+            result=self.invoke('..lm-generation-id.data',[('lm-generate','n_clicks',1)],
+                [('lm-workspace','data','a'*64),('lm-job','value','b'*32),('lm-checkpoint','value','step-1'),
+                 ('lm-prompt','value','The cat'),('lm-new-tokens','value',3),('lm-inspect-generation','value',True)])
+            self.assertEqual(result['lm-generation-id']['data'],'request')
+            self.assertTrue(backend.call_args.args[3]['inspect_layers'])
+        report=dict(step=1,mode='inference',scope='scope',limits='limits',gradients={},frames=[dict(
+            input_tokens=4,prefix_tokens=4,logits_finite=True,next_token_candidates=[dict(token=' cat',token_id=2,probability=.5)],
+            layers=[dict(layer=0,kind='ACAN',input=dict(rms=1.,finite=True),output=dict(rms=1.,finite=True),
+                         change=dict(rms=.1,finite=True),effective_slots=1.8,mass_fractions=[.6,.4])])])
+        result=self.invoke('..lm-layer-frame.options',
+            [('lm-layer-source','value','inference'),('lm-training-layers','data',None),('lm-inference-layers','data',dict(report,frames=report['frames']*3))],
+            [('lm-layer-frame','value',2)])
+        self.assertEqual(result['lm-layer-frame']['value'],2)
+        result=self.invoke('..lm-new-tokens.max',[('lm-inspect-generation','value',True)],[('lm-new-tokens','value',64)])
+        self.assertEqual(result['lm-new-tokens']['value'],32)
+        panel=inspection_panel(report,0)
+        self.assertIn('RMS misura',str(panel))
+        self.assertIn('Candidati per il token successivo',str(panel))
+        self.assertIn('Quota di massa',str(panel))
+        self.assertIn('Nessuna cattura',str(inspection_panel(report,99)))
+
     def test_load_restores_labels_and_invalid_model_preserves_state(self):
         contents = 'data:application/json;base64,' + base64.b64encode(self.model.encode()).decode()
         result = self.invoke('..model-store.data', [('upload-model', 'contents', contents)],

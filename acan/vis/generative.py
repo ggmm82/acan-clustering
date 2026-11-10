@@ -99,12 +99,23 @@ layout = dbc.Container([
     dbc.Accordion([dbc.AccordionItem([html.Pre(id='lm-debug-view', style={'whiteSpace':'pre-wrap'}),
         dbc.Button('Scarica diagnostica', id='lm-debug-download'), dcc.Download(id='lm-debug-file'),
         dcc.Store(id='lm-debug-data')], title='Diagnostica del progetto e log')], start_collapsed=True),
+    dbc.Accordion([dbc.AccordionItem([
+        html.P('Cattura su richiesta, senza cambiare i pesi: attivazioni dell’ultima posizione e gradienti per layer. Le masse degli slot sono riassunti del prefisso, non etichette linguistiche. La cattura aggiunge tempo; non usarne i tempi come benchmark.'),
+        dbc.Button('Cattura il prossimo passo di training', id='lm-layer-capture', outline=True),
+        html.Div(id='lm-layer-request-status', role='status'), html.Div(id='lm-layer-status'),
+        dcc.Store(id='lm-training-layers'), dcc.Store(id='lm-inference-layers'),
+        dcc.Dropdown(id='lm-layer-source', value='training', clearable=False, options=[{'label':'Ultima cattura training','value':'training'},{'label':'Ultima generazione ispezionata','value':'inference'}]),
+        dcc.Dropdown(id='lm-layer-frame', placeholder='Seleziona un passo di generazione'),
+        html.Div(id='lm-layer-view'),
+        dbc.Button('Scarica ispezione layer', id='lm-layer-download', outline=True), dcc.Download(id='lm-layer-file'),
+    ], title='Dentro il modello · layer, slot e gradienti')], start_collapsed=True, className='my-3'),
     dcc.Interval(id='lm-poll', interval=5000, disabled=True),
     html.Hr(), html.H5('4 · Prova un checkpoint durante il percorso'),
     html.P('Sulla stessa GPU la generazione richiede il training in pausa. Il checkpoint è immutabile: la prova non modifica quanto appreso. Dopo la prova puoi riprendere il training.'),
     dcc.Dropdown(id='lm-checkpoint', placeholder='Checkpoint verificabili: migliore conservato e ultimi tre'),
     dbc.Textarea(id='lm-prompt', value='', placeholder='Scrivi un inizio di frase nella lingua del corpus', rows=3),
     dbc.Label('Nuovi token'), dbc.Input(id='lm-new-tokens', type='number', value=64, min=1, max=256),
+    dbc.Checkbox(id='lm-inspect-generation', value=False, label='Ispeziona i layer durante la generazione (massimo 32 nuovi token e prompt di 256 token)'),
     dbc.Button('Genera dal checkpoint', id='lm-generate', className='my-2'),
     html.Div(id='lm-generation-status', role='status'), html.Pre(id='lm-output', style={'whiteSpace':'pre-wrap'}),
     html.Div(id='lm-generation-metrics'),
@@ -123,6 +134,41 @@ layout = dbc.Container([
         dbc.Button('Avvia controllo denso con stesso budget', id='lm-dense-control'),html.Div(id='lm-control-status',role='status')
     ],title='Controllo scientifico aggiuntivo (facoltativo)')],start_collapsed=True),
 ])
+
+
+def inspection_panel(report, frame=0):
+    if not report or frame is None:
+        return html.P((report or {}).get('error') or 'Richiedi una cattura durante il training oppure abilita l’ispezione prima di generare. Poi scegli la sorgente qui sopra.')
+    frames = report.get('frames', [])
+    if not isinstance(frame, int) or not 0 <= frame < len(frames):
+        return html.P(report.get('error', 'Nessuna cattura disponibile.'))
+    sample = frames[frame]
+    rows, masses = sample['layers'], [r for r in sample['layers'] if 'mass_fractions' in r]
+    gradients = report.get('gradients', {})
+    header = html.Tr([html.Th(x) for x in ['Layer', 'Tipo', 'RMS ingresso', 'RMS uscita', 'RMS variazione', 'Gradiente prima del clipping', 'Slot effettivi', 'Anomalie']])
+    def number(value):
+        return f'{value:.4g}' if value is not None else '—'
+    body = []
+    for row in rows:
+        grad = gradients.get(str(row['layer']), {})
+        warnings = [row.get('warning', '')]
+        if not all(row[key]['finite'] for key in ('input','output','change')) or not row.get('slots_finite',True) or not grad.get('finite',True):
+            warnings.append('Valori non finiti: verificare stabilità numerica.')
+        body.append(html.Tr([html.Td(x) for x in [row['layer'], row['kind'], number(row['input']['rms']), number(row['output']['rms']), number(row['change']['rms']), number(grad.get('norm')), number(row.get('effective_slots')), ' '.join(warnings)]]))
+    panels = [html.P(f"Passo di training: {report.get('step')} · {report['mode']}. RMS misura l’ampiezza dei segnali; slot effettivi misura la distribuzione della massa, non il numero di significati."),
+              dbc.Table([html.Thead(header), html.Tbody(body)], responsive=True, bordered=True, size='sm')]
+    if masses:
+        figure = go.Figure(go.Heatmap(z=[r['mass_fractions'] for r in masses], y=[f"L{r['layer']}" for r in masses], x=list(range(len(masses[0]['mass_fractions']))), zmin=0,zmax=1,colorbar=dict(title='Frazione')))
+        figure.update_layout(title='Quota di massa per slot nel prefisso letto', xaxis_title='Slot (identità locale al layer)', yaxis_title='Layer')
+        panels.append(dcc.Graph(figure=figure))
+    panels.append(html.P(f"Token letti in questo forward: {sample.get('input_tokens', '—')} · prefisso accumulato: {sample.get('prefix_tokens', '—')}."))
+    if 'last_input_token' in sample:
+        panels.append(html.P(f"Ultimo token in ingresso: {sample['last_input_token']!r}"))
+    candidates = sample.get('next_token_candidates', [])
+    if candidates:
+        panels.append(html.P('Candidati per il token successivo: '+', '.join(f"{c['token'] if c['token'] is not None else c['token_id']!r}: {c['probability']:.1%}" for c in candidates)+'. Sono probabilità proposte; il campionamento può scegliere un altro token.'))
+    panels.extend([html.P(report['scope'],className='small text-muted'), html.P(report['limits'],className='small text-muted')])
+    return panels
 
 
 def register(app):
@@ -443,40 +489,87 @@ def register(app):
     def download_debug(clicks,report):
         return dict(content=json.dumps(report,indent=2,ensure_ascii=False),filename='acan-lm-diagnostics.json') if report else dash.no_update
 
+    @app.callback(Output('lm-new-tokens','max'), Output('lm-new-tokens','value'),
+                  Input('lm-inspect-generation','value'), State('lm-new-tokens','value'))
+    def inspection_budget(enabled, count):
+        limit = 32 if enabled else 256
+        return limit, min(count, limit) if isinstance(count, (int,float)) else limit
+
     @app.callback(Output('lm-generation-id','data'), Output('lm-generation-status','children'),
                   Input('lm-generate','n_clicks'), State('lm-workspace','data'), State('lm-job','value'),
-                  State('lm-checkpoint','value'), State('lm-prompt','value'), State('lm-new-tokens','value'), prevent_initial_call=True)
-    def start_generation(click, workspace, job, checkpoint, prompt, count):
+                  State('lm-checkpoint','value'), State('lm-prompt','value'), State('lm-new-tokens','value'), State('lm-inspect-generation','value'), prevent_initial_call=True)
+    def start_generation(click, workspace, job, checkpoint, prompt, count, inspect):
         try:
             if not job or not checkpoint:
                 raise ValueError('Seleziona progetto e checkpoint, poi metti in pausa il training.')
-            result = backend(workspace, f'/jobs/{job}/generate', 'POST', dict(checkpoint=checkpoint,prompt=prompt,max_new_tokens=count))
+            result = backend(workspace, f'/jobs/{job}/generate', 'POST', dict(checkpoint=checkpoint,prompt=prompt,max_new_tokens=count,inspect_layers=bool(inspect)))
             return result['id'], 'Generazione avviata dal checkpoint selezionato.'
         except ValueError as exc:
             return None, str(exc)
 
-    @app.callback(Output('lm-output','children'), Output('lm-generation-metrics','children'),
+    @app.callback(Output('lm-output','children'), Output('lm-generation-metrics','children'), Output('lm-inference-layers','data'),
                   Input('lm-poll','n_intervals'), Input('lm-generation-id','data'), Input('lm-job','value'), State('lm-workspace','data'))
     def generation_status(interval, generation, selected, workspace):
         if not generation or not workspace:
-            return '', []
+            return '', [], None
         try:
             item = backend(workspace, '/generations/'+generation)
             if item['job'] != selected:
-                return '', []
+                return '', [], None
             if item['status'] == 'failed':
-                return item['error'], []
+                return item['error'], [], None
             if item['status'] != 'completed':
-                return 'Generazione in corso…', []
+                return 'Generazione in corso…', [], None
             result = item['result']
             description = f"Passo {result['step']} · {result['generated_tokens']} token · {result['tokens_per_second']:.2f} token/s · cache totale {result['cache_total_bytes']/1048576:.3f} MiB"
             reduction = result['cache_reduction_fraction']
             panels = [html.P(description), html.P(f"Cache layer densi: {result['cache_dense_layers_bytes']:,} byte; cache ACAN: {result['cache_acan_layers_bytes']:,} byte. Riduzione complessiva rispetto al riferimento GQA: {reduction:.1%}. Misura del cache residente, non del picco totale di memoria."),
                       html.P('Gli indici di canale e gli slot descrivono variabili latenti; non sono spiegazioni linguistiche certificate.'),
                       dbc.Accordion([dbc.AccordionItem(html.Pre(json.dumps(result['explanations'], indent=2)), title='Ispeziona slot e canali latenti')], start_collapsed=True)]
-            return result['text'], panels
+            return result['text'], panels, result.get('layer_inspection')
         except ValueError as exc:
-            return str(exc), []
+            return str(exc), [], None
+
+    @app.callback(Output('lm-layer-request-status','children'), Input('lm-layer-capture','n_clicks'),
+                  State('lm-workspace','data'), State('lm-job','value'), prevent_initial_call=True)
+    def capture_layers(clicks, workspace, job):
+        try:
+            if not job:
+                raise ValueError('Seleziona un progetto attivo.')
+            backend(workspace, f'/jobs/{job}/layers', 'POST', {})
+            return 'Cattura richiesta: attendi il prossimo passo completo di training.'
+        except ValueError as exc:
+            return str(exc)
+
+    @app.callback(Output('lm-training-layers','data'), Output('lm-layer-status','children'),
+                  Input('lm-poll','n_intervals'), Input('lm-job','value'), State('lm-workspace','data'))
+    def training_layers(interval, job, workspace):
+        if not job or not workspace:
+            return None, ''
+        try:
+            result = backend(workspace, f'/jobs/{job}/layers')
+            return result['report'], 'Cattura in attesa del prossimo passo; se in pausa, riprendi il training.' if result['pending'] else ''
+        except ValueError as exc:
+            return None, str(exc)
+
+    @app.callback(Output('lm-layer-frame','options'), Output('lm-layer-frame','value'),
+                  Input('lm-layer-source','value'), Input('lm-training-layers','data'), Input('lm-inference-layers','data'), State('lm-layer-frame','value'))
+    def layer_frames(source, training, inference, selected):
+        report = training if source == 'training' else inference
+        frames = (report or {}).get('frames', [])
+        selected = selected if isinstance(selected, int) and 0 <= selected < len(frames) else (0 if frames else None)
+        return [dict(label=('Prefill · intero prompt' if i == 0 and source == 'inference' else f'Forward {i}'), value=i) for i in range(len(frames))], selected
+
+    @app.callback(Output('lm-layer-view','children'), Input('lm-layer-frame','value'),
+                  Input('lm-layer-source','value'), Input('lm-training-layers','data'), Input('lm-inference-layers','data'))
+    def view_layers(frame, source, training, inference):
+        return inspection_panel(training if source == 'training' else inference, frame)
+
+    @app.callback(Output('lm-layer-file','data'), Input('lm-layer-download','n_clicks'),
+                  State('lm-layer-source','value'), State('lm-training-layers','data'), State('lm-inference-layers','data'), prevent_initial_call=True)
+    def download_layers(clicks, source, training, inference):
+        report = training if source == 'training' else inference
+        return dict(content=json.dumps(report,indent=2,ensure_ascii=False), filename='acan-layer-inspection.json') if report else dash.no_update
 
     @app.callback(Output('lm-key-download','data'), Input('lm-export-key','n_clicks'), State('lm-workspace','data'), prevent_initial_call=True)
     def export_key(click, workspace):

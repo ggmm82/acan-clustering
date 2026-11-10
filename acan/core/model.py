@@ -99,6 +99,9 @@ class AlgebraicClusterModel:
         """
         v7-compatible hard cluster assignment using linear row-normalized Relevance R.
         """
+        if getattr(self,'routing_profile','legacy-v8') == 'paper-routing-v1':
+            weights, confidence, best = self.predictTupleSoft(rowTuple,cix)
+            return best, float(-np.log(max(confidence,1e-12)))
         t = np.asarray(rowTuple, dtype=np.float64).reshape(1, -1)
         w = self.Relevance[:, cix].copy()
         row_sums = w.sum(axis=1, keepdims=True)
@@ -113,6 +116,16 @@ class AlgebraicClusterModel:
         Raises feature relevance R to power `gamma` and applies a soft threshold against
         spurious finite-sample noise on irrelevant dimensions (Theorem 4.1.1 continuous analog).
         """
+        if getattr(self,'routing_profile','legacy-v8') == 'paper-routing-v1':
+            from acan.algebra import routing_logits, mass_modulation
+            t = np.asarray(rowTuple,dtype=np.float64).reshape(1,-1)
+            p = self.routing_parameters
+            logits = routing_logits(t,self.Groups[:,cix],self.Relevance[:,cix],p['alpha'],p['beta'])
+            frequencies = np.asarray(self.Freqs).reshape(-1)
+            logits = mass_modulation(logits,frequencies,p['gamma'],np.log)
+            weights = np.exp(logits-logits.max());weights /= weights.sum()
+            best = int(weights.argmax())
+            return weights, float(weights[best]), best
         t = np.asarray(rowTuple, dtype=np.float64).reshape(1, -1)
         w_raw = self.Relevance[:, cix].copy()
         # Suppress low-relevance noise floor (< 35% of each slot's peak relevance)
@@ -212,6 +225,8 @@ class AlgebraicClusterModel:
         model.Relevance = np.asarray(dictsModel["Relevance"], dtype=np.float64)
         model.Groups = np.asarray(dictsModel["Groups"], dtype=np.float64)
         model.cp = dictsModel["cp"]
+        model.routing_profile = dictsModel.get('routing_profile','legacy-v8')
+        model.routing_parameters = dictsModel.get('routing_parameters')
         model.Freqs = np.asarray(dictsModel["Freqs"], dtype=np.float64)
         model.Counts = np.asarray(dictsModel["Counts"], dtype=np.float64)
         model.children = {int(k): v for k, v in dictsModel.get("children", {}).items()}

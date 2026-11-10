@@ -58,7 +58,11 @@ class AlgebraicClusterLearner:
         labels=None,
         max_k=None,
         random_state=42,
+        routing_profile="legacy-v8",
     ):
+        if routing_profile not in ('legacy-v8','paper-routing-v1'):
+            raise ValueError('Profilo matematico non riconosciuto.')
+        self.routing_profile = routing_profile
         self.full_dataset = ds.copy()
         self.total_n = len(self.full_dataset)
         actual_batch_size = min(batch_size, self.total_n)
@@ -85,16 +89,23 @@ class AlgebraicClusterLearner:
         label_mask = self._create_label_mask(labels)
         self.k = min(max_k, self.n) if max_k is not None else self.n
 
+        numpy_class, torch_class = _AnalyticalClusterNet, ModularClusterNet
+        if routing_profile == 'paper-routing-v1':
+            from .paper_routing import PaperRoutingNumpy
+            numpy_class = PaperRoutingNumpy
+            if HAS_TORCH:
+                from .paper_routing import PaperRoutingTorch
+                torch_class = PaperRoutingTorch
         if HAS_TORCH and device != "numpy":
             self._use_torch = True
             self.X = torch.tensor(self.NormDataset, dtype=torch.float32, device=device)
-            self.model_net = ModularClusterNet(
+            self.model_net = torch_class(
                 self.n, self.m, k=self.k, device=device, tau=tau, alpha=alpha, label_mask=label_mask
             )
         else:
             self._use_torch = False
             self.X = self.NormDataset
-            self.model_net = _AnalyticalClusterNet(
+            self.model_net = numpy_class(
                 self.n,
                 self.m,
                 k=self.k,
@@ -242,6 +253,10 @@ class AlgebraicClusterLearner:
         self.model.Relevance = self.Relevance[transformation_row_mask]
         self.model.Counts = self.Counts[transformation_row_mask]
         self.model.cp = self.cp
+        self.model.routing_profile = self.routing_profile
+        if self.routing_profile == 'paper-routing-v1':
+            self.model.routing_parameters = dict(alpha=self.model_net.relevance_alpha,
+                beta=self.model_net.beta, gamma=self.model_net.mass_gamma)
         self.model.Freqs = self.Freqs.T[transformation_row_mask]
         self.model.n = int(max(self.model.Counts.sum(), len(self.NormDataset)))
         return self.model
@@ -292,13 +307,14 @@ class AlgebraicClusterLearner:
         tau=0.20,
         alpha=0.5,
         device="cpu",
+        routing_profile="legacy-v8",
     ):
         """
         Recursive Hierarchical Concept Discovery (upgraded from v7 stub to full
         multi-level concept graph induction).
         """
         acl = AlgebraicClusterLearner(
-            dataset, labels=labels, lr=lr, tau=tau, alpha=alpha, device=device
+            dataset, labels=labels, lr=lr, tau=tau, alpha=alpha, device=device, routing_profile=routing_profile
         )
         node = acl.nLearn(max_epochs=max_epochs)
         node.n = len(dataset)
@@ -335,6 +351,7 @@ class AlgebraicClusterLearner:
                         tau=tau,
                         alpha=alpha,
                         device=device,
+                        routing_profile=routing_profile,
                     )
                     node.children[k_idx] = child_node.id
 
@@ -350,6 +367,7 @@ class AlgebraicClusterLearner:
         tau=0.20,
         alpha=0.5,
         device="cpu",
+        routing_profile="legacy-v8",
     ):
         trainDataset, minMax = GraphClusterModel.normalizeData(
             GraphClusterModel.full_dummies(dataset)
@@ -368,6 +386,7 @@ class AlgebraicClusterLearner:
             tau=tau,
             alpha=alpha,
             device=device,
+            routing_profile=routing_profile,
         )
         gcm.rootId = root.id
         gcm.clusterModel[root.id] = root
@@ -391,12 +410,14 @@ class ACANPredictor:
         alpha=0.6,
         use_soft_attention=True,
         device="cpu",
+        routing_profile="legacy-v8",
     ):
         self.max_depth = max_depth
         self.max_epochs = max_epochs
         self.lr = lr
         self.tau = tau
         self.alpha = alpha
+        self.routing_profile = routing_profile
         self.use_soft_attention = use_soft_attention
         self.device = device
         self.gcm = None
@@ -426,6 +447,7 @@ class ACANPredictor:
             tau=self.tau,
             alpha=self.alpha,
             device=self.device,
+            routing_profile=self.routing_profile,
         )
         return self
 

@@ -1,0 +1,5194 @@
+{
+  "scope": "Measured local CPU routing comparison. Partial mathematical alignment, not full paper conformance or independent final-test certification.",
+  "versions": {
+    "python": "3.12.14",
+    "numpy": "2.5.4",
+    "pandas": "3.1.0"
+  },
+  "protocol": {
+    "options": {
+      "max_depth": 1,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300
+    },
+    "seeds": [
+      7,
+      21,
+      42,
+      84,
+      123
+    ],
+    "description": "Same typed data, exclusions, split and optimizer budget. Seed 42 reproduces GUI split membership. No tuning or score-based model selection. Multiple holdouts overlap; these are exploratory repeats, not independent confidence intervals.",
+    "interpretation": "Only routing is corrected: fixed omega, legacy relevance and CP remain. LLM has a different task and is not evaluated on a fabricated ARFF-to-text corpus.",
+    "baselines_requested": true,
+    "baseline_seed": 42,
+    "paper_operator_parameters": {
+      "alpha": 2,
+      "beta": 8,
+      "gamma": 1.15,
+      "origin": "Supplied LM package defaults, not tuned on these datasets"
+    },
+    "initialization_seed": 42
+  },
+  "notes": [
+    "The two anneal.arff uploads are identical; anneal and anneal.ORIG are related versions of the same dataset and must not count as independent tasks.",
+    "Modern baselines measured only on seed 42; do not compare them to five-split ACAN means as if they shared the same protocol.",
+    "The partial paper routing is unstable on Titanic and worse on Audiology. Legacy remains the application default; no automatic profile selection or benchmark."
+  ],
+  "summary": [
+    {
+      "dataset": "anneal.arff",
+      "profile": "legacy-v8",
+      "sha256": "16579283dc5b058fcfe591d72578809307c842414b070548c6550336562e0f52",
+      "targets": [
+        "class"
+      ],
+      "excluded_columns": [
+        "product-type",
+        "'m'",
+        "marvi",
+        "corr",
+        "jurofm",
+        "'s'",
+        "'p'"
+      ],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 0.7611111111111111,
+        "Balanced_accuracy": 0.2,
+        "F1_macro": 0.17287066246056781
+      },
+      "standard_deviations": {
+        "Accuracy": 0.0,
+        "Balanced_accuracy": 0.0,
+        "F1_macro": 0.0
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 1,
+          "training_seconds": 1.5511557730023924,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 1,
+          "training_seconds": 1.4631360970015521,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 1,
+          "training_seconds": 1.702358724000078,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 1,
+          "training_seconds": 1.4624758810023195,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 1,
+          "training_seconds": 2.099867519998952,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "anneal.arff",
+      "profile": "paper-routing-v1",
+      "sha256": "16579283dc5b058fcfe591d72578809307c842414b070548c6550336562e0f52",
+      "targets": [
+        "class"
+      ],
+      "excluded_columns": [
+        "product-type",
+        "'m'",
+        "marvi",
+        "corr",
+        "jurofm",
+        "'s'",
+        "'p'"
+      ],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 0.75,
+        "Balanced_accuracy": 0.2017883211678832,
+        "F1_macro": 0.1768242093831569
+      },
+      "standard_deviations": {
+        "Accuracy": 0.024845199749997625,
+        "Balanced_accuracy": 0.003998807696988674,
+        "F1_macro": 0.0056930410838708385
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 3,
+          "training_seconds": 8.931963136998093,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 2,
+          "training_seconds": 10.321026819001418,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 5,
+          "training_seconds": 10.155463759998383,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7055555555555556,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.20894160583941607,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.18524590163934426,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 6,
+          "training_seconds": 7.9441620350007724,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 3,
+          "training_seconds": 11.62974331499936,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.18026315789473685,
+              "N": 180
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "anneal.ORIG.arff",
+      "profile": "legacy-v8",
+      "sha256": "d2269d703674b7e8b72a941a1f9f29dad29718f0c153338cc2325a99818d7444",
+      "targets": [
+        "class"
+      ],
+      "excluded_columns": [
+        "product-type",
+        "m",
+        "marvi",
+        "corr",
+        "jurofm",
+        "s",
+        "p"
+      ],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 0.7611111111111111,
+        "Balanced_accuracy": 0.2,
+        "F1_macro": 0.17287066246056781
+      },
+      "standard_deviations": {
+        "Accuracy": 0.0,
+        "Balanced_accuracy": 0.0,
+        "F1_macro": 0.0
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 1,
+          "training_seconds": 1.4697785250027664,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 1,
+          "training_seconds": 1.4081003210012568,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 1,
+          "training_seconds": 1.7303674760005379,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 1,
+          "training_seconds": 1.4998018699989188,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 1,
+          "training_seconds": 1.8248711160013045,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "anneal.ORIG.arff",
+      "profile": "paper-routing-v1",
+      "sha256": "d2269d703674b7e8b72a941a1f9f29dad29718f0c153338cc2325a99818d7444",
+      "targets": [
+        "class"
+      ],
+      "excluded_columns": [
+        "product-type",
+        "m",
+        "marvi",
+        "corr",
+        "jurofm",
+        "s",
+        "p"
+      ],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 0.75,
+        "Balanced_accuracy": 0.2017883211678832,
+        "F1_macro": 0.1768242093831569
+      },
+      "standard_deviations": {
+        "Accuracy": 0.024845199749997625,
+        "Balanced_accuracy": 0.003998807696988674,
+        "F1_macro": 0.0056930410838708385
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 3,
+          "training_seconds": 10.219187694001448,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 2,
+          "training_seconds": 8.654036812000413,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 5,
+          "training_seconds": 10.319447375000891,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7055555555555556,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.20894160583941607,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.18524590163934426,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 6,
+          "training_seconds": 9.855051447997539,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.17287066246056781,
+              "N": 180
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 718,
+          "validation_rows": 180,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 3,
+          "training_seconds": 11.449047346999578,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.7611111111111111,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 180
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.18026315789473685,
+              "N": 180
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "audiology.arff",
+      "profile": "legacy-v8",
+      "sha256": "7c27ff462d6f05d83bf672db88add7621e7da1014eb174a0aac52b3d0a1c5903",
+      "targets": [
+        "class"
+      ],
+      "excluded_columns": [],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 0.4,
+        "Balanced_accuracy": 0.1667169431875314,
+        "F1_macro": 0.12012907342628705
+      },
+      "standard_deviations": {
+        "Accuracy": 0.10033026747142892,
+        "Balanced_accuracy": 0.05045473692754961,
+        "F1_macro": 0.05035821933388445
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 180,
+          "validation_rows": 46,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 6,
+          "training_seconds": 2.2532608789988444,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.391304347826087,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.15384615384615385,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.08051948051948053,
+              "N": 46
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 180,
+          "validation_rows": 46,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 5,
+          "training_seconds": 1.820944077000604,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.4782608695652174,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.1492063492063492,
+              "N": 46
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 180,
+          "validation_rows": 46,
+          "unseen_target_rows": {
+            "class": 3
+          },
+          "groups": 6,
+          "training_seconds": 0.9013424959994154,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.5217391304347826,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.23529411764705882,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.194833488951136,
+              "N": 46
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 180,
+          "validation_rows": 46,
+          "unseen_target_rows": {
+            "class": 6
+          },
+          "groups": 4,
+          "training_seconds": 1.8007588110012875,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.32608695652173914,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.1111111111111111,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.08134920634920635,
+              "N": 46
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 180,
+          "validation_rows": 46,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 5,
+          "training_seconds": 1.174165192001965,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.2826086956521739,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.13333333333333333,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.09473684210526316,
+              "N": 46
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "audiology.arff",
+      "profile": "paper-routing-v1",
+      "sha256": "7c27ff462d6f05d83bf672db88add7621e7da1014eb174a0aac52b3d0a1c5903",
+      "targets": [
+        "class"
+      ],
+      "excluded_columns": [],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 0.23478260869565215,
+        "Balanced_accuracy": 0.07826043237807942,
+        "F1_macro": 0.03183332047366998
+      },
+      "standard_deviations": {
+        "Accuracy": 0.12525965470337333,
+        "Balanced_accuracy": 0.03186900128282685,
+        "F1_macro": 0.027454648635511437
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 180,
+          "validation_rows": 46,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 6,
+          "training_seconds": 10.658975753001869,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.13043478260869565,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.07692307692307693,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.01775147928994083,
+              "N": 46
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 180,
+          "validation_rows": 46,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 7,
+          "training_seconds": 8.891385273000196,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.43478260869565216,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.13333333333333333,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.08,
+              "N": 46
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 180,
+          "validation_rows": 46,
+          "unseen_target_rows": {
+            "class": 3
+          },
+          "groups": 5,
+          "training_seconds": 5.563811730997259,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.21739130434782608,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.058823529411764705,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.02100840336134454,
+              "N": 46
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 180,
+          "validation_rows": 46,
+          "unseen_target_rows": {
+            "class": 6
+          },
+          "groups": 5,
+          "training_seconds": 6.650864194998576,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.13043478260869565,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.05555555555555555,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.012820512820512822,
+              "N": 46
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 180,
+          "validation_rows": 46,
+          "unseen_target_rows": {
+            "class": 0
+          },
+          "groups": 6,
+          "training_seconds": 6.703045218000625,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Accuracy",
+              "Valore": 0.2608695652173913,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.06666666666666667,
+              "N": 46
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "class",
+              "Metrica": "F1_macro",
+              "Valore": 0.027586206896551724,
+              "N": 46
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "autos.arff",
+      "profile": "legacy-v8",
+      "sha256": "61335be0bef9805450fbcd82068c452d5af4e51b33e2397cf11816688fa87a3a",
+      "targets": [
+        "symboling"
+      ],
+      "excluded_columns": [],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 0.3024390243902439,
+        "Balanced_accuracy": 0.2675990675990676,
+        "F1_macro": 0.1419525907596749
+      },
+      "standard_deviations": {
+        "Accuracy": 0.1342571604343696,
+        "Balanced_accuracy": 0.029097875114805653,
+        "F1_macro": 0.04863349809859988
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 164,
+          "validation_rows": 41,
+          "unseen_target_rows": {
+            "symboling": 0
+          },
+          "groups": 3,
+          "training_seconds": 0.9754954419986461,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Accuracy",
+              "Valore": 0.21951219512195122,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.24242424242424243,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "F1_macro",
+              "Valore": 0.10934744268077601,
+              "N": 41
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 164,
+          "validation_rows": 41,
+          "unseen_target_rows": {
+            "symboling": 0
+          },
+          "groups": 3,
+          "training_seconds": 1.0590667340002256,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Accuracy",
+              "Valore": 0.24390243902439024,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.25757575757575757,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "F1_macro",
+              "Valore": 0.12301075268817203,
+              "N": 41
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 164,
+          "validation_rows": 41,
+          "unseen_target_rows": {
+            "symboling": 0
+          },
+          "groups": 5,
+          "training_seconds": 0.9960431180006708,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Accuracy",
+              "Valore": 0.2926829268292683,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2878787878787879,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "F1_macro",
+              "Valore": 0.14017094017094017,
+              "N": 41
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 164,
+          "validation_rows": 41,
+          "unseen_target_rows": {
+            "symboling": 0
+          },
+          "groups": 4,
+          "training_seconds": 1.000333813000907,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Accuracy",
+              "Valore": 0.5365853658536586,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.3076923076923077,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "F1_macro",
+              "Valore": 0.22612270714737512,
+              "N": 41
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 164,
+          "validation_rows": 41,
+          "unseen_target_rows": {
+            "symboling": 0
+          },
+          "groups": 3,
+          "training_seconds": 0.6535852390006767,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Accuracy",
+              "Valore": 0.21951219512195122,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.24242424242424243,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "F1_macro",
+              "Valore": 0.11111111111111112,
+              "N": 41
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "autos.arff",
+      "profile": "paper-routing-v1",
+      "sha256": "61335be0bef9805450fbcd82068c452d5af4e51b33e2397cf11816688fa87a3a",
+      "targets": [
+        "symboling"
+      ],
+      "excluded_columns": [],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 0.4390243902439025,
+        "Balanced_accuracy": 0.2682484182484183,
+        "F1_macro": 0.1837390594317979
+      },
+      "standard_deviations": {
+        "Accuracy": 0.11569308512811144,
+        "Balanced_accuracy": 0.028424046067361382,
+        "F1_macro": 0.041526592985749046
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 164,
+          "validation_rows": 41,
+          "unseen_target_rows": {
+            "symboling": 0
+          },
+          "groups": 13,
+          "training_seconds": 3.005915066001762,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Accuracy",
+              "Valore": 0.24390243902439024,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.25757575757575757,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "F1_macro",
+              "Valore": 0.11904761904761903,
+              "N": 41
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 164,
+          "validation_rows": 41,
+          "unseen_target_rows": {
+            "symboling": 0
+          },
+          "groups": 10,
+          "training_seconds": 3.7420372190026683,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Accuracy",
+              "Valore": 0.4634146341463415,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.24567099567099568,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "F1_macro",
+              "Valore": 0.1856910569105691,
+              "N": 41
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 164,
+          "validation_rows": 41,
+          "unseen_target_rows": {
+            "symboling": 0
+          },
+          "groups": 12,
+          "training_seconds": 3.295563553998363,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Accuracy",
+              "Valore": 0.5121951219512195,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2878787878787879,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "F1_macro",
+              "Valore": 0.2126984126984127,
+              "N": 41
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 164,
+          "validation_rows": 41,
+          "unseen_target_rows": {
+            "symboling": 0
+          },
+          "groups": 14,
+          "training_seconds": 2.8503159520005283,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Accuracy",
+              "Valore": 0.5365853658536586,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.3076923076923077,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "F1_macro",
+              "Valore": 0.22612270714737512,
+              "N": 41
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 164,
+          "validation_rows": 41,
+          "unseen_target_rows": {
+            "symboling": 0
+          },
+          "groups": 9,
+          "training_seconds": 2.0488690409983974,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Accuracy",
+              "Valore": 0.43902439024390244,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.24242424242424243,
+              "N": 41
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "symboling",
+              "Metrica": "F1_macro",
+              "Valore": 0.17513550135501355,
+              "N": 41
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "adultMinimal.xlsx",
+      "profile": "legacy-v8",
+      "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+      "targets": [
+        "income"
+      ],
+      "excluded_columns": [],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 0.652,
+        "Balanced_accuracy": 0.652,
+        "F1_macro": 0.583146072110499
+      },
+      "standard_deviations": {
+        "Accuracy": 0.14166862743741115,
+        "Balanced_accuracy": 0.14166862743741115,
+        "F1_macro": 0.2301127317514456
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 399,
+          "validation_rows": 100,
+          "unseen_target_rows": {
+            "income": 0
+          },
+          "groups": 4,
+          "training_seconds": 1.3588715070000035,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Accuracy",
+              "Valore": 0.5,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.5,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "F1_macro",
+              "Valore": 0.3333333333333333,
+              "N": 100
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 399,
+          "validation_rows": 100,
+          "unseen_target_rows": {
+            "income": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.9709964410030807,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Accuracy",
+              "Valore": 0.73,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.73,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "F1_macro",
+              "Valore": 0.7237851662404092,
+              "N": 100
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 399,
+          "validation_rows": 100,
+          "unseen_target_rows": {
+            "income": 0
+          },
+          "groups": 2,
+          "training_seconds": 0.8908430230003432,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Accuracy",
+              "Valore": 0.8,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.8,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "F1_macro",
+              "Valore": 0.7999199679871949,
+              "N": 100
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 399,
+          "validation_rows": 100,
+          "unseen_target_rows": {
+            "income": 0
+          },
+          "groups": 4,
+          "training_seconds": 1.0568725900011486,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Accuracy",
+              "Valore": 0.73,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.73,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "F1_macro",
+              "Valore": 0.7253585596582239,
+              "N": 100
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 399,
+          "validation_rows": 100,
+          "unseen_target_rows": {
+            "income": 0
+          },
+          "groups": 3,
+          "training_seconds": 0.7700516049990256,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Accuracy",
+              "Valore": 0.5,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.5,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "F1_macro",
+              "Valore": 0.3333333333333333,
+              "N": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "adultMinimal.xlsx",
+      "profile": "paper-routing-v1",
+      "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+      "targets": [
+        "income"
+      ],
+      "excluded_columns": [],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 0.744,
+        "Balanced_accuracy": 0.744,
+        "F1_macro": 0.7411170866032526
+      },
+      "standard_deviations": {
+        "Accuracy": 0.037815340802378104,
+        "Balanced_accuracy": 0.037815340802378104,
+        "F1_macro": 0.03924389511027923
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 399,
+          "validation_rows": 100,
+          "unseen_target_rows": {
+            "income": 0
+          },
+          "groups": 4,
+          "training_seconds": 2.435773404999054,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Accuracy",
+              "Valore": 0.76,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.76,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "F1_macro",
+              "Valore": 0.7584541062801933,
+              "N": 100
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 399,
+          "validation_rows": 100,
+          "unseen_target_rows": {
+            "income": 0
+          },
+          "groups": 5,
+          "training_seconds": 1.898281270001462,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Accuracy",
+              "Valore": 0.73,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.73,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "F1_macro",
+              "Valore": 0.7237851662404092,
+              "N": 100
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 399,
+          "validation_rows": 100,
+          "unseen_target_rows": {
+            "income": 0
+          },
+          "groups": 3,
+          "training_seconds": 1.7281337220010755,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Accuracy",
+              "Valore": 0.8,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.8,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "F1_macro",
+              "Valore": 0.7999199679871949,
+              "N": 100
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 399,
+          "validation_rows": 100,
+          "unseen_target_rows": {
+            "income": 0
+          },
+          "groups": 5,
+          "training_seconds": 2.4466003719971923,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Accuracy",
+              "Valore": 0.73,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.73,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "F1_macro",
+              "Valore": 0.7253585596582239,
+              "N": 100
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 399,
+          "validation_rows": 100,
+          "unseen_target_rows": {
+            "income": 0
+          },
+          "groups": 5,
+          "training_seconds": 2.295592963000672,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Accuracy",
+              "Valore": 0.7,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.7,
+              "N": 100
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "income",
+              "Metrica": "F1_macro",
+              "Valore": 0.6980676328502415,
+              "N": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "GiocoSet.xlsx",
+      "profile": "legacy-v8",
+      "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+      "targets": [
+        "Gioco"
+      ],
+      "excluded_columns": [],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 1.0,
+        "Balanced_accuracy": 1.0,
+        "F1_macro": 1.0
+      },
+      "standard_deviations": {
+        "Accuracy": 0.0,
+        "Balanced_accuracy": 0.0,
+        "F1_macro": 0.0
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 80,
+          "validation_rows": 20,
+          "unseen_target_rows": {
+            "Gioco": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.2692638150001585,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 20
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 80,
+          "validation_rows": 20,
+          "unseen_target_rows": {
+            "Gioco": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.22576565700001083,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 20
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 80,
+          "validation_rows": 20,
+          "unseen_target_rows": {
+            "Gioco": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.1886868820001837,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 20
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 80,
+          "validation_rows": 20,
+          "unseen_target_rows": {
+            "Gioco": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.20065727999826777,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 20
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 80,
+          "validation_rows": 20,
+          "unseen_target_rows": {
+            "Gioco": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.21481808700264082,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 20
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "GiocoSet.xlsx",
+      "profile": "paper-routing-v1",
+      "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+      "targets": [
+        "Gioco"
+      ],
+      "excluded_columns": [],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 1.0,
+        "Balanced_accuracy": 1.0,
+        "F1_macro": 1.0
+      },
+      "standard_deviations": {
+        "Accuracy": 0.0,
+        "Balanced_accuracy": 0.0,
+        "F1_macro": 0.0
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 80,
+          "validation_rows": 20,
+          "unseen_target_rows": {
+            "Gioco": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.24308881899924017,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 20
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 80,
+          "validation_rows": 20,
+          "unseen_target_rows": {
+            "Gioco": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.23788758799855714,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 20
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 80,
+          "validation_rows": 20,
+          "unseen_target_rows": {
+            "Gioco": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.1995287490026385,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 20
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 80,
+          "validation_rows": 20,
+          "unseen_target_rows": {
+            "Gioco": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.22168684200005373,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 20
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 80,
+          "validation_rows": 20,
+          "unseen_target_rows": {
+            "Gioco": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.21205982500032405,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 20
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Gioco",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 20
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "irrilevanti.xlsx",
+      "profile": "legacy-v8",
+      "sha256": "efb843c1233cbab6861acf50c69a0fdd68fc1395010e01b278ad88864db90d4d",
+      "targets": [
+        "label"
+      ],
+      "excluded_columns": [],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 1.0,
+        "Balanced_accuracy": 1.0,
+        "F1_macro": 1.0
+      },
+      "standard_deviations": {
+        "Accuracy": 0.0,
+        "Balanced_accuracy": 0.0,
+        "F1_macro": 0.0
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 800,
+          "validation_rows": 200,
+          "unseen_target_rows": {
+            "label": 0
+          },
+          "groups": 4,
+          "training_seconds": 1.732776091001142,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 200
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 800,
+          "validation_rows": 200,
+          "unseen_target_rows": {
+            "label": 0
+          },
+          "groups": 4,
+          "training_seconds": 1.2235597250000865,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 200
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 800,
+          "validation_rows": 200,
+          "unseen_target_rows": {
+            "label": 0
+          },
+          "groups": 4,
+          "training_seconds": 1.2157846989975951,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 200
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 800,
+          "validation_rows": 200,
+          "unseen_target_rows": {
+            "label": 0
+          },
+          "groups": 4,
+          "training_seconds": 1.8223398169975553,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 200
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 800,
+          "validation_rows": 200,
+          "unseen_target_rows": {
+            "label": 0
+          },
+          "groups": 4,
+          "training_seconds": 1.1207918569998583,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 200
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "irrilevanti.xlsx",
+      "profile": "paper-routing-v1",
+      "sha256": "efb843c1233cbab6861acf50c69a0fdd68fc1395010e01b278ad88864db90d4d",
+      "targets": [
+        "label"
+      ],
+      "excluded_columns": [],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 1.0,
+        "Balanced_accuracy": 1.0,
+        "F1_macro": 1.0
+      },
+      "standard_deviations": {
+        "Accuracy": 0.0,
+        "Balanced_accuracy": 0.0,
+        "F1_macro": 0.0
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 800,
+          "validation_rows": 200,
+          "unseen_target_rows": {
+            "label": 0
+          },
+          "groups": 4,
+          "training_seconds": 9.480170168000768,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 200
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 800,
+          "validation_rows": 200,
+          "unseen_target_rows": {
+            "label": 0
+          },
+          "groups": 4,
+          "training_seconds": 6.443993804998172,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 200
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 800,
+          "validation_rows": 200,
+          "unseen_target_rows": {
+            "label": 0
+          },
+          "groups": 4,
+          "training_seconds": 8.187994451000122,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 200
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 800,
+          "validation_rows": 200,
+          "unseen_target_rows": {
+            "label": 0
+          },
+          "groups": 4,
+          "training_seconds": 6.162849207998079,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 200
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 800,
+          "validation_rows": 200,
+          "unseen_target_rows": {
+            "label": 0
+          },
+          "groups": 4,
+          "training_seconds": 5.64058527400266,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 1.0,
+              "N": 200
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "label",
+              "Metrica": "F1_macro",
+              "Valore": 1.0,
+              "N": 200
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "titanic.csv",
+      "profile": "legacy-v8",
+      "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+      "targets": [
+        "Survived"
+      ],
+      "excluded_columns": [
+        "PassengerId",
+        "Name",
+        "Ticket",
+        "Cabin"
+      ],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 0.783240223463687,
+        "Balanced_accuracy": 0.7631357048748353,
+        "F1_macro": 0.7670939412902579
+      },
+      "standard_deviations": {
+        "Accuracy": 0.028867062978243138,
+        "Balanced_accuracy": 0.03172039710088603,
+        "F1_macro": 0.03152495667134371
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 712,
+          "validation_rows": 179,
+          "unseen_target_rows": {
+            "Survived": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.5547296500008088,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Accuracy",
+              "Valore": 0.7653631284916201,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.746969696969697,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "F1_macro",
+              "Valore": 0.7495335820895522,
+              "N": 179
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 712,
+          "validation_rows": 179,
+          "unseen_target_rows": {
+            "Survived": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.4485393169998133,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Accuracy",
+              "Valore": 0.7597765363128491,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.737022397891963,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "F1_macro",
+              "Valore": 0.7411642062077546,
+              "N": 179
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 712,
+          "validation_rows": 179,
+          "unseen_target_rows": {
+            "Survived": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.8162660980015062,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Accuracy",
+              "Valore": 0.776536312849162,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.7533596837944664,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "F1_macro",
+              "Valore": 0.7584345479082322,
+              "N": 179
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 712,
+          "validation_rows": 179,
+          "unseen_target_rows": {
+            "Survived": 0
+          },
+          "groups": 4,
+          "training_seconds": 0.8279819210001733,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Accuracy",
+              "Valore": 0.8324022346368715,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.8177206851119895,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "F1_macro",
+              "Valore": 0.8210954157782516,
+              "N": 179
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 712,
+          "validation_rows": 179,
+          "unseen_target_rows": {
+            "Survived": 0
+          },
+          "groups": 4,
+          "training_seconds": 1.251571156000864,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Accuracy",
+              "Valore": 0.7821229050279329,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.7606060606060605,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "F1_macro",
+              "Valore": 0.7652419544674984,
+              "N": 179
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "dataset": "titanic.csv",
+      "profile": "paper-routing-v1",
+      "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+      "targets": [
+        "Survived"
+      ],
+      "excluded_columns": [
+        "PassengerId",
+        "Name",
+        "Ticket",
+        "Cabin"
+      ],
+      "seeds": [
+        7,
+        21,
+        42,
+        84,
+        123
+      ],
+      "means": {
+        "Accuracy": 0.5407821229050278,
+        "Balanced_accuracy": 0.518866930171278,
+        "F1_macro": 0.48805489224758913
+      },
+      "standard_deviations": {
+        "Accuracy": 0.2884380859849241,
+        "Balanced_accuracy": 0.26657822286617966,
+        "F1_macro": 0.28535220450518023
+      },
+      "per_seed": [
+        {
+          "seed": 7,
+          "train_rows": 712,
+          "validation_rows": 179,
+          "unseen_target_rows": {
+            "Survived": 0
+          },
+          "groups": 6,
+          "training_seconds": 1.1087536589984666,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Accuracy",
+              "Valore": 0.2346368715083799,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.25303030303030305,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "F1_macro",
+              "Valore": 0.2342544886807182,
+              "N": 179
+            }
+          ]
+        },
+        {
+          "seed": 21,
+          "train_rows": 712,
+          "validation_rows": 179,
+          "unseen_target_rows": {
+            "Survived": 0
+          },
+          "groups": 6,
+          "training_seconds": 0.8797004999978526,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Accuracy",
+              "Valore": 0.24022346368715083,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.2629776021080369,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "F1_macro",
+              "Valore": 0.23905976494123532,
+              "N": 179
+            }
+          ]
+        },
+        {
+          "seed": 42,
+          "train_rows": 712,
+          "validation_rows": 179,
+          "unseen_target_rows": {
+            "Survived": 0
+          },
+          "groups": 5,
+          "training_seconds": 2.376052614999935,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Accuracy",
+              "Valore": 0.6145251396648045,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.5,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "F1_macro",
+              "Valore": 0.3806228373702422,
+              "N": 179
+            }
+          ]
+        },
+        {
+          "seed": 84,
+          "train_rows": 712,
+          "validation_rows": 179,
+          "unseen_target_rows": {
+            "Survived": 0
+          },
+          "groups": 4,
+          "training_seconds": 2.6047622879996197,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Accuracy",
+              "Valore": 0.8324022346368715,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.8177206851119895,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "F1_macro",
+              "Valore": 0.8210954157782516,
+              "N": 179
+            }
+          ]
+        },
+        {
+          "seed": 123,
+          "train_rows": 712,
+          "validation_rows": 179,
+          "unseen_target_rows": {
+            "Survived": 0
+          },
+          "groups": 6,
+          "training_seconds": 1.9081123149990162,
+          "scores": [
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Accuracy",
+              "Valore": 0.7821229050279329,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "Balanced_accuracy",
+              "Valore": 0.7606060606060605,
+              "N": 179
+            },
+            {
+              "Modello": "ACAN attuale",
+              "Target": "Survived",
+              "Metrica": "F1_macro",
+              "Valore": 0.7652419544674984,
+              "N": 179
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "seed42_baselines": [
+    {
+      "dataset": "anneal.arff",
+      "seed": 42,
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.7055555555555556,
+          "N": 180
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.20894160583941607,
+          "N": 180
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.18524590163934426,
+          "N": 180
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.7611111111111111,
+          "N": 180
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.2,
+          "N": 180
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.17287066246056781,
+          "N": 180
+        },
+        {
+          "Modello": "KNN",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.8611111111111112,
+          "N": 180
+        },
+        {
+          "Modello": "KNN",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.6874817518248175,
+          "N": 180
+        },
+        {
+          "Modello": "KNN",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.7132678132678132,
+          "N": 180
+        },
+        {
+          "Modello": "CART",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.8722222222222222,
+          "N": 180
+        },
+        {
+          "Modello": "CART",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.6347810218978103,
+          "N": 180
+        },
+        {
+          "Modello": "CART",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.6335638297872341,
+          "N": 180
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.9722222222222222,
+          "N": 180
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.9841605839416058,
+          "N": 180
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.9673901024724533,
+          "N": 180
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.9555555555555556,
+          "N": 180
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.9797810218978101,
+          "N": 180
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.948315565031983,
+          "N": 180
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.9666666666666667,
+          "N": 180
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.9741605839416059,
+          "N": 180
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.9613025210084034,
+          "N": 180
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.9666666666666667,
+          "N": 180
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.9741605839416059,
+          "N": 180
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.9613025210084034,
+          "N": 180
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.9611111111111111,
+          "N": 180
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.9491605839416059,
+          "N": 180
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.9472527472527472,
+          "N": 180
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "class",
+          "Training_secondi": 0.0010940369975287467,
+          "Inferenza_secondi": 0.00938414100164664,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "class",
+          "Training_secondi": 0.002133133002644172,
+          "Inferenza_secondi": 0.00020000199947389774,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "class",
+          "Training_secondi": 0.3127470680010447,
+          "Inferenza_secondi": 0.03130954600055702,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "class",
+          "Training_secondi": 0.33869539000079385,
+          "Inferenza_secondi": 0.014910680998582393,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "class",
+          "Training_secondi": 1.0982341810013168,
+          "Inferenza_secondi": 0.014085921000514645,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "class",
+          "Training_secondi": 0.11176455099848681,
+          "Inferenza_secondi": 0.002819598998030415,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "class",
+          "Training_secondi": 0.5352877779987466,
+          "Inferenza_secondi": 0.000772857998526888,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 1.6795730310004728,
+          "Stato": "ok"
+        }
+      ]
+    },
+    {
+      "dataset": "anneal.ORIG.arff",
+      "seed": 42,
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.7055555555555556,
+          "N": 180
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.20894160583941607,
+          "N": 180
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.18524590163934426,
+          "N": 180
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.7611111111111111,
+          "N": 180
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.2,
+          "N": 180
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.17287066246056781,
+          "N": 180
+        },
+        {
+          "Modello": "KNN",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.8611111111111112,
+          "N": 180
+        },
+        {
+          "Modello": "KNN",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.6874817518248175,
+          "N": 180
+        },
+        {
+          "Modello": "KNN",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.7132678132678132,
+          "N": 180
+        },
+        {
+          "Modello": "CART",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.8722222222222222,
+          "N": 180
+        },
+        {
+          "Modello": "CART",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.6347810218978103,
+          "N": 180
+        },
+        {
+          "Modello": "CART",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.6335638297872341,
+          "N": 180
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.9722222222222222,
+          "N": 180
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.9841605839416058,
+          "N": 180
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.9673901024724533,
+          "N": 180
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.9555555555555556,
+          "N": 180
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.9797810218978101,
+          "N": 180
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.948315565031983,
+          "N": 180
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.9666666666666667,
+          "N": 180
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.9741605839416059,
+          "N": 180
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.9613025210084034,
+          "N": 180
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.9666666666666667,
+          "N": 180
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.9741605839416059,
+          "N": 180
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.9613025210084034,
+          "N": 180
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.9611111111111111,
+          "N": 180
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.9491605839416059,
+          "N": 180
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.9472527472527472,
+          "N": 180
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "class",
+          "Training_secondi": 0.0013847910013282672,
+          "Inferenza_secondi": 0.006397715998900821,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "class",
+          "Training_secondi": 0.0033630319994699676,
+          "Inferenza_secondi": 0.0010431779992359225,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "class",
+          "Training_secondi": 0.40817359300126554,
+          "Inferenza_secondi": 0.018487318000552477,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "class",
+          "Training_secondi": 0.38249927799915895,
+          "Inferenza_secondi": 0.020708804000605596,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "class",
+          "Training_secondi": 1.0815806610007712,
+          "Inferenza_secondi": 0.013699773997359443,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "class",
+          "Training_secondi": 0.1143561819990282,
+          "Inferenza_secondi": 0.0026291720023436937,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "class",
+          "Training_secondi": 0.5803385619983601,
+          "Inferenza_secondi": 0.0010942260014417116,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 1.8611656249995576,
+          "Stato": "ok"
+        }
+      ]
+    },
+    {
+      "dataset": "audiology.arff",
+      "seed": 42,
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.21739130434782608,
+          "N": 46
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.058823529411764705,
+          "N": 46
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.02100840336134454,
+          "N": 46
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.21739130434782608,
+          "N": 46
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.058823529411764705,
+          "N": 46
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.02100840336134454,
+          "N": 46
+        },
+        {
+          "Modello": "KNN",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.5652173913043478,
+          "N": 46
+        },
+        {
+          "Modello": "KNN",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.33039215686274515,
+          "N": 46
+        },
+        {
+          "Modello": "KNN",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.2779044001266223,
+          "N": 46
+        },
+        {
+          "Modello": "CART",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.5869565217391305,
+          "N": 46
+        },
+        {
+          "Modello": "CART",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.3392156862745098,
+          "N": 46
+        },
+        {
+          "Modello": "CART",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.29381207028265854,
+          "N": 46
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.717391304347826,
+          "N": 46
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5156862745098039,
+          "N": 46
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.4390572390572391,
+          "N": 46
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.782608695652174,
+          "N": 46
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.6058823529411765,
+          "N": 46
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.5021265284423179,
+          "N": 46
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.6521739130434783,
+          "N": 46
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.4627450980392157,
+          "N": 46
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.35281638439533175,
+          "N": 46
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.717391304347826,
+          "N": 46
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5235294117647059,
+          "N": 46
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.4590668590668591,
+          "N": 46
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "class",
+          "Metrica": "Accuracy",
+          "Valore": 0.8260869565217391,
+          "N": 46
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "class",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.6794117647058824,
+          "N": 46
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "class",
+          "Metrica": "F1_macro",
+          "Valore": 0.6091470258136924,
+          "N": 46
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "class",
+          "Training_secondi": 0.0025931509990186896,
+          "Inferenza_secondi": 0.007227488000353333,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "class",
+          "Training_secondi": 0.0037058140005683526,
+          "Inferenza_secondi": 0.00039286900209845044,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "class",
+          "Training_secondi": 0.516832543999044,
+          "Inferenza_secondi": 0.019048589001613436,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "class",
+          "Training_secondi": 0.4143461739986378,
+          "Inferenza_secondi": 0.024631405001855455,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "class",
+          "Training_secondi": 3.4920314670016523,
+          "Inferenza_secondi": 0.04285003999757464,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "class",
+          "Training_secondi": 0.40749222800150164,
+          "Inferenza_secondi": 0.0038712259993189946,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "class",
+          "Training_secondi": 18.317798255000525,
+          "Inferenza_secondi": 0.0030936380026105326,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 4.325764368000819,
+          "Stato": "ok"
+        }
+      ]
+    },
+    {
+      "dataset": "autos.arff",
+      "seed": 42,
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "symboling",
+          "Metrica": "Accuracy",
+          "Valore": 0.5121951219512195,
+          "N": 41
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "symboling",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.2878787878787879,
+          "N": 41
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "symboling",
+          "Metrica": "F1_macro",
+          "Valore": 0.2126984126984127,
+          "N": 41
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "symboling",
+          "Metrica": "Accuracy",
+          "Valore": 0.3170731707317073,
+          "N": 41
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "symboling",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.16666666666666666,
+          "N": 41
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "symboling",
+          "Metrica": "F1_macro",
+          "Valore": 0.08024691358024691,
+          "N": 41
+        },
+        {
+          "Modello": "KNN",
+          "Target": "symboling",
+          "Metrica": "Accuracy",
+          "Valore": 0.6097560975609756,
+          "N": 41
+        },
+        {
+          "Modello": "KNN",
+          "Target": "symboling",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5092157842157842,
+          "N": 41
+        },
+        {
+          "Modello": "KNN",
+          "Target": "symboling",
+          "Metrica": "F1_macro",
+          "Valore": 0.5025641025641026,
+          "N": 41
+        },
+        {
+          "Modello": "CART",
+          "Target": "symboling",
+          "Metrica": "Accuracy",
+          "Valore": 0.6585365853658537,
+          "N": 41
+        },
+        {
+          "Modello": "CART",
+          "Target": "symboling",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.6601814851814852,
+          "N": 41
+        },
+        {
+          "Modello": "CART",
+          "Target": "symboling",
+          "Metrica": "F1_macro",
+          "Valore": 0.6682795698924732,
+          "N": 41
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "symboling",
+          "Metrica": "Accuracy",
+          "Valore": 0.8048780487804879,
+          "N": 41
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "symboling",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8464868464868466,
+          "N": 41
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "symboling",
+          "Metrica": "F1_macro",
+          "Valore": 0.8247215747215747,
+          "N": 41
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "symboling",
+          "Metrica": "Accuracy",
+          "Valore": 0.8536585365853658,
+          "N": 41
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "symboling",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8941058941058942,
+          "N": 41
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "symboling",
+          "Metrica": "F1_macro",
+          "Valore": 0.869088319088319,
+          "N": 41
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "symboling",
+          "Metrica": "Accuracy",
+          "Valore": 0.8048780487804879,
+          "N": 41
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "symboling",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8574758574758574,
+          "N": 41
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "symboling",
+          "Metrica": "F1_macro",
+          "Valore": 0.8578051041819158,
+          "N": 41
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "symboling",
+          "Metrica": "Accuracy",
+          "Valore": 0.8048780487804879,
+          "N": 41
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "symboling",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8464868464868466,
+          "N": 41
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "symboling",
+          "Metrica": "F1_macro",
+          "Valore": 0.8303992303992304,
+          "N": 41
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "symboling",
+          "Metrica": "Accuracy",
+          "Valore": 0.8292682926829268,
+          "N": 41
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "symboling",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8812853812853813,
+          "N": 41
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "symboling",
+          "Metrica": "F1_macro",
+          "Valore": 0.8590283790283789,
+          "N": 41
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "symboling",
+          "Training_secondi": 0.0030459330009762198,
+          "Inferenza_secondi": 0.005473388999234885,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "symboling",
+          "Training_secondi": 0.0033325969998259097,
+          "Inferenza_secondi": 0.0006580640001629945,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "symboling",
+          "Training_secondi": 0.504743386998598,
+          "Inferenza_secondi": 0.027007174998288974,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "symboling",
+          "Training_secondi": 0.2587712290005584,
+          "Inferenza_secondi": 0.01150370799950906,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "symboling",
+          "Training_secondi": 0.4493194169990602,
+          "Inferenza_secondi": 0.006342084001516923,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "symboling",
+          "Training_secondi": 0.11118368900133646,
+          "Inferenza_secondi": 0.0012559790011437144,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "symboling",
+          "Training_secondi": 0.7429363499977626,
+          "Inferenza_secondi": 0.0010580109992588405,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 1.1258047449991864,
+          "Stato": "ok"
+        }
+      ]
+    },
+    {
+      "dataset": "adultMinimal.xlsx",
+      "seed": 42,
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.8,
+          "N": 100
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8,
+          "N": 100
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.7999199679871949,
+          "N": 100
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.5,
+          "N": 100
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5,
+          "N": 100
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.3333333333333333,
+          "N": 100
+        },
+        {
+          "Modello": "KNN",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.79,
+          "N": 100
+        },
+        {
+          "Modello": "KNN",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.79,
+          "N": 100
+        },
+        {
+          "Modello": "KNN",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.7898108297467721,
+          "N": 100
+        },
+        {
+          "Modello": "CART",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.78,
+          "N": 100
+        },
+        {
+          "Modello": "CART",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.78,
+          "N": 100
+        },
+        {
+          "Modello": "CART",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.7799119647859143,
+          "N": 100
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.74,
+          "N": 100
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.74,
+          "N": 100
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.7398959583833533,
+          "N": 100
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.73,
+          "N": 100
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.73,
+          "N": 100
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.7293233082706767,
+          "N": 100
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.81,
+          "N": 100
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.81,
+          "N": 100
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.8099809980998101,
+          "N": 100
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.72,
+          "N": 100
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.72,
+          "N": 100
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.72,
+          "N": 100
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "income",
+          "Metrica": "Accuracy",
+          "Valore": 0.79,
+          "N": 100
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "income",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.79,
+          "N": 100
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "income",
+          "Metrica": "F1_macro",
+          "Valore": 0.7898108297467721,
+          "N": 100
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "income",
+          "Training_secondi": 0.003890886000590399,
+          "Inferenza_secondi": 0.005535730997507926,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "income",
+          "Training_secondi": 0.0027671850002661813,
+          "Inferenza_secondi": 0.0005098080000607297,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "income",
+          "Training_secondi": 0.5608680699988327,
+          "Inferenza_secondi": 0.036335802000394324,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "income",
+          "Training_secondi": 0.39637719800157356,
+          "Inferenza_secondi": 0.026354836001701187,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "income",
+          "Training_secondi": 0.1463647239979764,
+          "Inferenza_secondi": 0.002685409999685362,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "income",
+          "Training_secondi": 0.04241171500325436,
+          "Inferenza_secondi": 0.0019856560029438697,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "income",
+          "Training_secondi": 0.08520732000033604,
+          "Inferenza_secondi": 0.0026090840001415927,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 0.7355904500000179,
+          "Stato": "ok"
+        }
+      ]
+    },
+    {
+      "dataset": "GiocoSet.xlsx",
+      "seed": 42,
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 0.55,
+          "N": 20
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5,
+          "N": 20
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 0.3548387096774194,
+          "N": 20
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "CART",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 0.55,
+          "N": 20
+        },
+        {
+          "Modello": "CART",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5303030303030303,
+          "N": 20
+        },
+        {
+          "Modello": "CART",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 0.52,
+          "N": 20
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 0.55,
+          "N": 20
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5303030303030303,
+          "N": 20
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 0.52,
+          "N": 20
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Gioco",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Gioco",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 20
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Gioco",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 20
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "Gioco",
+          "Training_secondi": 0.0029629689997818787,
+          "Inferenza_secondi": 0.024492978998750914,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "Gioco",
+          "Training_secondi": 0.009719163001136621,
+          "Inferenza_secondi": 0.0009867489970929455,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Gioco",
+          "Training_secondi": 0.6832310420031718,
+          "Inferenza_secondi": 0.02063724599793204,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Gioco",
+          "Training_secondi": 0.3428747949983517,
+          "Inferenza_secondi": 0.026407092998852022,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Gioco",
+          "Training_secondi": 0.05675302199961152,
+          "Inferenza_secondi": 0.002518163000786444,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Gioco",
+          "Training_secondi": 0.029182957998273196,
+          "Inferenza_secondi": 0.002017065002291929,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Gioco",
+          "Training_secondi": 0.05527922200053581,
+          "Inferenza_secondi": 0.0016473830000904854,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 0.16787660400223103,
+          "Stato": "ok"
+        }
+      ]
+    },
+    {
+      "dataset": "irrilevanti.xlsx",
+      "seed": 42,
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 0.265,
+          "N": 200
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.25,
+          "N": 200
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 0.10474308300395258,
+          "N": 200
+        },
+        {
+          "Modello": "KNN",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 0.805,
+          "N": 200
+        },
+        {
+          "Modello": "KNN",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8053344403799256,
+          "N": 200
+        },
+        {
+          "Modello": "KNN",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 0.8023807941224042,
+          "N": 200
+        },
+        {
+          "Modello": "CART",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "CART",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "CART",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "label",
+          "Metrica": "Accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "label",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 1.0,
+          "N": 200
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "label",
+          "Metrica": "F1_macro",
+          "Valore": 1.0,
+          "N": 200
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "label",
+          "Training_secondi": 0.0063268260018958244,
+          "Inferenza_secondi": 0.04140450900013093,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "label",
+          "Training_secondi": 0.0042656859986891504,
+          "Inferenza_secondi": 0.00041595700167817995,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "label",
+          "Training_secondi": 0.6159841980006604,
+          "Inferenza_secondi": 0.023375263997877482,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "label",
+          "Training_secondi": 0.567464944000676,
+          "Inferenza_secondi": 0.02464283500012243,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "label",
+          "Training_secondi": 0.3940513400011696,
+          "Inferenza_secondi": 0.010852769002667628,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "label",
+          "Training_secondi": 0.09202479200030211,
+          "Inferenza_secondi": 0.003243890001613181,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "label",
+          "Training_secondi": 0.19236287899911986,
+          "Inferenza_secondi": 0.003294415997515898,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 4.7608396190007625,
+          "Stato": "ok"
+        }
+      ]
+    },
+    {
+      "dataset": "titanic.csv",
+      "seed": 42,
+      "scores": [
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.6145251396648045,
+          "N": 179
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5,
+          "N": 179
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.3806228373702422,
+          "N": 179
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.6145251396648045,
+          "N": 179
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.5,
+          "N": 179
+        },
+        {
+          "Modello": "Maggioranza training",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.3806228373702422,
+          "N": 179
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.8100558659217877,
+          "N": 179
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7806324110671936,
+          "N": 179
+        },
+        {
+          "Modello": "KNN",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.7902536531568789,
+          "N": 179
+        },
+        {
+          "Modello": "CART",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.7653631284916201,
+          "N": 179
+        },
+        {
+          "Modello": "CART",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.730764163372859,
+          "N": 179
+        },
+        {
+          "Modello": "CART",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.7388858016115587,
+          "N": 179
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.8212290502793296,
+          "N": 179
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7978260869565217,
+          "N": 179
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.8054347826086956,
+          "N": 179
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.8044692737430168,
+          "N": 179
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7895915678524374,
+          "N": 179
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.7918950340475004,
+          "N": 179
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.8268156424581006,
+          "N": 179
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.8104743083003952,
+          "N": 179
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.8145697577276525,
+          "N": 179
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.7988826815642458,
+          "N": 179
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7850461133069828,
+          "N": 179
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.7865659777424483,
+          "N": 179
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Survived",
+          "Metrica": "Accuracy",
+          "Valore": 0.8044692737430168,
+          "N": 179
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Survived",
+          "Metrica": "Balanced_accuracy",
+          "Valore": 0.7652832674571806,
+          "N": 179
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Survived",
+          "Metrica": "F1_macro",
+          "Valore": 0.7778132425435329,
+          "N": 179
+        }
+      ],
+      "timings": [
+        {
+          "Modello": "KNN",
+          "Target": "Survived",
+          "Training_secondi": 0.004011449997051386,
+          "Inferenza_secondi": 0.013941763001639629,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CART",
+          "Target": "Survived",
+          "Training_secondi": 0.004699402998085134,
+          "Inferenza_secondi": 0.00035605499942903407,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Random Forest",
+          "Target": "Survived",
+          "Training_secondi": 0.6351966359979997,
+          "Inferenza_secondi": 0.032155280001461506,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "Extra Trees",
+          "Target": "Survived",
+          "Training_secondi": 0.5539348479978798,
+          "Inferenza_secondi": 0.04994517199884285,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "HistGradientBoosting",
+          "Target": "Survived",
+          "Training_secondi": 0.2452846479973232,
+          "Inferenza_secondi": 0.0043077390000689775,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "XGBoost",
+          "Target": "Survived",
+          "Training_secondi": 0.07201486700068926,
+          "Inferenza_secondi": 0.003220491998945363,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "CatBoost",
+          "Target": "Survived",
+          "Training_secondi": 0.09954448999997112,
+          "Inferenza_secondi": 0.00092113700156915,
+          "Stato": "ok"
+        },
+        {
+          "Modello": "ACAN attuale",
+          "Target": "tutti",
+          "Inferenza_secondi": 1.794412627001293,
+          "Stato": "ok"
+        }
+      ]
+    }
+  ]
+}

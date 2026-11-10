@@ -269,6 +269,117 @@ class ControlledTrainingTests(unittest.TestCase):
             self.assertEqual(result.status_code,400)
             self.assertIn('split ufficiali',result.get_json()['error'])
 
+    def test_known_legacy_controlled_resume_preserves_exact_weights(self):
+        import torch
+        from safetensors.torch import load_file
+        from acan.lm import research_trainer as trainer
+        from acan.lm.compatibility import LEGACY_TRAINING,LEGACY_INFERENCE
+        from acan.lm.research_model import check_inference_contract
+        from acan.lm.store import Store
+        with tempfile.TemporaryDirectory() as one,tempfile.TemporaryDirectory() as two:
+            a,ja,path,base=self.fixture(one,steps=4)
+            b,jb,_,_=self.fixture(two,steps=4,base_path=path)
+            for store,job in ((a,ja),(b,jb)):
+                config=dict(job['config']);config.pop('routing_profile')
+                with store.db() as db:db.execute('UPDATE jobs SET config=? WHERE id=?',(json.dumps(config),job['id']))
+                job['config']=config
+            with patch.object(trainer,'contract',return_value=LEGACY_TRAINING[0]),patch.object(trainer,'inference_contract',return_value=LEGACY_INFERENCE):
+                self.run_job(a,ja,path,base)
+                stop=threading.Event();original=Store.record
+                def record(store,id,step,values):
+                    original(store,id,step,values)
+                    if str(store.root)==str(b.root) and step==2:stop.set()
+                with patch.object(Store,'record',record):self.run_job(b,jb,path,base,stop)
+            b.update(jb['id'],pause=0);self.run_job(b,jb,path,base)
+            self.assertEqual(b.job(jb['id'])['status'],'completed')
+            outputs=[]
+            for store,job in ((a,ja),(b,jb)):
+                current=store.job(job['id']);check_inference_contract(current['config'],current['progress'])
+                outputs.append(load_file(store.directory('jobs',job['id'])/'checkpoints'/current['checkpoint']/'trainables.safetensors'))
+            for key in outputs[0]:self.assertTrue(torch.equal(outputs[0][key],outputs[1][key]),key)
+            with self.assertRaisesRegex(ValueError,'versione'):
+                check_inference_contract(dict(jb['config'],routing_profile='shared-algebra-v1'),dict(model_contract=LEGACY_INFERENCE))
+
+    def test_layer_inspection_preserves_exact_training_and_is_owner_scoped(self):
+        import torch
+        from safetensors.torch import load_file
+        from acan.lm.inspection import latest
+        from acan.lm.service import create_app
+        with tempfile.TemporaryDirectory() as one, tempfile.TemporaryDirectory() as two:
+            a,ja,path,base=self.fixture(one,steps=2,distillation=0)
+            b,jb,_,_=self.fixture(two,steps=2,distillation=0,base_path=path)
+            app=create_app(two,'c'*40);client=app.test_client()
+            headers={'Authorization':'Bearer '+'c'*40,'X-ACAN-Workspace':'a'*64}
+            other=dict(headers,**{'X-ACAN-Workspace':'b'*64})
+            endpoint='/jobs/'+jb['id']+'/layers'
+            b.update(jb['id'],status='running')
+            self.assertEqual(client.post(endpoint,headers=other,json={}).status_code,404)
+            self.assertEqual(client.get(endpoint,headers=other).status_code,404)
+            self.assertEqual(client.post(endpoint,headers=headers,json={}).status_code,200)
+            self.run_job(a,ja,path,base);self.run_job(b,jb,path,base)
+            report=client.get(endpoint,headers=headers).get_json()
+            self.assertFalse(report['pending']);report=report['report']
+            self.assertEqual(report['step'],1)
+            self.assertEqual(len(report['frames']),1)
+            self.assertEqual(len(report['frames'][0]['layers']),2)
+            self.assertEqual(set(report['gradients']),{'0','1'})
+            self.assertGreater(report['gradients']['1']['norm'],0)
+            self.assertEqual(report['frames'][0]['layers'][1]['kind'],'ACAN')
+            self.assertNotIn('document',json.dumps(report))
+            self.assertIsNone(latest(a,ja)['report'])
+            for store,job in ((a,ja),(b,jb)):
+                current=store.job(job['id'])
+                values=load_file(store.directory('jobs',job['id'])/'checkpoints'/current['checkpoint']/'trainables.safetensors')
+                if store is a:first=values
+                else:
+                    for key in first:self.assertTrue(torch.equal(first[key],values[key]),key)
+
+    def test_layer_inspection_tracks_prefill_decoding_and_does_not_change_logits(self):
+        import torch
+        from acan.lm.inspection import Capture
+        from acan.lm.research_model import load_model
+        from acan.lm.grafting import reset_streams
+        with tempfile.TemporaryDirectory() as root:
+            store,job,path,base=self.fixture(root,steps=1,distillation=0)
+            torch.manual_seed(42);model,_=load_model(path,job['config']);model.eval()
+            ids=torch.tensor([[2,3,4,5]])
+            with torch.inference_mode():
+                expected=model.generate(ids,max_new_tokens=3,do_sample=False,use_cache=True,pad_token_id=0,eos_token_id=None)
+                reset_streams(model)
+                with Capture(model,'inference',max_frames=3) as capture:
+                    actual=model.generate(ids,max_new_tokens=3,do_sample=False,use_cache=True,pad_token_id=0,eos_token_id=None)
+                self.assertTrue(torch.equal(expected,actual))
+            report=capture.report(0)
+            self.assertEqual(len(report['frames']),3)
+            self.assertEqual(report['gradients'],{})
+            for frame in report['frames']:
+                self.assertEqual(len(frame['layers']),2)
+                self.assertTrue(frame['logits_finite'])
+                self.assertEqual(len(frame['next_token_candidates']),5)
+                self.assertAlmostEqual(sum(frame['layers'][1]['mass_fractions']),1.,places=5)
+            self.assertFalse(capture.handles)
+            self.assertFalse(model.get_base_model().model._forward_pre_hooks)
+            self.assertFalse(model.get_base_model().lm_head._forward_hooks)
+            # An exception must also remove hooks and must not retain tensors.
+            with self.assertRaisesRegex(RuntimeError,'test error'):
+                with Capture(model,'inference'):raise RuntimeError('test error')
+            self.assertFalse(model.get_base_model().model._forward_pre_hooks)
+            self.assertFalse(model.get_base_model().lm_head._forward_hooks)
+            json.dumps(report,allow_nan=False)
+            core=model.get_base_model()
+            def corrupt(module,inputs,output):
+                return torch.full_like(output,float('nan'))
+            hook=core.model.layers[0].register_forward_hook(corrupt)
+            try:
+                with torch.inference_mode(),Capture(model,'inference') as broken:
+                    model(ids,use_cache=False)
+                failure=broken.report()
+                self.assertFalse(failure['frames'][0]['logits_finite'])
+                self.assertFalse(failure['frames'][0]['layers'][0]['output']['finite'])
+                json.dumps(failure,allow_nan=False)
+            finally:
+                hook.remove()
+
     def test_document_deduplication_and_pause_recovery_do_not_cross_splits(self):
         from acan.lm.research_data import prepare
         from acan.lm.data import PreparationPaused

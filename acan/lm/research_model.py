@@ -5,7 +5,8 @@ from .grafting import load_base,add_lora
 
 def load_model(path,options,device='cpu',evaluate_base=None):
     if options.get('architecture','hybrid')=='hybrid' and options.get('graft_fraction',.5)==.5:
-        return load_base(path,options,device,evaluate_base)
+        model,report=load_base(path,options,device,evaluate_base)
+        return shared_adapter(model,report,options)
     from transformers import AutoModelForCausalLM
     dtype=torch.bfloat16 if device=='cuda' and torch.cuda.is_bf16_supported() else torch.float32
     all_concept=options.get('architecture','hybrid')=='hybrid'
@@ -35,7 +36,7 @@ def load_model(path,options,device='cpu',evaluate_base=None):
             layer.self_attn=new
         report=dict(profile='acan-all-layers-causal-v1',replaced_layers=list(range(len(model.model.layers))),
                     total_layers=len(model.model.layers),slots=options['slots'],window=options['window'],fraction=1.,baseline_nll=baseline)
-        return add_lora(model,options['lora_rank']).to(device),report
+        return shared_adapter(add_lora(model,options['lora_rank']).to(device),report,options)
     report=dict(profile='dense-lora-control-v1',replaced_layers=[],total_layers=len(model.model.layers),
                 slots=0,window=0,fraction=0.,baseline_nll=baseline)
     return add_lora(model,options['lora_rank']).to(device),report
@@ -45,12 +46,30 @@ def inference_contract():
     import hashlib
     from pathlib import Path
     root=Path(__file__).parent
-    return hashlib.sha256((root/'research_model.py').read_bytes()+(root/'full_attention.py').read_bytes()).hexdigest()
+    return hashlib.sha256(b''.join(path.read_bytes() for path in (root/'research_model.py',root/'full_attention.py',root/'shared_attention.py',root.parent/'algebra.py'))).hexdigest()
 
 
 def check_inference_contract(options,state):
     recorded=state.get('model_contract')
-    if recorded is not None and recorded!=inference_contract():
+    from .compatibility import LEGACY_INFERENCE
+    legacy = 'routing_profile' not in options and recorded == LEGACY_INFERENCE
+    if recorded is not None and recorded!=inference_contract() and not legacy:
         raise ValueError('Modello di un’altra versione: usare l’immagine worker che lo ha creato.')
     if options.get('graft_fraction',.5)==1. and recorded is None:
         raise ValueError('Checkpoint interamente ACAN privo del contratto del modello.')
+
+
+def shared_adapter(model,report,options):
+    if options.get('routing_profile') == 'shared-algebra-v1':
+        from .shared_attention import SharedAlgebraAttention
+        from .full_attention import FullConceptAttention
+        from .attention import ACANConceptAttentionLayer
+        class SharedFullAttention(FullConceptAttention,SharedAlgebraAttention):
+            pass
+        for module in list(model.modules()):
+            if isinstance(module,FullConceptAttention):
+                module.__class__=SharedFullAttention
+            elif isinstance(module,ACANConceptAttentionLayer):
+                module.__class__=SharedAlgebraAttention
+        report=dict(report,algebra='shared-algebra-v1')
+    return model,report

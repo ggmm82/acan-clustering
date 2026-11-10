@@ -10,7 +10,7 @@ from acan.vis.evaluation import evaluate
 from acan.vis.benchmark_job import BenchmarkJob, signature as benchmark_signature
 from acan.vis.refinement import root_signature, remove_branch
 from acan.vis.inference import infer
-from acan.vis.datasets import clean_frame, target_and_filters, split_for_training, check_budget
+from acan.vis.datasets import clean_frame, target_and_filters, split_for_training, check_budget, read_arff
 
 import dash  # pip install dash
 import dash_cytoscape as cyto  # pip install dash-cytoscape==0.2.0 or higher
@@ -24,7 +24,6 @@ import matplotlib.pyplot as plt
 import io
 import gzip
 import base64
-from scipy.io import arff
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from sklearn import metrics
@@ -500,7 +499,7 @@ model_layout = dbc.Container([
         dbc.Col([dbc.Label('Target (svuota per scoperta non supervisionata)'),
                  dcc.Dropdown(id='dpdnLabel', value=[], multi=True, options=[]),
                  dbc.Button('Svuota target', id='btn-clear-label', size='sm', color='link')], md=7),
-        dbc.Col([dbc.Button('Scopri concetti', id='button-learn', n_clicks=0, className='m-1'),
+        dbc.Col([dbc.Button('Scopri concetti', id='button-learn', n_clicks=0, disabled=True, className='m-1'),
                  dbc.Button('Salva modello', id='btn-download', n_clicks=0, className='m-1', outline=True),
                  dcc.Download(id='download-model')], md=5),
     ], className='my-3'),
@@ -514,12 +513,17 @@ model_layout = dbc.Container([
         ]),
         dbc.Label('Tipo di previsione del target'),
         dcc.Dropdown(id='target-task', value='auto', clearable=False, options=[{'label':'Automatico (codici interi fino a 20 classi: classificazione)', 'value':'auto'}, {'label':'Classificazione', 'value':'classification'}, {'label':'Regressione numerica', 'value':'regression'}]),
+        dbc.Label('Routing ACAN'),
+        dcc.Dropdown(id='tabular-routing-profile',value='legacy-v8',clearable=False,options=[
+            {'label':'Esperimento · sole equazioni di routing del paper','value':'paper-routing-v1'},
+            {'label':'Profilo attuale · compatibilità e confronto','value':'legacy-v8'}]),
+        html.P('Profilo del paper: α=2, β=8, γ=1,15 (default del pacchetto LM, non ottimizzati sui tuoi dati). Sono uniformati gli operatori di distanza e massa; rilevanza, omega e obiettivi conservano i limiti documentati. Il profilo non certifica l’intero paper.',className='small text-muted'),
         dbc.Row([parameter(*args) for args in [
             ('Epoche', 'train-epochs', 100, 1, 1000, 1),
             ('Learning rate', 'input-lr', .08, .001, 1, .01),
             ('Batch (solo training iniziale a un livello)', 'input-max-batch', 300, 10, 10000, 10),
-            ('Temperatura τ', 'train-tau', .2, .01, 10, .01),
-            ('Miscela α', 'train-alpha', .5, 0, 1, .05),
+            ('Temperatura τ (solo versione precedente)', 'train-tau', .2, .01, 10, .01),
+            ('Miscela α (solo versione precedente)', 'train-alpha', .5, 0, 1, .05),
             ('Campioni minimi del ramo', 'train-min-samples', 12, 2, 10000, 1),
             ('Livelli iniziali automatici (predefinito: 1)', 'train-depth', 1, 1, 6, 1),
             ('Soglia purezza (solo livelli automatici)', 'train-purity', .92, 0, 1, .01),
@@ -725,6 +729,23 @@ def update_labels(data, lbs):
 
 
 
+@app.callback(Output('train-tau','disabled'),Output('train-alpha','disabled'),Input('tabular-routing-profile','value'))
+def routing_legacy_controls(profile):
+    return profile != 'legacy-v8', profile != 'legacy-v8'
+
+
+@app.callback(Output('button-learn','disabled'), Input('data-store','data'),
+              Input('label-store','data'), Input('dpdnLabel','value'), Input('dpdnLabel','options'),
+              Input('dpdnFilter','value'), Input('dpdnFilter','options'))
+def training_controls_pending(data, labels, selected, options, filters, filter_options):
+    if not data or not options or list(labels or []) != list(selected or []):
+        return True
+    columns = set(data)
+    available = {item['value'] for item in (filter_options or [])}
+    return not (set(labels or []).issubset(columns) and available == columns-set(labels or [])
+                and set(filters or []).issubset(available))
+
+
 @app.callback(
     Output("download-model", "data"),
     Input("btn-download", "n_clicks"),
@@ -747,36 +768,37 @@ def update_data(contents, filename, last_modified, labels):
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
         try:
-            if 'csv' in filename:
+            extension = filename.rsplit('.', 1)[-1].casefold()
+            if extension == 'csv':
                 # Assume that the user uploaded a CSV file
                 df = pd.read_csv(
                     io.StringIO(decoded.decode('utf-8')))
                 
-            if 'json' in filename:
+            elif extension == 'json':
                 # Assume that the user uploaded a CSV file
                 df = pd.read_json(
                     io.StringIO(decoded.decode('utf-8')))
                 
-            elif 'xlsx' in filename:
+            elif extension == 'xlsx':
                 # Assume that the user uploaded an excel file
                 df = pd.read_excel(io.BytesIO(decoded), engine='openpyxl')
 
-            elif 'parquet' in filename:
+            elif extension == 'parquet':
                 arrTb=pq.read_table(io.BytesIO(decoded))
                 df=arrTb.to_pandas(date_as_object=False)
 
-            elif 'arff' in filename:
-                # Assume that the user uploaded an excel file
-                data = arff.loadarff(io.StringIO(decoded.decode('utf-8')))
-                df = pd.DataFrame(data[0])
+            elif extension == 'arff':
+                df = read_arff(decoded)
 
-            elif 'mat' in filename:
+            elif extension == 'mat':
                 mat = loadmat(io.BytesIO(decoded))
                 mat = {k:v for k, v in mat.items() if k[0] != '_'}
                 mdata = mat[next(iter(mat))]  # variable in mat file
                 mdtype = mdata.dtype  # dtypes of structures are "unsized objects"
                 ndata = {n: mdata[n][0, 0] for n in mdtype.names}
                 df=pd.DataFrame(ndata['data'])
+            else:
+                raise ValueError('Formato non supportato: usa CSV, JSON, XLSX, Parquet, ARFF o MAT.')
 
             df = clean_frame(df)
             original_rows = len(df)
@@ -872,6 +894,7 @@ def evaluate_model(model, benchmark_report, tab_id):
             report['dataset'] = dataset_info
         panels = [html.P(f"{source} · {report['rows']} righe · {stats['nodes']} nodi · {stats['groups']} gruppi · {stats['depth']} livelli. Accuracy/F1 in [0,1]; MAE/RMSE nelle unità originali."),
                   dbc.Table.from_dataframe(summary.round(5), striped=True, responsive=True)]
+        panels.extend(dbc.Alert(item['warning'], color='warning') for item in report.get('diagnostics', []))
         if dataset_info:
             panels.append(html.P(f"Training: {dataset_info['train_rows']} righe; validazione: {dataset_info['validation_rows']}; righe senza target escluse: {dataset_info['excluded_missing_targets']}; split stratificato: {'sì' if dataset_info['stratified'] else 'no'}. Target: {dataset_info['target_types']}."))
         if report.get('comparisons'):
@@ -928,10 +951,11 @@ def download_prediction(clicks, report):
               State('train-alpha', 'value'),
               State('train-purity', 'value'),
               State('target-task', 'value'),
+              State('tabular-routing-profile','value'),
               State('tab-session', 'data'),
               prevent_initial_call=True
               )
-def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, depth, epochs, min_samples, tau, alpha, purity, task, tab_id):
+def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, depth, epochs, min_samples, tau, alpha, purity, task, routing_profile, tab_id):
     if not n_clicks:
         return (dash.no_update,) * 5
     if not data:
@@ -943,7 +967,9 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, dep
             return dash.no_update, dash.no_update, "Training già in corso.", False, False
         train, test, dataset_info = split_for_training(data, labels or [], filters, categories, task)
         check_budget(train)
-        options = dict(max_depth=depth, max_epochs=epochs, min_samples_split=min_samples,
+        if routing_profile not in ('legacy-v8','paper-routing-v1'):
+            raise ValueError('Seleziona un profilo di routing ACAN valido.')
+        options = dict(routing_profile=routing_profile,max_depth=depth, max_epochs=epochs, min_samples_split=min_samples,
                        tau=tau, alpha=alpha, similarity_threshold=purity, lr=lr,
                        batch_size=max_batch, device='numpy')
         bounds = dict(max_depth=(1, 6), max_epochs=(1, 1000), min_samples_split=(2, 10000),
@@ -1549,7 +1575,7 @@ def describe_graph(model, layout):
     if layout == 'breadthfirst':
         config.update(directed=True, roots=f'[id = "{graph.rootId}"]', spacingFactor=1.3)
     return (f"Radice {graph.rootId} · {stats['nodes']} nodi concetto · {stats['depth']} livelli · "
-            f"{stats['groups']} gruppi · {root.n} campioni · {len(root.cols)} attributi. "
+            f"{stats['groups']} gruppi · {root.n} campioni · {len(root.cols)} attributi · routing {getattr(root,'routing_profile','legacy-v8')}. "
             'Seleziona un nodo o un collegamento per esplorare centroidi, rilevanze e dispersione.'), config
 
 generative.register(app)
