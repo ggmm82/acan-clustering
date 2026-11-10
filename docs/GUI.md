@@ -67,3 +67,18 @@ and numerical missing values use training means and trained missing indicators.
 Retrain older JSON models to acquire this schema. Resource checks run before
 one-hot allocation and report which columns cause expansion. See the measured
 [five-dataset verification](DATASET-EVALUATION.md).
+
+## Filter state regression
+
+The browser must send the same exclusions displayed in Model. Exclusions now
+use explicit checkboxes instead of the stale multi-select control. Data upload now
+sends filter options and their selected values together; model JSON loading
+keeps filter options based on the uploaded table rather than its target-only
+dropdown. Use **Ripristina filtri suggeriti** to restore defaults after clearing.
+The CI gate includes real Chromium tests at mobile and desktop widths, including
+upload, model export/reload and restore, and asserts the actual training request
+contains all displayed exclusions. The original Titanic failure was reproduced
+on the deployed app: four visually selected filters were sent as an empty list.
+A public reference with identical table values was used; uploaded user data was
+not sent to the public app. Corrected local browser training completes with all
+four exclusions in the request.

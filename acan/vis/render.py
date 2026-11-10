@@ -50,7 +50,7 @@ benchmark_jobs = TrainingJobs(max_running=1)
 
 @app.server.get('/healthz')
 def health():
-    return {'status': 'ok'}
+    return {'status':'ok','version':'8.3.0','build_revision':os.environ.get('ACAN_BUILD_REVISION','development'),'dataset_filter_control':'checkbox-v1'}
 
 @app.server.before_request
 def ensure_session():
@@ -508,8 +508,9 @@ model_layout = dbc.Container([
         dbc.Row([
             dbc.Col([dbc.Label('Colonne categoriche'), dcc.Dropdown(id='dpdnCategory', value=[], multi=True),
                      dbc.Button('Svuota', id='btn-clear-category', color='link', size='sm')], md=6),
-            dbc.Col([dbc.Label('Escludi colonne'), dcc.Dropdown(id='dpdnFilter', value=[], multi=True),
-                     dbc.Button('Svuota', id='btn-clear-filter', color='link', size='sm')], md=6),
+            dbc.Col([dbc.Label('Escludi colonne'), dbc.Checklist(id='dpdnFilter', value=[], options=[], style={'maxHeight':'180px', 'overflowY':'auto'}),
+                     dbc.Button('Svuota', id='btn-clear-filter', color='link', size='sm'),
+                     dbc.Button('Ripristina filtri suggeriti', id='btn-suggest-filter', color='link', size='sm')], md=6),
         ]),
         dbc.Label('Tipo di previsione del target'),
         dcc.Dropdown(id='target-task', value='auto', clearable=False, options=[{'label':'Automatico (codici interi fino a 20 classi: classificazione)', 'value':'auto'}, {'label':'Classificazione', 'value':'classification'}, {'label':'Regressione numerica', 'value':'regression'}]),
@@ -533,6 +534,9 @@ model_layout = dbc.Container([
         dbc.Col(dbc.Button('Rimuovi approfondimento selezionato', id='remove-branch', color='warning', outline=True, className='m-1'), md='auto'),
         dbc.Col(dbc.Button('Ferma training', id='btn-stop-learn', color='danger', disabled=True, className='m-1'), md='auto'),
     ]),
+    dbc.Accordion([dbc.AccordionItem([html.Pre(id='dataset-debug-view', style={'whiteSpace':'pre-wrap'}),
+        dbc.Button('Scarica diagnostica dati', id='dataset-debug-download'), dcc.Download(id='dataset-debug-file'),
+        dcc.Store(id='dataset-debug-data')], title='Diagnostica dati e filtri ricevuti dal server')], start_collapsed=True),
     html.Div(id='learning-status', children='Pronto: carica i dati e scopri i concetti.', className='alert alert-light my-2', role='status'),
     dcc.Interval(id='learning-monitor', interval=1000, disabled=True),
     html.Div(id='graph-summary', className='alert alert-info'),
@@ -668,6 +672,18 @@ def clear_filter(n_clicks):
         return []
     return dash.no_update
 
+@app.callback(Output('dpdnFilter', 'value', allow_duplicate=True),
+              Input('btn-suggest-filter', 'n_clicks'), State('data-store', 'data'),
+              State('label-store', 'data'), prevent_initial_call=True)
+def suggest_filters(clicks, data, labels):
+    if not clicks or not data:
+        return dash.no_update
+    frame = clean_frame(pd.DataFrame(data))
+    if frame.empty:
+        return []
+    return target_and_filters(frame, labels)[1]
+
+
 @app.callback(
     Output('dpdnLabel', 'value', allow_duplicate=True),
     Input('btn-clear-label', 'n_clicks'),
@@ -682,16 +698,18 @@ def clear_label(n_clicks, options):
 
 @app.callback([Output('label-store', 'data'), Output("dpdnFilter", "options")],
               Input('dpdnLabel', 'value'),
-              State("dpdnLabel", "options"))
-def set_labels(labels, opts):
-    newOps=[]
-    for opt in opts:
-        if opt['value'] not in labels:
-            newOps.append(opt)
-    return labels, newOps
+              State("dpdnLabel", "options"),
+              State('data-store', 'data'))
+def set_labels(labels, opts, data):
+    labels = labels or []
+    # A loaded model restores target options only. Feature filters must continue
+    # to describe the uploaded table, otherwise the dropdown discards selections.
+    columns = list(pd.DataFrame(data).columns) if data else [item['value'] for item in (opts or [])]
+    return labels, [{'label': name, 'value': name} for name in columns if name not in labels]
 
 @app.callback(
-    [Output("dpdnLabel", "options"),Output("dpdnLabel", "value"), Output("dpdnCategory", "options"), Output("dpdnFilter", "value")] ,
+    [Output("dpdnLabel", "options"),Output("dpdnLabel", "value"), Output("dpdnCategory", "options"), Output("dpdnFilter", "value"),
+     Output("dpdnFilter", "options", allow_duplicate=True)] ,
     Input('data-store', 'data'),
     State('label-store', 'data'),
     prevent_initial_call=True,
@@ -699,10 +717,11 @@ def set_labels(labels, opts):
 def update_labels(data, lbs):
     df = clean_frame(pd.DataFrame(data))
     if df.empty:
-        return [], [], [], []
+        return [], [], [], [], []
     labels, filters = target_and_filters(df, lbs)
     options = [{'label': name, 'value': name} for name in df.columns]
-    return options, labels, options, filters
+    filter_options = [item for item in options if item['value'] not in labels]
+    return options, labels, options, filters, filter_options
 
 
 
@@ -776,6 +795,32 @@ def update_data(contents, filename, last_modified, labels):
 
     return pd.DataFrame().to_dict(), balanced, uplData
 
+
+
+@app.callback(Output('dataset-debug-view','children'),Output('dataset-debug-data','data'),
+              Input('data-store','data'),Input('label-store','data'),Input('dpdnFilter','value'),
+              Input('dpdnCategory','value'),Input('target-task','value'))
+def dataset_debug(data,labels,filters,categories,task):
+    if not data:
+        return 'Carica un dataset.',None
+    report=dict(received_filters=filters or [],received_targets=labels or [],categorical_columns=categories or [],task=task)
+    try:
+        from acan.vis.datasets import encoding_size
+        train,test,info=split_for_training(data,labels or [],filters,categories,task or 'auto')
+        report.update(dataset=info,encoding=encoding_size(train))
+        try:
+            check_budget(train);report['budget']='ok'
+        except ValueError as exc:
+            report['budget']=str(exc)
+    except Exception as exc:
+        report['error']=str(exc)
+    return json.dumps(report,indent=2,ensure_ascii=False),report
+
+
+@app.callback(Output('dataset-debug-file','data'),Input('dataset-debug-download','n_clicks'),
+              State('dataset-debug-data','data'),prevent_initial_call=True)
+def download_dataset_debug(clicks,report):
+    return dict(content=json.dumps(report,indent=2,ensure_ascii=False),filename='acan-dataset-diagnostics.json') if report else dash.no_update
 
 
 @app.callback(Output("data-info", "children"),

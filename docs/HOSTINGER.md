@@ -79,3 +79,15 @@ for long training connect a private HTTPS GPU worker using `ACAN_LM_URL` and
 `ACAN_LM_SERVICE_TOKEN`. The frontend does not store optimizer state. Keep the
 worker's named data volume and exact image pinned, and do not remove volumes
 on deploy. See [Generative setup and recovery](GENERATIVE.md).
+
+### `ACAN_LM_SERVICE_TOKEN is missing a value`
+
+The generative Compose deliberately requires one private internal service key.
+Set `ACAN_LM_SERVICE_TOKEN` in the project's environment/`.env` to a random value
+of at least 32 characters. The same variable is passed to both services. Reuse
+the existing value when updating a working stack. If the editor offers only YAML,
+replace both `${ACAN_LM_SERVICE_TOKEN:?Set a private service token}` expressions
+with the same quoted private value, and keep that deployment file private. This
+is service-to-service authorization, not a human login. Do not post the value in
+issues, PRs or chat. A missing-value error happens before images are pulled.
+Pause/save any active training before redeploying and retain project/volume names.
