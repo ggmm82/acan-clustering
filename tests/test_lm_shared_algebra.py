@@ -27,6 +27,9 @@ class SharedEquationTests(unittest.TestCase):
         logits=-8*distance+1.15*np.log(first.mean(1,keepdims=True)+1e-4)
         expected=np.exp(logits-logits.max(0));expected/=expected.sum(0)
         np.testing.assert_allclose(result['T'],expected,atol=1e-12)
+        from unittest.mock import patch
+        with patch('acan.core.paper_routing.MAX_WORKING_CELLS',12):
+            np.testing.assert_array_equal(net(x)['T'],result['T'])
         np.testing.assert_allclose(result['G'],result['T']@x/result['T'].sum(1,keepdims=True),atol=1e-12)
 
     def test_paper_routing_numpy_gradient_matches_its_objective(self):

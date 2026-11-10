@@ -9,6 +9,7 @@ from .network import _AnalyticalClusterNet, _sigmoid_np, _softmax_axis0_np, HAS_
 from acan.algebra import routing_logits, mass_modulation
 
 PROFILE = 'paper-routing-v1'
+MAX_WORKING_CELLS = 8_000_000
 
 
 class PaperRoutingNumpy(_AnalyticalClusterNet):
@@ -23,7 +24,11 @@ class PaperRoutingNumpy(_AnalyticalClusterNet):
         self.n = n = len(X)
         G = _sigmoid_np(self.matrices['G'])
         relevance, _, _ = self._compute_relevance(G)
-        logits = routing_logits(X[None], G[:,None], relevance[:,None], self.relevance_alpha, self.beta)
+        # Bound the temporary k*n*m array on the CPU Hostinger frontend. Chunking
+        # changes neither each token's distance nor the global stage-one mass.
+        width = max(1, MAX_WORKING_CELLS // max(self.k*self.m, 1))
+        logits = np.concatenate([routing_logits(X[None,start:start+width], G[:,None], relevance[:,None],
+            self.relevance_alpha, self.beta) for start in range(0,n,width)], axis=1)
         first = _softmax_axis0_np(logits)
         mass1 = first.mean(axis=1, keepdims=True)
         T = _softmax_axis0_np(mass_modulation(logits, mass1, self.mass_gamma, np.log))
