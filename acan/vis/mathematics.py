@@ -149,6 +149,20 @@ Le masse esattamente zero sono eliminate dal modello tabulare salvato e maschera
 Ogni figlio della gerarchia viene addestrato con lo stesso nucleo sui suoi record.
 La scelta di approfondire usa la purezza delle etichette nei record di training,
 non la sicurezza delle probabilità apprese dei prototipi.
+Nei nuovi modelli, la previsione somma anche i rami della gerarchia con le loro
+probabilità, conservando la miscela appresa durante il training:
+
+$$
+p_v(y\mid x)=\sum_i T_{v,i}(x)\,p_{v,i}(y\mid x).
+$$
+
+Qui p del concetto è la sua testa categorica se terminale, oppure la previsione
+del figlio. Espandere un concetto con un figlio dalla stessa distribuzione non
+cambia la previsione. Il percorso visualizzato è il percorso completo più
+probabile; la sua probabilità non è una confidenza calibrata della classe.
+La testa categorica si inizializza con log(p), inversa della softmax. I JSON
+precedenti conservano il vecchio comportamento; riaddestrare per usare la
+marginalizzazione, identificata da `hierarchy_readout=conditional-mixture-v1`.
 I layer linguistici sono trasformazioni successive: non sono automaticamente
 l'albero tabulare. Nel generativo il budget CPU del profilo congiunto è 32 token
 per blocco e 8 slot per layer; ogni token esegue un passo del nucleo comune.
@@ -185,7 +199,7 @@ Accuracy e NLL devono essere misurate su dati esclusi dal training.
 una prova di miglioramento dell'LLM.** Le nuove misure riproducibili e il confronto
 linguistico con sola NLL sono documentati in `docs/JOINT-CP.md`.
 
-La nuova proposta ritrova **4 concetti su Gioco**, anche su cinque split controllati. Letter gerarchico completo misura **92,025% su 4.000 righe di test**, rispetto al precedente 91,425%; nel campione GUI scende invece da 90,60% a **89,00%**. I 63 confronti aggiuntivi comprendono Iris, Sonar, Adult minimale, Titanic, Vote, Mushroom e Breast Cancer: esistono anche regressioni, in particolare Breast Cancer. Risultati, costi e ricevute sono in `docs/CP-SELECTION.md`. Per il generativo sono verificate le proprietà meccaniche; la qualità linguistica su modelli preaddestrati resta da dimostrare.
+La proposta conserva **4 concetti su Gioco** sui cinque split controllati. Dopo la correzione della lettura gerarchica e dell'inizializzazione, Letter completo misura **92,70% su 4.000 righe di test**; il campione GUI misura **89,85%** (PR8: 91,425% e 90,60%). Il 95,78% storico resta non recuperato. Adult e Titanic migliorano nella media dei tre split iniziali; Breast Cancer resta debole, Iris e Vote peggiorano e lo split aggiuntivo mostra variabilità. I 63 confronti iniziali e le 35 esecuzioni successive sono documentati, insieme a limiti e ricevute, in `docs/CP-SELECTION.md`. Sono prove diagnostiche sugli stessi file, non una garanzia generale. Per il generativo sono verificate le proprietà meccaniche; la qualità linguistica su modelli preaddestrati resta da dimostrare.
 """
 
 layout = html.Div(dcc.Markdown(TEXT, mathjax=True), className='p-3', style={'maxWidth':'960px','margin':'auto'})

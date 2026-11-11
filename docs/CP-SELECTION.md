@@ -42,8 +42,8 @@ mostrato è quello con maggiore probabilità congiunta; la sua probabilità non 
 una confidenza calibrata della classe. I JSON precedenti conservano il loro
 comportamento grazie al metadato `hierarchy_readout`; riaddestrare per usare la
 correzione. È una correzione dell'adattatore gerarchico, non una nuova CP o un
-secondo modello generativo. La tabella seguente registra la prima proposta;
-i confronti dopo queste correzioni sono in corso.
+secondo modello generativo. La prima tabella registra la proposta iniziale; la sezione successiva confronta
+le correzioni con gli stessi split e con uno split aggiuntivo.
 
 Parametri fissati prima dei confronti: split stratificato 80/20, seed 42/7/21, profondità massima 3, 100 epoche, lr=0,08, batch massimo 300, purezza 0,92 e minimo 12 righe per espandere un ramo. Statistiche, codifica e imputazione vengono apprese sul training. Nessun parametro è scelto in base ai risultati del test. Sono confrontati legacy-v8, il precedente joint della PR8 e la proposta. Tre split ripetuti non equivalgono a tre dataset indipendenti; le medie sono esplorative.
 
@@ -57,7 +57,7 @@ Parametri fissati prima dei confronti: split stratificato 80/20, seed 42/7/21, p
 | mushroom.arff | 88.70% | 100.00% | 100.00% |
 | breast-cancer.arff | 70.69% | 69.54% | 66.67% |
 
-Tutte le 63 esecuzioni conservano le predizioni dopo salvataggio/caricamento e non modificano il modello in inferenza. Adult è il file **minimale da 499 righe**, non il dataset Adult completo. Su Breast Cancer il legacy raggiunge 70,69% predicendo la classe maggioritaria: balanced accuracy 50%; la proposta misura 58,06% balanced, contro 60,09% del joint precedente. Restano regressioni effettive, soprattutto rispetto al joint su Breast Cancer e al legacy su Adult minimale.
+Tutte le 63 esecuzioni conservano le predizioni dopo salvataggio/caricamento. Il vecchio controllo automatico di non mutazione serializzava nuovamente un oggetto non interrogato: quel flag non costituisce una prova. Lo script ora interroga direttamente l’istanza ricaricata; un test separato verifica la gerarchia, le probabilità, i percorsi e l’assenza di mutazioni. Adult è il file **minimale da 499 righe**, non il dataset Adult completo. Su Breast Cancer il legacy raggiunge 70,69% predicendo la classe maggioritaria: balanced accuracy 50%; la proposta misura 58,06% balanced, contro 60,09% del joint precedente. Restano regressioni effettive, soprattutto rispetto al joint su Breast Cancer e al legacy su Adult minimale.
 
 Vote contiene una riga senza attributi osservati. La verifica non la elimina: usa il preprocessing nativo già appreso dal training. È emerso un errore del controllo preliminare della GUI, corretto nella PR. Le ricevute annotano i casi che richiedevano l’API nativa nel codice precedente.
 
@@ -67,7 +67,70 @@ Letter gerarchico, seed42: **92,025%** sulle 4.000 righe di test, contro **91,42
 
 Ricevute aggregate senza righe dei dati: [63 confronti](results/cp-generalization.json), [Letter](results/cp-letter.json). Includono hash dei file e dei sorgenti sperimentali congelati, split, accuratezza bilanciata, macro F1, tempi e conteggi. Le successive modifiche della PR alla GUI, ai controlli di input, ai metadati e al costo CP del solo decoding non cambiano la formula tabulare misurata.
 
+## Verifica delle regressioni dopo le correzioni
+
+Il commit `46b88ce` corregge l'inizializzazione della softmax e conserva la miscela
+probabilistica lungo i rami. La CP*, lambda, il criterio per le masse e i parametri
+di training restano gli stessi per tutti i file. Medie sugli stessi tre split:
+
+| Dataset | CP* iniziale | Dopo le correzioni |
+|---|---:|---:|
+| iris.arff | 96.67% | 95.56% |
+| sonar.xlsx | 84.13% | 84.13% |
+| adultMinimal.xlsx | 69.67% | 72.67% |
+| titanic.csv | 76.16% | 81.19% |
+| vote.arff | 93.49% | 92.34% |
+| mushroom.arff | 100.00% | 100.00% |
+| breast-cancer.arff | 66.67% | 67.24% |
+
+Letter completo: **92,70%**, 3.703 prototipi e 62 nodi,
+contro 92,025%, 4.339 prototipi e 68 nodi della prima proposta. Letter nel campione
+web 10.000→8.000/2.000: **89,85%**, 1.701 prototipi,
+contro 89,00% della prima proposta e 90,60% della PR8. Il 95,78% storico resta
+non recuperato. Gioco conserva quattro concetti e 100% sui cinque split; ripetuta
+anche la prova Excel → training → quattro gruppi → salvataggio nel browser.
+
+Una verifica diagnostica sui medesimi modelli già addestrati, cambiando soltanto
+la lettura della gerarchia, porta Adult da 69,67% a 73,67% e la NLL media da 2,453
+a 0,614; Letter web da 89,00% a 89,80%, NLL da 1,109 a 0,333. Questo isola
+l'incoerenza fra miscela appresa e scelta rigida dei rami. Non è il risultato
+del nuovo training completo, che include anche l'inizializzazione corretta.
+
+Le correzioni rispondono a regressioni viste su questi test: riusarli serve alla
+diagnosi, non costituisce una verifica finale indipendente. Dopo aver fissato
+le correzioni è stato aggiunto seed99, sugli stessi file e con gli stessi parametri:
+
+| Dataset | Prima, seed99 | Dopo, seed99 |
+|---|---:|---:|
+| iris.arff | 96.67% | 96.67% |
+| sonar.xlsx | 78.57% | 73.81% |
+| adultMinimal.xlsx | 69.00% | 80.00% |
+| titanic.csv | 79.33% | 78.21% |
+| vote.arff | 93.10% | 93.10% |
+| mushroom.arff | 100.00% | 100.00% |
+| breast-cancer.arff | 68.97% | 68.97% |
+
+Adult migliora anche qui; Titanic e Sonar non confermano il miglioramento.
+Breast Cancer mantiene la stessa accuracy, ma la balanced accuracy scende da
+62,55% a 60,83%. Sui primi tre split la balanced accuracy di Breast Cancer passa
+da 58,06% a 58.46%, ancora sotto 60,09% della PR8.
+Iris e Vote perdono parte del vantaggio della prima proposta. Questi limiti
+restano aperti: le correzioni non dimostrano una superiorità universale, né una
+qualità linguistica migliore. Nessuna soglia o numero di concetti è stato scelto
+in funzione del singolo dataset.
+
+[35 esecuzioni aggiuntive, Letter e diagnosi della gerarchia](results/cp-regressions.json).
+126 test locali passati; controlli browser delle formule su 550/1440 px e di
+Gioco superati. La CI del commit con il codice `46b88ce` ha superato anche i
+controlli generativi, Docker e la pubblicazione della build verificata.
+Le ricevute storiche distinguono ora il solo roundtrip GUI dal controllo
+sull'istanza ricaricata: `null` indica che la non mutazione non era verificata
+direttamente in quella misura. Il nuovo controllo e il test della gerarchia
+interrogano l'oggetto ricaricato e ne confrontano lo stato prima/dopo.
+
 ## Efficienza e portata
+
+La marginalizzazione tabulare valuta tutti i rami; usa routing vettorizzato e blocchi di 256 osservazioni, senza tagliare probabilità piccole con soglie. Il costo cresce con i nodi della gerarchia. Le nuove prove sono state eseguite in concorrenza: i tempi grezzi nelle ricevute non sono un confronto controllato di velocità.
 
 Il training è più costoso: CP* aggiunge un confronto O(k²d), oltre al routing O(nkd), alle ricerche di passo e ai controlli strutturali. Non si rivendica un miglioramento generale del tempo di training. La riduzione dei prototipi salvati è misurata. In decoding linguistico il confronto fra prototipi per la loss viene saltato, con output identico verificato: costo per token O(kd+wd) e memoria dello stato indipendente dalla lunghezza del contesto, a budget k/w fissati.
 
@@ -83,5 +146,7 @@ python scripts/check_lm.py --output reports/lm-audit.json
 python -m scripts.evaluate_joint_cp --letter letter.arff --depth 3 --output reports/letter.json
 python scripts/verify_cp_generalization.py --baseline /path/to/PR8-checkout --output reports/cp-comparison.json titanic.csv adultMinimal.xlsx sonar.xlsx vote.arff mushroom.arff iris.arff breast-cancer.arff
 ```
+
+Per il confronto prima/dopo le correzioni, usare il checkout `fb62fb4` come `--baseline` e ripetere con `--seeds 42 7 21` oppure `--seeds 99`; il record `joint` di quel checkout rappresenta la prima proposta CP*, oltre al controllo legacy.
 
 Il confronto usa i profili storici soltanto come controlli. Le prove web devono verificare anche regressioni e tempi, non soltanto il numero di gruppi.
