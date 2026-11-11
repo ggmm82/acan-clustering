@@ -199,7 +199,7 @@ complete, non etichetta automaticamente i concetti e non applica una loss CP
 aggiuntiva. Il trainer legacy resta invariato: su quei progetti è disponibile
 l'ispezione in generazione, non la cattura del prossimo passo di training.
 
-### Routing CP comune al tabulare (PR8)
+### Solver CP precedente (`cp-routing-v1`, PR8)
 
 Nei nuovi progetti la GUI permette `cp-routing-v1`: la stessa energia e lo stesso
 solver di `Model → Routing ACAN → CP diretta`, con backend Torch differenziabile
@@ -219,5 +219,36 @@ La scheda **Matematica** dell'app spiega formule, coefficienti, limiti e differe
 fra CP e NLL. La diagnosi Letter (`LETTER-DIAGNOSIS.md`) mostra che il nuovo routing
 non risolve automaticamente la classificazione reale.
 
-Il gate LM richiede 36 test nominati, inclusa la ripresa CP da checkpoint con pesi
+Il gate LM richiede almeno 40 test e controlli nominati, inclusa la ripresa CP da checkpoint con pesi
 bit per bit uguali al training non interrotto sul modello locale di prova.
+
+
+### Modello congiunto (`cp-joint-v1`)
+
+Il nuovo profilo usa `concept_step` e `concept_assignments` di `acan/algebra.py`,
+gli stessi operatori del modello tabulare supervisionato. Rilevanza root-shift
+limitata, routing a distanza, conteggi/somme, centroide e CP normalizzata sono
+un unico nucleo matematico; il precedente solver a tre passi resta disponibile
+con il suo identificatore originale. Il profilo congiunto esegue un passo per token.
+
+Il trainer aggiunge esplicitamente alla NLL next-token
+`cp_weight × media(layer ACAN, batch, posizioni predittive)(1 − CP/√d)`.
+La CP viene calcolata nello stesso forward che produce la NLL e mantiene il grafo
+PyTorch; non è una metrica staccata. La rilevanza viene limitata a [0,1] anche
+quando un prototipo esce dall'intervallo di un prefisso corto. L'ultima posizione
+del blocco è esclusa perché non possiede un target next-token nel blocco.
+Con teacher KL abilitata si aggiunge la CP alla combinazione NLL/KL esistente.
+Validazione, early stopping e conservazione del migliore usano ancora la NLL.
+
+La GUI propone `cp_weight=0.1`, configurabile fino a 1 e azzerabile per il controllo
+con sola NLL. L'API mantiene 0 come default per i chiamanti precedenti. Il peso,
+il profilo, le metriche separate e l'obiettivo totale sono registrati nella
+configurazione/checkpoint ed esportati; non è possibile cambiare la loss di un
+progetto già avviato mediante la semplice ripresa. Il profilo resta vincolato a
+32 token e 8 slot su CPU. Scegliere il nuovo nucleo richiede un nuovo progetto.
+
+I controlli obbligatori includono parità dei gradienti analitici NumPy con autograd,
+gradienti CP non nulli, causalità anche della CP, equivalenza streaming, entrambi
+i graft e ripresa esatta con il termine CP e gradient checkpointing attivi.
+La prova con λ=0/0,1 usa pesi iniziali e blocchi identici per ogni coppia;
+i risultati non dimostrano qualità linguistica generale. Vedi [JOINT-CP.md](JOINT-CP.md).

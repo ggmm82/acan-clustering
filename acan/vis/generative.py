@@ -82,9 +82,10 @@ layout = dbc.Container([
                      ('Accumulo gradienti','lm-accum',8,1,256),('Learning rate','lm-lr',.0001,.0000001,.01),
                      ('Slot','lm-slots',16,2,64),('Finestra locale','lm-window',16,1,128),
                      ('Rank LoRA','lm-rank',8,2,64),('Checkpoint ogni N passi','lm-save',100,1,10000),
-                     ('Controlli senza miglioramento prima della pausa (0: disattiva)','lm-patience',3,0,20),('Miglioramento minimo NLL','lm-min-delta',.01,0,1)]]),
+                     ('Controlli senza miglioramento prima della pausa (0: disattiva)','lm-patience',3,0,20),('Miglioramento minimo NLL','lm-min-delta',.01,0,1),
+                     ('Peso CP sperimentale (0: sola NLL; solo CP diretta)','lm-cp-weight',.1,0,1)]]),
         dbc.Label('Attenzione ACAN nei nuovi progetti'),
-        dcc.Dropdown(id='lm-routing',value='cp-routing-v1',clearable=False,options=[{'label':'CP diretta · routing comune al grafo (CPU più lento)','value':'cp-routing-v1'},{'label':'Routing causale precedente · confronto','value':'shared-algebra-v1'}]),
+        dcc.Dropdown(id='lm-routing',value='cp-joint-v1',clearable=False,options=[{'label':'Modello congiunto NLL + CP · comune al tabulare','value':'cp-joint-v1'},{'label':'CP diretta precedente · confronto','value':'cp-routing-v1'},{'label':'Routing causale precedente · confronto','value':'shared-algebra-v1'}]),
         dcc.Dropdown(id='lm-fraction',value=.5,clearable=False,options=[{'label':'50% dei livelli · ibrido predefinito','value':.5},{'label':'100% dei livelli · sperimentale; su CPU massimo 64 token','value':1.}]),
         dbc.Checkbox(id='lm-distill', value=False, label='Distillazione: imita anche il modello originale (più memoria e tempo, facoltativa su CPU)'),
         html.P('Nuovi progetti: documenti separati in training/validazione/test, duplicati esatti rimossi, miglior checkpoint conservato e pausa automatica dopo tre controlli senza miglioramenti sufficienti. Il progetto legacy conserva il metodo originale.', className='small text-muted'),
@@ -302,7 +303,7 @@ def register(app):
     @app.callback(Output('lm-length','value'),Output('lm-slots','value'),Input('lm-routing','value'),
                   State('lm-length','value'),State('lm-slots','value'))
     def routing_budget(profile,length,slots):
-        if profile=='cp-routing-v1':
+        if profile in ('cp-routing-v1','cp-joint-v1'):
             return min(length or 32,32),min(slots or 8,8)
         return dash.no_update,dash.no_update
 
@@ -357,14 +358,15 @@ def register(app):
                   State('lm-base','value'), State('lm-name','value'), State('lm-steps','value'),
                   State('lm-length','value'), State('lm-batch','value'), State('lm-accum','value'),
                   State('lm-lr','value'), State('lm-slots','value'), State('lm-window','value'),
-                  State('lm-rank','value'), State('lm-save','value'), State('lm-device','value'), State('lm-distill','value'), State('lm-fraction','value'), State('lm-patience','value'), State('lm-min-delta','value'), State('lm-routing','value'), prevent_initial_call=True)
-    def control(start, pause, resume, workspace, job, corpus, base, name, steps, length, batch, accumulation, lr, slots, window, rank, save_steps, device, distill, fraction, patience, min_delta, routing):
+                  State('lm-rank','value'), State('lm-save','value'), State('lm-device','value'), State('lm-distill','value'), State('lm-fraction','value'), State('lm-patience','value'), State('lm-min-delta','value'), State('lm-routing','value'), State('lm-cp-weight','value'), prevent_initial_call=True)
+    def control(start, pause, resume, workspace, job, corpus, base, name, steps, length, batch, accumulation, lr, slots, window, rank, save_steps, device, distill, fraction, patience, min_delta, routing, cp_weight):
         try:
             action = dash.ctx.triggered_id
             if action == 'lm-start':
                 config = dict(corpus_id=corpus, base_model=base, name=name, total_steps=steps, sequence_length=length,
                               batch_size=batch, accumulation=accumulation, learning_rate=lr, slots=slots, window=window,
-                              lora_rank=rank, save_steps=save_steps, device=device, protocol='controlled-v1', routing_profile=routing, distillation_weight=.5 if distill else 0., graft_fraction=fraction, early_stop_patience=patience, early_stop_min_delta=min_delta)
+                              lora_rank=rank, save_steps=save_steps, device=device, protocol='controlled-v1', routing_profile=routing, distillation_weight=.5 if distill else 0., graft_fraction=fraction, early_stop_patience=patience, early_stop_min_delta=min_delta,
+                              cp_weight=cp_weight if routing in ('cp-routing-v1','cp-joint-v1') else 0.)
                 job = backend(workspace, '/jobs', 'POST', config)['id']
                 backend(workspace, f'/jobs/{job}/start', 'POST')
                 return job, 'Training avviato nel worker; puoi chiudere la pagina.'
@@ -396,7 +398,7 @@ def register(app):
             figure.add_hline(y=baseline, line_dash='dash', line_color='green', annotation_text='Modello originale sullo stesso corpus')
         text = f"{job['status']} · passo {metrics.get('step',0)}/{job['config']['total_steps']} · token elaborati {metrics.get('tokens_trained',0):,} · ultimo checkpoint {job['checkpoint'] or 'ancora nessuno'}"
         detail = [html.P(text), html.P(job['error'], className='text-danger') if job['error'] else None]
-        for key,label in [('training_nll','NLL training'),('validation_nll','NLL validazione'),('validation_perplexity','Perplessità validazione'),
+        for key,label in [('training_nll','NLL training'),('training_objective','Obiettivo training'),('training_cp_penalty','Penalità CP media'),('cp_weight','Peso CP'),('validation_nll','NLL validazione'),('validation_perplexity','Perplessità validazione'),
                           ('baseline_nll','NLL base prima del graft'),('tokens_per_second','Token/s misurati'),('trainable_parameters','Parametri trainabili'),('total_parameters','Parametri totali del modello innestato'),('process_peak_rss_kib','Picco RAM del processo di training (KiB)')]:
             if metrics.get(key) is not None:
                 detail.append(html.P(f"{label}: {metrics[key]:,.5g}"))

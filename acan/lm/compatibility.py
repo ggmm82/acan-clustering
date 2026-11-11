@@ -9,12 +9,16 @@ LEGACY_TRAINING = (
     '00a1973c7bc31c81fa711ccc76b53bdde0e28bd6e6f70cb5a2aa3f814ca9729e',
     '104c751409871a0bed4416c32a764f9e02d30fd802d708e07a4608d5730139e2',
 )
+PRE_JOINT_TRAINING = '8acbb6907ceb994e7963a9008b7ada33840a00b2c83f130d7d4e43baef336282'
+PRE_JOINT_INFERENCE = 'cbbb435f05f9f757587b483918039b802dc79ddd4c26d7d4095ec6d9ba68023a'
 
 
 def training_identity(values, config, checkpoint_root, selected, current):
     from pathlib import Path
     from . import checkpoints
     candidates = [current]
+    if 'cp_weight' not in config and config.get('routing_profile') in ('shared-algebra-v1','legacy-causal-v1','cp-routing-v1'):
+        candidates.append(PRE_JOINT_TRAINING)
     if 'routing_profile' not in config:
         candidates.extend(LEGACY_TRAINING)
     if config.get('routing_profile') in ('shared-algebra-v1','legacy-causal-v1'):

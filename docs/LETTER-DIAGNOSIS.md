@@ -1,5 +1,14 @@
 # Letter: diagnosi misurata nella PR8
 
+**Aggiornamento:** la ricostruzione supervisionata `cp-joint-v1` sul file
+ricaricato misura 86,38% (16.000/4.000) e 87,20% (protocollo GUI 8.000/2.000).
+Queste misure e il codice riproducibile sono in [JOINT-CP.md](JOINT-CP.md).
+Con profondità massima 3: 91,43% sul file completo (65 nodi, 2 livelli effettivi) e
+90,60% nel protocollo GUI (50 nodi, 2 livelli effettivi). Il 95,78% citato
+prima della sospensione era sul multilivello gerarchico e non è stato recuperato
+o riprodotto dalla ricostruzione attuale.
+Il resto della pagina conserva la diagnosi dei profili precedenti.
+
 File utente: 20.000 righe, 16 attributi numerici, target `class` con 26 lettere.
 Il confronto usa tutte le righe: 16.000 training, 4.000 validazione, split
 stratificato seed 42, preprocessing addestrato soltanto sul training. La GUI

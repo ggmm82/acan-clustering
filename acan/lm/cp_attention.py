@@ -31,25 +31,50 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
         cp_root=cp_sums/positions
         cp_den=.5*(cp_max-cp_min)+(cp_root-.5*(cp_min+cp_max)).abs()
         all_assignments = []
+        all_cp = []
+        all_relevance = []
         saved_content = []
         for batch_index in range(b):
             count = previous['mass'][batch_index,:,None] if previous else x.new_zeros(self.k,1)
             content = previous['cp_x'][batch_index] if previous else x.new_zeros(self.k,d)
             pieces = []
+            prefix_cp = []
+            prefix_relevance = []
             for index in range(length):
                 den = cp_den[batch_index,index:index+1]
                 valid = den>1e-8
                 state = dict(anchors=self.G.sigmoid(),omega=self.omega.abs()[None]*valid,
                     root=cp_root[batch_index,index:index+1],den=torch.where(valid,den,torch.ones_like(den)))
-                solved = solve(routing_x[batch_index,index:index+1],state,steps=3,
-                    base_counts=count,base_sums=content)
+                if getattr(self,'joint_model',False):
+                    from acan.algebra import concept_step
+                    solved = concept_step(routing_x[batch_index,index:index+1],
+                        state['anchors'],state['root'],state['den'],state['omega'],self.beta,
+                        slice(None),lambda value,floor: value.clamp_min(floor),torch.clamp,
+                        lambda scores: scores.softmax(0),base_counts=count,base_sums=content)
+                else:
+                    solved = solve(routing_x[batch_index,index:index+1],state,steps=3,
+                        base_counts=count,base_sums=content)
                 assignment = solved['T'][:,0]
                 pieces.append(assignment)
+                if getattr(self,'joint_model',False):
+                    prefix_relevance.append(solved['R'])
+                if self.training and torch.is_grad_enabled():
+                    from acan.algebra import normalized_cluster_probability
+                    # Anchors may lie outside a short prefix's observed range.
+                    # Cap relevance to keep CP/sqrt(d) bounded in [0,1].
+                    prefix_cp.append(solved['normalized_cp'] if 'normalized_cp' in solved else
+                        normalized_cluster_probability(solved['F'].T, solved['R'].clamp(0, 1),
+                            lambda value, floor: value.clamp_min(floor)))
                 count = count+assignment[:,None]
                 content = content+assignment[:,None]*routing_x[batch_index,index]
             all_assignments.append(torch.stack(pieces))
+            if prefix_cp:
+                all_cp.append(torch.stack(prefix_cp))
+            if prefix_relevance:
+                all_relevance.append(torch.stack(prefix_relevance))
             saved_content.append(content)
         assignments = torch.stack(all_assignments)
+        self.last_cp = torch.stack(all_cp) if all_cp else None
         mass1 = assignments.cumsum(1)+(previous['mass1'][:,None] if previous else 0)
         mass = assignments.cumsum(1) + (previous['mass'][:, None] if previous else 0)
         active = mass / positions >= self.pruning
@@ -76,6 +101,8 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
         std = (weighted_x2 / (mass[..., None] + 1e-6) - centroid.square()).clamp_min(0).add(1e-6).sqrt()
         tightness = (1 - 1.5 * std).clamp(0, 1)
         final_relevance = .55 * r_shift + .45 * tightness
+        if getattr(self,'joint_model',False):
+            final_relevance = torch.stack(all_relevance)
         gate = (final_relevance * active[..., None]).sum(2) / active.sum(-1, keepdim=True)
         context = (assignments[..., None] * active[..., None] * slot_states).sum(2) * gate
         old_keys = previous['keys'] if previous else key[:, :0]
@@ -106,3 +133,8 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
                               relevance=final_relevance[:, -1].detach().clone(), masses=mass[:, -1].detach().clone(),
                               assignments=assignments[:, -1].detach().clone())
         return output
+
+
+class CPJointAttention(CPUnifiedAttention):
+    """The same learned concept model as the joint tabular adapter."""
+    joint_model = True

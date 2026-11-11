@@ -12,5 +12,11 @@ class TrainingSnapshotTests(unittest.TestCase):
         for profile,device in profiles:
             learner=AlgebraicClusterLearner(frame,batch_size=20,device=device,routing_profile=profile)
             model=learner.nLearn(max_epochs=8,min_delta=0)
-            self.assertAlmostEqual(model.cp,max(r['cp'] for r in learner.history),places=10)
-            self.assertAlmostEqual(float(learner.model_net(learner.X)['cp']),model.cp,places=10)
+            # Restored float32 parameters can change the final reduction by one
+            # ULP. NumPy uses float64; neither check should demand float64
+            # precision of a float32 backend.
+            tolerance = 5e-7 if learner._use_torch else 1e-11
+            np.testing.assert_allclose(model.cp,max(r['cp'] for r in learner.history),rtol=tolerance,atol=1e-12)
+            value=learner.model_net(learner.X)['cp']
+            value=float(value.detach()) if learner._use_torch else float(value)
+            np.testing.assert_allclose(value,model.cp,rtol=tolerance,atol=1e-12)

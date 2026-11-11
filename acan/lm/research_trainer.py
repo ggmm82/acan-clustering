@@ -17,7 +17,7 @@ from .trainer import BASE_MODELS, resolve_base, validation_loss, wsd_lr
 def contract():
     root=Path(__file__).parent
     return hashlib.sha256(b''.join((root/name).read_bytes() for name in
-        ('research_trainer.py','research_data.py','distillation.py','research_options.py','research_model.py','full_attention.py','shared_attention.py','compatibility.py'))+(root.parent/'algebra.py').read_bytes()+(root/'cp_attention.py').read_bytes()+(root.parent/'core'/'variational.py').read_bytes()).hexdigest()
+        ('research_trainer.py','research_data.py','distillation.py','cp_objective.py','research_options.py','research_model.py','full_attention.py','shared_attention.py','compatibility.py'))+(root.parent/'algebra.py').read_bytes()+(root/'cp_attention.py').read_bytes()+(root.parent/'core'/'variational.py').read_bytes()).hexdigest()
 
 
 def run_training(root, identifier, stop_event=None):
@@ -101,7 +101,7 @@ def run_training(root, identifier, stop_event=None):
                 for group in optimizer.param_groups:
                     group['lr'] = lr
                 optimizer.zero_grad(set_to_none=True)
-                loss_sum, actual_tokens, objective_sum, kl_sum = 0., 0, 0., 0.
+                loss_sum, actual_tokens, objective_sum, kl_sum, cp_sum = 0., 0, 0., 0., 0.
                 from .inspection import training_probe
                 with training_probe(store, job, model, state['step']+1):
                     for _ in range(config['accumulation']):
@@ -115,11 +115,15 @@ def run_training(root, identifier, stop_event=None):
                                 teacher_logits=teacher(batch,use_cache=False).logits
                             training_objective,divergence=objective(output.logits,teacher_logits,loss,
                                 config['distillation_weight'],config['distillation_temperature'])
+                        from .cp_objective import regularize, clear
+                        training_objective,cp_penalty=regularize(model,training_objective,config.get('cp_weight',0.))
                         if not torch.isfinite(loss):
                             raise ValueError('Loss non finita: conservato l’ultimo checkpoint valido.')
                         if not torch.isfinite(training_objective):
                             raise ValueError('Obiettivo di distillazione non finito.')
                         (training_objective / config['accumulation']).backward()
+                        clear(model)
+                        cp_sum+=float(cp_penalty.detach())/config['accumulation']
                         objective_sum+=float(training_objective.detach())/config['accumulation']
                         kl_sum+=float(divergence.detach())/config['accumulation'] if divergence is not None else 0.
                         loss_sum += float(loss.detach()) / config['accumulation']
@@ -137,7 +141,8 @@ def run_training(root, identifier, stop_event=None):
                 state['gradient_norm']=float(norm)
                 optimizer.step(); optimizer.zero_grad(set_to_none=True)
                 state.update(step=state['step']+1, tokens_trained=state['tokens_trained']+actual_tokens,
-                             training_nll=loss_sum, training_objective=objective_sum, teacher_kl=kl_sum, learning_rate=lr)
+                             training_nll=loss_sum, training_objective=objective_sum, teacher_kl=kl_sum,
+                             training_cp_penalty=cp_sum, cp_weight=config.get('cp_weight',0.),learning_rate=lr)
                 state['tokens_per_second'] = (state['tokens_trained'] - initial_tokens) / max(time.monotonic()-started, 1e-6)
                 state['gpu_peak_bytes'] = torch.cuda.max_memory_allocated() if device == 'cuda' else None
                 save_due = state['step'] % config['save_steps'] == 0 or time.monotonic()-last_save >= config['save_seconds']

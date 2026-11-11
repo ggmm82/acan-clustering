@@ -1,7 +1,11 @@
 """Named CPU checks required before publishing controlled LM tooling."""
 PROTOCOL='controlled-v1'
-MIN_TESTS=36
+MIN_TESTS=40
 REQUIRED_TESTS={
+    'test_joint_core_numpy_torch_values_and_gradients_agree',
+    'test_joint_lm_cp_is_causal_differentiable_and_streaming_equivalent',
+    'test_joint_cp_mean_is_independent_of_layer_and_batch_replication',
+    'test_joint_grafted_model_uses_same_core_at_both_fractions',
     'test_cp_routing_resume_preserves_exact_parameters',
     'test_numpy_torch_router_parity_and_differentiability',
     'test_prefix_streaming_and_finite_training_gradients',
