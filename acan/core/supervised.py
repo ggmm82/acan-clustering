@@ -40,7 +40,8 @@ def objective(params, x, groups, state, weight=WEIGHT, gradients=True):
     def softmax(scores):
         t = np.exp(scores-scores.max(0, keepdims=True))
         return t/t.sum(0, keepdims=True)
-    shared = concept_step(x,a,root,den,omega,beta,features,np.maximum,np.clip,softmax)
+    shared = concept_step(x,a,root,den,omega,beta,features,np.maximum,np.clip,softmax,
+                          log_multiplicity=state.get('log_multiplicity'))
     r0,w,scores,t = (shared[key] for key in ('routing_relevance','weights','scores','T'))
     h = r0[:, features]**2 + 1e-4
     ax, xx = a[:, features], x[:, features]
@@ -86,6 +87,59 @@ def objective(params, x, groups, state, weight=WEIGHT, gradients=True):
         dg[:, indices] = p*(da[:, indices]-(da[:, indices]*p).sum(1, keepdims=True))
     result['gradients'] = dict(G=dg, log_beta=np.asarray((dz*scores).sum())*((params['log_beta']>0)&(params['log_beta']<9)))
     return result
+
+
+def consolidate(params, x, groups, state):
+    """Coalesce equivalent concepts in the learned CP geometry, never set k.
+
+    Complete-link groups avoid merging a chain of distinct concepts. Check both
+    the predictive distribution and CP on all training rows before accepting.
+    Nothing is removed solely because its hard assignment count is zero.
+    """
+    before = objective(params, x, groups, state, gradients=False)
+    a = before['G']; k = len(a)
+    relevance = np.clip(np.abs(a-state['root'])/state['den']*state['omega'],0,1)
+    f = state['features']; observed = a[:,f]
+    h = relevance[:,f]**2+1e-4; w = h/h.sum(1,keepdims=True)
+    distance = ((observed[:,None]-observed[None,:])**2*w[:,None]).sum(2)
+    equivalent = np.maximum(distance,distance.T) <= 1e-6
+    equivalent &= np.max(np.abs(relevance[:,None]-relevance[None,:]),axis=2) <= 1e-3
+    for indices in groups:
+        target = a[:,indices]
+        equivalent &= np.max(np.abs(target[:,None]-target[None,:]),axis=2) <= 1e-4
+    partitions = []
+    for index in range(k):
+        for members in partitions:
+            if equivalent[index,members].all():
+                members.append(index)
+                break
+        else:
+            partitions.append([index])
+    if len(partitions) == k:
+        return params, state, before, False
+    multiplicity = np.exp(state.get('log_multiplicity',np.zeros((k,1)))).reshape(-1)
+    merged = np.stack([np.average(a[members],axis=0,weights=multiplicity[members])
+                       for members in partitions])
+    scaled = np.divide(merged-state['lo'],state['span'],out=np.full_like(merged,.5),
+                       where=state['span']>1e-8).clip(1e-12,1-1e-12)
+    candidate = dict(G=np.log(scaled/(1-scaled)),log_beta=params['log_beta'].copy())
+    for indices in groups:
+        candidate['G'][:,indices] = np.log(merged[:,indices].clip(1e-12))
+    candidate_state = dict(state,log_multiplicity=np.log(
+        np.array([multiplicity[members].sum() for members in partitions])[:,None]))
+    after = objective(candidate,x,groups,candidate_state,gradients=False)
+    # The comparison uses training only. Keep the original parameters whenever
+    # equivalence is not demonstrated, regardless of the proposed group count.
+    accepted = (after['nll'] <= before['nll']+1e-6 and
+                after['normalized_cp'] >= before['normalized_cp']-1e-6)
+    for indices in groups:
+        old_prediction = before['T'].T@a[:,indices]
+        new_prediction = after['T'].T@after['G'][:,indices]
+        accepted &= bool(np.array_equal(old_prediction.argmax(1),new_prediction.argmax(1)))
+        accepted &= bool(np.max(np.abs(old_prediction-new_prediction)) <= 1e-4)
+    if not accepted:
+        return params,state,before,False
+    return candidate,candidate_state,after,True
 
 
 def train(learner, epochs):
@@ -136,7 +190,9 @@ def train(learner, epochs):
             cp_weight=WEIGHT,k_active=int((result['T'].sum(1)>1e-6).sum())))
         if result['loss'] < best_loss:
             best_loss = result['loss']; best = {k:v.copy() for k,v in params.items()}
-    result = objective(best,x,groups,state,gradients=False)
+    initial_k = learner.k
+    best,state,result,consolidated = consolidate(best,x,groups,state)
+    learner.k = len(best['G'])
     # Persist only a bounded visualization sample; frequencies/CP use all training rows.
     sample = learner.NormDataset
     view = objective(best,sample,groups,state,gradients=False)
@@ -152,6 +208,9 @@ def train(learner, epochs):
         beta=float(np.exp(np.clip(best['log_beta'],0,9))),features=np.flatnonzero(features).tolist(),
         routing_relevance=np.clip(np.abs(anchors-state['root'])/state['den']*state['omega'],0,1).tolist(),
         training_rows=len(x),training_nll=result['nll'],training_objective=result['loss'])
+    learner.variational_state.update(initial_prototypes=initial_k,consolidated=consolidated)
+    if 'log_multiplicity' in state:
+        learner.variational_state['log_multiplicity'] = state['log_multiplicity'].tolist()
     return learner.setModel()
 
 
@@ -170,7 +229,8 @@ def predict(model, row, cix):
             value = np.exp(scores-scores.max(axis=0,keepdims=True))
             return value/value.sum(axis=0,keepdims=True)
         weights,_,_ = concept_assignments(np.asarray(row).reshape(1,-1)[:,positions],a,r,
-            state['beta'],slice(None),softmax)
+            state['beta'],slice(None),softmax,
+            np.asarray(state['log_multiplicity']) if 'log_multiplicity' in state else None)
         weights = weights[:,0]
     weights /= weights.sum()
     best = int(weights.argmax())

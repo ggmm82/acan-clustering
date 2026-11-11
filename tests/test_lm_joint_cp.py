@@ -9,6 +9,34 @@ LM=all(importlib.util.find_spec(name) for name in ('torch','transformers','peft'
 
 @unittest.skipUnless(LM,'LM dependencies required')
 class JointCPTests(unittest.TestCase):
+    def test_coalescing_equal_slots_preserves_prefix_cp_readout_and_gradients(self):
+        import torch
+        from acan.algebra import concept_step
+        torch.set_num_threads(1)
+        x=torch.tensor([[.1,.8],[.7,.3],[.4,.6]],dtype=torch.float64)
+        anchors=torch.tensor([[.2,.7],[.8,.1]],dtype=torch.float64,requires_grad=True)
+        copies=torch.tensor([0,0,1,1,1])
+        def run(a,log_multiplicity=None):
+            count=sums=None; readout=[]; cps=[]
+            for t in range(len(x)):
+                prefix=x[:t+1]; root=prefix.mean(0,keepdim=True)
+                lo,hi=prefix.amin(0,keepdim=True),prefix.amax(0,keepdim=True)
+                den=(hi-lo)/2+(root-(hi+lo)/2).abs()
+                result=concept_step(x[t:t+1],a,root,den.clamp_min(1e-6),
+                    torch.ones_like(root),8.,slice(None),lambda v,f:v.clamp_min(f),
+                    torch.clamp,lambda v:v.softmax(0),base_counts=count,base_sums=sums,
+                    log_multiplicity=log_multiplicity)
+                count,sums=result['C'],result['sums']
+                readout.append(result['T'].T@a); cps.append(result['normalized_cp'])
+            return torch.cat(readout),torch.stack(cps)
+        expanded,cp_expanded=run(anchors[copies])
+        compact,cp_compact=run(anchors,torch.tensor([[2.],[3.]],dtype=x.dtype).log())
+        torch.testing.assert_close(expanded,compact,atol=1e-12,rtol=1e-12)
+        torch.testing.assert_close(cp_expanded,cp_compact,atol=1e-12,rtol=1e-12)
+        grad_expanded=torch.autograd.grad(expanded.sum()+cp_expanded.sum(),anchors)[0]
+        grad_compact=torch.autograd.grad(compact.sum()+cp_compact.sum(),anchors)[0]
+        torch.testing.assert_close(grad_expanded,grad_compact,atol=1e-12,rtol=1e-12)
+
     def test_joint_core_numpy_torch_values_and_gradients_agree(self):
         import torch
         from acan.algebra import concept_step,prediction_cp_objective
@@ -18,13 +46,15 @@ class JointCPTests(unittest.TestCase):
         x=np.column_stack([rng.uniform(.1,.9,(7,3)),np.eye(2)[[0,1,0,1,1,0,1]]])
         params=dict(G=rng.normal(size=(3,5)),log_beta=np.asarray(3.))
         state=dict(features=np.array([1,1,1,0,0],bool),root=x.mean(0,keepdims=True),den=np.ones((1,5))*.5,
-                   omega=np.ones((1,5)),lo=np.zeros((1,5)),span=np.ones((1,5)))
+                   omega=np.ones((1,5)),lo=np.zeros((1,5)),span=np.ones((1,5)),
+                   log_multiplicity=np.log(np.array([[1.],[2.],[3.]])))
         expected=objective(params,x,[[3,4]],state)
         g=torch.tensor(params['G'],requires_grad=True)
         beta=torch.tensor(params['log_beta'],requires_grad=True)
         anchors=torch.cat((g[:,:3].sigmoid(),g[:,3:].softmax(1)),1)
         actual=concept_step(torch.tensor(x),anchors,torch.tensor(state['root']),torch.tensor(state['den']),
-            torch.tensor(state['omega']),beta.exp(),state['features'],lambda v,f:v.clamp_min(f),torch.clamp,lambda v:v.softmax(0))
+            torch.tensor(state['omega']),beta.exp(),state['features'],lambda v,f:v.clamp_min(f),torch.clamp,lambda v:v.softmax(0),
+            log_multiplicity=torch.tensor(state['log_multiplicity']))
         for key in ('T','R','F','normalized_cp'):
             np.testing.assert_allclose(expected[key],actual[key].detach(),atol=1e-12,rtol=1e-12)
         prediction=actual['T'].T@anchors[:,3:]

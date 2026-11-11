@@ -6,6 +6,33 @@ from acan.core.supervised import objective
 
 
 class SupervisedCPTests(unittest.TestCase):
+    def test_joint_discovers_four_interactions_and_ignores_new_dates(self):
+        from acan.vis.training import train_native, graph_stats
+        from acan.vis.inference import infer
+        rng = np.random.default_rng(12)
+        def examples(repeats):
+            a,b = np.tile(np.array([[0,0],[0,1],[1,0],[1,1]]),(repeats,1)).T
+            return pd.DataFrame(dict(Tempo=np.where(a,'Sole','Piove'),
+                Luogo=np.where(b,'Spiazzale','Palazzetto'),
+                Giorno=rng.integers(1,29,len(a)),Mese=rng.integers(1,13,len(a)),
+                Anno=rng.integers(1980,2010,len(a)),Gioco=np.where(a==b,'SI','NO')))
+        train,held = examples(25),examples(30)
+        options=dict(lr=.08,tau=.2,alpha=.5,device='numpy',batch_size=300,max_depth=3,
+                     max_epochs=100,min_samples_split=12,similarity_threshold=.92,
+                     routing_profile='cp-joint-v1')
+        graph=train_native(train,['Gioco'],options)
+        self.assertEqual(graph_stats(graph),dict(nodes=1,depth=1,groups=4))
+        root=graph.clusterModel[graph.rootId]
+        self.assertEqual(root.routing_parameters['initial_prototypes'],len(train))
+        self.assertTrue(root.routing_parameters['consolidated'])
+        self.assertEqual(root.Counts.sum(),len(train))
+        self.assertAlmostEqual(root.Freqs.sum(),1.)
+        restored=GraphClusterModel.loadModel(graph.to_json())
+        predicted=infer(restored.to_json(),held)
+        np.testing.assert_array_equal(predicted.Gioco,held.Gioco)
+        self.assertEqual(predicted.ACAN_path.nunique(),4)
+        self.assertTrue((predicted.groupby(['Tempo','Luogo']).ACAN_path.nunique()==1).all())
+
     def test_child_anchors_initialize_in_the_observed_local_range(self):
         data=pd.DataFrame(dict(x=[.6,.62,.68,.8],label_a=[1.,1.,0.,0.],label_b=[0.,0.,1.,1.]))
         learner=AlgebraicClusterLearner(data,labels=['label'],device='numpy',lr=0.,

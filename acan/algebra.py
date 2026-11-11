@@ -32,7 +32,7 @@ def prediction_cp_objective(prediction_loss, mean_normalized_cp, weight):
     return prediction_loss + weight * (1 - mean_normalized_cp)
 
 
-def concept_assignments(x, anchors, relevance, beta, features, softmax):
+def concept_assignments(x, anchors, relevance, beta, features, softmax, log_multiplicity=None):
     """One routing equation for training and frozen tabular/causal LM inference."""
     focused = relevance[:, features] ** 2 + 1e-4
     weights = focused / focused.sum(axis=1, keepdims=True)
@@ -40,11 +40,15 @@ def concept_assignments(x, anchors, relevance, beta, features, softmax):
     distance = ((weights*a*a).sum(axis=1, keepdims=True)
                 - 2*(weights*a)@observed.T + weights@(observed*observed).T)
     scores = -beta*distance
-    return softmax(scores), weights, scores
+    # Combining equivalent slots must preserve their total probability mass.
+    # log(m) makes one slot represent m identical slots exactly.
+    logits = scores if log_multiplicity is None else scores + log_multiplicity
+    return softmax(logits), weights, scores
 
 
 def concept_step(x, anchors, root, denominator, omega, beta, features,
-                 maximum, clip, softmax, base_counts=None, base_sums=None):
+                 maximum, clip, softmax, base_counts=None, base_sums=None,
+                 log_multiplicity=None):
     """Shared concept model for a batch of rows or the next causal token.
 
     Targets can contribute to the training summaries, but are excluded from
@@ -52,7 +56,8 @@ def concept_step(x, anchors, root, denominator, omega, beta, features,
     All operations retain PyTorch's graph and also work on NumPy arrays.
     """
     relevance = clip(abs(anchors-root) / denominator * omega, 0, 1)
-    assignments, weights, scores = concept_assignments(x,anchors,relevance,beta,features,softmax)
+    assignments, weights, scores = concept_assignments(
+        x,anchors,relevance,beta,features,softmax,log_multiplicity)
     counts = assignments.sum(axis=1, keepdims=True)
     sums = assignments@x
     if base_counts is not None:
