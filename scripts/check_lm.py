@@ -24,6 +24,7 @@ def main():
     from acan.lm.checkpoints import contract
     torch.set_num_threads(1)
     suite=unittest.defaultTestLoader.discover(str(ROOT/'tests'),pattern='test_lm*.py')
+    suite.addTests(unittest.defaultTestLoader.discover(str(ROOT/'tests'),pattern='test_exclusive_cp.py'))
     from acan.lm.audit_contract import REQUIRED_TESTS,MIN_TESTS,PROTOCOL
     def cases(suite):
         for item in suite:

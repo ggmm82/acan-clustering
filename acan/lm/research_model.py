@@ -78,5 +78,9 @@ def shared_adapter(model,report,options):
                 module.__class__=SharedFullAttention
             elif isinstance(module,ACANConceptAttentionLayer):
                 module.__class__=SharedAlgebraAttention
+            if options.get('routing_profile')=='cp-joint-v1' and isinstance(module,ACANConceptAttentionLayer):
+                module.initialize_concepts()
         report=dict(report,algebra=options['routing_profile'])
+        if options['routing_profile']=='cp-joint-v1':
+            report['cp_definition']='exclusive-cp-v1'
     return model,report

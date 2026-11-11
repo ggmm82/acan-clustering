@@ -92,7 +92,7 @@ in particolare §3 e Tabella 1. Le formule del paper e quelle oggi eseguite dal
 codice sono distinte qui sotto: la GUI espone il core esistente e non certifica
 una corrispondenza completa. L'[audit](docs/PAPER-AUDIT.md) documenta le differenze.
 Il nuovo profilo GUI `cp-joint-v1` unifica tabulare e generativo: le formule
-complete e le misure sono in [JOINT-CP.md](docs/JOINT-CP.md) e nella sezione
+complete e le misure della proposta sono in [CP-SELECTION.md](docs/CP-SELECTION.md) e nella sezione
 [Unico nucleo CP](#unico-nucleo-cp-per-modello-interattivo-e-generativo). Le
 equazioni legacy seguenti descrivono il profilo conservato per compatibilità.
 
@@ -172,7 +172,7 @@ NumPy/PyTorch a parametri uguali; non dimostra i teoremi del paper.
 
 1. Il training iniziale apprende un nodo con `nLearn`: assegnamenti, prototipi,
    rilevanze e obiettivo del profilo selezionato. `cp-joint-v1` ottimizza NLL + CP
-   normalizzata e conserva i prototipi; il legacy ottimizza CP e rimuove gli
+   estesa e conserva soltanto il supporto positivo appreso; il legacy ottimizza CP e rimuove gli
    slot vuoti dall’export. Le matrici di training non vengono fisicamente ridotte.
 2. Un doppio clic su **un gruppo** seleziona i suoi soli campioni di training
    tramite `splitDataset`. Un nuovo nodo è appreso con `gLearn(max_depth=1)`,
@@ -264,44 +264,25 @@ file utente.
 
 ### Unico nucleo CP per modello interattivo e generativo
 
-Scegli **Modello congiunto NLL + CP** (`cp-joint-v1`) in **Model → Impostazioni
-avanzate → Routing ACAN** e nel laboratorio **Generative**. È il profilo
-preselezionato nei nuovi modelli della GUI; i default delle API precedenti
-restano compatibili. I due percorsi
-chiamano lo stesso nucleo in `acan/algebra.py`: rilevanza limitata, distanza pesata,
-assegnazione ai concetti, conteggi/centroidi e CP normalizzata. La scheda
-**Matematica** spiega le formule e il collegamento con entrambi i PDF in `paper/`.
+I nuovi training web usano un’unica proposta `cp-joint-v1`, identificata nei checkpoint da
+`exclusive-cp-v1`. Tabulare e generativo condividono routing, masse sul simplesso,
+statistiche, CP estesa e obiettivo NLL + lambda × (1 − CP*). Le masse esattamente zero
+definiscono gli slot inattivi; non vengono fusi prototipi né imposto un numero di gruppi.
+La scheda **Matematica** espone la formula e distingue le proprietà dimostrate dalle ipotesi.
+I vecchi checkpoint e le API storiche rimangono compatibili; nuovi rami non mescolano formule diverse.
 
-L’obiettivo comune è `NLL + λ × (1 − CP/√d)`. Nel tabulare il target categorico
-resta escluso dal routing e λ è 0,1; si usano tutte le righe di training,
-fino a 256 prototipi e le epoche selezionate. Nel linguaggio si prevede il prossimo
-token e si fa la media della penalità CP sui layer ACAN e sulle posizioni predittive,
-usando soltanto il prefisso già letto. Il peso CP linguistico è configurabile:
-0,1 è un esperimento iniziale, 0 è il controllo con sola NLL. Il budget CPU del
-profilo linguistico è 32 token e 8 slot; il nucleo esegue un passo per token.
+**Risultati della proposta:** Gioco produce quattro concetti; Letter gerarchico completo
+sale da 91,425% a **92,025%**, con 4.339 prototipi invece di 7.391. Sul campione GUI
+scende da 90,60% a **89,00%**. Il 95,78% storico resta non riprodotto. Su sette altri file,
+63 confronti esplorativi mostrano miglioramenti e regressioni: **non è una sostituzione
+universalmente migliore**. Il training è più costoso; in decoding LM il termine quadratico
+usato per la loss viene saltato senza cambiare l’output. La qualità linguistica su LLM
+preaddestrati non è ancora dimostrata.
 
-I test verificano parità NumPy/PyTorch di valori e gradienti, causalità, streaming,
-persistenza, gerarchia e ripresa esatta con checkpointing. Cambiano la codifica
-riga/token e la testa di previsione; la logica dei concetti e della CP è comune.
-I profili precedenti restano disponibili: i modelli salvati non vengono convertiti.
-Il nuovo training supervisionato tabulare supporta target categorici; per regressione
-usare un profilo precedente. Non è una riproduzione integrale di tutte le equazioni
-o dei risultati sperimentali dei paper.
-
-Sul `letter.arff` ricaricato, con split stratificato seed 42 e preprocessing
-addestrato soltanto sul training, il nuovo profilo misura **86,38%** su 4.000 righe
-escluse dal training; il protocollo GUI (campione 10.000 → 8.000/2.000) misura
-**87,20%**. La gerarchia con profondità massima 3 misura **91,43%** sul file
-completo (2 livelli effettivi) e **90,60%** nel protocollo GUI (2 livelli effettivi).
-Il precedente **95,78% riguardava il multilivello gerarchico**: non è stato
-recuperato né riprodotto dalla ricostruzione attuale.
-Il confronto linguistico con λ=0/0,1 è una prova meccanica su un Llama piccolo
-inizializzato casualmente: non dimostra miglioramenti di qualità dell’LLM.
-
-Formule, differenze dai paper, protocolli e comandi riproducibili:
-[JOINT-CP.md](docs/JOINT-CP.md). La precedente diagnosi dei profili storici resta in
-[LETTER-DIAGNOSIS.md](docs/LETTER-DIAGNOSIS.md); il precedente solver variazionale
-è descritto in [VARIATIONAL-ROUTING.md](docs/VARIATIONAL-ROUTING.md).
+Formule, precisazioni dei teoremi originali, risultati completi, limiti e istruzioni per
+provare la PR dal web: [CP-SELECTION.md](docs/CP-SELECTION.md).
+I protocolli e i risultati della versione precedente sono conservati in
+[JOINT-CP.md](docs/JOINT-CP.md) e [LETTER-DIAGNOSIS.md](docs/LETTER-DIAGNOSIS.md).
 
 
 ### Grafo leggibile e navigazione dei concetti
@@ -317,5 +298,6 @@ Il conteggio globale indica i **prototipi complessivi**, non certifica altrettan
 concetti distinti. Per ogni nodo sono distinti i gruppi con record assegnati e i
 prototipi senza assegnazioni hard, consultabili con l'apposita opzione. Questi
 ultimi possono ancora contribuire alle previsioni soft. Il rendering non elimina
-o accorpa i prototipi del modello: la CP attuale non garantisce da sola una
-rappresentazione compatta; il pruning richiede una verifica predittiva separata.
+o accorpa i prototipi del modello. Nel nuovo training la selezione avviene tramite le masse
+del nucleo condiviso, come descritto in [CP-SELECTION.md](docs/CP-SELECTION.md); il conteggio
+non certifica un numero semanticamente corretto di concetti su qualunque dataset.

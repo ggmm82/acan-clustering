@@ -66,7 +66,16 @@ def run_training(root, identifier, stop_event=None):
             if config['gradient_checkpointing']:
                 model.enable_input_require_grads()
                 model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
-            optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=config['learning_rate'])
+            from .cp_attention import CPJointAttention
+            simplex_parameters = [layer.masses for layer in model.modules() if isinstance(layer,CPJointAttention)]
+            simplex_ids = {id(parameter) for parameter in simplex_parameters}
+            parameter_groups = [dict(params=[p for p in model.parameters()
+                if p.requires_grad and id(p) not in simplex_ids])]
+            if simplex_parameters:
+                # Weight decay followed by simplex projection would continually
+                # resurrect zero masses by redistributing their missing sum.
+                parameter_groups.append(dict(params=simplex_parameters,weight_decay=0.))
+            optimizer = torch.optim.AdamW(parameter_groups, lr=config['learning_rate'])
             state = dict(step=0, cursor=dict(epoch=0, offset=0), tokens_trained=0, baseline_nll=graft['baseline_nll'],
                          device=device, graft=graft, trainable_parameters=sum(p.numel() for p in model.parameters() if p.requires_grad),
                          total_parameters=sum(p.numel() for p in model.parameters()), identity=identity,
@@ -102,10 +111,13 @@ def run_training(root, identifier, stop_event=None):
                     group['lr'] = lr
                 optimizer.zero_grad(set_to_none=True)
                 loss_sum, actual_tokens, objective_sum, kl_sum, cp_sum = 0., 0, 0., 0., 0.
+                structural_batches = []
                 from .inspection import training_probe
                 with training_probe(store, job, model, state['step']+1):
                     for _ in range(config['accumulation']):
                         batch = blocks.batch(config['batch_size'], state['cursor']).to(device)
+                        if simplex_parameters:
+                            structural_batches.append(batch)
                         output = model(batch, labels=batch, use_cache=False)
                         loss = output.loss
                         training_objective = loss
@@ -139,7 +151,27 @@ def run_training(root, identifier, stop_event=None):
                 for name,values in groups.items():
                     state[name]=float(torch.stack(values).sum().sqrt()) if values else 0.
                 state['gradient_norm']=float(norm)
-                optimizer.step(); optimizer.zero_grad(set_to_none=True)
+                optimizer.step()
+                from .cp_objective import project_concept_masses
+                project_concept_masses(model)
+                optimizer.zero_grad(set_to_none=True)
+                if simplex_parameters:
+                    from .cp_objective import coordinate_concept_step
+                    def structural_objective():
+                        total = 0.
+                        for training_batch in structural_batches:
+                            probe = model(training_batch,labels=training_batch,use_cache=False)
+                            value = probe.loss
+                            if teacher is not None:
+                                teacher_logits = teacher(training_batch,use_cache=False).logits
+                                value,_ = objective(probe.logits,teacher_logits,value,
+                                    config['distillation_weight'],config['distillation_temperature'])
+                            value,_ = regularize(model,value,config.get('cp_weight',0.))
+                            total = total+value
+                            clear(model)
+                        return total/len(structural_batches)
+                    coordinate_concept_step(model,state['step'],structural_objective)
+                    state['concept_counts'] = [int((parameter>0).sum()) for parameter in simplex_parameters]
                 state.update(step=state['step']+1, tokens_trained=state['tokens_trained']+actual_tokens,
                              training_nll=loss_sum, training_objective=objective_sum, teacher_kl=kl_sum,
                              training_cp_penalty=cp_sum, cp_weight=config.get('cp_weight',0.),learning_rate=lr)

@@ -63,6 +63,22 @@ class TestSavedInference(unittest.TestCase):
         self.assertTrue(result.output_value.notna().all())
         self.assertTrue(result.output_value.between(0, 1).all())
 
+    def test_predict_all_missing_features_uses_train_fitted_preprocessing(self):
+        from acan.vis.training import train_native
+        data=pd.DataFrame(dict(age=[1.,2.,np.nan,4.]*8,vote=['y','n',None,'y']*8,
+                               Class=['a','b','a','a']*8))
+        options=dict(lr=.08,tau=.2,alpha=.5,device='numpy',batch_size=300,
+            max_depth=1,max_epochs=10,min_samples_split=12,similarity_threshold=.92)
+        payload=train_native(data,['Class'],options).to_json()
+        query=pd.DataFrame(dict(age=[np.nan],vote=[None]))
+        result=infer(payload,query)
+        self.assertIn(result.Class.iloc[0],['a','b'])
+        self.assertTrue(np.isfinite(result.ACAN_confidence).all())
+        with self.assertRaisesRegex(ValueError,'attributo noto'):
+            infer(payload,pd.DataFrame(dict(unrelated=[1.])))
+        with self.assertRaisesRegex(ValueError,'attributo noto'):
+            infer(payload,query.assign(Class=None),'complete')
+
 
 class BlockingLearner:
     def __init__(self):

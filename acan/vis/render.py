@@ -503,7 +503,8 @@ def create_legend():
 
 def parameter(label, id, value, lo, hi, step):
     return dbc.Col([dbc.Label(label), dbc.Input(id=id, type='number', value=value,
-                    min=lo, max=hi, step=step)], md=4, className='mb-2')
+                    min=lo, max=hi, step=step)], md=4, className='mb-2',
+                   style={'display':'none'} if id in ('train-tau','train-alpha') else {})
 
 
 model_layout = dbc.Container([
@@ -530,11 +531,8 @@ model_layout = dbc.Container([
         dcc.Dropdown(id='target-task', value='auto', clearable=False, options=[{'label':'Automatico (codici interi fino a 20 classi: classificazione)', 'value':'auto'}, {'label':'Classificazione', 'value':'classification'}, {'label':'Regressione numerica', 'value':'regression'}]),
         dbc.Label('Routing ACAN'),
         dcc.Dropdown(id='tabular-routing-profile',value='cp-joint-v1',clearable=False,options=[
-            {'label':'Modello congiunto NLL + CP · comune al generativo','value':'cp-joint-v1'},
-            {'label':'CP diretta precedente · massimo 32 slot e 30 passi','value':'cp-routing-v1'},
-            {'label':'Esperimento · sole equazioni di routing del paper','value':'paper-routing-v1'},
-            {'label':'Profilo attuale · compatibilità e confronto','value':'legacy-v8'}]),
-        html.P('Modello congiunto: stesso nucleo CP del generativo, tutte le righe di training, fino a 256 prototipi, target categorici e loss NLL + 0,1 × (1 − CP normalizzata). CP diretta precedente: assegnazioni su 300 righe, 32 slot e 30 passi. Formule, gerarchia, budget e differenze dai paper sono spiegati nella sezione Matematica.',className='small text-muted'),
+            {'label':'CP condivisa con selezione dei concetti · comune al generativo','value':'cp-joint-v1'}]),
+        html.P('Un solo nucleo CP per i nuovi modelli tabulari e generativi. Il numero di concetti attivi viene appreso; 256 è il limite di capacità, non il numero richiesto. Target categorici. Le misure, i limiti sperimentali e la formula estesa sono nella scheda Matematica. I modelli precedenti restano caricabili.',className='small text-muted'),
         dbc.Row([parameter(*args) for args in [
             ('Epoche', 'train-epochs', 100, 1, 1000, 1),
             ('Learning rate', 'input-lr', .08, .001, 1, .01),
