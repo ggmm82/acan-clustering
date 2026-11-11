@@ -12,7 +12,7 @@ $$
 CP_* = \left(\sum_i\sqrt{\pi_iF_i}\right)\sqrt{\sum_iF_iq_i-z^TSz}.
 $$
 
-La somma esterna è l’affinità di Bhattacharyya: impedisce che una massa a priori quasi nulla rappresenti arbitrariamente un concetto frequentemente usato. Non viene interpretata come probabilità della classe. Il termine di sovrapposizione penalizza copie dei concetti. Entrambi i fattori sono limitati: per Cauchy–Schwarz il primo non supera uno; il radicando è fra zero e `sum(F_i q_i)`. Con r copie identiche e pi=F, CP* vale `sqrt(q/r)` invece di `sqrt(q)`. Queste proprietà sono dimostrazioni del criterio; non sono una prova di recupero del K semanticamente vero su dati arbitrari.
+La somma esterna è l’affinità di Bhattacharyya: impedisce che una massa a priori quasi nulla rappresenti arbitrariamente un concetto frequentemente usato. Non viene interpretata come probabilità della classe. Il termine di sovrapposizione penalizza copie dei concetti. Entrambi i fattori sono limitati: per Cauchy–Schwarz il primo non supera uno; il radicando è fra zero e `sum(F_i q_i)`. Con r copie identiche, frequenze uniformi F_i=1/r e pi=F, CP* vale `sqrt(q/r)` invece di `sqrt(q)`. Queste proprietà sono dimostrazioni del criterio; non sono una prova di recupero del K semanticamente vero su dati arbitrari.
 
 L’obiettivo resta `NLL + lambda*(1-CP*)`, con lambda=0,1 nel tabulare e configurabile nel linguaggio. Il linguaggio media sui layer ACAN e sui token con target successivo, usando soltanto il prefisso osservato. La normalizzazione, il routing, la CP e le operazioni sul simplesso sono le stesse funzioni NumPy/PyTorch in `acan/algebra.py`. Codifica e teste di previsione restano adattatori distinti.
 
@@ -61,7 +61,7 @@ Tutte le 63 esecuzioni conservano le predizioni dopo salvataggio/caricamento. Il
 
 Vote contiene una riga senza attributi osservati. La verifica non la elimina: usa il preprocessing nativo già appreso dal training. È emerso un errore del controllo preliminare della GUI, corretto nella PR. Le ricevute annotano i casi che richiedevano l’API nativa nel codice precedente.
 
-Gioco: quattro concetti sul file completo e sui cinque split seed 1/7/21/42/99; accuratezza test 100% nei controlli eseguiti. La riga con target `?` è esclusa dal training. Una prova sintetica indipendente cambia le date e controlla le quattro relazioni senza passare il numero atteso al modello.
+Gioco supervisionato: quattro concetti sulle 100 righe con target osservato e sui cinque split seed 1/7/21/42/99; accuratezza test 100% nei controlli eseguiti. La riga con target `?` è esclusa dal training. Una prova sintetica indipendente cambia le date e controlla le quattro relazioni senza passare il numero atteso al modello.
 
 Letter gerarchico, seed42: **92,025%** sulle 4.000 righe di test, contro **91,425%** del joint precedente; prototipi totali **4.339** contro **7.391**. Sul campione GUI 10.000→8.000/2.000, invece, **89,00%** contro **90,60%**. Il precedente **95,78% non è stato recuperato**. Non si presenta il risultato sul file completo come prova di assenza di regressioni.
 
@@ -87,7 +87,7 @@ Letter completo: **92,70%**, 3.703 prototipi e 62 nodi,
 contro 92,025%, 4.339 prototipi e 68 nodi della prima proposta. Letter nel campione
 web 10.000→8.000/2.000: **89,85%**, 1.701 prototipi,
 contro 89,00% della prima proposta e 90,60% della PR8. Il 95,78% storico resta
-non recuperato. Gioco conserva quattro concetti e 100% sui cinque split; ripetuta
+non recuperato. Gioco supervisionato conserva quattro concetti e 100% sui cinque split; ripetuta
 anche la prova Excel → training → quattro gruppi → salvataggio nel browser.
 
 Una verifica diagnostica sui medesimi modelli già addestrati, cambiando soltanto
@@ -128,6 +128,55 @@ sull'istanza ricaricata: `null` indica che la non mutazione non era verificata
 direttamente in quella misura. Il nuovo controllo e il test della gerarchia
 interrogano l'oggetto ricaricato e ne confrontano lo stato prima/dopo.
 
+## Clustering non supervisionato: controllo sul file originale
+
+La presenza del target cambia il problema: NLL e pesi degli attributi usano le
+etichette nel percorso supervisionato. Il risultato di classificazione non va
+presentato come prova del clustering non supervisionato. Senza target la NLL
+è zero e viene ottimizzata soltanto la CP; una colonna Gioco presente nel file
+è allora un attributo osservato come gli altri, non una risposta da predire.
+
+Il confronto fra implementazioni, con stessa preparazione e 100 epoche, chiarisce
+il risultato dichiarato dall'utente:
+
+| Dati, sempre senza target | Righe | Controllo precedente | CP attuale |
+|---|---:|---:|---:|
+| File originale, tutte le colonne e la riga con `?` | 101 | 4 | **5** |
+| Righe con esito osservato, tutte le colonne | 100 | 4 | 4 |
+| Split di training 80/20 della GUI sul file originale | 80 | 2 | 3 |
+| Righe complete, ma colonna Gioco rimossa | 100 | 2 | 14 |
+
+**La regressione sulle 101 righe resta aperta.** Anche prolungando lo stesso training a 300 e 1.000 epoche rimangono cinque gruppi; aumentare semplicemente il budget non risolve questa prova. Il controllo precedente è il
+profilo legacy-v8 conservato nel repository. Escludere la riga incompleta o
+confrontare cinque colonne con sei non risolve quella regressione. La prima
+diagnosi aveva rimosso la colonna Gioco: viene conservata solo come confronto
+fra problemi diversi, non come prova contro il risultato originale.
+
+Il valore mancante viene codificato come categoria distinta. Una prova separata
+con imputazione tramite frequenze categoriche ha comunque prodotto cinque gruppi:
+non è stata adottata e non si attribuisce il problema soltanto alla codifica.
+Non sono stati imposti quattro cluster, aggiunte fusioni o scartate righe per
+far tornare il conteggio. [Ricevute degli otto controlli](results/cp-unsupervised.json).
+
+La causa matematica della proliferazione non è eliminata dalla penalità dei
+duplicati: per prototipi separati S è quasi zero e, a parità di qualità e masse
+coerenti, CP* non penalizza direttamente K. La NLL può favorire frammenti che
+memorizzano le etichette; nella gerarchia ogni nodo ha un proprio obiettivo e
+l'espansione dipende anche da purezza/variabilità, righe minime e profondità.
+Non c'è una penalità globale per la dimensione dell'albero.
+
+Le correzioni riducono i prototipi di Letter completo da 4.339 a 3.703 e del
+campione web da 2.036 a 1.701. Non è una riduzione universale: per esempio Adult
+passa dall'intervallo 354–395 a 370–444 e Mushroom da 49–121 a 71–155 nei tre split.
+Resta da trovare e verificare un criterio che concili la qualità dei concetti,
+la robustezza a missingness/rumore e la complessità, senza un K scelto sul test.
+
+La scheda Matematica ora espone un racconto autonomo di questi concetti, con
+motivazioni, esempi e limiti; i riferimenti tecnici e ai paper restano in questo
+rapporto. Il [piano della prossima PR dell'interfaccia](NEXT-UI-PR.md) riguarda un
+run successivo: compiti espliciti, classi numeriche, parametri effettivi, lettura
+dei concetti e navigazione dello storico generativo oltre 500 punti.
+
 ## Efficienza e portata
 
 La marginalizzazione tabulare valuta tutti i rami; usa routing vettorizzato e blocchi di 256 osservazioni, senza tagliare probabilità piccole con soglie. Il costo cresce con i nodi della gerarchia. Le nuove prove sono state eseguite in concorrenza: i tempi grezzi nelle ricevute non sono un confronto controllato di velocità.
@@ -145,6 +194,10 @@ OPENBLAS_NUM_THREADS=1 python -m pytest -q
 python scripts/check_lm.py --output reports/lm-audit.json
 python -m scripts.evaluate_joint_cp --letter letter.arff --depth 3 --output reports/letter.json
 python scripts/verify_cp_generalization.py --baseline /path/to/PR8-checkout --output reports/cp-comparison.json titanic.csv adultMinimal.xlsx sonar.xlsx vote.arff mushroom.arff iris.arff breast-cancer.arff
+python -m scripts.evaluate_cp_clustering GiocoSet.xlsx --compare-legacy --output reports/gioco-all.json
+python -m scripts.evaluate_cp_clustering GiocoSet.xlsx --compare-legacy --complete-columns Gioco --output reports/gioco-complete.json
+python -m scripts.evaluate_cp_clustering GiocoSet.xlsx --compare-legacy --gui-split --output reports/gioco-gui.json
+python -m scripts.evaluate_cp_clustering GiocoSet.xlsx --compare-legacy --complete-columns Gioco --drop-columns Gioco --output reports/gioco-without-column.json
 ```
 
 Per il confronto prima/dopo le correzioni, usare il checkout `fb62fb4` come `--baseline` e ripetere con `--seeds 42 7 21` oppure `--seeds 99`; il record `joint` di quel checkout rappresenta la prima proposta CP*, oltre al controllo legacy.

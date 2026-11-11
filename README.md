@@ -268,11 +268,15 @@ I nuovi training web usano un’unica proposta `cp-joint-v1`, identificata nei c
 `exclusive-cp-v1`. Tabulare e generativo condividono routing, masse sul simplesso,
 statistiche, CP estesa e obiettivo NLL + lambda × (1 − CP*). Le masse esattamente zero
 definiscono gli slot inattivi; non vengono fusi prototipi né imposto un numero di gruppi.
-La scheda **Matematica** espone la formula e distingue le proprietà dimostrate dalle ipotesi.
+La scheda **Matematica** spiega prototipi, rilevanza, appartenenza, CP e gerarchia con
+esempi e limiti. Senza target si ottimizza la sola CP; con target la NLL introduce
+supervisione. Questi due compiti non devono essere confusi.
 I vecchi checkpoint e le API storiche rimangono compatibili; nuovi rami non mescolano formule diverse.
 
-**Risultati dopo le correzioni:** Gioco conserva quattro concetti e 100% nei cinque
-split verificati. Letter gerarchico completo raggiunge **92,70%**, con
+**Risultati dopo le correzioni:** Gioco, in classificazione, conserva quattro concetti
+e 100% nei cinque split verificati. Nel clustering **non supervisionato sulle 101 righe
+originali trova invece 5 gruppi contro i 4 del controllo precedente**: resta una regressione.
+Sulle 100 righe senza il valore mancante trova 4 gruppi anche senza target. Letter gerarchico completo raggiunge **92,70%**, con
 3.703 prototipi, rispetto al 92,025% della prima proposta e al 91,425%
 della PR8. Nel campione web misura **89,85%** (prima proposta 89,00%; PR8
 90,60%). Il 95,78% storico resta non riprodotto. Nei tre split iniziali Adult
@@ -289,6 +293,9 @@ il comportamento originario. Non cambiano la CP o i parametri in base al dataset
 
 Formule, precisazioni dei teoremi originali, risultati completi, limiti e istruzioni per
 provare la PR dal web: [CP-SELECTION.md](docs/CP-SELECTION.md).
+Il [piano di semplificazione dell’interfaccia](docs/NEXT-UI-PR.md) è destinato alla
+prossima PR, in un run successivo; comprende classi numeriche e storico generativo
+navigabile oltre i 500 punti attualmente restituiti dal server.
 I protocolli e i risultati della versione precedente sono conservati in
 [JOINT-CP.md](docs/JOINT-CP.md) e [LETTER-DIAGNOSIS.md](docs/LETTER-DIAGNOSIS.md).
 

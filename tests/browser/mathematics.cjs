@@ -14,7 +14,10 @@ const assert=require('node:assert/strict');
       assert.equal(await page.locator('#page-mathematics [data-mjx-error]').count(),0);
       assert.equal(await page.locator('#page-mathematics h3').count(),7);
       const text=await page.locator('#page-mathematics').innerText();
-      assert(text.includes('cp-joint-v1')&&text.includes('95,78%'));
+      assert(text.includes('non supervisionato')&&text.includes('95,78%'));
+      assert(text.includes('Rilevanza:')&&text.includes('prototipi possono proliferare'));
+      assert(text.includes('Classificazione')&&text.includes('14 gruppi'));
+      assert(!text.includes('acan/algebra.py'));
       console.log(`Mathematics: ${width}px, all sections and formulas rendered without errors.`);
       await page.close();
     }
