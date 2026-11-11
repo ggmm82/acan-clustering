@@ -4,7 +4,7 @@ import json
 import re
 from flask import session
 from acan.vis.jobs import TrainingJobs
-from acan.vis import generative
+from acan.vis import generative, mathematics
 from acan.vis.training import NativeTraining, graph_stats
 from acan.vis.evaluation import evaluate
 from acan.vis.benchmark_job import BenchmarkJob, signature as benchmark_signature
@@ -514,10 +514,12 @@ model_layout = dbc.Container([
         dbc.Label('Tipo di previsione del target'),
         dcc.Dropdown(id='target-task', value='auto', clearable=False, options=[{'label':'Automatico (codici interi fino a 20 classi: classificazione)', 'value':'auto'}, {'label':'Classificazione', 'value':'classification'}, {'label':'Regressione numerica', 'value':'regression'}]),
         dbc.Label('Routing ACAN'),
-        dcc.Dropdown(id='tabular-routing-profile',value='legacy-v8',clearable=False,options=[
+        dcc.Dropdown(id='tabular-routing-profile',value='cp-joint-v1',clearable=False,options=[
+            {'label':'Modello congiunto NLL + CP · comune al generativo','value':'cp-joint-v1'},
+            {'label':'CP diretta precedente · massimo 32 slot e 30 passi','value':'cp-routing-v1'},
             {'label':'Esperimento · sole equazioni di routing del paper','value':'paper-routing-v1'},
             {'label':'Profilo attuale · compatibilità e confronto','value':'legacy-v8'}]),
-        html.P('Profilo del paper: α=2, β=8, γ=1,15 (default del pacchetto LM, non ottimizzati sui tuoi dati). Sono uniformati gli operatori di distanza e massa; rilevanza, omega e obiettivi conservano i limiti documentati. Il profilo non certifica l’intero paper.',className='small text-muted'),
+        html.P('Modello congiunto: stesso nucleo CP del generativo, tutte le righe di training, fino a 256 prototipi, target categorici e loss NLL + 0,1 × (1 − CP normalizzata). CP diretta precedente: assegnazioni su 300 righe, 32 slot e 30 passi. Formule, gerarchia, budget e differenze dai paper sono spiegati nella sezione Matematica.',className='small text-muted'),
         dbc.Row([parameter(*args) for args in [
             ('Epoche', 'train-epochs', 100, 1, 1000, 1),
             ('Learning rate', 'input-lr', .08, .001, 1, .01),
@@ -595,7 +597,7 @@ inference_layout = dbc.Container([
 _page_layout = dbc.Container([
     html.Div([html.H1('ACAN · Concept Explorer'), html.P('Dati → concetti → gerarchia → predizione e completamento', className='text-muted')], className='p-4 mb-3 bg-light border rounded'),
     dcc.Tabs(id='tabs', value='Data', children=[
-        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative']
+        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative', 'Matematica']
     ]),
     # Keep the graph mounted when switching tabs: destroying Cytoscape while
     # asynchronous layout/resize callbacks are pending causes browser errors.
@@ -604,6 +606,7 @@ _page_layout = dbc.Container([
     html.Div([evaluation_layout, dcc.Store(id='eval-store')], id='page-evaluation', style={'display': 'none'}),
     html.Div(inference_layout, id='page-inference', style={'display': 'none'}),
     html.Div(generative.layout, id='page-generative', style={'display': 'none'}),
+    html.Div(mathematics.layout, id='page-mathematics', style={'display':'none'}),
 ], fluid=True)
 
 
@@ -648,11 +651,11 @@ def tab_job_key(tab_id):
 
 
 @app.callback([Output('page-data', 'style'), Output('page-model', 'style'),
-               Output('page-evaluation', 'style'), Output('page-inference', 'style'), Output('page-generative', 'style')],
+               Output('page-evaluation', 'style'), Output('page-inference', 'style'), Output('page-generative', 'style'), Output('page-mathematics','style')],
               Input('tabs', 'value'))
 def show_page(tab):
     return [{'display': 'block' if tab == name else 'none'}
-            for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative']]
+            for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative', 'Matematica']]
 
 
 # Callback per pulire i dropdown
@@ -967,7 +970,7 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, dep
             return dash.no_update, dash.no_update, "Training già in corso.", False, False
         train, test, dataset_info = split_for_training(data, labels or [], filters, categories, task)
         check_budget(train)
-        if routing_profile not in ('legacy-v8','paper-routing-v1'):
+        if routing_profile not in ('legacy-v8','paper-routing-v1','cp-routing-v1','cp-joint-v1'):
             raise ValueError('Seleziona un profilo di routing ACAN valido.')
         options = dict(routing_profile=routing_profile,max_depth=depth, max_epochs=epochs, min_samples_split=min_samples,
                        tau=tau, alpha=alpha, similarity_threshold=purity, lr=lr,

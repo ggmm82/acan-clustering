@@ -60,12 +60,14 @@ class AlgebraicClusterLearner:
         random_state=42,
         routing_profile="legacy-v8",
     ):
-        if routing_profile not in ('legacy-v8','paper-routing-v1'):
+        if routing_profile not in ('legacy-v8','paper-routing-v1','cp-routing-v1','cp-joint-v1'):
             raise ValueError('Profilo matematico non riconosciuto.')
         self.routing_profile = routing_profile
         self.full_dataset = ds.copy()
         self.total_n = len(self.full_dataset)
         actual_batch_size = min(batch_size, self.total_n)
+        if routing_profile in ("cp-routing-v1", "cp-joint-v1"):
+            actual_batch_size = min(actual_batch_size, 300)
         self.batch_size = actual_batch_size
         self.random_state = random_state
 
@@ -88,6 +90,13 @@ class AlgebraicClusterLearner:
 
         label_mask = self._create_label_mask(labels)
         self.k = min(max_k, self.n) if max_k is not None else self.n
+        if routing_profile in ('cp-routing-v1','cp-joint-v1'):
+            from .supervised import target_groups
+            self._supervised_groups = target_groups(self)
+            if routing_profile=='cp-joint-v1' and self.labels and not self._supervised_groups:
+                raise ValueError('Il modello congiunto richiede target categorici; per regressione usare un altro profilo.')
+            self.k = min(self.k, 256 if routing_profile=='cp-joint-v1' else 32)
+            device = "numpy"
 
         numpy_class, torch_class = _AnalyticalClusterNet, ModularClusterNet
         if routing_profile == 'paper-routing-v1':
@@ -178,6 +187,12 @@ class AlgebraicClusterLearner:
         Differentiable training loop optimizing Cluster Probability (cp) via Adam
         with automatic early stopping.
         """
+        if self.routing_profile == "cp-joint-v1":
+            from .supervised import train
+            return train(self, max_epochs)
+        if self.routing_profile == "cp-routing-v1":
+            from .variational import train
+            return train(self, max_epochs)
         if self._use_torch:
             optimizer = optim.Adam(self.model_net.parameters(), lr=self.lr)
         else:
@@ -185,6 +200,7 @@ class AlgebraicClusterLearner:
 
         best_cp = -np.inf
         best_state = None
+        best_data = None
         wait = 0
 
         for epoch in range(max_epochs):
@@ -192,6 +208,11 @@ class AlgebraicClusterLearner:
                 break
             self.iteration = epoch
             self._sample_new_batch(epoch)
+            # The reported objective belongs to the pre-update weights and this
+            # exact batch. Preserve both as one candidate checkpoint.
+            candidate_state = ({k: v.detach().clone() for k,v in self.model_net.matrices.items()}
+                               if self._use_torch else
+                               {k: v.copy() for k,v in self.model_net.matrices.items()})
 
             if self._use_torch:
                 optimizer.zero_grad()
@@ -213,10 +234,8 @@ class AlgebraicClusterLearner:
             if curr_cp > best_cp + min_delta:
                 best_cp = curr_cp
                 wait = 0
-                if self._use_torch:
-                    best_state = {k: v.detach().clone() for k, v in self.model_net.matrices.items()}
-                else:
-                    best_state = {k: v.copy() for k, v in self.model_net.matrices.items()}
+                best_state = candidate_state
+                best_data = self.NormDataset.copy()
             else:
                 wait += 1
                 if wait >= patience and epoch >= 20:
@@ -226,6 +245,10 @@ class AlgebraicClusterLearner:
                 print(f"[Epoch {epoch:03d}] cp={curr_cp:.5f}, k_active={k_act}")
 
         if best_state is not None:
+            self.NormDataset = best_data
+            self.n = len(best_data)
+            self.X = (torch.tensor(best_data,dtype=self.X.dtype,device=self.device)
+                      if self._use_torch else best_data)
             if self._use_torch:
                 with torch.no_grad():
                     for k, v in best_state.items():
@@ -243,6 +266,8 @@ class AlgebraicClusterLearner:
             pd.DataFrame(self.NormDataset, columns=self.cols)
         )
         transformation_row_mask = self.Transformation_hard.sum(axis=1) > 0
+        if self.routing_profile in ("cp-routing-v1", "cp-joint-v1"):
+            transformation_row_mask[:] = True
         if not np.any(transformation_row_mask):
             transformation_row_mask[0] = True
 
@@ -254,9 +279,15 @@ class AlgebraicClusterLearner:
         self.model.Counts = self.Counts[transformation_row_mask]
         self.model.cp = self.cp
         self.model.routing_profile = self.routing_profile
+        if self.routing_profile == 'cp-joint-v1':
+            self.model.Root = self.Root.copy()
+            self.model.RootMin, self.model.RootMax = self.RootMin.copy(), self.RootMax.copy()
+            self.model.RootError = self.full_dataset.to_numpy(dtype=float).std(axis=0,keepdims=True)
         if self.routing_profile == 'paper-routing-v1':
             self.model.routing_parameters = dict(alpha=self.model_net.relevance_alpha,
                 beta=self.model_net.beta, gamma=self.model_net.mass_gamma)
+        if self.routing_profile in ("cp-routing-v1", "cp-joint-v1"):
+            self.model.routing_parameters = self.variational_state
         self.model.Freqs = self.Freqs.T[transformation_row_mask]
         self.model.n = int(max(self.model.Counts.sum(), len(self.NormDataset)))
         return self.model
@@ -290,6 +321,8 @@ class AlgebraicClusterLearner:
         }
 
     def get_current_model(self):
+        if self.routing_profile in ("cp-routing-v1", "cp-joint-v1") and hasattr(self,"model"):
+            return self.model
         self.forward_pass()
         return self.setModel()
 
@@ -332,7 +365,14 @@ class AlgebraicClusterLearner:
                     continue
                 # Check label impurity if labels are provided, or feature variance otherwise
                 if full_lbls:
-                    max_class_prob = float(np.max(node.Groups[k_idx, [node.cols.index(c) for c in full_lbls]]))
+                    if routing_profile == 'cp-joint-v1':
+                        # Learned class readouts can be confident even when a
+                        # branch contains mixed labels. Split on observed
+                        # training purity, never on a fitted readout or test.
+                        max_class_prob = min(float(sub_df.iloc[:,indices].mean().max())
+                                             for indices in acl._supervised_groups)
+                    else:
+                        max_class_prob = float(np.max(node.Groups[k_idx, [node.cols.index(c) for c in full_lbls]]))
                     needs_split = max_class_prob < similarity_threshold
                 else:
                     needs_split = float(np.mean(np.std(sub_df.to_numpy(), axis=0))) > 0.15

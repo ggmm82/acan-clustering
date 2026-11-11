@@ -99,7 +99,7 @@ class AlgebraicClusterModel:
         """
         v7-compatible hard cluster assignment using linear row-normalized Relevance R.
         """
-        if getattr(self,'routing_profile','legacy-v8') == 'paper-routing-v1':
+        if getattr(self,'routing_profile','legacy-v8') in ('paper-routing-v1','cp-routing-v1','cp-joint-v1'):
             weights, confidence, best = self.predictTupleSoft(rowTuple,cix)
             return best, float(-np.log(max(confidence,1e-12)))
         t = np.asarray(rowTuple, dtype=np.float64).reshape(1, -1)
@@ -116,6 +116,12 @@ class AlgebraicClusterModel:
         Raises feature relevance R to power `gamma` and applies a soft threshold against
         spurious finite-sample noise on irrelevant dimensions (Theorem 4.1.1 continuous analog).
         """
+        if getattr(self,'routing_profile','legacy-v8') == 'cp-routing-v1':
+            from .variational import predict
+            return predict(self,rowTuple,cix)
+        if getattr(self,'routing_profile','legacy-v8') == 'cp-joint-v1':
+            from .supervised import predict
+            return predict(self,rowTuple,cix)
         if getattr(self,'routing_profile','legacy-v8') == 'paper-routing-v1':
             from acan.algebra import routing_logits, mass_modulation
             t = np.asarray(rowTuple,dtype=np.float64).reshape(1,-1)
