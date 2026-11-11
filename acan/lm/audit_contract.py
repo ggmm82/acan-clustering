@@ -1,7 +1,12 @@
 """Named CPU checks required before publishing controlled LM tooling."""
 PROTOCOL='controlled-v1'
-MIN_TESTS=40
+MIN_TESTS=45
 REQUIRED_TESTS={
+    'test_exclusive_cp_gradients_include_overlap_and_masses',
+    'test_duplicate_evidence_is_discounted_without_a_group_count',
+    'test_interaction_concepts_are_learned_with_irrelevant_dates',
+    'test_generative_coordinate_uses_objective_and_preserves_rng',
+    'test_exclusive_core_torch_matches_numpy_at_interior_and_boundary',
     'test_joint_core_numpy_torch_values_and_gradients_agree',
     'test_joint_lm_cp_is_causal_differentiable_and_streaming_equivalent',
     'test_joint_cp_mean_is_independent_of_layer_and_batch_replication',

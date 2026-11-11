@@ -28,13 +28,23 @@ def infer(model_json, dataset, mode='predict'):
     for col in data.columns[data.isna().any()]:
         if not root.fullLabels([col]):
             raise ValueError(f'Colonna assente dal modello: {col}')
-    for _, row in data.iterrows():
-        if not row.isna().any():
-            continue
-        known = pd.DataFrame([row.dropna().to_dict()])
-        encoded = GraphClusterModel.full_dummies(known)
-        if not any(col in root.cols for col in encoded.columns):
+    if mode == 'predict' and model.preprocessing:
+        # Prediction has train-fitted imputation and missing-category encoding.
+        # An all-missing observation still has a defined prediction; reject an
+        # unrelated schema rather than rejecting missing feature values.
+        fields = {field['name'] for field in model.preprocessing['fields']}
+        if not fields.intersection(dataset.columns):
             raise ValueError('Ogni riga incompleta richiede almeno un attributo noto al modello.')
+    else:
+        for _, row in data.iterrows():
+            if not row.isna().any():
+                continue
+            known = pd.DataFrame([row.dropna().to_dict()])
+            if known.empty:
+                raise ValueError('Ogni riga incompleta richiede almeno un attributo noto al modello.')
+            encoded = GraphClusterModel.full_dummies(known)
+            if not any(col in root.cols for col in encoded.columns):
+                raise ValueError('Ogni riga incompleta richiede almeno un attributo noto al modello.')
     if mode == 'predict':
         features = data.drop(columns=model.labels, errors='ignore')
         if model.preprocessing:

@@ -23,6 +23,8 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
         r_shift = (difference.abs() / denominator[:, :, None]).clamp(0, 1)
         from acan.core.variational import solve
         routing_x = x.sigmoid()
+        if getattr(self,'joint_model',False):
+            routing_x = routing_x.double()
         cp_sums = routing_x.cumsum(1)+(previous['cp_sum'][:,None] if previous else 0)
         cp_min,cp_max = routing_x.cummin(1).values,routing_x.cummax(1).values
         if previous:
@@ -34,6 +36,7 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
         all_cp = []
         all_relevance = []
         saved_content = []
+        saved_overlaps = []
         for batch_index in range(b):
             count = previous['mass'][batch_index,:,None] if previous else x.new_zeros(self.k,1)
             content = previous['cp_x'][batch_index] if previous else x.new_zeros(self.k,d)
@@ -48,9 +51,13 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
                 if getattr(self,'joint_model',False):
                     from acan.algebra import concept_step
                     solved = concept_step(routing_x[batch_index,index:index+1],
-                        state['anchors'],state['root'],state['den'],state['omega'],self.beta,
+                        state['anchors'].double(),state['root'],state['den'],state['omega'].double(),
+                        self.log_beta.clamp(0,9).exp().double(),
                         slice(None),lambda value,floor: value.clamp_min(floor),torch.clamp,
-                        lambda scores: scores.softmax(0),base_counts=count,base_sums=content)
+                        lambda scores: scores.softmax(0),base_counts=count,base_sums=content,
+                        masses=self.masses.double(),exponential=torch.exp,
+                        distinct=(1-torch.eye(self.k,device=x.device,dtype=torch.float64) if self.training else None),
+                        compute_cp=self.training)
                 else:
                     solved = solve(routing_x[batch_index,index:index+1],state,steps=3,
                         base_counts=count,base_sums=content)
@@ -58,7 +65,7 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
                 pieces.append(assignment)
                 if getattr(self,'joint_model',False):
                     prefix_relevance.append(solved['R'])
-                if self.training and torch.is_grad_enabled():
+                if self.training:
                     from acan.algebra import normalized_cluster_probability
                     # Anchors may lie outside a short prefix's observed range.
                     # Cap relevance to keep CP/sqrt(d) bounded in [0,1].
@@ -73,11 +80,15 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
             if prefix_relevance:
                 all_relevance.append(torch.stack(prefix_relevance))
             saved_content.append(content)
+            if 'overlap' in solved:
+                saved_overlaps.append(solved['overlap'].detach())
         assignments = torch.stack(all_assignments)
         self.last_cp = torch.stack(all_cp) if all_cp else None
         mass1 = assignments.cumsum(1)+(previous['mass1'][:,None] if previous else 0)
         mass = assignments.cumsum(1) + (previous['mass'][:, None] if previous else 0)
         active = mass / positions >= self.pruning
+        if getattr(self,'joint_model',False):
+            active = (self.masses>0)[None,None].expand(b,length,-1)
         fallback = torch.nn.functional.one_hot(mass.argmax(-1), self.k).bool()
         active = torch.where(active.any(-1, keepdim=True), active, fallback)
         q, key, value = self.q_proj(h), self.k_proj(h), self.v_proj(h)
@@ -104,6 +115,8 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
         if getattr(self,'joint_model',False):
             final_relevance = torch.stack(all_relevance)
         gate = (final_relevance * active[..., None]).sum(2) / active.sum(-1, keepdim=True)
+        if getattr(self,'joint_model',False):
+            gate = (final_relevance*assignments[...,None]).sum(2)
         context = (assignments[..., None] * active[..., None] * slot_states).sum(2) * gate
         old_keys = previous['keys'] if previous else key[:, :0]
         old_values = previous['local_values'] if previous else value[:, :0]
@@ -132,9 +145,20 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
         self.last_info = dict(active_slots=active[:, -1].sum(-1).detach().clone(),
                               relevance=final_relevance[:, -1].detach().clone(), masses=mass[:, -1].detach().clone(),
                               assignments=assignments[:, -1].detach().clone())
+        if saved_overlaps:
+            self.last_info['overlap'] = torch.stack(saved_overlaps).mean(0)
         return output
 
 
 class CPJointAttention(CPUnifiedAttention):
     """The same learned concept model as the joint tabular adapter."""
     joint_model = True
+
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.initialize_concepts()
+
+    def initialize_concepts(self):
+        if not hasattr(self,'masses'):
+            self.masses = torch.nn.Parameter(self.G.new_full((self.k,),1/self.k))
+            self.log_beta = torch.nn.Parameter(self.G.new_tensor(math.log(128.)))

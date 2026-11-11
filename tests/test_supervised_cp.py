@@ -6,6 +6,47 @@ from acan.core.supervised import objective
 
 
 class SupervisedCPTests(unittest.TestCase):
+    def test_categorical_initialization_inverts_softmax(self):
+        data=pd.DataFrame(dict(x=[0.,.5,1.],label_a=[1.,0.,0.],
+                               label_b=[0.,1.,0.],label_c=[0.,0.,1.]))
+        learner=AlgebraicClusterLearner(data,labels=['label'],device='numpy',lr=0.,
+            batch_size=3,routing_profile='cp-joint-v1')
+        node=learner.nLearn(max_epochs=1)
+        expected=np.array([.01,.01,.99])/1.01
+        np.testing.assert_allclose(np.sort(node.Groups[:,1:],axis=1),
+            np.repeat(expected[None,:],node.k(),axis=0),atol=1e-12)
+
+    def test_joint_hierarchy_marginalizes_paths_and_preserves_old_checkpoints(self):
+        from acan.core.model import AlgebraicClusterModel
+        def node(identifier,readouts,masses):
+            result=AlgebraicClusterModel()
+            result.id=identifier;result.cols=['x','label_a','label_b']
+            result.Groups=np.column_stack([np.zeros(2),readouts])
+            result.Freqs=np.asarray(masses).reshape(1,-1)
+            result.routing_profile='cp-joint-v1'
+            result.routing_parameters=dict(features=[0],routing_relevance=np.ones((2,3)).tolist(),
+                masses=masses,beta=1.,hierarchy_readout='conditional-mixture-v1')
+            return result
+        root=node(0,[[1.,0.],[0.,1.]],[.6,.4])
+        child=node(1,[[1.,0.],[0.,1.]],[.2,.8])
+        root.children={0:1}
+        graph=GraphClusterModel();graph.clusterModel={0:root,1:child};graph.rootId=0
+        data=pd.DataFrame(dict(x=np.zeros(257),label_a=np.ones(257),label_b=np.zeros(257)))
+        labels=['label_a','label_b']
+        result,confidence,paths=graph.assignLabel(root,data,labels)
+        np.testing.assert_allclose(result,np.tile([.12,.88],(257,1)),atol=1e-12)
+        np.testing.assert_allclose(confidence,.48,atol=1e-12)
+        self.assertTrue(np.all(paths=='1_G1'))
+        child.Groups[:,1:]=[1.,0.]
+        expanded=graph.assignLabel(root,data,labels)[0]
+        root.children={}
+        unexpanded=graph.assignLabel(root,data,labels)[0]
+        np.testing.assert_allclose(expanded,unexpanded,atol=1e-12)
+        root.children={0:1};child.Groups[:,1:]=[[1.,0.],[0.,1.]]
+        root.routing_parameters.pop('hierarchy_readout')
+        historical=graph.assignLabel(root,data,labels)[0]
+        np.testing.assert_allclose(historical,np.tile([.2,.8],(257,1)),atol=1e-12)
+
     def test_child_anchors_initialize_in_the_observed_local_range(self):
         data=pd.DataFrame(dict(x=[.6,.62,.68,.8],label_a=[1.,1.,0.,0.],label_b=[0.,0.,1.,1.]))
         learner=AlgebraicClusterLearner(data,labels=['label'],device='numpy',lr=0.,
