@@ -271,13 +271,21 @@ definiscono gli slot inattivi; non vengono fusi prototipi né imposto un numero 
 La scheda **Matematica** espone la formula e distingue le proprietà dimostrate dalle ipotesi.
 I vecchi checkpoint e le API storiche rimangono compatibili; nuovi rami non mescolano formule diverse.
 
-**Risultati della proposta:** Gioco produce quattro concetti; Letter gerarchico completo
-sale da 91,425% a **92,025%**, con 4.339 prototipi invece di 7.391. Sul campione GUI
-scende da 90,60% a **89,00%**. Il 95,78% storico resta non riprodotto. Su sette altri file,
-63 confronti esplorativi mostrano miglioramenti e regressioni: **non è una sostituzione
-universalmente migliore**. Il training è più costoso; in decoding LM il termine quadratico
-usato per la loss viene saltato senza cambiare l’output. La qualità linguistica su LLM
-preaddestrati non è ancora dimostrata.
+**Risultati dopo le correzioni:** Gioco conserva quattro concetti e 100% nei cinque
+split verificati. Letter gerarchico completo raggiunge **92,70%**, con
+3.703 prototipi, rispetto al 92,025% della prima proposta e al 91,425%
+della PR8. Nel campione web misura **89,85%** (prima proposta 89,00%; PR8
+90,60%). Il 95,78% storico resta non riprodotto. Nei tre split iniziali Adult
+passa da 69,67% a 72,67% e Titanic da 76,16% a 81,19%; Breast Cancer migliora
+poco, Iris e Vote peggiorano. Lo split aggiuntivo non conferma tutti i miglioramenti.
+Le regressioni residue sono documentate: **non è una sostituzione universalmente
+migliore**. Il generativo condivide la CP; la qualità linguistica su LLM
+preaddestrati resta da dimostrare.
+
+La gerarchia ora conserva la miscela probabilistica dei concetti anche quando
+sono presenti figli; la testa categorica inizializza correttamente la softmax.
+Per usare questa lettura avviare un nuovo training: i JSON precedenti mantengono
+il comportamento originario. Non cambiano la CP o i parametri in base al dataset.
 
 Formule, precisazioni dei teoremi originali, risultati completi, limiti e istruzioni per
 provare la PR dal web: [CP-SELECTION.md](docs/CP-SELECTION.md).
