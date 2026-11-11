@@ -382,8 +382,8 @@ orgChartData=cyto.Cytoscape(
     style={'width': '100%', 'height': '650px', 'border': '1px solid #dee2e6', 'borderRadius': '8px'},
     responsive=True,
     autoungrabify=False,
-    minZoom=0.1,
-    maxZoom=2,
+    minZoom=0.03,
+    maxZoom=4,
     layout={'name': 'breadthfirst', 'directed': True, 'animate': False, 'spacingFactor': 1.3},
     #layout={'name': 'cose', 'animate': True},
     elements={},
@@ -406,6 +406,9 @@ orgChartData=cyto.Cytoscape(
         },
 
         # Stile specifico per nodi Group (più piccoli)
+        {'selector': '.node', 'style': {
+            'shape': 'round-rectangle', 'width': 180, 'height': 80,
+            'font-size': 14, 'text-wrap': 'wrap', 'text-max-width': 165}},
         {
             'selector': '.group-node',
             'style': {
@@ -422,6 +425,18 @@ orgChartData=cyto.Cytoscape(
         },
 
         # Group selectors for EDGES
+        {'selector': '.local-root', 'style': {
+            'shape': 'round-rectangle', 'width': 210, 'height': 72,
+            'font-size': 16, 'font-weight': 'bold', 'text-wrap': 'wrap',
+            'text-max-width': 195, 'border-width': 2, 'border-color': '#334155'}},
+        {'selector': '.local-group', 'style': {
+            'shape': 'round-rectangle', 'width': 145, 'height': 74,
+            'font-size': 14, 'font-weight': 'bold', 'text-wrap': 'wrap',
+            'text-max-width': 135, 'color': '#111827',
+            'text-outline-color': '#fff', 'text-outline-width': 1,
+            'border-width': 1, 'border-color': '#64748b'}},
+        {'selector': '.has-child', 'style': {'border-width': 3, 'border-color': '#2563eb'}},
+        {'selector': 'node:selected', 'style': {'border-width': 4, 'border-color': '#7c3aed'}},
         {
             'selector': 'edge',
             'style': {
@@ -546,13 +561,31 @@ model_layout = dbc.Container([
     html.Div(id='learning-status', children='Pronto: carica i dati e scopri i concetti.', className='alert alert-light my-2', role='status'),
     dcc.Interval(id='learning-monitor', interval=1000, disabled=True),
     html.Div(id='graph-summary', className='alert alert-info'),
+    html.Div([
     dbc.Row([
         dbc.Col(dcc.RadioItems(id='graph-view', options=[{'label': ' Concetti e gruppi', 'value': 'full'},
                    {'label': ' Solo gerarchia', 'value': 'hierarchy'}], value='full', inline=True), md=7),
-        dbc.Col(dcc.Dropdown(id='graph-layout', options=['breadthfirst', 'cose', 'concentric'],
-                   value='breadthfirst', clearable=False), md=5),
+        dbc.Col([dbc.Label('Disposizione panoramica', html_for='graph-layout'),
+            dcc.Dropdown(id='graph-layout', options=['breadthfirst', 'cose', 'concentric'],
+                   value='cose', clearable=False)], md=5),
     ], className='mb-3'),
+    dbc.Row([
+        dbc.Col([dbc.Label('Concetto da esplorare'), dcc.Dropdown(id='graph-focus', clearable=False)], md=7),
+        dbc.Col([dbc.Label('Gruppi del concetto'), dcc.Dropdown(id='graph-page', value=1, clearable=False)], md=5),
+    ], className='mb-2'),
+    dbc.Checkbox(id='graph-empty', value=False, label='Includi prototipi senza assegnazioni hard'),
+    html.Div([
+        dbc.Button('Radice', id='graph-root', outline=True, size='sm', className='m-1'),
+        dbc.Button('Sali al padre', id='graph-up', outline=True, size='sm', className='m-1'),
+        dbc.Button('−', id='graph-zoom-out', outline=True, size='sm', className='m-1', title='Riduci zoom'),
+        dbc.Button('+', id='graph-zoom-in', outline=True, size='sm', className='m-1', title='Aumenta zoom'),
+        dbc.Button('Centra vista', id='graph-fit', outline=True, size='sm', className='m-1'),
+        dbc.Button('Schermo intero', id='graph-fullscreen', outline=True, size='sm', className='m-1'),
+    ]),
+    html.Div(id='graph-window-summary', className='small text-muted my-2', role='status'),
     dbc.Row([dbc.Col(orgChartData, md=8), dbc.Col([html.Div(id='node-detail'), html.Div(id='edge-detail')], md=4)]),
+    html.P('Doppio clic sui gruppi con bordo blu per aprire il concetto figlio. Sugli altri gruppi richiede un approfondimento. La panoramica mostra tutta la gerarchia.', className='small text-muted mt-2'),
+    ], id='graph-panel'),
     dbc.Accordion([dbc.AccordionItem([
         dbc.Label('Nodo concetto'), dcc.Dropdown(id='concept-node', clearable=False),
         dcc.Graph(id='concept-relevance'), html.Div(id='concept-rules'),
@@ -630,12 +663,7 @@ app.clientside_callback(
             }
             const cy = el._cyreg.cy;
             cy.resize();
-            const config = {name: layout || 'breadthfirst', animate: false, padding: 30};
-            if (config.name === 'breadthfirst') {
-                config.directed = true;
-                if (model) config.roots = '[id="' + JSON.parse(model).rootId + '"]';
-            }
-            cy.layout(config).run();
+            cy.fit(cy.elements(), 35);
         }
         setTimeout(resize, 150);
         return Date.now();
@@ -1019,7 +1047,6 @@ def monitor_learning(n_intervals, tab_id):
         return dash.no_update, dash.no_update, f"❌ {job['error']}", True, True, dash.no_update
     gcm = learner.graph
     stats = graph_stats(gcm)
-    elements = list(to_elements(gcm).values())
     return (gcm.to_json(), dash.no_update,
             f"✅ Completato: {stats['nodes']} nodi concetto | {stats['depth']} livelli | {stats['groups']} gruppi",
             True, True, secrets.randbits(32))
@@ -1109,12 +1136,16 @@ def export_inference(n_clicks, csv_text):
 
 @app.callback(Output('org-chart', 'elements'),
               Input("model-store", "data"), Input('graph-view', 'value'),
+              Input('graph-focus', 'value'), Input('graph-page', 'value'), Input('graph-empty', 'value'),
               prevent_initial_call=True)
-def update_graph(model, view='full'):
+def update_graph(model, view='full', focus=None, page=1, include_empty=False):
     if not model:
         return []
     gcm=GraphClusterModel.loadModel(model)
-    els=to_elements(gcm, show_leaves=view != 'hierarchy')
+    if view != 'hierarchy':
+        from .graph_view import elements
+        return elements(gcm,focus,page,include_empty)
+    els=to_elements(gcm, show_leaves=False)
     if model:
         return list(els.values())
     else:
@@ -1567,19 +1598,36 @@ def export_rules(clicks, model):
     return dict(content=json.dumps(rules, indent=2), filename='acan-concept-rules.json')
 
 @app.callback(Output('graph-summary', 'children'), Output('org-chart', 'layout'),
-              Input('model-store', 'data'), Input('graph-layout', 'value'))
-def describe_graph(model, layout):
+              Input('model-store', 'data'), Input('graph-layout', 'value'),
+              Input('graph-view', 'value'), Input('graph-focus', 'value'))
+def describe_graph(model, layout, view='full', focus=None):
     if not model:
         return 'Carica un modello o avvia la scoperta dei concetti.', {'name': layout, 'animate': False}
     graph = GraphClusterModel.loadModel(model)
     stats = graph_stats(graph)
     root = graph.clusterModel[graph.rootId]
-    config = dict(name=layout, animate=False)
+    config = dict(name=layout if view=='hierarchy' else 'preset', animate=False, fit=True, padding=35)
     if layout == 'breadthfirst':
         config.update(directed=True, roots=f'[id = "{graph.rootId}"]', spacingFactor=1.3)
     return (f"Radice {graph.rootId} · {stats['nodes']} nodi concetto · {stats['depth']} livelli · "
-            f"{stats['groups']} gruppi · {root.n} campioni · {len(root.cols)} attributi · routing {getattr(root,'routing_profile','legacy-v8')}. "
+            f"{stats['groups']} prototipi complessivi · {root.n} campioni · {len(root.cols)} attributi · routing {getattr(root,'routing_profile','legacy-v8')}. "
             'Seleziona un nodo o un collegamento per esplorare centroidi, rilevanze e dispersione.'), config
+
+
+@app.callback(Output('graph-focus', 'options'), Output('graph-focus', 'value'),
+              Output('graph-page', 'options'), Output('graph-page', 'value'),
+              Output('graph-window-summary', 'children'),
+              Input('model-store', 'data'), Input('graph-focus', 'value'), Input('graph-page', 'value'),
+              Input('graph-empty', 'value'), Input('graph-root', 'n_clicks'), Input('graph-up', 'n_clicks'))
+def navigate_graph(model, focus, page, include_empty, root_clicks, up_clicks):
+    if not model:
+        return [],None,[],1,'Carica un modello per esplorare i concetti.'
+    from .graph_view import navigation
+    trigger = dash.ctx.triggered_id
+    action = {'graph-root':'root','graph-up':'up'}.get(trigger)
+    if trigger in ('model-store','graph-focus','graph-empty','graph-root','graph-up'):
+        page = 1
+    return navigation(GraphClusterModel.loadModel(model),focus,page,include_empty,action)
 
 generative.register(app)
 

@@ -98,6 +98,7 @@ jobs:
           done
           node tests/browser/filters.cjs
           node tests/browser/mathematics.cjs
+          node tests/browser/graph.cjs
       - name: Upload server log on failure
         if: failure()
         uses: actions/upload-artifact@v4

@@ -302,3 +302,20 @@ Formule, differenze dai paper, protocolli e comandi riproducibili:
 [JOINT-CP.md](docs/JOINT-CP.md). La precedente diagnosi dei profili storici resta in
 [LETTER-DIAGNOSIS.md](docs/LETTER-DIAGNOSIS.md); il precedente solver variazionale
 è descritto in [VARIATIONAL-ROUTING.md](docs/VARIATIONAL-ROUTING.md).
+
+
+### Grafo leggibile e navigazione dei concetti
+
+La vista **Concetti e gruppi** mostra un concetto alla volta, con **12 gruppi per
+pagina** e schede con etichette leggibili. Il selettore del concetto e i pulsanti
+**Radice / Sali al padre** permettono di percorrere la gerarchia. Un doppio clic
+su un gruppo con bordo blu apre il figlio già addestrato; sugli altri gruppi
+richiede un approfondimento. La vista **Solo gerarchia** conserva la panoramica.
+Sono disponibili zoom, centratura e schermo intero.
+
+Il conteggio globale indica i **prototipi complessivi**, non certifica altrettanti
+concetti distinti. Per ogni nodo sono distinti i gruppi con record assegnati e i
+prototipi senza assegnazioni hard, consultabili con l'apposita opzione. Questi
+ultimi possono ancora contribuire alle previsioni soft. Il rendering non elimina
+o accorpa i prototipi del modello: la CP attuale non garantisce da sola una
+rappresentazione compatta; il pruning richiede una verifica predittiva separata.
