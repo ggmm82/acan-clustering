@@ -4,7 +4,7 @@ PDF_SHA256 = '1fdd1a5f6e235d291c29364cae2dd1bd138df74db42256bb9ec36dd528f40396'
 CONFORMANCE = 'partial'
 GAPS = [
     {'id': 'joint-cp-core', 'status': 'qualified',
-     'detail': 'cp-joint-v1 shares bounded root-shift relevance, weighted routing, summaries and normalized CP/NLL objective between tabular and LM adapters. This explicit supervised extension omits the paper-specific dual relevance and mass/bilinear routing; backend values/gradients, causality and resume are tested, not general language quality.'},
+     'detail': 'cp-joint-v1 shares bounded root-shift relevance, learned simplex masses, routing, summaries and exclusive-cp-v1/NLL between tabular and LM adapters. The extension adds explicit overlap exclusion and probability affinity; it is not a proof of the paper theorems or general language quality. It omits paper-specific dual relevance and mass/bilinear routing. Values, derivatives, causality and resume are tested.'},
     {'id': 'backend-initialization', 'status': 'qualified',
      'detail': 'CPU forward/gradient parity is checked with identical parameters; native initializers differ. GPU execution and bitwise cross-backend training equivalence are not certified.'},
     {'id': 'routing', 'status': 'qualified',
@@ -16,9 +16,9 @@ GAPS = [
     {'id': 'masking', 'status': 'different',
      'detail': 'Runtime arbitrary-column completion exists; legacy tabular training optimizes CP; cp-joint-v1 adds categorical NLL with targets excluded from routing. Neither is an arbitrary masked reconstruction objective.'},
     {'id': 'pruning', 'status': 'partial',
-     'detail': 'Legacy empty hard-assignment rows are removed on export; cp-joint-v1 retains its bounded prototype set. Neither physically prunes training parameter arrays.'},
+     'detail': 'The new joint model learns simplex masses. Exact zero support is removed from saved tabular arrays and masked in LM slots; no similarity-based merge is used. Occupied support is not a guarantee of semantic concept count or globally optimal cardinality.'},
     {'id': 'complexity', 'status': 'qualified',
-     'detail': 'Routing is O(n*k*m) for fixed k/m; coupling preprocessing includes O(n*m^2) work.'},
+     'detail': 'Routing is O(n*k*m); coupling preprocessing includes O(n*m^2). Exclusive CP adds O(k^2*m) per training evaluation and line search overhead. LM inference skips this pairwise training cost and retains fixed-prefix-state memory. No universal throughput improvement is claimed.'},
     {'id': 'theorems', 'status': 'unverified',
      'detail': 'Early stopping ensures bounded iterations, not global Adam convergence. Noise and collapse theorems require independent mathematical review.'},
     {'id': 'benchmark-provenance', 'status': 'different',

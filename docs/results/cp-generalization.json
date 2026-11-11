@@ -1,0 +1,3311 @@
+[
+  {
+    "dataset": "adultMinimal.xlsx",
+    "variant": "exclusive",
+    "seed": 21,
+    "source_sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "income"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 499,
+      "usable_rows": 499,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "income": "classification"
+      },
+      "stratified": true,
+      "train_rows": 399,
+      "validation_rows": 100,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 8.988791642997967,
+    "stats": {
+      "nodes": 14,
+      "depth": 3,
+      "groups": 354
+    },
+    "hard_nonempty_groups": 80,
+    "accuracy": 0.68,
+    "balanced_accuracy": 0.6799999999999999,
+    "macro_f1": 0.677938808373591,
+    "train_accuracy": 0.8145363408521303,
+    "majority_baseline": 0.5,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "adultMinimal.xlsx",
+    "variant": "exclusive",
+    "seed": 42,
+    "source_sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "income"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 499,
+      "usable_rows": 499,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "income": "classification"
+      },
+      "stratified": true,
+      "train_rows": 399,
+      "validation_rows": 100,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 8.819065413998032,
+    "stats": {
+      "nodes": 15,
+      "depth": 3,
+      "groups": 395
+    },
+    "hard_nonempty_groups": 78,
+    "accuracy": 0.71,
+    "balanced_accuracy": 0.71,
+    "macro_f1": 0.7099709970997099,
+    "train_accuracy": 0.7844611528822055,
+    "majority_baseline": 0.5,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "adultMinimal.xlsx",
+    "variant": "exclusive",
+    "seed": 7,
+    "source_sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "income"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 499,
+      "usable_rows": 499,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "income": "classification"
+      },
+      "stratified": true,
+      "train_rows": 399,
+      "validation_rows": 100,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 8.536602690001018,
+    "stats": {
+      "nodes": 14,
+      "depth": 3,
+      "groups": 395
+    },
+    "hard_nonempty_groups": 75,
+    "accuracy": 0.7,
+    "balanced_accuracy": 0.7,
+    "macro_f1": 0.6989160979526294,
+    "train_accuracy": 0.8095238095238095,
+    "majority_baseline": 0.5,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "adultMinimal.xlsx",
+    "variant": "joint",
+    "seed": 21,
+    "source_sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "income"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 499,
+      "usable_rows": 499,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "income": "classification"
+      },
+      "stratified": true,
+      "train_rows": 399,
+      "validation_rows": 100,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 1.20492110500345,
+    "stats": {
+      "nodes": 10,
+      "depth": 3,
+      "groups": 564
+    },
+    "hard_nonempty_groups": 101,
+    "accuracy": 0.67,
+    "balanced_accuracy": 0.6699999999999999,
+    "macro_f1": 0.6683750376846548,
+    "train_accuracy": 0.7894736842105263,
+    "majority_baseline": 0.5,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "adultMinimal.xlsx",
+    "variant": "joint",
+    "seed": 42,
+    "source_sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "income"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 499,
+      "usable_rows": 499,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "income": "classification"
+      },
+      "stratified": true,
+      "train_rows": 399,
+      "validation_rows": 100,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 1.3417091320006875,
+    "stats": {
+      "nodes": 9,
+      "depth": 2,
+      "groups": 542
+    },
+    "hard_nonempty_groups": 120,
+    "accuracy": 0.74,
+    "balanced_accuracy": 0.74,
+    "macro_f1": 0.7362012987012987,
+    "train_accuracy": 0.7969924812030075,
+    "majority_baseline": 0.5,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "adultMinimal.xlsx",
+    "variant": "joint",
+    "seed": 7,
+    "source_sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "income"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 499,
+      "usable_rows": 499,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "income": "classification"
+      },
+      "stratified": true,
+      "train_rows": 399,
+      "validation_rows": 100,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 1.2269810830002825,
+    "stats": {
+      "nodes": 9,
+      "depth": 3,
+      "groups": 485
+    },
+    "hard_nonempty_groups": 98,
+    "accuracy": 0.63,
+    "balanced_accuracy": 0.63,
+    "macro_f1": 0.6290726817042607,
+    "train_accuracy": 0.7744360902255639,
+    "majority_baseline": 0.5,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "adultMinimal.xlsx",
+    "variant": "legacy",
+    "seed": 21,
+    "source_sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "income"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 499,
+      "usable_rows": 499,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "income": "classification"
+      },
+      "stratified": true,
+      "train_rows": 399,
+      "validation_rows": 100,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.6767499390007288,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 4
+    },
+    "hard_nonempty_groups": 4,
+    "accuracy": 0.73,
+    "balanced_accuracy": 0.73,
+    "macro_f1": 0.7237851662404092,
+    "train_accuracy": 0.7719298245614035,
+    "majority_baseline": 0.5,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "adultMinimal.xlsx",
+    "variant": "legacy",
+    "seed": 42,
+    "source_sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "income"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 499,
+      "usable_rows": 499,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "income": "classification"
+      },
+      "stratified": true,
+      "train_rows": 399,
+      "validation_rows": 100,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.41891105900140246,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 2
+    },
+    "hard_nonempty_groups": 2,
+    "accuracy": 0.8,
+    "balanced_accuracy": 0.8,
+    "macro_f1": 0.7999199679871949,
+    "train_accuracy": 0.7543859649122807,
+    "majority_baseline": 0.5,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "adultMinimal.xlsx",
+    "variant": "legacy",
+    "seed": 7,
+    "source_sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "income"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 499,
+      "usable_rows": 499,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "income": "classification"
+      },
+      "stratified": true,
+      "train_rows": 399,
+      "validation_rows": 100,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.6886274919997959,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 4
+    },
+    "hard_nonempty_groups": 4,
+    "accuracy": 0.76,
+    "balanced_accuracy": 0.76,
+    "macro_f1": 0.7584541062801933,
+    "train_accuracy": 0.7644110275689223,
+    "majority_baseline": 0.5,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "breast-cancer.arff",
+    "variant": "exclusive",
+    "seed": 21,
+    "source_sha256": "f37aea89243c1ea4fff82269ccd0a677afd5d88966bd927295be9f774a15e9d9",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 286,
+      "usable_rows": 286,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 228,
+      "validation_rows": 58,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 4.878738814000826,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 191
+    },
+    "hard_nonempty_groups": 162,
+    "accuracy": 0.6379310344827587,
+    "balanced_accuracy": 0.5889526542324246,
+    "macro_f1": 0.5833048238111529,
+    "train_accuracy": 0.9868421052631579,
+    "majority_baseline": 0.7068965517241379,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "breast-cancer.arff",
+    "variant": "exclusive",
+    "seed": 42,
+    "source_sha256": "f37aea89243c1ea4fff82269ccd0a677afd5d88966bd927295be9f774a15e9d9",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 286,
+      "usable_rows": 286,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 228,
+      "validation_rows": 58,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 6.281443803000002,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 200
+    },
+    "hard_nonempty_groups": 175,
+    "accuracy": 0.7068965517241379,
+    "balanced_accuracy": 0.5860832137733142,
+    "macro_f1": 0.5896795672076571,
+    "train_accuracy": 0.9780701754385965,
+    "majority_baseline": 0.7068965517241379,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "breast-cancer.arff",
+    "variant": "exclusive",
+    "seed": 7,
+    "source_sha256": "f37aea89243c1ea4fff82269ccd0a677afd5d88966bd927295be9f774a15e9d9",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 286,
+      "usable_rows": 286,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 228,
+      "validation_rows": 58,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 7.181732553999609,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 200
+    },
+    "hard_nonempty_groups": 160,
+    "accuracy": 0.6551724137931034,
+    "balanced_accuracy": 0.5667144906743186,
+    "macro_f1": 0.5684523809523809,
+    "train_accuracy": 0.9824561403508771,
+    "majority_baseline": 0.7068965517241379,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "breast-cancer.arff",
+    "variant": "joint",
+    "seed": 21,
+    "source_sha256": "f37aea89243c1ea4fff82269ccd0a677afd5d88966bd927295be9f774a15e9d9",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 286,
+      "usable_rows": 286,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 228,
+      "validation_rows": 58,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 0.8243813430017326,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 228
+    },
+    "hard_nonempty_groups": 130,
+    "accuracy": 0.6896551724137931,
+    "balanced_accuracy": 0.6255380200860832,
+    "macro_f1": 0.6255380200860832,
+    "train_accuracy": 0.9868421052631579,
+    "majority_baseline": 0.7068965517241379,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "breast-cancer.arff",
+    "variant": "joint",
+    "seed": 42,
+    "source_sha256": "f37aea89243c1ea4fff82269ccd0a677afd5d88966bd927295be9f774a15e9d9",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 286,
+      "usable_rows": 286,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 228,
+      "validation_rows": 58,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 1.0352554170021904,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 228
+    },
+    "hard_nonempty_groups": 189,
+    "accuracy": 0.7241379310344828,
+    "balanced_accuracy": 0.5982783357245337,
+    "macro_f1": 0.6034188034188034,
+    "train_accuracy": 0.9780701754385965,
+    "majority_baseline": 0.7068965517241379,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "breast-cancer.arff",
+    "variant": "joint",
+    "seed": 7,
+    "source_sha256": "f37aea89243c1ea4fff82269ccd0a677afd5d88966bd927295be9f774a15e9d9",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 286,
+      "usable_rows": 286,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 228,
+      "validation_rows": 58,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 0.9515899919970252,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 228
+    },
+    "hard_nonempty_groups": 160,
+    "accuracy": 0.6724137931034483,
+    "balanced_accuracy": 0.5789096126255381,
+    "macro_f1": 0.5817836812144213,
+    "train_accuracy": 0.9824561403508771,
+    "majority_baseline": 0.7068965517241379,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "breast-cancer.arff",
+    "variant": "legacy",
+    "seed": 21,
+    "source_sha256": "f37aea89243c1ea4fff82269ccd0a677afd5d88966bd927295be9f774a15e9d9",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 286,
+      "usable_rows": 286,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 228,
+      "validation_rows": 58,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.7753466190006293,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 4
+    },
+    "hard_nonempty_groups": 4,
+    "accuracy": 0.7068965517241379,
+    "balanced_accuracy": 0.5,
+    "macro_f1": 0.41414141414141414,
+    "train_accuracy": 0.7017543859649122,
+    "majority_baseline": 0.7068965517241379,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "breast-cancer.arff",
+    "variant": "legacy",
+    "seed": 42,
+    "source_sha256": "f37aea89243c1ea4fff82269ccd0a677afd5d88966bd927295be9f774a15e9d9",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 286,
+      "usable_rows": 286,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 228,
+      "validation_rows": 58,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.7650391090028279,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 3
+    },
+    "hard_nonempty_groups": 3,
+    "accuracy": 0.7068965517241379,
+    "balanced_accuracy": 0.5,
+    "macro_f1": 0.41414141414141414,
+    "train_accuracy": 0.7017543859649122,
+    "majority_baseline": 0.7068965517241379,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "breast-cancer.arff",
+    "variant": "legacy",
+    "seed": 7,
+    "source_sha256": "f37aea89243c1ea4fff82269ccd0a677afd5d88966bd927295be9f774a15e9d9",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 286,
+      "usable_rows": 286,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 228,
+      "validation_rows": 58,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.7957281179988058,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 3
+    },
+    "hard_nonempty_groups": 3,
+    "accuracy": 0.7068965517241379,
+    "balanced_accuracy": 0.5,
+    "macro_f1": 0.41414141414141414,
+    "train_accuracy": 0.7017543859649122,
+    "majority_baseline": 0.7068965517241379,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "iris.arff",
+    "variant": "exclusive",
+    "seed": 21,
+    "source_sha256": "7d34ba556497e9dc28335ea6628a37d1dbcba090a1ae20dc2de9c7032d199153",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 150,
+      "usable_rows": 150,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 120,
+      "validation_rows": 30,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 1.447247702999448,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 46
+    },
+    "hard_nonempty_groups": 26,
+    "accuracy": 0.9666666666666667,
+    "balanced_accuracy": 0.9666666666666667,
+    "macro_f1": 0.9665831244778612,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.3333333333333333,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "iris.arff",
+    "variant": "exclusive",
+    "seed": 42,
+    "source_sha256": "7d34ba556497e9dc28335ea6628a37d1dbcba090a1ae20dc2de9c7032d199153",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 150,
+      "usable_rows": 150,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 120,
+      "validation_rows": 30,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 0.8015964620026352,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 32
+    },
+    "hard_nonempty_groups": 30,
+    "accuracy": 0.9666666666666667,
+    "balanced_accuracy": 0.9666666666666667,
+    "macro_f1": 0.9665831244778613,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.3333333333333333,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "iris.arff",
+    "variant": "exclusive",
+    "seed": 7,
+    "source_sha256": "7d34ba556497e9dc28335ea6628a37d1dbcba090a1ae20dc2de9c7032d199153",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 150,
+      "usable_rows": 150,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 120,
+      "validation_rows": 30,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 1.3150039719985216,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 36
+    },
+    "hard_nonempty_groups": 22,
+    "accuracy": 0.9666666666666667,
+    "balanced_accuracy": 0.9666666666666667,
+    "macro_f1": 0.9665831244778613,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.3333333333333333,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "iris.arff",
+    "variant": "joint",
+    "seed": 21,
+    "source_sha256": "7d34ba556497e9dc28335ea6628a37d1dbcba090a1ae20dc2de9c7032d199153",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 150,
+      "usable_rows": 150,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 120,
+      "validation_rows": 30,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 0.19998118100193096,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 120
+    },
+    "hard_nonempty_groups": 30,
+    "accuracy": 0.9666666666666667,
+    "balanced_accuracy": 0.9666666666666667,
+    "macro_f1": 0.9665831244778612,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.3333333333333333,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "iris.arff",
+    "variant": "joint",
+    "seed": 42,
+    "source_sha256": "7d34ba556497e9dc28335ea6628a37d1dbcba090a1ae20dc2de9c7032d199153",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 150,
+      "usable_rows": 150,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 120,
+      "validation_rows": 30,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 0.19120267999824136,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 120
+    },
+    "hard_nonempty_groups": 30,
+    "accuracy": 0.9333333333333333,
+    "balanced_accuracy": 0.9333333333333332,
+    "macro_f1": 0.9326599326599326,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.3333333333333333,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "iris.arff",
+    "variant": "joint",
+    "seed": 7,
+    "source_sha256": "7d34ba556497e9dc28335ea6628a37d1dbcba090a1ae20dc2de9c7032d199153",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 150,
+      "usable_rows": 150,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 120,
+      "validation_rows": 30,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 0.18105570699844975,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 120
+    },
+    "hard_nonempty_groups": 36,
+    "accuracy": 0.9333333333333333,
+    "balanced_accuracy": 0.9333333333333332,
+    "macro_f1": 0.9326599326599326,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.3333333333333333,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "iris.arff",
+    "variant": "legacy",
+    "seed": 21,
+    "source_sha256": "7d34ba556497e9dc28335ea6628a37d1dbcba090a1ae20dc2de9c7032d199153",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 150,
+      "usable_rows": 150,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 120,
+      "validation_rows": 30,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.19358052200186648,
+    "stats": {
+      "nodes": 2,
+      "depth": 2,
+      "groups": 4
+    },
+    "hard_nonempty_groups": 4,
+    "accuracy": 0.9333333333333333,
+    "balanced_accuracy": 0.9333333333333332,
+    "macro_f1": 0.9333333333333332,
+    "train_accuracy": 0.9166666666666666,
+    "majority_baseline": 0.3333333333333333,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "iris.arff",
+    "variant": "legacy",
+    "seed": 42,
+    "source_sha256": "7d34ba556497e9dc28335ea6628a37d1dbcba090a1ae20dc2de9c7032d199153",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 150,
+      "usable_rows": 150,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 120,
+      "validation_rows": 30,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.18522419500004617,
+    "stats": {
+      "nodes": 2,
+      "depth": 2,
+      "groups": 4
+    },
+    "hard_nonempty_groups": 4,
+    "accuracy": 0.9333333333333333,
+    "balanced_accuracy": 0.9333333333333332,
+    "macro_f1": 0.9326599326599326,
+    "train_accuracy": 0.9333333333333333,
+    "majority_baseline": 0.3333333333333333,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "iris.arff",
+    "variant": "legacy",
+    "seed": 7,
+    "source_sha256": "7d34ba556497e9dc28335ea6628a37d1dbcba090a1ae20dc2de9c7032d199153",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 150,
+      "usable_rows": 150,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 120,
+      "validation_rows": 30,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.13731730799918296,
+    "stats": {
+      "nodes": 2,
+      "depth": 2,
+      "groups": 4
+    },
+    "hard_nonempty_groups": 4,
+    "accuracy": 1.0,
+    "balanced_accuracy": 1.0,
+    "macro_f1": 1.0,
+    "train_accuracy": 0.9416666666666667,
+    "majority_baseline": 0.3333333333333333,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "mushroom.arff",
+    "variant": "exclusive",
+    "seed": 21,
+    "source_sha256": "34a8ff8ed2864b6c1a9fbaf6f8951e694d48caa682f09b067ee5e5567622d671",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "class"
+    ],
+    "filters": [
+      "veil-type"
+    ],
+    "info": {
+      "raw_rows": 8124,
+      "usable_rows": 8124,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "veil-type"
+      ],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 6499,
+      "validation_rows": 1625,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 101.86661238599845,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 108
+    },
+    "hard_nonempty_groups": 36,
+    "accuracy": 1.0,
+    "balanced_accuracy": 1.0,
+    "macro_f1": 1.0,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.5181538461538462,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": []
+  },
+  {
+    "dataset": "mushroom.arff",
+    "variant": "exclusive",
+    "seed": 42,
+    "source_sha256": "34a8ff8ed2864b6c1a9fbaf6f8951e694d48caa682f09b067ee5e5567622d671",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "class"
+    ],
+    "filters": [
+      "veil-type"
+    ],
+    "info": {
+      "raw_rows": 8124,
+      "usable_rows": 8124,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "veil-type"
+      ],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 6499,
+      "validation_rows": 1625,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 126.6097371629985,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 121
+    },
+    "hard_nonempty_groups": 43,
+    "accuracy": 1.0,
+    "balanced_accuracy": 1.0,
+    "macro_f1": 1.0,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.5181538461538462,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "mushroom.arff",
+    "variant": "exclusive",
+    "seed": 7,
+    "source_sha256": "34a8ff8ed2864b6c1a9fbaf6f8951e694d48caa682f09b067ee5e5567622d671",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "class"
+    ],
+    "filters": [
+      "veil-type"
+    ],
+    "info": {
+      "raw_rows": 8124,
+      "usable_rows": 8124,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "veil-type"
+      ],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 6499,
+      "validation_rows": 1625,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 111.51507039200078,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 49
+    },
+    "hard_nonempty_groups": 30,
+    "accuracy": 1.0,
+    "balanced_accuracy": 1.0,
+    "macro_f1": 1.0,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.5181538461538462,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": []
+  },
+  {
+    "dataset": "mushroom.arff",
+    "variant": "joint",
+    "seed": 21,
+    "source_sha256": "34a8ff8ed2864b6c1a9fbaf6f8951e694d48caa682f09b067ee5e5567622d671",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "class"
+    ],
+    "filters": [
+      "veil-type"
+    ],
+    "info": {
+      "raw_rows": 8124,
+      "usable_rows": 8124,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "veil-type"
+      ],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 6499,
+      "validation_rows": 1625,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 45.09680474099878,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 256
+    },
+    "hard_nonempty_groups": 22,
+    "accuracy": 1.0,
+    "balanced_accuracy": 1.0,
+    "macro_f1": 1.0,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.5181538461538462,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": []
+  },
+  {
+    "dataset": "mushroom.arff",
+    "variant": "joint",
+    "seed": 42,
+    "source_sha256": "34a8ff8ed2864b6c1a9fbaf6f8951e694d48caa682f09b067ee5e5567622d671",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "class"
+    ],
+    "filters": [
+      "veil-type"
+    ],
+    "info": {
+      "raw_rows": 8124,
+      "usable_rows": 8124,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "veil-type"
+      ],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 6499,
+      "validation_rows": 1625,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 51.11345240300216,
+    "stats": {
+      "nodes": 2,
+      "depth": 2,
+      "groups": 272
+    },
+    "hard_nonempty_groups": 29,
+    "accuracy": 1.0,
+    "balanced_accuracy": 1.0,
+    "macro_f1": 1.0,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.5181538461538462,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "mushroom.arff",
+    "variant": "joint",
+    "seed": 7,
+    "source_sha256": "34a8ff8ed2864b6c1a9fbaf6f8951e694d48caa682f09b067ee5e5567622d671",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "class"
+    ],
+    "filters": [
+      "veil-type"
+    ],
+    "info": {
+      "raw_rows": 8124,
+      "usable_rows": 8124,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "veil-type"
+      ],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 6499,
+      "validation_rows": 1625,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 44.89873237899883,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 256
+    },
+    "hard_nonempty_groups": 20,
+    "accuracy": 1.0,
+    "balanced_accuracy": 1.0,
+    "macro_f1": 1.0,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.5181538461538462,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": []
+  },
+  {
+    "dataset": "mushroom.arff",
+    "variant": "legacy",
+    "seed": 21,
+    "source_sha256": "34a8ff8ed2864b6c1a9fbaf6f8951e694d48caa682f09b067ee5e5567622d671",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "class"
+    ],
+    "filters": [
+      "veil-type"
+    ],
+    "info": {
+      "raw_rows": 8124,
+      "usable_rows": 8124,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "veil-type"
+      ],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 6499,
+      "validation_rows": 1625,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 1.5992118060021312,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 2
+    },
+    "hard_nonempty_groups": 2,
+    "accuracy": 0.8806153846153846,
+    "balanced_accuracy": 0.88345573848072,
+    "macro_f1": 0.8803605313092979,
+    "train_accuracy": 0.888290506231728,
+    "majority_baseline": 0.5181538461538462,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": []
+  },
+  {
+    "dataset": "mushroom.arff",
+    "variant": "legacy",
+    "seed": 42,
+    "source_sha256": "34a8ff8ed2864b6c1a9fbaf6f8951e694d48caa682f09b067ee5e5567622d671",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "class"
+    ],
+    "filters": [
+      "veil-type"
+    ],
+    "info": {
+      "raw_rows": 8124,
+      "usable_rows": 8124,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "veil-type"
+      ],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 6499,
+      "validation_rows": 1625,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 1.9006274349994783,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 2
+    },
+    "hard_nonempty_groups": 2,
+    "accuracy": 0.8855384615384615,
+    "balanced_accuracy": 0.8885195499373565,
+    "macro_f1": 0.8852533575493989,
+    "train_accuracy": 0.8870595476227112,
+    "majority_baseline": 0.5181538461538462,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "mushroom.arff",
+    "variant": "legacy",
+    "seed": 7,
+    "source_sha256": "34a8ff8ed2864b6c1a9fbaf6f8951e694d48caa682f09b067ee5e5567622d671",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "class"
+    ],
+    "filters": [
+      "veil-type"
+    ],
+    "info": {
+      "raw_rows": 8124,
+      "usable_rows": 8124,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "veil-type"
+      ],
+      "target_types": {
+        "class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 6499,
+      "validation_rows": 1625,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 2.2677782850005315,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 2
+    },
+    "hard_nonempty_groups": 2,
+    "accuracy": 0.8947692307692308,
+    "balanced_accuracy": 0.8975164041099006,
+    "macro_f1": 0.8945735992943118,
+    "train_accuracy": 0.8847515002308047,
+    "majority_baseline": 0.5181538461538462,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": []
+  },
+  {
+    "dataset": "sonar.xlsx",
+    "variant": "exclusive",
+    "seed": 21,
+    "source_sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 208,
+      "usable_rows": 208,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 166,
+      "validation_rows": 42,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 2.4461849729996175,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 79
+    },
+    "hard_nonempty_groups": 71,
+    "accuracy": 0.8095238095238095,
+    "balanced_accuracy": 0.8045454545454545,
+    "macro_f1": 0.8055555555555556,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.5238095238095238,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "sonar.xlsx",
+    "variant": "exclusive",
+    "seed": 42,
+    "source_sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 208,
+      "usable_rows": 208,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 166,
+      "validation_rows": 42,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 2.1388807049988827,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 85
+    },
+    "hard_nonempty_groups": 71,
+    "accuracy": 0.9285714285714286,
+    "balanced_accuracy": 0.9272727272727272,
+    "macro_f1": 0.9282051282051282,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.5238095238095238,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "sonar.xlsx",
+    "variant": "exclusive",
+    "seed": 7,
+    "source_sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 208,
+      "usable_rows": 208,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 166,
+      "validation_rows": 42,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 2.5156682090018876,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 93
+    },
+    "hard_nonempty_groups": 82,
+    "accuracy": 0.7857142857142857,
+    "balanced_accuracy": 0.7863636363636364,
+    "macro_f1": 0.7855927396483267,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.5238095238095238,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "sonar.xlsx",
+    "variant": "joint",
+    "seed": 21,
+    "source_sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 208,
+      "usable_rows": 208,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 166,
+      "validation_rows": 42,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 0.5791412180005864,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 166
+    },
+    "hard_nonempty_groups": 50,
+    "accuracy": 0.8571428571428571,
+    "balanced_accuracy": 0.8545454545454545,
+    "macro_f1": 0.8558352402745995,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.5238095238095238,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "sonar.xlsx",
+    "variant": "joint",
+    "seed": 42,
+    "source_sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 208,
+      "usable_rows": 208,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 166,
+      "validation_rows": 42,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 0.6151418660010677,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 166
+    },
+    "hard_nonempty_groups": 48,
+    "accuracy": 0.8333333333333334,
+    "balanced_accuracy": 0.8272727272727273,
+    "macro_f1": 0.8285714285714285,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.5238095238095238,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "sonar.xlsx",
+    "variant": "joint",
+    "seed": 7,
+    "source_sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 208,
+      "usable_rows": 208,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 166,
+      "validation_rows": 42,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 0.5406162910003331,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 166
+    },
+    "hard_nonempty_groups": 43,
+    "accuracy": 0.7619047619047619,
+    "balanced_accuracy": 0.7636363636363637,
+    "macro_f1": 0.7619047619047619,
+    "train_accuracy": 1.0,
+    "majority_baseline": 0.5238095238095238,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "sonar.xlsx",
+    "variant": "legacy",
+    "seed": 21,
+    "source_sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 208,
+      "usable_rows": 208,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 166,
+      "validation_rows": 42,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.426226379997388,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 2
+    },
+    "hard_nonempty_groups": 2,
+    "accuracy": 0.7619047619047619,
+    "balanced_accuracy": 0.7636363636363637,
+    "macro_f1": 0.7619047619047619,
+    "train_accuracy": 0.6626506024096386,
+    "majority_baseline": 0.5238095238095238,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "sonar.xlsx",
+    "variant": "legacy",
+    "seed": 42,
+    "source_sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 208,
+      "usable_rows": 208,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 166,
+      "validation_rows": 42,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.4418934050008829,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 2
+    },
+    "hard_nonempty_groups": 2,
+    "accuracy": 0.6666666666666666,
+    "balanced_accuracy": 0.6659090909090909,
+    "macro_f1": 0.6659090909090909,
+    "train_accuracy": 0.6686746987951807,
+    "majority_baseline": 0.5238095238095238,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "sonar.xlsx",
+    "variant": "legacy",
+    "seed": 7,
+    "source_sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 208,
+      "usable_rows": 208,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 166,
+      "validation_rows": 42,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.4358950489986455,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 2
+    },
+    "hard_nonempty_groups": 2,
+    "accuracy": 0.7380952380952381,
+    "balanced_accuracy": 0.7340909090909091,
+    "macro_f1": 0.7343300747556067,
+    "train_accuracy": 0.7831325301204819,
+    "majority_baseline": 0.5238095238095238,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "titanic.csv",
+    "variant": "exclusive",
+    "seed": 21,
+    "source_sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "Survived"
+    ],
+    "filters": [
+      "PassengerId",
+      "Name",
+      "Ticket",
+      "Cabin"
+    ],
+    "info": {
+      "raw_rows": 891,
+      "usable_rows": 891,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "PassengerId",
+        "Name",
+        "Ticket",
+        "Cabin"
+      ],
+      "target_types": {
+        "Survived": "classification"
+      },
+      "stratified": true,
+      "train_rows": 712,
+      "validation_rows": 179,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 13.780784947000939,
+    "stats": {
+      "nodes": 19,
+      "depth": 3,
+      "groups": 507
+    },
+    "hard_nonempty_groups": 153,
+    "accuracy": 0.7486033519553073,
+    "balanced_accuracy": 0.7414361001317523,
+    "macro_f1": 0.738006179866645,
+    "train_accuracy": 0.8946629213483146,
+    "majority_baseline": 0.6145251396648045,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "titanic.csv",
+    "variant": "exclusive",
+    "seed": 42,
+    "source_sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "Survived"
+    ],
+    "filters": [
+      "PassengerId",
+      "Name",
+      "Ticket",
+      "Cabin"
+    ],
+    "info": {
+      "raw_rows": 891,
+      "usable_rows": 891,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "PassengerId",
+        "Name",
+        "Ticket",
+        "Cabin"
+      ],
+      "target_types": {
+        "Survived": "classification"
+      },
+      "stratified": true,
+      "train_rows": 712,
+      "validation_rows": 179,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 14.096169148000627,
+    "stats": {
+      "nodes": 19,
+      "depth": 3,
+      "groups": 563
+    },
+    "hard_nonempty_groups": 152,
+    "accuracy": 0.7541899441340782,
+    "balanced_accuracy": 0.7486824769433464,
+    "macro_f1": 0.7444184839044652,
+    "train_accuracy": 0.9002808988764045,
+    "majority_baseline": 0.6145251396648045,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "titanic.csv",
+    "variant": "exclusive",
+    "seed": 7,
+    "source_sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "Survived"
+    ],
+    "filters": [
+      "PassengerId",
+      "Name",
+      "Ticket",
+      "Cabin"
+    ],
+    "info": {
+      "raw_rows": 891,
+      "usable_rows": 891,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "PassengerId",
+        "Name",
+        "Ticket",
+        "Cabin"
+      ],
+      "target_types": {
+        "Survived": "classification"
+      },
+      "stratified": true,
+      "train_rows": 712,
+      "validation_rows": 179,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 14.866118926998752,
+    "stats": {
+      "nodes": 16,
+      "depth": 3,
+      "groups": 433
+    },
+    "hard_nonempty_groups": 148,
+    "accuracy": 0.7821229050279329,
+    "balanced_accuracy": 0.7633069828722003,
+    "macro_f1": 0.7667167919799498,
+    "train_accuracy": 0.901685393258427,
+    "majority_baseline": 0.6145251396648045,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "titanic.csv",
+    "variant": "joint",
+    "seed": 21,
+    "source_sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Survived"
+    ],
+    "filters": [
+      "PassengerId",
+      "Name",
+      "Ticket",
+      "Cabin"
+    ],
+    "info": {
+      "raw_rows": 891,
+      "usable_rows": 891,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "PassengerId",
+        "Name",
+        "Ticket",
+        "Cabin"
+      ],
+      "target_types": {
+        "Survived": "classification"
+      },
+      "stratified": true,
+      "train_rows": 712,
+      "validation_rows": 179,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 2.6821034399981727,
+    "stats": {
+      "nodes": 12,
+      "depth": 3,
+      "groups": 799
+    },
+    "hard_nonempty_groups": 208,
+    "accuracy": 0.7541899441340782,
+    "balanced_accuracy": 0.7567852437417655,
+    "macro_f1": 0.7475641025641026,
+    "train_accuracy": 0.8862359550561798,
+    "majority_baseline": 0.6145251396648045,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "titanic.csv",
+    "variant": "joint",
+    "seed": 42,
+    "source_sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Survived"
+    ],
+    "filters": [
+      "PassengerId",
+      "Name",
+      "Ticket",
+      "Cabin"
+    ],
+    "info": {
+      "raw_rows": 891,
+      "usable_rows": 891,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "PassengerId",
+        "Name",
+        "Ticket",
+        "Cabin"
+      ],
+      "target_types": {
+        "Survived": "classification"
+      },
+      "stratified": true,
+      "train_rows": 712,
+      "validation_rows": 179,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 2.665550906000135,
+    "stats": {
+      "nodes": 15,
+      "depth": 3,
+      "groups": 758
+    },
+    "hard_nonempty_groups": 232,
+    "accuracy": 0.770949720670391,
+    "balanced_accuracy": 0.7461133069828721,
+    "macro_f1": 0.7515656206628076,
+    "train_accuracy": 0.8960674157303371,
+    "majority_baseline": 0.6145251396648045,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "titanic.csv",
+    "variant": "joint",
+    "seed": 7,
+    "source_sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Survived"
+    ],
+    "filters": [
+      "PassengerId",
+      "Name",
+      "Ticket",
+      "Cabin"
+    ],
+    "info": {
+      "raw_rows": 891,
+      "usable_rows": 891,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "PassengerId",
+        "Name",
+        "Ticket",
+        "Cabin"
+      ],
+      "target_types": {
+        "Survived": "classification"
+      },
+      "stratified": true,
+      "train_rows": 712,
+      "validation_rows": 179,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 2.249315986999136,
+    "stats": {
+      "nodes": 12,
+      "depth": 3,
+      "groups": 707
+    },
+    "hard_nonempty_groups": 168,
+    "accuracy": 0.7821229050279329,
+    "balanced_accuracy": 0.7579051383399209,
+    "macro_f1": 0.763684370874378,
+    "train_accuracy": 0.8651685393258427,
+    "majority_baseline": 0.6145251396648045,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "titanic.csv",
+    "variant": "legacy",
+    "seed": 21,
+    "source_sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Survived"
+    ],
+    "filters": [
+      "PassengerId",
+      "Name",
+      "Ticket",
+      "Cabin"
+    ],
+    "info": {
+      "raw_rows": 891,
+      "usable_rows": 891,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "PassengerId",
+        "Name",
+        "Ticket",
+        "Cabin"
+      ],
+      "target_types": {
+        "Survived": "classification"
+      },
+      "stratified": true,
+      "train_rows": 712,
+      "validation_rows": 179,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.5354814870006521,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 4
+    },
+    "hard_nonempty_groups": 4,
+    "accuracy": 0.3854748603351955,
+    "balanced_accuracy": 0.5,
+    "macro_f1": 0.2782258064516129,
+    "train_accuracy": 0.38342696629213485,
+    "majority_baseline": 0.6145251396648045,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "titanic.csv",
+    "variant": "legacy",
+    "seed": 42,
+    "source_sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Survived"
+    ],
+    "filters": [
+      "PassengerId",
+      "Name",
+      "Ticket",
+      "Cabin"
+    ],
+    "info": {
+      "raw_rows": 891,
+      "usable_rows": 891,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "PassengerId",
+        "Name",
+        "Ticket",
+        "Cabin"
+      ],
+      "target_types": {
+        "Survived": "classification"
+      },
+      "stratified": true,
+      "train_rows": 712,
+      "validation_rows": 179,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.7195119649986736,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 4
+    },
+    "hard_nonempty_groups": 4,
+    "accuracy": 0.776536312849162,
+    "balanced_accuracy": 0.7533596837944664,
+    "macro_f1": 0.7584345479082322,
+    "train_accuracy": 0.7893258426966292,
+    "majority_baseline": 0.6145251396648045,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "titanic.csv",
+    "variant": "legacy",
+    "seed": 7,
+    "source_sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Survived"
+    ],
+    "filters": [
+      "PassengerId",
+      "Name",
+      "Ticket",
+      "Cabin"
+    ],
+    "info": {
+      "raw_rows": 891,
+      "usable_rows": 891,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [
+        "PassengerId",
+        "Name",
+        "Ticket",
+        "Cabin"
+      ],
+      "target_types": {
+        "Survived": "classification"
+      },
+      "stratified": true,
+      "train_rows": 712,
+      "validation_rows": 179,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 0.6071049189995392,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 4
+    },
+    "hard_nonempty_groups": 4,
+    "accuracy": 0.7653631284916201,
+    "balanced_accuracy": 0.746969696969697,
+    "macro_f1": 0.7495335820895522,
+    "train_accuracy": 0.7921348314606742,
+    "majority_baseline": 0.6145251396648045,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true
+  },
+  {
+    "dataset": "vote.arff",
+    "variant": "exclusive",
+    "seed": 21,
+    "source_sha256": "ee647a77207729d73d02cea20646afcd274fe9de95711cbf9909c903636cd65f",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 435,
+      "usable_rows": 435,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 348,
+      "validation_rows": 87,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 8.894847526000376,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 191
+    },
+    "hard_nonempty_groups": 59,
+    "accuracy": 0.9540229885057471,
+    "balanced_accuracy": 0.9569922308546059,
+    "macro_f1": 0.9521978021978021,
+    "train_accuracy": 0.9942528735632183,
+    "majority_baseline": 0.6091954022988506,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": [
+      "No objects to concatenate"
+    ]
+  },
+  {
+    "dataset": "vote.arff",
+    "variant": "exclusive",
+    "seed": 42,
+    "source_sha256": "ee647a77207729d73d02cea20646afcd274fe9de95711cbf9909c903636cd65f",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 435,
+      "usable_rows": 435,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 348,
+      "validation_rows": 87,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 9.865351464999549,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 198
+    },
+    "hard_nonempty_groups": 77,
+    "accuracy": 0.9310344827586207,
+    "balanced_accuracy": 0.9223085460599334,
+    "macro_f1": 0.9267676767676767,
+    "train_accuracy": 0.9971264367816092,
+    "majority_baseline": 0.6091954022988506,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": [
+      "No objects to concatenate"
+    ]
+  },
+  {
+    "dataset": "vote.arff",
+    "variant": "exclusive",
+    "seed": 7,
+    "source_sha256": "ee647a77207729d73d02cea20646afcd274fe9de95711cbf9909c903636cd65f",
+    "code_sha256": "9c71c4fa5449b7ce8830e6b3bf4292dff7e79389a958c191e0853fc0be2c890c",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 435,
+      "usable_rows": 435,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 348,
+      "validation_rows": 87,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 10.170815257999493,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 186
+    },
+    "hard_nonempty_groups": 74,
+    "accuracy": 0.9195402298850575,
+    "balanced_accuracy": 0.9234184239733629,
+    "macro_f1": 0.9167236428278409,
+    "train_accuracy": 0.9942528735632183,
+    "majority_baseline": 0.6091954022988506,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": [
+      "No objects to concatenate"
+    ]
+  },
+  {
+    "dataset": "vote.arff",
+    "variant": "joint",
+    "seed": 21,
+    "source_sha256": "ee647a77207729d73d02cea20646afcd274fe9de95711cbf9909c903636cd65f",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 435,
+      "usable_rows": 435,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 348,
+      "validation_rows": 87,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 1.817300423001143,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 256
+    },
+    "hard_nonempty_groups": 91,
+    "accuracy": 0.9540229885057471,
+    "balanced_accuracy": 0.9517203107658158,
+    "macro_f1": 0.9517203107658158,
+    "train_accuracy": 0.9942528735632183,
+    "majority_baseline": 0.6091954022988506,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": [
+      "No objects to concatenate"
+    ]
+  },
+  {
+    "dataset": "vote.arff",
+    "variant": "joint",
+    "seed": 42,
+    "source_sha256": "ee647a77207729d73d02cea20646afcd274fe9de95711cbf9909c903636cd65f",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 435,
+      "usable_rows": 435,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 348,
+      "validation_rows": 87,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 1.7097273960025632,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 256
+    },
+    "hard_nonempty_groups": 100,
+    "accuracy": 0.9195402298850575,
+    "balanced_accuracy": 0.9076026637069923,
+    "macro_f1": 0.9140437544107269,
+    "train_accuracy": 0.9942528735632183,
+    "majority_baseline": 0.6091954022988506,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": [
+      "No objects to concatenate"
+    ]
+  },
+  {
+    "dataset": "vote.arff",
+    "variant": "joint",
+    "seed": 7,
+    "source_sha256": "ee647a77207729d73d02cea20646afcd274fe9de95711cbf9909c903636cd65f",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 435,
+      "usable_rows": 435,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 348,
+      "validation_rows": 87,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "cp-joint-v1"
+    },
+    "seconds": 1.7543912590008404,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 256
+    },
+    "hard_nonempty_groups": 91,
+    "accuracy": 0.896551724137931,
+    "balanced_accuracy": 0.8887347391786904,
+    "macro_f1": 0.8907797461291672,
+    "train_accuracy": 0.9885057471264368,
+    "majority_baseline": 0.6091954022988506,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": [
+      "No objects to concatenate"
+    ]
+  },
+  {
+    "dataset": "vote.arff",
+    "variant": "legacy",
+    "seed": 21,
+    "source_sha256": "ee647a77207729d73d02cea20646afcd274fe9de95711cbf9909c903636cd65f",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 435,
+      "usable_rows": 435,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 348,
+      "validation_rows": 87,
+      "seed": 21
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 2.1961932760023046,
+    "stats": {
+      "nodes": 3,
+      "depth": 3,
+      "groups": 16
+    },
+    "hard_nonempty_groups": 16,
+    "accuracy": 0.6091954022988506,
+    "balanced_accuracy": 0.5,
+    "macro_f1": 0.37857142857142856,
+    "train_accuracy": 0.6149425287356322,
+    "majority_baseline": 0.6091954022988506,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": [
+      "No objects to concatenate"
+    ]
+  },
+  {
+    "dataset": "vote.arff",
+    "variant": "legacy",
+    "seed": 42,
+    "source_sha256": "ee647a77207729d73d02cea20646afcd274fe9de95711cbf9909c903636cd65f",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 435,
+      "usable_rows": 435,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 348,
+      "validation_rows": 87,
+      "seed": 42
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 1.1760443349994603,
+    "stats": {
+      "nodes": 1,
+      "depth": 1,
+      "groups": 3
+    },
+    "hard_nonempty_groups": 3,
+    "accuracy": 0.9655172413793104,
+    "balanced_accuracy": 0.966426193118757,
+    "macro_f1": 0.9639751552795031,
+    "train_accuracy": 0.9540229885057471,
+    "majority_baseline": 0.6091954022988506,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": [
+      "No objects to concatenate"
+    ]
+  },
+  {
+    "dataset": "vote.arff",
+    "variant": "legacy",
+    "seed": 7,
+    "source_sha256": "ee647a77207729d73d02cea20646afcd274fe9de95711cbf9909c903636cd65f",
+    "code_sha256": "e19e57ed85e74bb2ed0164fdaf938d2d7ba1231dcaa19b9331e9c55410a5f071",
+    "labels": [
+      "Class"
+    ],
+    "filters": [],
+    "info": {
+      "raw_rows": 435,
+      "usable_rows": 435,
+      "excluded_missing_targets": 0,
+      "excluded_columns": [],
+      "target_types": {
+        "Class": "classification"
+      },
+      "stratified": true,
+      "train_rows": 348,
+      "validation_rows": 87,
+      "seed": 7
+    },
+    "options": {
+      "lr": 0.08,
+      "tau": 0.2,
+      "alpha": 0.5,
+      "device": "numpy",
+      "batch_size": 300,
+      "max_depth": 3,
+      "max_epochs": 100,
+      "min_samples_split": 12,
+      "similarity_threshold": 0.92,
+      "routing_profile": "legacy-v8"
+    },
+    "seconds": 1.286983607998991,
+    "stats": {
+      "nodes": 2,
+      "depth": 2,
+      "groups": 5
+    },
+    "hard_nonempty_groups": 5,
+    "accuracy": 0.9195402298850575,
+    "balanced_accuracy": 0.9181465038845726,
+    "macro_f1": 0.9159420289855073,
+    "train_accuracy": 0.9195402298850575,
+    "majority_baseline": 0.6091954022988506,
+    "persistence_identical": true,
+    "inference_does_not_mutate_model": true,
+    "gui_inference_issues": [
+      "No objects to concatenate"
+    ]
+  }
+]

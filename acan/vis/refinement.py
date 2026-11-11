@@ -38,6 +38,9 @@ def refine(model_json, training, node_id, options):
     graph = GraphClusterModel.loadModel(model_json)
     parent_id, group = parse_group(node_id)
     parent = graph.clusterModel[parent_id]
+    if (getattr(parent,'routing_profile','legacy-v8')=='cp-joint-v1' and
+            parent.routing_parameters.get('cp_definition')!='exclusive-cp-v1'):
+        raise ValueError('Modello CP precedente: riaddestrare prima di approfondire con il nuovo nucleo, evitando di mescolare formule diverse.')
     if group in parent.children:
         raise ValueError('Il gruppo ha già un approfondimento: scegli un suo gruppo figlio.')
     if len(graph.clusterModel) >= 64:

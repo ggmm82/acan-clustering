@@ -4,14 +4,14 @@ from dash import dcc, html
 TEXT = r"""
 ## Un unico nucleo matematico basato sulla CP
 
-Scegli **Modello congiunto NLL + CP** (`cp-joint-v1`) nelle impostazioni del
-modello tabulare e del laboratorio generativo. Entrambi chiamano le stesse
+Il modello **CP condivisa con selezione dei concetti** (`cp-joint-v1`) è usato nei nuovi training del
+tabulare e del laboratorio generativo. Entrambi chiamano le stesse
 funzioni in `acan/algebra.py`: `concept_assignments`, `concept_step`,
-`normalized_cluster_probability` e `prediction_cp_objective`.
+`normalized_cluster_probability`, `exclusive_cluster_probability`, `mass_assignments` e `prediction_cp_objective`.
 Il tabulare usa NumPy con gradienti analitici; il generativo usa PyTorch con
 autograd. I test confrontano valori, loss e gradienti sugli stessi dati.
 
-Il modello comune impara a **prevedere bene mantenendo organizzati i concetti**.
+La proposta è un’estensione **sperimentale** della CP degli studi originali, identificata nei nuovi checkpoint da `exclusive-cp-v1`. Non è una dimostrazione di miglioramento universale. Il modello impara a prevedere il target e a organizzare i concetti.
 La CP entra esplicitamente nella loss e il suo gradiente aggiorna anche i prototipi
 che determinano il routing. Non è soltanto un indicatore mostrato nel grafico.
 
@@ -48,8 +48,8 @@ D_{it}=\sum_{j\in O}W_{ij}(X_{tj}-A_{ij})^2,
 $$
 
 $$
-T_{it}=\operatorname{softmax}_i(-\beta D_{it}),\quad
-\sum_iT_{it}=1.
+\pi_i\geq0,\qquad \sum_i\pi_i=1,\qquad
+T_{it}=\frac{\pi_i\exp(-\beta D_{it})}{\sum_q\pi_q\exp(-\beta D_{qt})}.
 $$
 
 Il routing vede soltanto gli attributi osservabili. Nel tabulare il target resta
@@ -81,10 +81,27 @@ crescita automatica con il numero di canali; il clipping evita rilevanze illimit
 quando un prototipo cade fuori dall'intervallo di un prefisso ancora corto.
 La CP normalizzata resta in [0,1], a parte il pavimento numerico $10^{-6}$.
 
+La CP originale non distingue un concetto da copie identiche che ne dividono la frequenza. La proposta aggiunge **esclusività** e **coerenza delle probabilità**, usando la stessa distanza già presente nel routing:
+
+$$
+q_i=\frac{\sum_jR_{ij}^2}{\sum_jR_{ij}},\quad z_i=F_i\sqrt{q_i},\quad
+S_{ii}=0,\quad S_{ij}=\exp\left[-\frac\beta2(D_{ij}+D_{ji})\right]\quad(i\ne j).
+$$
+
+Qui la distanza fra prototipi usa gli stessi pesi W del routing. L’affinità di Bhattacharyya confronta le masse apprese con le frequenze osservate:
+
+$$
+B(\pi,F)=\sum_i\sqrt{\pi_iF_i},\qquad
+CP_* = B(\pi,F)\sqrt{\sum_iF_iq_i-z^TSz}.
+$$
+
+È un indice di organizzazione, **non una probabilità calibrata della classe**. La costruzione è limitata: poiché ogni S è fra zero e uno e F somma a uno, il radicando è non negativo e non supera la CP originale al quadrato; per Cauchy–Schwarz anche B è fra zero e uno. Quindi CP* è fra zero e uno, salvo i pavimenti numerici.
+Con r copie identiche, qualità q e masse uguali alle frequenze, si ottiene CP* = sqrt(q/r), mentre un unico rappresentante vale sqrt(q). Questo rompe la neutralità dei duplicati senza prescrivere il numero di concetti. **Non prova che l’ottimizzazione non convessa trovi sempre il numero semanticamente corretto.**
+
 ### 4. La stessa loss: previsione più organizzazione dei concetti
 
 $$
-\mathcal L=\mathcal L_{previsione}+\lambda(1-\overline{CP}).
+\mathcal L=\mathcal L_{previsione}+\lambda(1-CP_*).
 $$
 
 Nel tabulare supervisionato $\mathcal L_{previsione}$ è la NLL della classe
@@ -97,7 +114,7 @@ Nel linguaggio la stessa loss diventa:
 
 $$
 \mathcal L_{LM}=-\frac1N\sum_t\log p(w_{t+1}\mid w_{\leq t})
-+\lambda\,\operatorname{media}_{\ell,t}(1-\overline{CP}_{\ell,t}).
++\lambda\,\operatorname{media}_{\ell,t}(1-CP_{*,\ell,t}).
 $$
 
 Si fa la media sui **layer ACAN**, sul batch e sulle posizioni con un token
@@ -120,13 +137,22 @@ probabilità delle classi e temperatura del routing. Il checkpoint è selezionat
 sull'obiettivo congiunto di training, senza consultare il test. JSON conserva
 prototipi, rilevanza del routing, temperatura, frequenze, obiettivo e profilo.
 
+Le masse sono parametri del simplesso, aggiornati tramite proiezione euclidea e ottimizzazione per coordinate dello **stesso obiettivo di training**. Gli estremi con massa zero sono candidati numerici: vengono accettati solo se l’obiettivo non aumenta. La direzione usa la sovrapposizione S già definita dalla CP. Non vengono mediati i prototipi né usate soglie di similarità per unirli.
+
+$$
+K_{attivo}=\left|\{i:\pi_i>0\}\right|.
+$$
+
+Tabulare e generativo chiamano gli stessi operatori di proiezione e di scelta delle coordinate. Nel tabulare il controllo delle masse considera tutto il training; nel generativo i batch di training, mantenendo il dropout identico nei confronti e conservando lo stato casuale per la ripresa. I rispettivi adattatori e ottimizzatori non sono bit per bit identici.
+Le masse esattamente zero sono eliminate dal modello tabulare salvato e mascherate negli slot linguistici. I budget 256 e 8 sono limiti di capacità, non numeri di concetti imposti. Non sono state introdotte regole per Gioco, Letter o altri dataset.
+
 Ogni figlio della gerarchia viene addestrato con lo stesso nucleo sui suoi record.
 La scelta di approfondire usa la purezza delle etichette nei record di training,
 non la sicurezza delle probabilità apprese dei prototipi.
 I layer linguistici sono trasformazioni successive: non sono automaticamente
 l'albero tabulare. Nel generativo il budget CPU del profilo congiunto è 32 token
 per blocco e 8 slot per layer; ogni token esegue un passo del nucleo comune.
-Le diverse dimensioni e i budget sono configurazioni, non equazioni diverse.
+Le diverse dimensioni e i budget sono configurazioni, non equazioni diverse. Il confronto fra prototipi della nuova CP aggiunge lavoro O(k²d) al training. In inferenza linguistica tale termine viene saltato senza cambiare l’output: il costo ricorrente resta O(kd + wd), con memoria indipendente dalla lunghezza del prefisso. Il training tabulare è più lento della versione precedente.
 
 ### 6. Collegamento con i due documenti di partenza
 
@@ -148,6 +174,8 @@ I profili precedenti (`legacy-v8`, `paper-routing-v1`, `cp-routing-v1`,
 esistenti. Scegliere il nuovo nucleo richiede un nuovo training; i checkpoint non
 vengono convertiti silenziosamente.
 
+La revisione dei teoremi dei documenti ha inoltre isolato due precisazioni. Per slot coincidenti, la dinamica gravitazionale ideale soddisfa log(Ca/Cb) al passo successivo = gamma log(Ca/Cb): la simmetria è instabile per gamma > 1, mentre gamma = 1 è neutro. Inoltre, sul rumore uniforme, max(0, 1 - 2 sigma) vale circa 0,423, non zero; non basta quindi a dimostrare il decadimento della rilevanza dichiarato nel paper. Queste osservazioni **non costituiscono una nuova prova dei teoremi complessivi**, né la proposta implementa integralmente quella dinamica gravitazionale. La selezione qui descritta è l’estensione CP* esplicita sopra.
+
 ### 7. Cosa dimostrano le verifiche
 
 Verifichiamo parità NumPy/PyTorch di valori e gradienti, differenze finite,
@@ -156,6 +184,8 @@ Accuracy e NLL devono essere misurate su dati esclusi dal training.
 **Il 95,78% gerarchico citato nella sessione precedente non è un risultato recuperato né
 una prova di miglioramento dell'LLM.** Le nuove misure riproducibili e il confronto
 linguistico con sola NLL sono documentati in `docs/JOINT-CP.md`.
+
+La nuova proposta ritrova **4 concetti su Gioco**, anche su cinque split controllati. Letter gerarchico completo misura **92,025% su 4.000 righe di test**, rispetto al precedente 91,425%; nel campione GUI scende invece da 90,60% a **89,00%**. I 63 confronti aggiuntivi comprendono Iris, Sonar, Adult minimale, Titanic, Vote, Mushroom e Breast Cancer: esistono anche regressioni, in particolare Breast Cancer. Risultati, costi e ricevute sono in `docs/CP-SELECTION.md`. Per il generativo sono verificate le proprietà meccaniche; la qualità linguistica su modelli preaddestrati resta da dimostrare.
 """
 
 layout = html.Div(dcc.Markdown(TEXT, mathjax=True), className='p-3', style={'maxWidth':'960px','margin':'auto'})
