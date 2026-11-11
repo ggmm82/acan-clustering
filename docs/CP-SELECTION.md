@@ -26,6 +26,25 @@ Le masse sono ottimizzate sul simplesso tramite proiezione e passi per coordinat
 
 ## Protocollo e risultati
 
+### Correzioni successive alla prima proposta
+
+La testa categorica inizializza ora i logits con `log(p)`, inversa della softmax,
+anziché con i log-odds della sigmoid: il precedente codice trasformava un seme
+binario 0,99/0,01 in circa 0,9999/0,0001, introducendo confidenza artificiale.
+La funzione obiettivo e il nucleo CP non cambiano.
+
+I nuovi modelli marginalizzano anche i rami della gerarchia:
+`p_node(y|x) = sum_i T_i(x) p_i(y|x)`, dove `p_i` è la testa del concetto
+terminale oppure la previsione del figlio. Prima, la sola presenza di un figlio
+faceva abbandonare la miscela e scegliere un unico ramo. Una sostituzione con un
+figlio dalla stessa distribuzione ora lascia invariata la previsione. Il percorso
+mostrato è quello con maggiore probabilità congiunta; la sua probabilità non è
+una confidenza calibrata della classe. I JSON precedenti conservano il loro
+comportamento grazie al metadato `hierarchy_readout`; riaddestrare per usare la
+correzione. È una correzione dell'adattatore gerarchico, non una nuova CP o un
+secondo modello generativo. La tabella seguente registra la prima proposta;
+i confronti dopo queste correzioni sono in corso.
+
 Parametri fissati prima dei confronti: split stratificato 80/20, seed 42/7/21, profondità massima 3, 100 epoche, lr=0,08, batch massimo 300, purezza 0,92 e minimo 12 righe per espandere un ramo. Statistiche, codifica e imputazione vengono apprese sul training. Nessun parametro è scelto in base ai risultati del test. Sono confrontati legacy-v8, il precedente joint della PR8 e la proposta. Tre split ripetuti non equivalgono a tre dataset indipendenti; le medie sono esplorative.
 
 | Dataset | Legacy CP | Joint precedente | Proposta CP* |

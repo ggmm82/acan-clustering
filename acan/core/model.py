@@ -304,6 +304,9 @@ class GraphClusterModel:
         return Y_pred, Y_conf, path
 
     def assignLabel(self, node, normDataset, fullLabels, use_soft_attention=True):
+        if (use_soft_attention and getattr(node,'routing_profile',None)=='cp-joint-v1'
+                and (node.routing_parameters or {}).get('hierarchy_readout')=='conditional-mixture-v1'):
+            return self._assign_joint_mixture(node,normDataset,fullLabels)
         res = np.zeros((len(normDataset), len(fullLabels)), dtype=np.float64)
         conf = np.zeros((len(normDataset), len(fullLabels)), dtype=np.float64)
         path = np.empty(len(normDataset), dtype="object")
@@ -346,6 +349,40 @@ class GraphClusterModel:
                         childNode, currDataset, fullLabels, use_soft_attention=use_soft_attention
                     )
         return res, conf, path
+
+    def _assign_joint_mixture(self, node, dataset, labels):
+        """Marginalize conditional concept paths instead of choosing one branch.
+
+        A child's prediction replaces its parent's readout, weighted by the
+        parent's posterior. The reported path is the most probable complete
+        latent path; its probability is not a calibrated class confidence.
+        Bounded batches keep the routing workspace independent of query size.
+        """
+        from .supervised import predict_assignments
+        if len(dataset)>256:
+            chunks=[self._assign_joint_mixture(node,dataset.iloc[start:start+256],labels)
+                    for start in range(0,len(dataset),256)]
+            return tuple(np.concatenate([chunk[i] for chunk in chunks]) for i in range(3))
+        columns=[c for c in node.cols if c in dataset.columns and c not in labels]
+        cix=[node.cols.index(c) for c in columns]
+        weights=predict_assignments(node,dataset[columns].to_numpy(dtype=np.float64),cix)
+        readout=pd.DataFrame(node.Groups,columns=node.cols)[labels].to_numpy(dtype=np.float64)
+        terminal=weights.copy()
+        if node.children:
+            terminal[list(node.children)]=0
+        result=terminal.T@readout
+        best=terminal.argmax(axis=0)
+        confidence=terminal.max(axis=0)
+        paths=np.asarray([f'{node.id}_G{i}' for i in best],dtype=object)
+        for slot,child_id in node.children.items():
+            child_result,child_confidence,child_paths=self._assign_joint_mixture(
+                self.clusterModel[child_id],dataset,labels)
+            result+=weights[slot,:,None]*child_result
+            path_probability=weights[slot]*child_confidence[:,0]
+            replace=path_probability>confidence
+            confidence[replace]=path_probability[replace]
+            paths[replace]=child_paths[replace]
+        return result,np.repeat(confidence[:,None],len(labels),axis=1),paths
 
     def predict_masked(self, incomplete_df):
         root = self.clusterModel[self.rootId]

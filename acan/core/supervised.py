@@ -153,7 +153,9 @@ def train(learner, epochs):
     params = dict(G=np.log(scaled/(1-scaled)), log_beta=np.asarray(np.log(128.)),
                   masses=np.ones(learner.k)/learner.k)
     for indices in groups:
-        params['G'][:, indices] = np.log(initial[:, indices]/(1-initial[:,indices]))
+        # Categorical heads use softmax, whose inverse is log probability.
+        # Log odds would sharpen a binary .99/.01 seed to .9999/.0001.
+        params['G'][:, indices] = np.log(initial[:, indices])
     den = span/2+np.abs(learner.Root-(learner.RootMin+span/2))
     omega = compute_group_behavior_coupling(x,~features if groups else None)
     state = dict(features=features, root=learner.Root, den=np.where(den>1e-8,den,1.),
@@ -251,6 +253,7 @@ def train(learner, epochs):
     anchors,_ = probabilities(best['G'],groups,state['lo'],state['span'])
     learner.variational_state = dict(objective='categorical-nll-cp-v1' if groups else 'normalized-cp-v1',cp_weight=WEIGHT,
         cp_definition='exclusive-cp-v1',masses=best['masses'].tolist(),
+        hierarchy_readout='conditional-mixture-v1',
         candidate_budget=candidate_budget,
         beta=float(np.exp(np.clip(best['log_beta'],0,9))),features=np.flatnonzero(features).tolist(),
         routing_relevance=np.clip(np.abs(anchors-state['root'])/state['den']*state['omega'],0,1).tolist(),
@@ -258,13 +261,14 @@ def train(learner, epochs):
     return learner.setModel()
 
 
-def predict(model, row, cix):
+def predict_assignments(model, rows, cix):
+    """Frozen feature-only posterior for one or more independent observations."""
     state = model.routing_parameters
     features = set(state['features'])
     # Never route on targets, even when hierarchy splitting passes complete rows.
     observed = [(position,index) for position,index in enumerate(cix) if index in features]
     if not observed:
-        weights = np.asarray(model.Freqs).reshape(-1).copy()
+        weights = np.repeat(np.asarray(model.Freqs).reshape(-1,1),len(rows),axis=1)
     else:
         positions,indices = zip(*observed)
         a = model.Groups[:,indices]
@@ -272,11 +276,14 @@ def predict(model, row, cix):
         def softmax(scores):
             value = np.exp(scores-scores.max(axis=0,keepdims=True))
             return value/value.sum(axis=0,keepdims=True)
-        weights,_,_ = concept_assignments(np.asarray(row).reshape(1,-1)[:,positions],a,r,
+        weights,_,_ = concept_assignments(np.asarray(rows)[:,positions],a,r,
             state['beta'],slice(None),softmax)
         if 'masses' in state:
             weights,_ = mass_assignments(weights,np.asarray(state['masses']),np.maximum)
-        weights = weights[:,0]
-    weights /= weights.sum()
+    return weights / weights.sum(axis=0,keepdims=True)
+
+
+def predict(model, row, cix):
+    weights = predict_assignments(model,np.asarray(row).reshape(1,-1),cix)[:,0]
     best = int(weights.argmax())
     return weights,float(weights[best]),best
