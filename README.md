@@ -91,6 +91,10 @@ Il riferimento scientifico è il [PDF fornito](paper/Algebraic_Concept_Attention
 in particolare §3 e Tabella 1. Le formule del paper e quelle oggi eseguite dal
 codice sono distinte qui sotto: la GUI espone il core esistente e non certifica
 una corrispondenza completa. L'[audit](docs/PAPER-AUDIT.md) documenta le differenze.
+Il nuovo profilo GUI `cp-joint-v1` unifica tabulare e generativo: le formule
+complete e le misure sono in [JOINT-CP.md](docs/JOINT-CP.md) e nella sezione
+[Unico nucleo CP](#unico-nucleo-cp-per-modello-interattivo-e-generativo). Le
+equazioni legacy seguenti descrivono il profilo conservato per compatibilità.
 
 ### Dalle righe ai concetti
 
@@ -112,7 +116,7 @@ Il centroide descrive i valori tipici del gruppo. La rilevanza $R_{ij}$ indica
 quanto l'attributo $j$ caratterizza il concetto $i$: non è una probabilità di
 predizione corretta e non sostituisce la validazione.
 
-### Routing del paper e routing attualmente implementato
+### Routing del paper e routing legacy
 
 Il paper, Eq. (4), propone distanza quadratica pesata e prior logaritmico di massa:
 
@@ -127,7 +131,7 @@ $\widetilde R$ le rilevanze affilate. Tabella 1 descrive
 $R=0.55R_{shift}+0.45R_{tight}$ e
 $\mathcal L=-CP(T,R,F)+\lambda_H H(T)$.
 
-**Il core corrente non esegue integralmente queste formule.** In
+**Il profilo `legacy-v8` non esegue integralmente queste formule.** In
 [`network.py`](acan/core/network.py), per `alpha > 0`, costruisce invece
 una similarità mista tra prodotto scalare pesato e distanza:
 
@@ -145,13 +149,13 @@ similarità; non va confuso con l'esponente della notazione del paper. Con
 dai dati e rimane fisso: non è un parametro ottimizzato e non realizza da solo
 l'espansione esplicita $\Phi(X)$ del paper.
 
-### Obiettivo realmente ottimizzato
+### Obiettivo del profilo legacy
 
 Il forward combina il centroide da attenzione e il prototipo parametrico:
 $G^{eff}=0.5G^{post}+0.5\sigma(\theta_G)$. La rilevanza implementata confronta
 $G^{eff}$ con la media globale `Root`, normalizzando per l'intervallo
 `RootMin`–`RootMax` (e moltiplicando per $\omega$ nel ramo metrico).
-Posto $s_i=\sum_jR_{ij}$, il codice massimizza, con protezioni numeriche:
+Posto $s_i=\sum_jR_{ij}$, il profilo legacy massimizza, con protezioni numeriche:
 
 $$
 CP=\sqrt{\sum_i\frac{F_i}{s_i/m}\sum_j R_{ij}^2},\qquad
@@ -166,9 +170,10 @@ NumPy/PyTorch a parametri uguali; non dimostra i teoremi del paper.
 
 ### Algoritmo e approfondimento su richiesta
 
-1. Il training iniziale apprende un singolo nodo con `nLearn`: assegnamenti,
-   centroidi, rilevanze, ottimizzazione di CP e rimozione degli slot vuoti dal
-   modello esportato. Le matrici di training non vengono fisicamente ridotte.
+1. Il training iniziale apprende un nodo con `nLearn`: assegnamenti, prototipi,
+   rilevanze e obiettivo del profilo selezionato. `cp-joint-v1` ottimizza NLL + CP
+   normalizzata e conserva i prototipi; il legacy ottimizza CP e rimuove gli
+   slot vuoti dall’export. Le matrici di training non vengono fisicamente ridotte.
 2. Un doppio clic su **un gruppo** seleziona i suoi soli campioni di training
    tramite `splitDataset`. Un nuovo nodo è appreso con `gLearn(max_depth=1)`,
    mantenendo la normalizzazione globale. Si aggiunge il collegamento al gruppo:
@@ -256,3 +261,61 @@ Il routing sperimentale del paper non sostituisce automaticamente il profilo
 attuale: sui dati reali non emerge un vincitore generale. I risultati completi,
 compresi regressioni e baseline, sono conservati senza pubblicare le righe dei
 file utente.
+
+### Unico nucleo CP per modello interattivo e generativo
+
+Scegli **Modello congiunto NLL + CP** (`cp-joint-v1`) in **Model → Impostazioni
+avanzate → Routing ACAN** e nel laboratorio **Generative**. È il profilo
+preselezionato nei nuovi modelli della GUI; i default delle API precedenti
+restano compatibili. I due percorsi
+chiamano lo stesso nucleo in `acan/algebra.py`: rilevanza limitata, distanza pesata,
+assegnazione ai concetti, conteggi/centroidi e CP normalizzata. La scheda
+**Matematica** spiega le formule e il collegamento con entrambi i PDF in `paper/`.
+
+L’obiettivo comune è `NLL + λ × (1 − CP/√d)`. Nel tabulare il target categorico
+resta escluso dal routing e λ è 0,1; si usano tutte le righe di training,
+fino a 256 prototipi e le epoche selezionate. Nel linguaggio si prevede il prossimo
+token e si fa la media della penalità CP sui layer ACAN e sulle posizioni predittive,
+usando soltanto il prefisso già letto. Il peso CP linguistico è configurabile:
+0,1 è un esperimento iniziale, 0 è il controllo con sola NLL. Il budget CPU del
+profilo linguistico è 32 token e 8 slot; il nucleo esegue un passo per token.
+
+I test verificano parità NumPy/PyTorch di valori e gradienti, causalità, streaming,
+persistenza, gerarchia e ripresa esatta con checkpointing. Cambiano la codifica
+riga/token e la testa di previsione; la logica dei concetti e della CP è comune.
+I profili precedenti restano disponibili: i modelli salvati non vengono convertiti.
+Il nuovo training supervisionato tabulare supporta target categorici; per regressione
+usare un profilo precedente. Non è una riproduzione integrale di tutte le equazioni
+o dei risultati sperimentali dei paper.
+
+Sul `letter.arff` ricaricato, con split stratificato seed 42 e preprocessing
+addestrato soltanto sul training, il nuovo profilo misura **86,38%** su 4.000 righe
+escluse dal training; il protocollo GUI (campione 10.000 → 8.000/2.000) misura
+**87,20%**. La gerarchia con profondità massima 3 misura **91,43%** sul file
+completo (2 livelli effettivi) e **90,60%** nel protocollo GUI (2 livelli effettivi).
+Il precedente **95,78% riguardava il multilivello gerarchico**: non è stato
+recuperato né riprodotto dalla ricostruzione attuale.
+Il confronto linguistico con λ=0/0,1 è una prova meccanica su un Llama piccolo
+inizializzato casualmente: non dimostra miglioramenti di qualità dell’LLM.
+
+Formule, differenze dai paper, protocolli e comandi riproducibili:
+[JOINT-CP.md](docs/JOINT-CP.md). La precedente diagnosi dei profili storici resta in
+[LETTER-DIAGNOSIS.md](docs/LETTER-DIAGNOSIS.md); il precedente solver variazionale
+è descritto in [VARIATIONAL-ROUTING.md](docs/VARIATIONAL-ROUTING.md).
+
+
+### Grafo leggibile e navigazione dei concetti
+
+La vista **Concetti e gruppi** mostra un concetto alla volta, con **12 gruppi per
+pagina** e schede con etichette leggibili. Il selettore del concetto e i pulsanti
+**Radice / Sali al padre** permettono di percorrere la gerarchia. Un doppio clic
+su un gruppo con bordo blu apre il figlio già addestrato; sugli altri gruppi
+richiede un approfondimento. La vista **Solo gerarchia** conserva la panoramica.
+Sono disponibili zoom, centratura e schermo intero.
+
+Il conteggio globale indica i **prototipi complessivi**, non certifica altrettanti
+concetti distinti. Per ogni nodo sono distinti i gruppi con record assegnati e i
+prototipi senza assegnazioni hard, consultabili con l'apposita opzione. Questi
+ultimi possono ancora contribuire alle previsioni soft. Il rendering non elimina
+o accorpa i prototipi del modello: la CP attuale non garantisce da sola una
+rappresentazione compatta; il pruning richiede una verifica predittiva separata.

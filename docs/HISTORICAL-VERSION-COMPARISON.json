@@ -1,0 +1,87 @@
+{
+  "source_hashes": {
+    "AlgebraicClusterLearner.py": "9aabf7e363fee1ec2cf9fc3aa3225bb76d112f21b9869d082f5b568cdecffbc9",
+    "AlgebraicClusterModel.py": "de05b40b9fcb381fc24a3270afc0a149e3b016b91a5d8fbf4aa5273d7b55061f",
+    "AlgebraicClusterRender.py": "6119aca1ab46c26c802bea06e406090716dc69ae89033b509e8d96a19e21227f"
+  },
+  "protocol": {
+    "split": "Same stored 16,000 train / 4,000 validation as LETTER-DIAGNOSIS.json; stratified seed 42",
+    "numpy_seed": 42,
+    "torch_seed": 42,
+    "backend": "CPU float32, one Torch thread",
+    "batch": 300,
+    "learning_rate": 0.1,
+    "execution": "Original class ASTs executed unchanged; bounded manual Adam loop follows nLearn numerical updates, omitting optional TensorBoard/JSONPath imports and GUI threads. No indefinite nLearn call.",
+    "limitation": "Single initialization and split, specified budgets; not an exhaustive reproduction of the historical GUI run, GPU, settings or a >0.9 checkpoint."
+  },
+  "original_numeric": [
+    {
+      "step": 100,
+      "accuracy": 0.04275,
+      "normalized_euclidean_error": 0.19273348520151,
+      "one_minus_old_error": 0.80726651479849,
+      "cp": 2.2264761924743652,
+      "groups": 2,
+      "seconds": 0.42513682400021935
+    },
+    {
+      "step": 1000,
+      "accuracy": 0.04275,
+      "normalized_euclidean_error": 0.1927321144273395,
+      "one_minus_old_error": 0.8072678855726605,
+      "cp": 2.2530388832092285,
+      "groups": 2,
+      "seconds": 13.746235236001667
+    },
+    {
+      "step": 3000,
+      "accuracy": 0.04175,
+      "normalized_euclidean_error": 0.1927885447508854,
+      "one_minus_old_error": 0.8072114552491146,
+      "cp": 2.425706148147583,
+      "groups": 2,
+      "seconds": 52.260613020000164
+    }
+  ],
+  "cp_mixture_ablation": [
+    {
+      "step": 100,
+      "accuracy": 0.038,
+      "normalized_euclidean_error": 0.19253145134739125,
+      "one_minus_old_error": 0.8074685486526088,
+      "cp": 4.56480598449707,
+      "groups": 1,
+      "seconds": 1.1508076489990344
+    },
+    {
+      "step": 1000,
+      "accuracy": 0.03925,
+      "normalized_euclidean_error": 0.19251906798929272,
+      "one_minus_old_error": 0.8074809320107073,
+      "cp": 4.574944496154785,
+      "groups": 1,
+      "seconds": 15.105829938998795
+    }
+  ],
+  "all_features_categorical_ablation": [
+    {
+      "step": 100,
+      "accuracy": 0.07875,
+      "normalized_euclidean_error": 0.19310670056550294,
+      "one_minus_old_error": 0.8068932994344971,
+      "cp": 7.59364128112793,
+      "groups": 11,
+      "seconds": 8.504245793999871
+    },
+    {
+      "step": 1000,
+      "accuracy": 0.085,
+      "normalized_euclidean_error": 0.192766338291258,
+      "one_minus_old_error": 0.807233661708742,
+      "cp": 7.814874649047852,
+      "groups": 11,
+      "seconds": 24.731745609999052
+    }
+  ],
+  "user_clarification": "Historical >0.9 means accuracy from confusion matrix, not 1 minus old Euclidean error."
+}

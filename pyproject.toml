@@ -36,4 +36,4 @@ include = ["acan", "acan.*"]
 namespaces = false
 
 [tool.setuptools.package-data]
-"acan.vis" = ["assets/*.js"]
+"acan.vis" = ["assets/*.js", "assets/*.css"]

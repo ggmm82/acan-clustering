@@ -52,7 +52,7 @@ def export_bundle(store, job, name):
         'base.json': json.dumps(base, indent=2).encode(),
         'config.json': json.dumps(job['config'], indent=2).encode(),
         'architecture.json': json.dumps(architecture, indent=2).encode(),
-        'training-summary.json': json.dumps({key:state.get(key) for key in ('step','training_nll','validation_nll','baseline_nll','tokens_trained','early_stop_reason')}, indent=2).encode(),
+        'training-summary.json': json.dumps({key:state.get(key) for key in ('step','training_nll','training_objective','training_cp_penalty','cp_weight','validation_nll','baseline_nll','tokens_trained','early_stop_reason')}, indent=2).encode(),
         'README.txt': ('Pacchetto di ispezione ACAN-LM Hybrid. Contiene i pesi appresi ACAN/LoRA e il riferimento esatto al modello originale, NON tutti i pesi originali.\n'
                        'Non contiene corpus, chiave workspace, token del servizio, stato RNG o optimizer pickle.\n'
                        'Installa questo progetto con extra [llm]. Estrai lo ZIP in una cartella e usa:\n'
