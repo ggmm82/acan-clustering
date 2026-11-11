@@ -1,0 +1,10 @@
+#graph-panel { background: #fff; padding: 8px; border-radius: 8px; }
+@media (max-width: 767px) { #org-chart { height: 900px !important; } }
+#graph-panel:fullscreen, #graph-panel.graph-fullscreen {
+  background: #fff; padding: 20px; overflow: auto;
+  width: 100vw; height: 100vh;
+}
+#graph-panel.graph-fullscreen { position: fixed; inset: 0; z-index: 10000; }
+#graph-panel:fullscreen #org-chart, #graph-panel.graph-fullscreen #org-chart {
+  height: max(440px, calc(100vh - 300px)) !important;
+}

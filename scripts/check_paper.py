@@ -36,11 +36,11 @@ def main():
         torch.manual_seed(42)
         torch.set_num_threads(1)
     suite = unittest.TestSuite()
-    for pattern in ('test_paper_contract.py', 'test_acan.py', 'test_lm_shared_algebra.py'):
+    for pattern in ('test_paper_contract.py', 'test_acan.py', 'test_lm_shared_algebra.py', 'test_variational_routing.py', 'test_training_snapshot.py'):
         suite.addTests(unittest.defaultTestLoader.discover(str(ROOT / 'tests'), pattern=pattern))
     stream = io.StringIO()
     result = unittest.TextTestRunner(stream=stream, verbosity=2).run(suite)
-    passed = result.wasSuccessful() and result.testsRun >= 13 and (not args.require_torch or not result.skipped)
+    passed = result.wasSuccessful() and result.testsRun >= 18 and (not args.require_torch or not result.skipped)
     report = dict(contract_version=2, status='passed' if passed else 'failed',
                   conformance=CONFORMANCE, shared_algebra_verified=passed and HAS_TORCH and not result.skipped, full_paper_conformance=False, paper_sha256=PAPER_SHA256, paper_pdf_sha256=PDF_SHA256,
                   commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),

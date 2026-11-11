@@ -4,7 +4,7 @@ import json
 import re
 from flask import session
 from acan.vis.jobs import TrainingJobs
-from acan.vis import generative
+from acan.vis import generative, mathematics
 from acan.vis.training import NativeTraining, graph_stats
 from acan.vis.evaluation import evaluate
 from acan.vis.benchmark_job import BenchmarkJob, signature as benchmark_signature
@@ -382,8 +382,8 @@ orgChartData=cyto.Cytoscape(
     style={'width': '100%', 'height': '650px', 'border': '1px solid #dee2e6', 'borderRadius': '8px'},
     responsive=True,
     autoungrabify=False,
-    minZoom=0.1,
-    maxZoom=2,
+    minZoom=0.03,
+    maxZoom=4,
     layout={'name': 'breadthfirst', 'directed': True, 'animate': False, 'spacingFactor': 1.3},
     #layout={'name': 'cose', 'animate': True},
     elements={},
@@ -406,6 +406,9 @@ orgChartData=cyto.Cytoscape(
         },
 
         # Stile specifico per nodi Group (più piccoli)
+        {'selector': '.node', 'style': {
+            'shape': 'round-rectangle', 'width': 180, 'height': 80,
+            'font-size': 14, 'text-wrap': 'wrap', 'text-max-width': 165}},
         {
             'selector': '.group-node',
             'style': {
@@ -422,6 +425,18 @@ orgChartData=cyto.Cytoscape(
         },
 
         # Group selectors for EDGES
+        {'selector': '.local-root', 'style': {
+            'shape': 'round-rectangle', 'width': 210, 'height': 72,
+            'font-size': 16, 'font-weight': 'bold', 'text-wrap': 'wrap',
+            'text-max-width': 195, 'border-width': 2, 'border-color': '#334155'}},
+        {'selector': '.local-group', 'style': {
+            'shape': 'round-rectangle', 'width': 145, 'height': 74,
+            'font-size': 14, 'font-weight': 'bold', 'text-wrap': 'wrap',
+            'text-max-width': 135, 'color': '#111827',
+            'text-outline-color': '#fff', 'text-outline-width': 1,
+            'border-width': 1, 'border-color': '#64748b'}},
+        {'selector': '.has-child', 'style': {'border-width': 3, 'border-color': '#2563eb'}},
+        {'selector': 'node:selected', 'style': {'border-width': 4, 'border-color': '#7c3aed'}},
         {
             'selector': 'edge',
             'style': {
@@ -514,10 +529,12 @@ model_layout = dbc.Container([
         dbc.Label('Tipo di previsione del target'),
         dcc.Dropdown(id='target-task', value='auto', clearable=False, options=[{'label':'Automatico (codici interi fino a 20 classi: classificazione)', 'value':'auto'}, {'label':'Classificazione', 'value':'classification'}, {'label':'Regressione numerica', 'value':'regression'}]),
         dbc.Label('Routing ACAN'),
-        dcc.Dropdown(id='tabular-routing-profile',value='legacy-v8',clearable=False,options=[
+        dcc.Dropdown(id='tabular-routing-profile',value='cp-joint-v1',clearable=False,options=[
+            {'label':'Modello congiunto NLL + CP · comune al generativo','value':'cp-joint-v1'},
+            {'label':'CP diretta precedente · massimo 32 slot e 30 passi','value':'cp-routing-v1'},
             {'label':'Esperimento · sole equazioni di routing del paper','value':'paper-routing-v1'},
             {'label':'Profilo attuale · compatibilità e confronto','value':'legacy-v8'}]),
-        html.P('Profilo del paper: α=2, β=8, γ=1,15 (default del pacchetto LM, non ottimizzati sui tuoi dati). Sono uniformati gli operatori di distanza e massa; rilevanza, omega e obiettivi conservano i limiti documentati. Il profilo non certifica l’intero paper.',className='small text-muted'),
+        html.P('Modello congiunto: stesso nucleo CP del generativo, tutte le righe di training, fino a 256 prototipi, target categorici e loss NLL + 0,1 × (1 − CP normalizzata). CP diretta precedente: assegnazioni su 300 righe, 32 slot e 30 passi. Formule, gerarchia, budget e differenze dai paper sono spiegati nella sezione Matematica.',className='small text-muted'),
         dbc.Row([parameter(*args) for args in [
             ('Epoche', 'train-epochs', 100, 1, 1000, 1),
             ('Learning rate', 'input-lr', .08, .001, 1, .01),
@@ -544,13 +561,31 @@ model_layout = dbc.Container([
     html.Div(id='learning-status', children='Pronto: carica i dati e scopri i concetti.', className='alert alert-light my-2', role='status'),
     dcc.Interval(id='learning-monitor', interval=1000, disabled=True),
     html.Div(id='graph-summary', className='alert alert-info'),
+    html.Div([
     dbc.Row([
         dbc.Col(dcc.RadioItems(id='graph-view', options=[{'label': ' Concetti e gruppi', 'value': 'full'},
                    {'label': ' Solo gerarchia', 'value': 'hierarchy'}], value='full', inline=True), md=7),
-        dbc.Col(dcc.Dropdown(id='graph-layout', options=['breadthfirst', 'cose', 'concentric'],
-                   value='breadthfirst', clearable=False), md=5),
+        dbc.Col([dbc.Label('Disposizione panoramica', html_for='graph-layout'),
+            dcc.Dropdown(id='graph-layout', options=['breadthfirst', 'cose', 'concentric'],
+                   value='cose', clearable=False)], md=5),
     ], className='mb-3'),
+    dbc.Row([
+        dbc.Col([dbc.Label('Concetto da esplorare'), dcc.Dropdown(id='graph-focus', clearable=False)], md=7),
+        dbc.Col([dbc.Label('Gruppi del concetto'), dcc.Dropdown(id='graph-page', value=1, clearable=False)], md=5),
+    ], className='mb-2'),
+    dbc.Checkbox(id='graph-empty', value=False, label='Includi prototipi senza assegnazioni hard'),
+    html.Div([
+        dbc.Button('Radice', id='graph-root', outline=True, size='sm', className='m-1'),
+        dbc.Button('Sali al padre', id='graph-up', outline=True, size='sm', className='m-1'),
+        dbc.Button('−', id='graph-zoom-out', outline=True, size='sm', className='m-1', title='Riduci zoom'),
+        dbc.Button('+', id='graph-zoom-in', outline=True, size='sm', className='m-1', title='Aumenta zoom'),
+        dbc.Button('Centra vista', id='graph-fit', outline=True, size='sm', className='m-1'),
+        dbc.Button('Schermo intero', id='graph-fullscreen', outline=True, size='sm', className='m-1'),
+    ]),
+    html.Div(id='graph-window-summary', className='small text-muted my-2', role='status'),
     dbc.Row([dbc.Col(orgChartData, md=8), dbc.Col([html.Div(id='node-detail'), html.Div(id='edge-detail')], md=4)]),
+    html.P('Doppio clic sui gruppi con bordo blu per aprire il concetto figlio. Sugli altri gruppi richiede un approfondimento. La panoramica mostra tutta la gerarchia.', className='small text-muted mt-2'),
+    ], id='graph-panel'),
     dbc.Accordion([dbc.AccordionItem([
         dbc.Label('Nodo concetto'), dcc.Dropdown(id='concept-node', clearable=False),
         dcc.Graph(id='concept-relevance'), html.Div(id='concept-rules'),
@@ -595,7 +630,7 @@ inference_layout = dbc.Container([
 _page_layout = dbc.Container([
     html.Div([html.H1('ACAN · Concept Explorer'), html.P('Dati → concetti → gerarchia → predizione e completamento', className='text-muted')], className='p-4 mb-3 bg-light border rounded'),
     dcc.Tabs(id='tabs', value='Data', children=[
-        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative']
+        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative', 'Matematica']
     ]),
     # Keep the graph mounted when switching tabs: destroying Cytoscape while
     # asynchronous layout/resize callbacks are pending causes browser errors.
@@ -604,6 +639,7 @@ _page_layout = dbc.Container([
     html.Div([evaluation_layout, dcc.Store(id='eval-store')], id='page-evaluation', style={'display': 'none'}),
     html.Div(inference_layout, id='page-inference', style={'display': 'none'}),
     html.Div(generative.layout, id='page-generative', style={'display': 'none'}),
+    html.Div(mathematics.layout, id='page-mathematics', style={'display':'none'}),
 ], fluid=True)
 
 
@@ -627,12 +663,7 @@ app.clientside_callback(
             }
             const cy = el._cyreg.cy;
             cy.resize();
-            const config = {name: layout || 'breadthfirst', animate: false, padding: 30};
-            if (config.name === 'breadthfirst') {
-                config.directed = true;
-                if (model) config.roots = '[id="' + JSON.parse(model).rootId + '"]';
-            }
-            cy.layout(config).run();
+            cy.fit(cy.elements(), 35);
         }
         setTimeout(resize, 150);
         return Date.now();
@@ -648,11 +679,11 @@ def tab_job_key(tab_id):
 
 
 @app.callback([Output('page-data', 'style'), Output('page-model', 'style'),
-               Output('page-evaluation', 'style'), Output('page-inference', 'style'), Output('page-generative', 'style')],
+               Output('page-evaluation', 'style'), Output('page-inference', 'style'), Output('page-generative', 'style'), Output('page-mathematics','style')],
               Input('tabs', 'value'))
 def show_page(tab):
     return [{'display': 'block' if tab == name else 'none'}
-            for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative']]
+            for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative', 'Matematica']]
 
 
 # Callback per pulire i dropdown
@@ -967,7 +998,7 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, dep
             return dash.no_update, dash.no_update, "Training già in corso.", False, False
         train, test, dataset_info = split_for_training(data, labels or [], filters, categories, task)
         check_budget(train)
-        if routing_profile not in ('legacy-v8','paper-routing-v1'):
+        if routing_profile not in ('legacy-v8','paper-routing-v1','cp-routing-v1','cp-joint-v1'):
             raise ValueError('Seleziona un profilo di routing ACAN valido.')
         options = dict(routing_profile=routing_profile,max_depth=depth, max_epochs=epochs, min_samples_split=min_samples,
                        tau=tau, alpha=alpha, similarity_threshold=purity, lr=lr,
@@ -1016,7 +1047,6 @@ def monitor_learning(n_intervals, tab_id):
         return dash.no_update, dash.no_update, f"❌ {job['error']}", True, True, dash.no_update
     gcm = learner.graph
     stats = graph_stats(gcm)
-    elements = list(to_elements(gcm).values())
     return (gcm.to_json(), dash.no_update,
             f"✅ Completato: {stats['nodes']} nodi concetto | {stats['depth']} livelli | {stats['groups']} gruppi",
             True, True, secrets.randbits(32))
@@ -1106,12 +1136,16 @@ def export_inference(n_clicks, csv_text):
 
 @app.callback(Output('org-chart', 'elements'),
               Input("model-store", "data"), Input('graph-view', 'value'),
+              Input('graph-focus', 'value'), Input('graph-page', 'value'), Input('graph-empty', 'value'),
               prevent_initial_call=True)
-def update_graph(model, view='full'):
+def update_graph(model, view='full', focus=None, page=1, include_empty=False):
     if not model:
         return []
     gcm=GraphClusterModel.loadModel(model)
-    els=to_elements(gcm, show_leaves=view != 'hierarchy')
+    if view != 'hierarchy':
+        from .graph_view import elements
+        return elements(gcm,focus,page,include_empty)
+    els=to_elements(gcm, show_leaves=False)
     if model:
         return list(els.values())
     else:
@@ -1564,19 +1598,36 @@ def export_rules(clicks, model):
     return dict(content=json.dumps(rules, indent=2), filename='acan-concept-rules.json')
 
 @app.callback(Output('graph-summary', 'children'), Output('org-chart', 'layout'),
-              Input('model-store', 'data'), Input('graph-layout', 'value'))
-def describe_graph(model, layout):
+              Input('model-store', 'data'), Input('graph-layout', 'value'),
+              Input('graph-view', 'value'), Input('graph-focus', 'value'))
+def describe_graph(model, layout, view='full', focus=None):
     if not model:
         return 'Carica un modello o avvia la scoperta dei concetti.', {'name': layout, 'animate': False}
     graph = GraphClusterModel.loadModel(model)
     stats = graph_stats(graph)
     root = graph.clusterModel[graph.rootId]
-    config = dict(name=layout, animate=False)
+    config = dict(name=layout if view=='hierarchy' else 'preset', animate=False, fit=True, padding=35)
     if layout == 'breadthfirst':
         config.update(directed=True, roots=f'[id = "{graph.rootId}"]', spacingFactor=1.3)
     return (f"Radice {graph.rootId} · {stats['nodes']} nodi concetto · {stats['depth']} livelli · "
-            f"{stats['groups']} gruppi · {root.n} campioni · {len(root.cols)} attributi · routing {getattr(root,'routing_profile','legacy-v8')}. "
+            f"{stats['groups']} prototipi complessivi · {root.n} campioni · {len(root.cols)} attributi · routing {getattr(root,'routing_profile','legacy-v8')}. "
             'Seleziona un nodo o un collegamento per esplorare centroidi, rilevanze e dispersione.'), config
+
+
+@app.callback(Output('graph-focus', 'options'), Output('graph-focus', 'value'),
+              Output('graph-page', 'options'), Output('graph-page', 'value'),
+              Output('graph-window-summary', 'children'),
+              Input('model-store', 'data'), Input('graph-focus', 'value'), Input('graph-page', 'value'),
+              Input('graph-empty', 'value'), Input('graph-root', 'n_clicks'), Input('graph-up', 'n_clicks'))
+def navigate_graph(model, focus, page, include_empty, root_clicks, up_clicks):
+    if not model:
+        return [],None,[],1,'Carica un modello per esplorare i concetti.'
+    from .graph_view import navigation
+    trigger = dash.ctx.triggered_id
+    action = {'graph-root':'root','graph-up':'up'}.get(trigger)
+    if trigger in ('model-store','graph-focus','graph-empty','graph-root','graph-up'):
+        page = 1
+    return navigation(GraphClusterModel.loadModel(model),focus,page,include_empty,action)
 
 generative.register(app)
 
