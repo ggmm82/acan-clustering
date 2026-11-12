@@ -29,16 +29,27 @@ class _NumpyAdam:
         self.m = {k: np.zeros_like(v) for k, v in params_dict.items()}
         self.v = {k: np.zeros_like(v) for k, v in params_dict.items()}
         self.t = 0
+        self._root_second_moments = set()
 
     def step(self, grads_dict):
         self.t += 1
         for k, p in self.params.items():
             g = grads_dict[k]
             self.m[k] = self.b1 * self.m[k] + (1.0 - self.b1) * g
-            self.v[k] = self.b2 * self.v[k] + (1.0 - self.b2) * (g * g)
+            # Keep the ordinary path bit-identical until squaring a finite
+            # gradient would overflow. Then represent sqrt(v) with hypot;
+            # this is the same Adam update, without clipping its direction.
+            if k not in self._root_second_moments and np.max(np.abs(g),initial=0)>np.sqrt(np.finfo(g.dtype).max):
+                self.v[k] = np.sqrt(self.v[k])
+                self._root_second_moments.add(k)
+            if k in self._root_second_moments:
+                self.v[k] = np.hypot(np.sqrt(self.b2)*self.v[k],np.sqrt(1-self.b2)*g)
+            else:
+                self.v[k] = self.b2 * self.v[k] + (1.0 - self.b2) * (g * g)
             m_hat = self.m[k] / (1.0 - self.b1 ** self.t)
-            v_hat = self.v[k] / (1.0 - self.b2 ** self.t)
-            p -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
+            v_root = (self.v[k]/np.sqrt(1-self.b2**self.t) if k in self._root_second_moments
+                      else np.sqrt(self.v[k]/(1-self.b2**self.t)))
+            p -= self.lr * m_hat / (v_root + self.eps)
 
 
 class AlgebraicClusterLearner:
@@ -93,8 +104,9 @@ class AlgebraicClusterLearner:
         if routing_profile in ('cp-routing-v1','cp-joint-v1'):
             from .supervised import target_groups
             self._supervised_groups = target_groups(self)
-            if routing_profile=='cp-joint-v1' and self.labels and not self._supervised_groups:
-                raise ValueError('Il modello congiunto richiede target categorici; per regressione usare un altro profilo.')
+            self._regression_indices=[self.cols.index(label) for label in self.labels if label in self.cols]
+            if routing_profile=='cp-joint-v1' and self.labels and not (self._supervised_groups or self._regression_indices):
+                raise ValueError('Target assente dalla codifica dei dati.')
             self.k = min(self.k, 256 if routing_profile=='cp-joint-v1' else 32)
             device = "numpy"
 
@@ -369,11 +381,13 @@ class AlgebraicClusterLearner:
                         # Learned class readouts can be confident even when a
                         # branch contains mixed labels. Split on observed
                         # training purity, never on a fitted readout or test.
-                        max_class_prob = min(float(sub_df.iloc[:,indices].mean().max())
-                                             for indices in acl._supervised_groups)
+                        max_class_prob = min((float(sub_df.iloc[:,indices].mean().max())
+                                             for indices in acl._supervised_groups),default=1.)
                     else:
                         max_class_prob = float(np.max(node.Groups[k_idx, [node.cols.index(c) for c in full_lbls]]))
                     needs_split = max_class_prob < similarity_threshold
+                    if routing_profile=='cp-joint-v1' and acl._regression_indices:
+                        needs_split |= float(np.mean(np.std(sub_df.iloc[:,acl._regression_indices].to_numpy(),axis=0)))>.15
                 else:
                     needs_split = float(np.mean(np.std(sub_df.to_numpy(), axis=0))) > 0.15
 

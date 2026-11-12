@@ -1,0 +1,45 @@
+{
+  "source_sha256": "5ea04ff9db18f5dc4345f2adf738dad7e0cb8c16bbc575e347dec27ef9cedb8c",
+  "info": {
+    "raw_rows": 159,
+    "usable_rows": 159,
+    "excluded_missing_targets": 0,
+    "excluded_columns": [],
+    "target_types": {
+      "class": "regression"
+    },
+    "stratified": false,
+    "train_rows": 127,
+    "validation_rows": 32,
+    "seed": 42
+  },
+  "runs": [
+    {
+      "depth": 1,
+      "stats": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 28
+      },
+      "mae": 1797.4838324357827,
+      "rmse": 2522.454043275322,
+      "r2": 0.6424328921885388,
+      "baseline_rmse": 4315.010302644126,
+      "training_mean_verified": true
+    },
+    {
+      "depth": 3,
+      "stats": {
+        "nodes": 1,
+        "depth": 1,
+        "groups": 28
+      },
+      "mae": 1797.4838324357827,
+      "rmse": 2522.454043275322,
+      "r2": 0.6424328921885388,
+      "baseline_rmse": 4315.010302644126,
+      "training_mean_verified": true
+    }
+  ],
+  "note": "Prescribed seed42,training-only statistics,no target in routing. Two requested depth budgets reached the same one-node model. Not a hyperparameter search or an external validation."
+}

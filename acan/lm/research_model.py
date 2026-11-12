@@ -82,5 +82,5 @@ def shared_adapter(model,report,options):
                 module.initialize_concepts()
         report=dict(report,algebra=options['routing_profile'])
         if options['routing_profile']=='cp-joint-v1':
-            report['cp_definition']='exclusive-cp-v1'
+            report['cp_definition']='pair-supported-cp-v1'
     return model,report

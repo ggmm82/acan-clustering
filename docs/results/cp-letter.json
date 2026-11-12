@@ -38,7 +38,7 @@
       "training_nll": 0.3305713141110106,
       "training_objective": 0.4094051482937436,
       "roundtrip_predictions_identical": true,
-      "inference_does_not_mutate_model": true,
+      "inference_does_not_mutate_model": null,
       "history": [
         {
           "epoch": 0,
@@ -940,7 +940,8 @@
           "cp_weight": 0.1,
           "k_active": 242
         }
-      ]
+      ],
+      "persistence_check": "gui-roundtrip-only"
     },
     {
       "sample": 10000,
@@ -969,7 +970,7 @@
       "training_nll": 0.3092683865231853,
       "training_objective": 0.3879895883703539,
       "roundtrip_predictions_identical": true,
-      "inference_does_not_mutate_model": true,
+      "inference_does_not_mutate_model": null,
       "history": [
         {
           "epoch": 0,
@@ -1871,7 +1872,8 @@
           "cp_weight": 0.1,
           "k_active": 245
         }
-      ]
+      ],
+      "persistence_check": "gui-roundtrip-only"
     }
   ]
 }

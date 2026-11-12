@@ -90,7 +90,8 @@ def mass_assignments(base, masses, maximum):
 
 
 def exclusive_cluster_probability(frequencies, relevance, anchors, weights,
-                                  features, beta, maximum, exponential, distinct, masses):
+                                  features, beta, maximum, exponential, distinct, masses,
+                                  evidence=None):
     """CP evidence minus evidence shared by distinct overlapping slots.
 
     With quality q_i=||R_i||²/sum(R_i), z_i=F_i sqrt(q_i), and
@@ -100,6 +101,8 @@ def exclusive_cluster_probability(frequencies, relevance, anchors, weights,
     """
     sums = maximum(relevance.sum(axis=1, keepdims=True), 1e-12)
     quality = (relevance*relevance).sum(axis=1, keepdims=True)/sums
+    if evidence is not None:
+        quality = quality*evidence
     a = anchors[:, features]
     distances = ((weights*a*a).sum(axis=1, keepdims=True)
                  - 2*(weights*a)@a.T + weights@(a*a).T)
@@ -139,7 +142,8 @@ def concept_assignments(x, anchors, relevance, beta, features, softmax):
 
 def concept_step(x, anchors, root, denominator, omega, beta, features,
                  maximum, clip, softmax, base_counts=None, base_sums=None,
-                 masses=None, exponential=None, distinct=None, compute_cp=True):
+                 masses=None, exponential=None, distinct=None, compute_cp=True,
+                 base_square_counts=None):
     """Shared concept model for a batch of rows or the next causal token.
 
     Targets can contribute to the training summaries, but are excluded from
@@ -152,6 +156,9 @@ def concept_step(x, anchors, root, denominator, omega, beta, features,
     if masses is not None:
         assignments, base_assignments = mass_assignments(assignments,masses,maximum)
     counts = assignments.sum(axis=1, keepdims=True)
+    square_counts = (assignments*assignments).sum(axis=1, keepdims=True)
+    if base_square_counts is not None:
+        square_counts = square_counts+base_square_counts
     sums = assignments@x
     if base_counts is not None:
         counts = counts + base_counts
@@ -163,10 +170,14 @@ def concept_step(x, anchors, root, denominator, omega, beta, features,
     frequencies = counts / maximum(counts.sum(), 1e-12)
     normalized_cp = normalized_cluster_probability(frequencies, final_relevance, maximum) if compute_cp else None
     result = dict(T=assignments, G=centroid, R=final_relevance, F=frequencies.T,
-                C=counts, sums=sums, normalized_cp=normalized_cp,
+                C=counts, sums=sums, square_counts=square_counts, normalized_cp=normalized_cp,
                 routing_relevance=relevance, weights=weights, scores=scores)
     if masses is not None and compute_cp:
+        # Fraction of assignment pairs contributed by distinct observations.
+        # For hard groups this is (C-1)/C: a singleton cannot support itself.
+        evidence = clip((counts*counts-square_counts)/maximum(counts*counts,1e-24),0,1)
         result.update(exclusive_cluster_probability(frequencies,final_relevance,
-            anchors,weights,features,beta,maximum,exponential,distinct,masses))
+            anchors,weights,features,beta,maximum,exponential,distinct,masses,evidence))
+        result['evidence'] = evidence
         result['base_assignments'] = base_assignments
     return result

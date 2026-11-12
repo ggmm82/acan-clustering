@@ -1,7 +1,10 @@
 """Named CPU checks required before publishing controlled LM tooling."""
 PROTOCOL='controlled-v1'
-MIN_TESTS=45
+MIN_TESTS=52
 REQUIRED_TESTS={
+    'test_project_selection_loads_only_selected_plot_data',
+    'test_overview_cache_is_invalidated_by_updates_and_rollback',
+    'test_overview_and_exact_pages_reach_all_steps_and_enforce_ownership',
     'test_exclusive_cp_gradients_include_overlap_and_masses',
     'test_duplicate_evidence_is_discounted_without_a_group_count',
     'test_interaction_concepts_are_learned_with_irrelevant_dates',

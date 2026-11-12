@@ -7,6 +7,17 @@ from acan.core.supervised import objective
 
 
 class ExclusiveCPTests(unittest.TestCase):
+    def test_adam_handles_finite_gradient_whose_square_overflows(self):
+        from acan.core.learner import _NumpyAdam
+        value=np.array([0.])
+        optimizer=_NumpyAdam({'mass':value},lr=.08)
+        with np.errstate(over='raise',invalid='raise'):
+            optimizer.step({'mass':np.array([1e200])})
+            self.assertAlmostEqual(float(value[0]),-.08)
+            optimizer.step({'mass':np.array([1e200])})
+            self.assertAlmostEqual(float(value[0]),-.16)
+        self.assertTrue(np.isfinite(value).all())
+
     def fixture(self):
         rng=np.random.default_rng(9)
         x=np.column_stack([rng.uniform(.1,.9,(9,3)),np.eye(2)[[0,1,1,0,1,0,0,1,0]]])
@@ -41,6 +52,40 @@ class ExclusiveCPTests(unittest.TestCase):
         np.testing.assert_array_equal(simplex_projection(np.array([2.,-.1,.4])),[1.,0.,0.])
         proposal = simplex_coordinate_candidate(np.array([.2,.5,.3]),0)
         np.testing.assert_array_equal(proposal,[0.,.7,.3])
+
+    def test_pair_support_excludes_self_evidence_and_accumulates_causally(self):
+        def step(x,**previous):
+            return concept_step(np.asarray(x),np.array([[.8,.2]]),np.array([[.5,.5]]),
+                np.ones((1,2))*.5,np.ones((1,2)),8.,slice(None),np.maximum,np.clip,
+                lambda scores:np.ones_like(scores),masses=np.ones(1),exponential=np.exp,
+                distinct=np.zeros((1,1)),**previous)
+        one=step([[.8,.2]])
+        self.assertEqual(float(one['evidence'][0,0]),0.)
+        two=step([[.8,.2]],base_counts=one['C'],base_sums=one['sums'],
+                 base_square_counts=one['square_counts'])
+        full=step([[.8,.2],[.8,.2]])
+        self.assertAlmostEqual(float(two['evidence'][0,0]),.5)
+        for key in ('C','sums','square_counts','evidence','normalized_cp'):
+            np.testing.assert_allclose(two[key],full[key],atol=1e-12)
+        self.assertGreater(two['normalized_cp'],one['normalized_cp'])
+
+    def test_unsupervised_relations_do_not_create_a_singleton_for_a_missing_cell(self):
+        import pandas as pd
+        from acan.vis.training import train_native,graph_stats
+        rng=np.random.default_rng(12)
+        a,b=np.tile(np.array([[0,0],[0,1],[1,0],[1,1]]),(25,1)).T
+        frame=pd.DataFrame(dict(weather=np.where(a,'sun','rain'),place=np.where(b,'outside','inside'),
+            day=rng.integers(1,29,len(a)),month=rng.integers(1,13,len(a)),
+            year=rng.integers(1980,2010,len(a)),outcome=np.where(a==b,'yes','no')))
+        incomplete=frame.iloc[[0]].copy();incomplete['outcome']=np.nan
+        frame=pd.concat([frame,incomplete],ignore_index=True)
+        options=dict(lr=.08,tau=.2,alpha=.5,device='numpy',batch_size=300,max_depth=1,
+            max_epochs=100,min_samples_split=12,similarity_threshold=.92,routing_profile='cp-joint-v1')
+        graph=train_native(frame,[],options)
+        self.assertEqual(graph.labels,[])
+        self.assertEqual(graph_stats(graph),dict(nodes=1,depth=1,groups=4))
+        self.assertEqual(graph.clusterModel[graph.rootId].routing_parameters['training_nll'],0.)
+        self.assertEqual(graph.clusterModel[graph.rootId].routing_parameters['training_rows'],101)
 
     def test_interaction_concepts_are_learned_with_irrelevant_dates(self):
         import pandas as pd
