@@ -47,10 +47,41 @@ def create_app(root=None, token=None):
     def state():
         store.reconcile()
         jobs = store.jobs(request.workspace)
+        summaries=request.args.get('summary')=='1'
+        selected=request.args.get('selected','')
         for job in jobs:
-            job['snapshots'] = snapshots(store, job)
-            job['history'] = store.history(job['id'], request.workspace)
-        return jsonify(jobs=jobs, corpora=store.corpora(request.workspace), busy=store.busy())
+            detailed=not summaries or job['id']==selected
+            if not detailed:
+                job['progress']={key:job['progress'][key] for key in ('step','tokens_trained') if key in job['progress']}
+            job['snapshots'] = snapshots(store, job) if detailed else []
+            job['history'] = [{key:row[key] for key in ('step','training_nll','validation_nll') if key in row}
+                              for row in store.history(job['id'],request.workspace,overview=True)] if detailed else []
+            job['history_view'] = 'full_overview'
+        result=dict(jobs=jobs, corpora=store.corpora(request.workspace), busy=store.busy())
+        if summaries:result['detail_job']=selected
+        return jsonify(result)
+
+    @app.get('/jobs/<identifier>/history')
+    def history(identifier):
+        try:
+            start=int(request.args.get('start','0'))
+            limit=int(request.args.get('limit','500'))
+            end=int(request.args['end']) if 'end' in request.args else None
+        except ValueError:
+            raise ValueError('Intervallo dello storico non valido.') from None
+        rows=store.history(identifier,request.workspace,start=start,limit=limit,end=end)
+        if request.args.get('plot')=='1':
+            rows=[{key:row[key] for key in ('step','training_nll','validation_nll') if key in row} for row in rows]
+        return jsonify(rows=rows,next_step=rows[-1]['step']+1 if rows else None)
+
+    @app.get('/jobs/<identifier>/view')
+    def job_view(identifier):
+        job=store.job(identifier,request.workspace)
+        job['snapshots']=snapshots(store,job)
+        job['history']=[{key:row[key] for key in ('step','training_nll','validation_nll') if key in row}
+                        for row in store.history(identifier,request.workspace,overview=True)]
+        job['history_view']='full_overview'
+        return jsonify(job)
 
     @app.get('/capabilities')
     def capabilities():

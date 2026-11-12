@@ -48,6 +48,7 @@ def owner_key(key):
 
 class Store:
     def __init__(self, root):
+        self._history_cache = {}
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         with self.db() as db:
@@ -135,11 +136,40 @@ class Store:
             db.execute('INSERT OR REPLACE INTO metrics VALUES(?,?,?)', (identifier, step, json.dumps(record, allow_nan=False)))
         self.update(identifier, progress=record)
 
-    def history(self, identifier, owner):
-        self.job(identifier, owner)
+    def history(self, identifier, owner, start=None, limit=500, overview=False, end=None):
+        job=self.job(identifier, owner)
+        if end is not None and (not isinstance(end,int) or start is None or end<start):
+            raise ValueError('Intervallo dello storico non valido.')
+        if not isinstance(limit,int) or not 1<=limit<=2000 or (start is not None and (not isinstance(start,int) or start<0)):
+            raise ValueError('Intervallo dello storico non valido.')
         with self.db() as db:
-            rows = db.execute('SELECT record FROM metrics WHERE job=? ORDER BY step DESC LIMIT 500', (identifier,)).fetchall()
-        return [json.loads(row[0]) for row in reversed(rows)]
+            if overview:
+                last=db.execute('SELECT step FROM metrics WHERE job=? ORDER BY step DESC LIMIT 1',(identifier,)).fetchone()
+                signature=(job['updated'],last[0] if last else None)
+                cached=self._history_cache.get(identifier)
+                if cached and cached[0]==signature:
+                    rows=cached[1]
+                else:
+                    count=db.execute('SELECT COUNT(*) FROM metrics WHERE job=?',(identifier,)).fetchone()[0]
+                    if not count:return []
+                    stride=max(1,(count+999)//1000)
+                    cursor=db.execute('WITH ordered AS (SELECT record, ROW_NUMBER() OVER (ORDER BY step) AS idx '
+                                      'FROM metrics WHERE job=?) SELECT record FROM ordered '
+                                      'WHERE (idx-1)%?=0 OR idx=? ORDER BY idx',(identifier,stride,count))
+                    rows=[]
+                    for row in cursor:
+                        metric=json.loads(row[0])
+                        rows.append((json.dumps({key:metric[key] for key in ('step','training_nll','validation_nll') if key in metric}),))
+                    if len(self._history_cache)>=16:
+                        self._history_cache.pop(next(iter(self._history_cache)),None)
+                    self._history_cache[identifier]=(signature,rows)
+            elif start is not None:
+                rows=db.execute('SELECT record FROM metrics WHERE job=? AND step>=? AND (? IS NULL OR step<=?) ORDER BY step LIMIT ?',
+                                (identifier,start,end,end,limit)).fetchall()
+            else:
+                rows=db.execute('SELECT record FROM metrics WHERE job=? ORDER BY step DESC LIMIT ?', (identifier,limit)).fetchall()
+                rows.reverse()
+        return [json.loads(row[0]) for row in rows]
 
     def create_corpus(self, owner, name, size):
         if not isinstance(size, int) or not 1 <= size <= 8*1024**3:

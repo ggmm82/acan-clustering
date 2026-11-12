@@ -47,7 +47,8 @@
     "train_accuracy": 0.8145363408521303,
     "majority_baseline": 0.5,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "adultMinimal.xlsx",
@@ -97,7 +98,8 @@
     "train_accuracy": 0.7844611528822055,
     "majority_baseline": 0.5,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "adultMinimal.xlsx",
@@ -147,7 +149,8 @@
     "train_accuracy": 0.8095238095238095,
     "majority_baseline": 0.5,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "adultMinimal.xlsx",
@@ -197,7 +200,8 @@
     "train_accuracy": 0.7894736842105263,
     "majority_baseline": 0.5,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "adultMinimal.xlsx",
@@ -247,7 +251,8 @@
     "train_accuracy": 0.7969924812030075,
     "majority_baseline": 0.5,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "adultMinimal.xlsx",
@@ -297,7 +302,8 @@
     "train_accuracy": 0.7744360902255639,
     "majority_baseline": 0.5,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "adultMinimal.xlsx",
@@ -347,7 +353,8 @@
     "train_accuracy": 0.7719298245614035,
     "majority_baseline": 0.5,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "adultMinimal.xlsx",
@@ -397,7 +404,8 @@
     "train_accuracy": 0.7543859649122807,
     "majority_baseline": 0.5,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "adultMinimal.xlsx",
@@ -447,7 +455,8 @@
     "train_accuracy": 0.7644110275689223,
     "majority_baseline": 0.5,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "breast-cancer.arff",
@@ -497,7 +506,8 @@
     "train_accuracy": 0.9868421052631579,
     "majority_baseline": 0.7068965517241379,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "breast-cancer.arff",
@@ -547,7 +557,8 @@
     "train_accuracy": 0.9780701754385965,
     "majority_baseline": 0.7068965517241379,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "breast-cancer.arff",
@@ -597,7 +608,8 @@
     "train_accuracy": 0.9824561403508771,
     "majority_baseline": 0.7068965517241379,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "breast-cancer.arff",
@@ -647,7 +659,8 @@
     "train_accuracy": 0.9868421052631579,
     "majority_baseline": 0.7068965517241379,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "breast-cancer.arff",
@@ -697,7 +710,8 @@
     "train_accuracy": 0.9780701754385965,
     "majority_baseline": 0.7068965517241379,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "breast-cancer.arff",
@@ -747,7 +761,8 @@
     "train_accuracy": 0.9824561403508771,
     "majority_baseline": 0.7068965517241379,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "breast-cancer.arff",
@@ -797,7 +812,8 @@
     "train_accuracy": 0.7017543859649122,
     "majority_baseline": 0.7068965517241379,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "breast-cancer.arff",
@@ -847,7 +863,8 @@
     "train_accuracy": 0.7017543859649122,
     "majority_baseline": 0.7068965517241379,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "breast-cancer.arff",
@@ -897,7 +914,8 @@
     "train_accuracy": 0.7017543859649122,
     "majority_baseline": 0.7068965517241379,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "iris.arff",
@@ -947,7 +965,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.3333333333333333,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "iris.arff",
@@ -997,7 +1016,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.3333333333333333,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "iris.arff",
@@ -1047,7 +1067,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.3333333333333333,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "iris.arff",
@@ -1097,7 +1118,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.3333333333333333,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "iris.arff",
@@ -1147,7 +1169,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.3333333333333333,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "iris.arff",
@@ -1197,7 +1220,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.3333333333333333,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "iris.arff",
@@ -1247,7 +1271,8 @@
     "train_accuracy": 0.9166666666666666,
     "majority_baseline": 0.3333333333333333,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "iris.arff",
@@ -1297,7 +1322,8 @@
     "train_accuracy": 0.9333333333333333,
     "majority_baseline": 0.3333333333333333,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "iris.arff",
@@ -1347,7 +1373,8 @@
     "train_accuracy": 0.9416666666666667,
     "majority_baseline": 0.3333333333333333,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "mushroom.arff",
@@ -1401,8 +1428,9 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.5181538461538462,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
-    "gui_inference_issues": []
+    "inference_does_not_mutate_model": null,
+    "gui_inference_issues": [],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "mushroom.arff",
@@ -1456,7 +1484,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.5181538461538462,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "mushroom.arff",
@@ -1510,8 +1539,9 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.5181538461538462,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
-    "gui_inference_issues": []
+    "inference_does_not_mutate_model": null,
+    "gui_inference_issues": [],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "mushroom.arff",
@@ -1565,8 +1595,9 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.5181538461538462,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
-    "gui_inference_issues": []
+    "inference_does_not_mutate_model": null,
+    "gui_inference_issues": [],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "mushroom.arff",
@@ -1620,7 +1651,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.5181538461538462,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "mushroom.arff",
@@ -1674,8 +1706,9 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.5181538461538462,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
-    "gui_inference_issues": []
+    "inference_does_not_mutate_model": null,
+    "gui_inference_issues": [],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "mushroom.arff",
@@ -1729,8 +1762,9 @@
     "train_accuracy": 0.888290506231728,
     "majority_baseline": 0.5181538461538462,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
-    "gui_inference_issues": []
+    "inference_does_not_mutate_model": null,
+    "gui_inference_issues": [],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "mushroom.arff",
@@ -1784,7 +1818,8 @@
     "train_accuracy": 0.8870595476227112,
     "majority_baseline": 0.5181538461538462,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "mushroom.arff",
@@ -1838,8 +1873,9 @@
     "train_accuracy": 0.8847515002308047,
     "majority_baseline": 0.5181538461538462,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
-    "gui_inference_issues": []
+    "inference_does_not_mutate_model": null,
+    "gui_inference_issues": [],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "sonar.xlsx",
@@ -1889,7 +1925,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.5238095238095238,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "sonar.xlsx",
@@ -1939,7 +1976,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.5238095238095238,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "sonar.xlsx",
@@ -1989,7 +2027,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.5238095238095238,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "sonar.xlsx",
@@ -2039,7 +2078,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.5238095238095238,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "sonar.xlsx",
@@ -2089,7 +2129,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.5238095238095238,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "sonar.xlsx",
@@ -2139,7 +2180,8 @@
     "train_accuracy": 1.0,
     "majority_baseline": 0.5238095238095238,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "sonar.xlsx",
@@ -2189,7 +2231,8 @@
     "train_accuracy": 0.6626506024096386,
     "majority_baseline": 0.5238095238095238,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "sonar.xlsx",
@@ -2239,7 +2282,8 @@
     "train_accuracy": 0.6686746987951807,
     "majority_baseline": 0.5238095238095238,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "sonar.xlsx",
@@ -2289,7 +2333,8 @@
     "train_accuracy": 0.7831325301204819,
     "majority_baseline": 0.5238095238095238,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "titanic.csv",
@@ -2349,7 +2394,8 @@
     "train_accuracy": 0.8946629213483146,
     "majority_baseline": 0.6145251396648045,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "titanic.csv",
@@ -2409,7 +2455,8 @@
     "train_accuracy": 0.9002808988764045,
     "majority_baseline": 0.6145251396648045,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "titanic.csv",
@@ -2469,7 +2516,8 @@
     "train_accuracy": 0.901685393258427,
     "majority_baseline": 0.6145251396648045,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "titanic.csv",
@@ -2529,7 +2577,8 @@
     "train_accuracy": 0.8862359550561798,
     "majority_baseline": 0.6145251396648045,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "titanic.csv",
@@ -2589,7 +2638,8 @@
     "train_accuracy": 0.8960674157303371,
     "majority_baseline": 0.6145251396648045,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "titanic.csv",
@@ -2649,7 +2699,8 @@
     "train_accuracy": 0.8651685393258427,
     "majority_baseline": 0.6145251396648045,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "titanic.csv",
@@ -2709,7 +2760,8 @@
     "train_accuracy": 0.38342696629213485,
     "majority_baseline": 0.6145251396648045,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "titanic.csv",
@@ -2769,7 +2821,8 @@
     "train_accuracy": 0.7893258426966292,
     "majority_baseline": 0.6145251396648045,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "titanic.csv",
@@ -2829,7 +2882,8 @@
     "train_accuracy": 0.7921348314606742,
     "majority_baseline": 0.6145251396648045,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true
+    "inference_does_not_mutate_model": null,
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "vote.arff",
@@ -2879,10 +2933,11 @@
     "train_accuracy": 0.9942528735632183,
     "majority_baseline": 0.6091954022988506,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
+    "inference_does_not_mutate_model": null,
     "gui_inference_issues": [
       "No objects to concatenate"
-    ]
+    ],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "vote.arff",
@@ -2932,10 +2987,11 @@
     "train_accuracy": 0.9971264367816092,
     "majority_baseline": 0.6091954022988506,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
+    "inference_does_not_mutate_model": null,
     "gui_inference_issues": [
       "No objects to concatenate"
-    ]
+    ],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "vote.arff",
@@ -2985,10 +3041,11 @@
     "train_accuracy": 0.9942528735632183,
     "majority_baseline": 0.6091954022988506,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
+    "inference_does_not_mutate_model": null,
     "gui_inference_issues": [
       "No objects to concatenate"
-    ]
+    ],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "vote.arff",
@@ -3038,10 +3095,11 @@
     "train_accuracy": 0.9942528735632183,
     "majority_baseline": 0.6091954022988506,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
+    "inference_does_not_mutate_model": null,
     "gui_inference_issues": [
       "No objects to concatenate"
-    ]
+    ],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "vote.arff",
@@ -3091,10 +3149,11 @@
     "train_accuracy": 0.9942528735632183,
     "majority_baseline": 0.6091954022988506,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
+    "inference_does_not_mutate_model": null,
     "gui_inference_issues": [
       "No objects to concatenate"
-    ]
+    ],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "vote.arff",
@@ -3144,10 +3203,11 @@
     "train_accuracy": 0.9885057471264368,
     "majority_baseline": 0.6091954022988506,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
+    "inference_does_not_mutate_model": null,
     "gui_inference_issues": [
       "No objects to concatenate"
-    ]
+    ],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "vote.arff",
@@ -3197,10 +3257,11 @@
     "train_accuracy": 0.6149425287356322,
     "majority_baseline": 0.6091954022988506,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
+    "inference_does_not_mutate_model": null,
     "gui_inference_issues": [
       "No objects to concatenate"
-    ]
+    ],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "vote.arff",
@@ -3250,10 +3311,11 @@
     "train_accuracy": 0.9540229885057471,
     "majority_baseline": 0.6091954022988506,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
+    "inference_does_not_mutate_model": null,
     "gui_inference_issues": [
       "No objects to concatenate"
-    ]
+    ],
+    "persistence_check": "gui-roundtrip-only"
   },
   {
     "dataset": "vote.arff",
@@ -3303,9 +3365,10 @@
     "train_accuracy": 0.9195402298850575,
     "majority_baseline": 0.6091954022988506,
     "persistence_identical": true,
-    "inference_does_not_mutate_model": true,
+    "inference_does_not_mutate_model": null,
     "gui_inference_issues": [
       "No objects to concatenate"
-    ]
+    ],
+    "persistence_check": "gui-roundtrip-only"
   }
 ]
