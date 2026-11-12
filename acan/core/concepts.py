@@ -17,6 +17,8 @@ error of the best. No concept count, purity or similarity threshold is given.
 import numpy as np
 import pandas as pd
 
+from acan.concept_algebra import centre_variance, description_length
+
 LOG_2PI = float(np.log(2*np.pi))
 
 
@@ -82,10 +84,7 @@ class ConceptMixture:
 
     def _parameters(self, s):
         """Posterior means; variances and frequencies shrink to the root by kappa."""
-        cm = s['Cm']
-        g = s['U']/np.maximum(cm, 1e-12)
-        spread = np.maximum(s['Q']-cm*g*g, 0)                    # C * within variance
-        v = (spread+self.kappa)/(cm+self.kappa)                 # root variance is one
+        g, v = centre_variance(s['Cm'], s['U'], s['Q'], 1., self.kappa, np)   # root variance is one
         ca = np.zeros_like(s['N'])
         for c in self.encoder.categorical:
             block = self.encoder.block(c)
@@ -111,21 +110,20 @@ class ConceptMixture:
         wn, wc = weights
         g, v, log_p = self._parameters(s)
         k = len(s['C'])
-        own = .5*(s['Cm']*np.log(v)*wn).sum(1)-(s['N']*log_p*wc).sum(1)-s['C']*np.log(np.maximum(s['C'], 1e-300))
+        own = description_length(s['Cm'], v, s['C'], np, wn)-(s['N']*log_p*wc).sum(1)
         cost = np.empty((k, k))
         for start in range(0, k, 64):
             rows = slice(start, start+64)
             merged = {key: s[key][rows, None]+s[key][None] for key in ('Cm', 'U', 'Q', 'N')}
             cm = merged['Cm']
-            gm = merged['U']/np.maximum(cm, 1e-12)
-            vm = (np.maximum(merged['Q']-cm*gm*gm, 0)+self.kappa)/(cm+self.kappa)
+            _, vm = centre_variance(cm, merged['U'], merged['Q'], 1., self.kappa, np)
             ca = np.zeros_like(merged['N'])
             for c in self.encoder.categorical:
                 block = self.encoder.block(c)
                 ca[..., block] = merged['N'][..., block].sum(-1, keepdims=True)
             lp = np.log((merged['N']+self.kappa*self.root_p)/(ca+self.kappa))
             c = s['C'][rows, None]+s['C'][None]
-            together = .5*(cm*np.log(vm)*wn).sum(-1)-(merged['N']*lp*wc).sum(-1)-c*np.log(np.maximum(c, 1e-300))
+            together = description_length(cm, vm, c, np, wn)-(merged['N']*lp*wc).sum(-1)
             cost[rows] = together-own[rows, None]-own[None]
         cost[np.arange(k), np.arange(k)] = np.inf
         return cost
@@ -190,8 +188,7 @@ class ConceptMixture:
             xs, ms, hs = x[part][:, None], mask[part][:, None], onehot[part][:, None]
             cm = np.maximum(s['Cm'][None]-r*ms, 0)
             u, q = s['U'][None]-r*xs, s['Q'][None]-r*xs*xs
-            g = u/np.maximum(cm, 1e-12)
-            v = (np.maximum(q-cm*g*g, 0)+self.kappa)/(cm+self.kappa)
+            g, v = centre_variance(cm, u, q, 1., self.kappa, np)
             numeric = -.5*((xs-g)**2/v+np.log(v)+LOG_2PI)*ms
             counts = np.maximum(s['N'][None]-r*hs, 0)
             prior = np.log(np.maximum(s['C'][None]-t[part], 1e-300))

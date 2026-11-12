@@ -101,6 +101,54 @@
    ],
    "seconds": 220.888398909,
    "state_vectors_per_key_head": 80
+  },
+  "finestra 64 + 64 concetti su chiavi non ruotate": {
+   "nll": 5.259670734405518,
+   "standard_error": 0.05195140093564987,
+   "per_segment": [
+    4.99997615814209,
+    4.979720592498779,
+    5.323866367340088,
+    5.735119819641113
+   ],
+   "seconds": 249.521440493,
+   "state_vectors_per_key_head": 128
+  },
+  "finestra 64 + 64 concetti su chiavi non ruotate, senza log C": {
+   "nll": 5.180570602416992,
+   "standard_error": 0.04913683980703354,
+   "per_segment": [
+    5.214505672454834,
+    4.981600284576416,
+    5.331067085266113,
+    5.195110321044922
+   ],
+   "seconds": 225.884397767,
+   "state_vectors_per_key_head": 128
+  },
+  "finestra 64 + 64 blocchi temporali su chiavi non ruotate": {
+   "nll": 5.5092997550964355,
+   "standard_error": 0.054391421377658844,
+   "per_segment": [
+    5.371397018432617,
+    5.203117847442627,
+    5.532595157623291,
+    5.930089473724365
+   ],
+   "seconds": 47.07352202699997,
+   "state_vectors_per_key_head": 128
+  },
+  "finestra 64 + 64 blocchi temporali su chiavi non ruotate, senza log C": {
+   "nll": 5.807804107666016,
+   "standard_error": 0.050983987748622894,
+   "per_segment": [
+    5.531622886657715,
+    5.506989002227783,
+    6.124828338623047,
+    6.067776679992676
+   ],
+   "seconds": 494.8374760329999,
+   "state_vectors_per_key_head": 128
   }
  }
 }
