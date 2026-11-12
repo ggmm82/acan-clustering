@@ -100,8 +100,11 @@ layout = dbc.Container([
                      ('Rank LoRA','lm-rank',8,2,64),('Checkpoint ogni N passi','lm-save',100,1,10000),
                      ('Controlli senza miglioramento prima della pausa (0: disattiva)','lm-patience',3,0,20),('Miglioramento minimo NLL','lm-min-delta',.01,0,1),
                      ('Peso CP sperimentale (0: sola NLL)','lm-cp-weight',.1,0,1)]]),
-        dbc.Label('Unico nucleo CP condiviso con il modello tabulare'),
-        dcc.Dropdown(id='lm-routing',value='cp-joint-v1',clearable=False,style={'display':'none'},options=[{'label':'CP condivisa con selezione dei concetti · comune al tabulare','value':'cp-joint-v1'}]),
+        dbc.Label('Modello dei concetti'),
+        dcc.Dropdown(id='lm-routing',value='cp-v9',clearable=False,options=[
+            {'label':'cp-v9 · stesso modello del tabulare: finestra esatta più concetti generalizzati, sola NLL','value':'cp-v9'},
+            {'label':'CP condivisa precedente (cp-joint-v1) · su CPU massimo 32 token e 8 slot','value':'cp-joint-v1'}]),
+        html.P('Con cp-v9 i token recenti restano esatti e quelli più vecchi diventano concetti; con finestra pari o superiore al blocco il modello innestato coincide con quello di partenza. Il peso CP non si applica.',className='small text-muted'),
         dcc.Dropdown(id='lm-fraction',value=.5,clearable=False,options=[{'label':'50% dei livelli · ibrido predefinito','value':.5},{'label':'100% dei livelli · sperimentale; CP su CPU massimo 32 token','value':1.}]),
         dbc.Checkbox(id='lm-distill', value=False, label='Distillazione: imita anche il modello originale (più memoria e tempo, facoltativa su CPU)'),
         html.P('Nuovi progetti: documenti separati in training/validazione/test, duplicati esatti rimossi, miglior checkpoint conservato e pausa automatica dopo tre controlli senza miglioramenti sufficienti. Il progetto legacy conserva il metodo originale.', className='small text-muted'),
@@ -468,14 +471,31 @@ def register(app):
                 detail.append(html.P(f"{label}: {metrics[key]:,.5g}"))
         validation = metrics.get('validation_nll')
         if validation is not None and baseline is not None:
-            meaning = 'ancora peggiore del modello originale' if validation > baseline else 'uguale o migliore del modello originale su questo campione'
-            detail.append(dbc.Alert(f'Validazione {validation:.3f}; modello originale {baseline:.3f}: {meaning}. Non esiste una soglia universale di qualità. Controlla anche testi nuovi e generazioni.', color='info'))
+            best = protected.get('validation_nll') if protected else None
+            parts = [f'Validazione ultimo passo {validation:.3f}']
+            if best is not None:
+                parts.append(f"migliore conservato {best:.3f}" + (f" al passo {protected['step']}" if protected.get('step') is not None else ''))
+            parts.append(f'modello di partenza non adattato {baseline:.3f}')
+            if validation > baseline:
+                parts.append('ancora peggiore del modello di partenza')
+            control = job['config'].get('architecture') == 'dense-control'
+            detail.append(dbc.Alert('; '.join(parts)+'. ' + (
+                'Questo è il controllo denso: è il riferimento con cui confrontare i progetti ACAN dello stesso budget.' if control else
+                'Il modello di partenza non ha visto questo corpus, quindi scendere sotto la sua linea non dimostra che i concetti servano: '
+                'il confronto valido è con il controllo denso addestrato con lo stesso budget (pulsante più sotto) e con le generazioni su testi nuovi.'),
+                color='info'))
+            if best is not None and validation > best + .05:
+                detail.append(dbc.Alert(f'La validazione è risalita di {validation-best:.3f} rispetto al migliore mentre il training continua a scendere: '
+                                        'il modello sta memorizzando il corpus. Usa il checkpoint migliore conservato.', color='warning'))
         if metrics.get('early_stop_reason'):
             detail.append(dbc.Alert(metrics['early_stop_reason']+' Puoi provare il migliore conservato; riprendi solo per un esperimento consapevole.',color='warning'))
         if metrics.get('dataset'):
             data=metrics['dataset'];unique=data['tokens']['train']
             validation_tokens=min(data['tokens']['validation']//(job['config']['sequence_length']+1),job['config'].get('validation_batches',8))*job['config']['sequence_length']
             detail.append(html.P(f'Campione di validazione per controllo: {validation_tokens} token.'))
+            if validation_tokens < 10000:
+                detail.append(html.P('Con un campione così piccolo differenze di NLL inferiori a circa 0,15 fra progetti non sono distinguibili dal caso: '
+                                     'per confrontare due modelli usare «Confronta sul test», che misura l’intero insieme di test.', className='small text-muted'))
             detail.append(html.P(f"Documenti distinti: {data['documents']}; duplicati rimossi: {data['duplicates']}; passaggi equivalenti sul training: {metrics.get('tokens_trained',0)/max(1,unique):.2f}. Il test è escluso dalla scelta dei checkpoint."))
         for key,label in [('gradient_norm','Norma gradiente'),('acan_gradient_norm','Gradiente ACAN'),('lora_gradient_norm','Gradiente LoRA'),('teacher_kl','Distanza dal teacher')]:
             if metrics.get(key) is not None:detail.append(html.P(f'{label}: {metrics[key]:.5g}'))

@@ -212,6 +212,8 @@ b,?,no
         self.assertEqual(figure['layout']['shapes'][0]['y0'], 4.683)
         text = str(result['lm-progress']['children'])
         self.assertIn('ancora peggiore', text)
+        self.assertIn('controllo denso', text)                         # the valid comparison is named
+        self.assertNotIn('uguale o migliore', text)
         self.assertIn('checkpoint passo 7', text)
         self.assertIn('token elaborati', text)
 

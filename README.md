@@ -4,6 +4,26 @@ ACAN (Algebraic Concept Attention Network) provides concept discovery and
 tabular autocompletion with a NumPy backend and an optional PyTorch backend.
 Requires Python 3.9 or newer.
 
+## Stato della revisione
+
+I nuovi modelli tabulari usano il nucleo **`cp-v9`**: concetti come statistiche
+additive, generalizzati per fusione e scelti dalla capacità di prevedere
+osservazioni non viste. Non richiede numero di concetti, soglie o epoche.
+
+- Fondazione matematica e validazione del criterio precedente: [docs/MATHEMATICAL-FOUNDATION.md](docs/MATHEMATICAL-FOUNDATION.md)
+- Misure, compresi i risultati negativi: [docs/CP-V9-RESULTS.md](docs/CP-V9-RESULTS.md)
+- Piano e stato delle fasi: [docs/REVISION-PLAN.md](docs/REVISION-PLAN.md)
+- Affermazioni dei paper da non citare: [docs/ERRATA.md](docs/ERRATA.md)
+
+Tabella e attenzione sono lo stesso modello: `acan/concept_algebra.py` definisce
+appartenenza, generalizzazione e giudizio, usati sia dal nucleo tabulare sia
+dallo strato di attenzione del laboratorio generativo. Senza compressione lo
+strato coincide con l'attenzione densa e l'innesto conserva il modello di
+partenza. Con compressione e senza addestramento la qualità è ancora lontana
+dal denso e lo strato non è più veloce: sono i due limiti aperti. Le sezioni
+seguenti che citano `cp-joint-v1` descrivono il profilo precedente, ancora
+caricabile.
+
 ## Development setup
 
 From the repository root:

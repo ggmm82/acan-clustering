@@ -14,9 +14,13 @@ def train_native(data, labels, options):
     graph.preprocessing = fit_features(data, labels)
     common = {k: options[k] for k in ('lr', 'tau', 'alpha', 'device')}
     common['routing_profile'] = options.get('routing_profile','legacy-v8')
-    if options['max_depth'] == 1:
+    if options['max_depth'] == 1 or common['routing_profile'] == 'cp-v9':
         learner = AlgebraicClusterLearner(normalized, labels=labels,
                                          batch_size=options['batch_size'], **common)
+        # One-hot blocks are single categorical attributes for the concept core.
+        from pandas.api.types import is_numeric_dtype, is_bool_dtype
+        learner.categorical_names = [str(name) for name in data.columns if name not in labels
+                                     and not is_numeric_dtype(data[name]) and not is_bool_dtype(data[name])]
         root = learner.nLearn(max_epochs=options['max_epochs'])
         root.history = learner.history
         graph.clusterModel[root.id] = root

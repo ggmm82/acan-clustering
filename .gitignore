@@ -16,3 +16,4 @@ out/
 reports/
 
 node_modules/
+.data/
