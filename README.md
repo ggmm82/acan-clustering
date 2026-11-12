@@ -337,3 +337,8 @@ La lettura numerica continua usa le appartenenze del training per stimare una
 media per prototipo. Su autoPrice (127 training,32 test,seed42), la verifica
 misura MAE1797,48,RMSE2522,45 e R²0,6424; baseline della media training RMSE4315,01.
 È un controllo di sviluppo su uno split, non una garanzia generale.
+
+Il cambio fra progetti generativi carica soltanto la vista selezionata. Le
+panoramiche immutate sono riutilizzate e il grafico riceve solo i campi necessari;
+lo zoom è conservato per progetto. Per questa ottimizzazione aggiornare anche il
+worker, oltre al frontend. I training in corso non vengono riavviati.

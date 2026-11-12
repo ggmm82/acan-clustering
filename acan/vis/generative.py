@@ -1,9 +1,11 @@
 """Lightweight Dash client for the separate, persistent generative worker."""
 import json
+import math
 import os
 import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlencode
 
 import dash
 from dash import dcc, html, Input, Output, State
@@ -56,6 +58,7 @@ layout = dbc.Container([
     html.H4('Laboratorio generativo · ACAN-LM Hybrid', className='mt-3'),
     html.P('Questo laboratorio adatta un modello a continuare testi simili al corpus. Scegli un testo, osserva la validazione e prova un checkpoint. Continued pre-training con LoRA e WSD su pesi SmolLM2. Nel profilo predefinito il 50% superiore usa il porting ACAN causale corretto; il profilo al 100% è sperimentale. Qualità linguistica e riduzione della cache sono da misurare: non sono garantite dal grafting.'),
     dcc.Store(id='lm-workspace', storage_type='local'), dcc.Store(id='lm-state'),
+    dcc.Store(id='lm-chart-view',storage_type='session'),
     dcc.Store(id='lm-active-job', storage_type='session'),
     dcc.Store(id='lm-upload-state'), dcc.Store(id='lm-generation-id'), dcc.Store(id='lm-browser-ready'), dcc.Store(id='lm-evaluation-id'), dcc.Store(id='lm-evaluation-report'),
     html.Div(id='lm-connection', role='status'),
@@ -119,7 +122,7 @@ layout = dbc.Container([
             dbc.Button('500 passi dopo',id='lm-history-next',size='sm',outline=True)],md=6),
     ]),
     html.P('La panoramica mostra tutto il percorso con campionamento per serie lunghe. Usa la finestra per leggere ogni punto. Lo zoom resta fermo durante gli aggiornamenti. Le metriche precedenti non implicano che i pesi di ogni passo siano ancora disponibili.',className='small text-muted'),
-    dcc.Graph(id='lm-loss'),
+    dcc.Loading(dcc.Graph(id='lm-loss'),delay_show=150),
     dbc.Accordion([dbc.AccordionItem([html.Pre(id='lm-debug-view', style={'whiteSpace':'pre-wrap'}),
         dbc.Button('Scarica diagnostica', id='lm-debug-download'), dcc.Download(id='lm-debug-file'),
         dcc.Store(id='lm-debug-data')], title='Diagnostica del progetto e log')], start_collapsed=True),
@@ -275,12 +278,13 @@ def register(app):
 
     @app.callback(Output('lm-state','data'), Output('lm-connection','children'),
                   Input('lm-poll','n_intervals'), Input('lm-refresh','n_clicks'), Input('lm-workspace','data'), Input('lm-upload-state','data'), Input('lm-active-job','data'),
+                  State('lm-job','value'),
                   State('tabs','value'))
-    def poll(interval, refresh, workspace, upload, active, tab):
+    def poll(interval, refresh, workspace, upload, active, selected, tab):
         if tab != 'Generative' or not workspace:
             return dash.no_update, dash.no_update
         try:
-            state = backend(workspace, '/state')
+            state = backend(workspace, '/state?'+urlencode(dict(summary=1,selected=selected or '')))
             try:
                 state['public_catalog'] = backend(workspace, '/public-corpora')
             except ValueError:
@@ -290,7 +294,8 @@ def register(app):
             capabilities = backend(workspace, '/capabilities')
             state['capabilities']=capabilities
             hardware = 'CUDA disponibile' if capabilities['cuda'] else 'CPU · profilo di verifica 135M'
-            return state, f'Worker collegato · {hardware} · persistenza attiva · una sola operazione alla volta.'
+            upgrade=' Per il caricamento rapido dei progetti aggiorna anche il worker.' if 'detail_job' not in state else ''
+            return state, f'Worker collegato · {hardware} · persistenza attiva · una sola operazione alla volta.'+upgrade
         except ValueError as exc:
             return None, dbc.Alert(str(exc), color='warning')
 
@@ -311,7 +316,7 @@ def register(app):
             chosen_job = selected if selected in job_ids else active if active in job_ids else None
         return ([dict(label=f"{item['name']} ({item['received']/1048576:.1f} MiB)", value=item['id']) for item in corpora],
                 [dict(label=f"{item['config']['name']} · {item['status']} · passo {item['progress'].get('step',0)}",value=item['id']) for item in state['jobs']],
-                chosen_corpus, chosen_job)
+                chosen_corpus, chosen_job if chosen_job!=selected else dash.no_update)
 
     @app.callback(Output('lm-base','options'),Output('lm-eval-profile','options'),
                   Output('lm-length','max'),Output('lm-batch','max'),Output('lm-slots','max'),Output('lm-window','max'),Output('lm-rank','max'),
@@ -399,6 +404,18 @@ def register(app):
         except ValueError as exc:
             return dash.no_update, str(exc)
 
+    app.clientside_callback("""function(change, figure, previous) {
+        if (!change || !figure || !figure.layout || !figure.layout.uirevision) return window.dash_clientside.no_update;
+        let range = change['xaxis.range'] || [change['xaxis.range[0]'],change['xaxis.range[1]']];
+        if (change['xaxis.autorange'] === true) range = null;
+        else if (!range.every(Number.isFinite)) return window.dash_clientside.no_update;
+        const views = Object.assign({},previous || {});
+        views[figure.layout.uirevision] = range;
+        while (Object.keys(views).length > 32) delete views[Object.keys(views)[0]];
+        return views;
+    }""",Output('lm-chart-view','data'),Input('lm-loss','relayoutData'),
+       State('lm-loss','figure'),State('lm-chart-view','data'))
+
     @app.callback(Output('lm-history-start','value'),Input('lm-history-prev','n_clicks'),
                   Input('lm-history-next','n_clicks'),Input('lm-job','value'),State('lm-history-start','value'),prevent_initial_call=True)
     def history_navigation(previous,next_,job,start):
@@ -413,11 +430,14 @@ def register(app):
     @app.callback(Output('lm-progress','children'), Output('lm-loss','figure'),
                   Output('lm-checkpoint','options'), Output('lm-checkpoint','value'),
                   Input('lm-state','data'), Input('lm-job','value'), State('lm-checkpoint','value'),
-                  Input('lm-history-mode','value'),Input('lm-history-start','value'),State('lm-workspace','data'))
-    def progress(state, selected, checkpoint, history_mode, history_start, workspace):
+                  Input('lm-history-mode','value'),Input('lm-history-start','value'),State('lm-workspace','data'),State('lm-chart-view','data'))
+    def progress(state, selected, checkpoint, history_mode, history_start, workspace, chart_view):
         job = next((j for j in (state or {}).get('jobs',[]) if j['id']==selected), None)
         if not job:
             return 'Seleziona un progetto.', go.Figure(), [], None
+        if 'detail_job' in (state or {}) and state['detail_job']!=selected:
+            try:job=backend(workspace,f'/jobs/{selected}/view')
+            except ValueError as exc:return dbc.Alert(str(exc),color='warning'),go.Figure(),[],None
         metrics = job['progress']
         figure = go.Figure()
         history=job['history']
@@ -425,12 +445,15 @@ def register(app):
         if history_mode=='overview' and job.get('history_view')!='full_overview':
             history_error='Il worker collegato fornisce lo storico precedente: aggiornalo per accedere all’intero percorso.'
         if history_mode=='window':
-            try:history=backend(workspace,f'/jobs/{selected}/history?start={max(0,int(history_start or 0))}&end={max(0,int(history_start or 0))+499}&limit=500')['rows']
+            try:history=backend(workspace,f'/jobs/{selected}/history?start={max(0,int(history_start or 0))}&end={max(0,int(history_start or 0))+499}&limit=500&plot=1')['rows']
             except ValueError as exc:history=[];history_error=str(exc)
         for key, label in [('training_nll','Training NLL'),('validation_nll','Validation NLL')]:
             rows = [row for row in history if key in row]
             figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows], mode='lines', name=label)
         figure.update_layout(title='Errore di previsione · più basso è meglio', xaxis_title='Passi', yaxis_title='NLL',uirevision=f'{selected}:{history_mode}:{history_start if history_mode=="window" else 0}',xaxis={'rangeslider':{'visible':True}})
+        saved_range=(chart_view or {}).get(figure.layout.uirevision) if isinstance(chart_view,dict) else None
+        if isinstance(saved_range,list) and len(saved_range)==2 and all(isinstance(v,(int,float)) and math.isfinite(v) for v in saved_range):
+            figure.update_xaxes(range=saved_range,autorange=False)
         protected=next((item for item in job['snapshots'] if item.get('best')),None)
         if protected and protected.get('validation_nll') is not None:
             figure.add_hline(y=protected['validation_nll'],line_dash='dot',line_color='purple',annotation_text='Migliore conservato')

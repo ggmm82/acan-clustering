@@ -207,7 +207,7 @@ b,?,no
                    config=dict(total_steps=1000), checkpoint='saved', error=None)
         result = self.invoke('..lm-progress.children', [('lm-state', 'data', {'jobs':[job]}),
                              ('lm-job', 'value', 'job'),('lm-history-mode','value','overview'),
-                             ('lm-history-start','value',0)], [('lm-checkpoint', 'value', None),('lm-workspace','data','a'*64)])
+                             ('lm-history-start','value',0)], [('lm-checkpoint', 'value', None),('lm-workspace','data','a'*64),('lm-chart-view','data',None)])
         figure = result['lm-loss']['figure']
         self.assertEqual(figure['layout']['shapes'][0]['y0'], 4.683)
         text = str(result['lm-progress']['children'])
@@ -221,6 +221,21 @@ b,?,no
         self.assertNotIn('lm-public-dataset', result)
         self.assertNotIn('lm-public-preset', result)
         self.assertTrue(result['lm-public-start']['disabled'])
+
+    def test_switching_projects_fetches_only_the_matching_plot(self):
+        from unittest.mock import patch
+        first=dict(id='first',progress={},history=[dict(step=1,training_nll=9.)],snapshots=[],
+                   config=dict(total_steps=1000),status='paused',checkpoint=None,error=None)
+        second={**first,'id':'second','history':[]}
+        view={**second,'history':[dict(step=1,training_nll=2.)],'history_view':'full_overview'}
+        with patch('acan.vis.generative.backend',return_value=view) as backend:
+            result=self.invoke('..lm-progress.children',[
+                ('lm-state','data',dict(jobs=[first,second],detail_job='first')),
+                ('lm-job','value','second'),('lm-history-mode','value','overview'),
+                ('lm-history-start','value',0)],
+                [('lm-checkpoint','value',None),('lm-workspace','data','a'*64),('lm-chart-view','data',None)])
+            backend.assert_called_once_with('a'*64,'/jobs/second/view')
+        self.assertEqual(result['lm-loss']['figure']['data'][0]['y'],[2.])
 
     def test_new_public_project_is_selected_over_previous_project(self):
         state = dict(jobs=[dict(id='old', config={'name':'Old'}, status='paused', progress={}),

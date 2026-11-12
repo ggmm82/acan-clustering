@@ -38,3 +38,26 @@ Le prove controllano oltre1.500 record, prime/ultime misure, paginazione, interv
 parametri non validi e isolamento fra proprietari. Nel browser vengono verificati
 training e salvataggio con26 classi numeriche decimali, filtri e navigazione del
 grafo su schermi piccoli e grandi.
+
+## Cambio fra progetti persistenti
+
+Il frontend richiede un elenco leggero dei progetti e carica storico e checkpoint
+solo per quello selezionato. Quando la selezione cambia, richiede direttamente
+la vista del nuovo progetto anziché attendere il polling successivo. Il grafico
+non riceve i diagnostici di ogni passo: soltanto passo e NLL; i dettagli del
+progetto restano disponibili separatamente nel riepilogo corrente.
+
+Le panoramiche immutate sono conservate in una cache limitata a16 progetti e
+invalidata dagli aggiornamenti e dalle riprese che eliminano passi. Il controllo
+di proprietà precede sempre la cache. Gli intervalli dello zoom sono conservati
+per progetto/modalità, fino a32 viste, e riapplicati al refresh. Un indicatore
+segnala il caricamento del grafico.
+
+I test verificano che gli altri storici non vengano letti, i payload del grafico
+non contengano diagnostica ingombrante, i nuovi passi e le riprese invalidino la
+cache e non siano visibili progetti di altri workspace. Nel browser si cambiano
+ripetutamente tre progetti e si verifica la vista corretta, il mantenimento dello
+zoom dopo un vero ridisegno e l'accesso a una finestra oltre1000 passi.
+
+Questa ottimizzazione richiede frontend e worker aggiornati; non modifica pesi,
+configurazioni, metriche conservate o processi di training.
