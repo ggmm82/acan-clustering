@@ -13,7 +13,8 @@ class ConceptAttentionTests(unittest.TestCase):
         from acan.lm.concept_attention import ConceptSlotAttention
         torch.set_num_threads(1); torch.manual_seed(3)
         config = LlamaConfig(vocab_size=32, hidden_size=32, intermediate_size=32, num_hidden_layers=1,
-                             num_attention_heads=4, num_key_value_heads=4, max_position_embeddings=256)
+                             num_attention_heads=4, num_key_value_heads=4, max_position_embeddings=256,
+                             attn_implementation='eager')
         dense = LlamaAttention(config, 0).eval()
         layer = ConceptSlotAttention(config, 0, slots=slots, window=window)
         for name in ('q_proj', 'k_proj', 'v_proj', 'o_proj'):

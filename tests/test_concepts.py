@@ -111,6 +111,9 @@ class ConceptApplicationTest(unittest.TestCase):
         rng = np.random.default_rng(0)
         priced = frame.assign(price=np.where(frame.play == 'yes', 30., 10.)+rng.normal(0, 1, len(frame)))
         graph = train_native(priced.iloc[:90], ['price'], OPTIONS)
+        root = graph.clusterModel[graph.rootId]
+        self.assertEqual(root.routing_parameters['numeric_targets'], [root.cols.index('price')])
+        self.assertEqual(root.routing_parameters['numeric_readout'], 'weighted-training-mean')
         predicted = infer(graph.to_json(), priced.iloc[90:])['price'].astype(float)
         error = np.abs(predicted.to_numpy()-priced.price.iloc[90:].to_numpy()).mean()
         self.assertLess(error, 3.)

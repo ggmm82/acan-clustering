@@ -108,6 +108,8 @@ def train(learner, epochs):
         objective='predictive-concepts-v1', cp_definition='explained-variance-v1',
         hierarchy_readout='conditional-mixture-v1', selection=model.selection,
         training_rows=len(x), training_score=model.final_score,
+        numeric_targets=[learner.cols.index(label) for label in learner.labels if label in learner.cols],
+        numeric_readout='weighted-training-mean',
         explained={name: value for name, value in explained.items() if name != 'CP'},
         log_prior=np.log(s['C']/s['C'].sum()).tolist(),
         numeric=[dict(column=encoder.numeric_index[j], mean=float(encoder.mean[j]), std=float(encoder.std[j]),
