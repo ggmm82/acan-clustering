@@ -14,8 +14,9 @@ Rimane un solo nucleo CP. Preset di risorse o modalità di uso non devono divent
 algoritmi alternativi, né nascondere una selezione supervisionata dei concetti.
 
 La semplificazione dell'interfaccia non risolve matematicamente il numero di
-prototipi. Il clustering di Gioco sulle 101 righe complete resta un controllo
-aperto: CP attuale 5 gruppi, precedente 4. Non introdurre un K imposto, fusioni
+prototipi. Il clustering di Gioco sulle 101 righe complete è ora recuperato: la CP con
+sostegno fra osservazioni diverse trova quattro gruppi senza target. Conservare
+questo controllo nella prossima PR. Non introdurre un K imposto, fusioni
 visive presentate come fusioni del modello o regole basate sul nome del dataset.
 
 ## 1. Partire dall'obiettivo della persona
@@ -24,8 +25,8 @@ Tre ingressi, con un testo breve e un esempio concreto:
 
 - **Scoprire gruppi:** nessuna colonna da prevedere. Mostrare tutte le colonne
   osservate, compresi eventuali esiti presenti nel file. Distinguere clustering
-  dell'intero file da uno studio di stabilità su campioni: non applicare di
-  nascosto il protocollo 80/20 della classificazione. Mostrare righe totali,
+  dell'intero file da uno studio di stabilità su campioni: mantenere la correzione già applicata: senza target il training usa tutte le
+  righe, mentre il protocollo 80/20 riguarda la classificazione. Mostrare righe totali,
   mancanti e realmente utilizzate prima di avviare.
 - **Prevedere una classe:** indicare la colonna da prevedere e spiegare che le
   etichette influenzano il training. Una classe può essere testo, intero o decimale.

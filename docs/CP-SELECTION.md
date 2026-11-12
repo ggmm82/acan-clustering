@@ -1,3 +1,8 @@
+> Aggiornamento: il modello corrente usa la CP con sostegno fra osservazioni diverse.
+> Recupera quattro gruppi su tutte le 101 righe di Gioco senza target.
+> Formula e nuove misure: [CP-PAIR-SUPPORT.md](CP-PAIR-SUPPORT.md).
+> Questa pagina conserva la diagnosi delle versioni precedenti.
+
 # CP condivisa: proposta sperimentale e verifiche
 
 Un unico nucleo `cp-joint-v1` con definizione `exclusive-cp-v1` è proposto per nuovi modelli tabulari e generativi. Le vecchie implementazioni rimangono controlli di regressione e supporto ai checkpoint; non sono nuove opzioni di modello nella GUI. La PR è destinata alla prova web, non certifica un miglioramento universale.

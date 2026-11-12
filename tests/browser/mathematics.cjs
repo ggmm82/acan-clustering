@@ -16,7 +16,7 @@ const assert=require('node:assert/strict');
       const text=await page.locator('#page-mathematics').innerText();
       assert(text.includes('non supervisionato')&&text.includes('95,78%'));
       assert(text.includes('Rilevanza:')&&text.includes('prototipi possono proliferare'));
-      assert(text.includes('Classificazione')&&text.includes('14 gruppi'));
+      assert(text.includes('Classificazione')&&text.includes('osservazioni diverse'));
       assert(!text.includes('acan/algebra.py'));
       console.log(`Mathematics: ${width}px, all sections and formulas rendered without errors.`);
       await page.close();

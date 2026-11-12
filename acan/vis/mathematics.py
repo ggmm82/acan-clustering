@@ -149,6 +149,21 @@ La media pesata mantiene il punteggio fra zero e uno senza farlo crescere
 automaticamente con il numero di attributi. La radice è crescente: massimizzarla
 favorisce gli stessi valori della quantità interna, pur cambiando i gradienti.
 
+Prima di valutare un concetto, escludiamo il sostegno che ogni riga dà a sé
+stessa. Pescando due assegnazioni nel concetto, la frazione che proviene da
+osservazioni diverse è:
+
+$$
+h_i=\frac{C_i^2-\sum_tT_{it}^2}{C_i^2},\qquad
+\widetilde q_i=h_iq_i.
+$$
+
+Se il concetto contiene una sola riga, h vale zero: non c'è evidenza condivisa.
+Con assegnazioni nette e C righe, h=(C−1)/C. Un gruppo sostenuto da molte righe
+riceve una correzione piccola. Non si sceglie un numero minimo di righe né un K:
+il fattore deriva dalle coppie di osservazioni diverse. Non è una dimostrazione
+di indipendenza statistica delle righe.
+
 Questa CP non distingue un concetto dalle sue copie. Per scoraggiare la
 duplicazione misuriamo la sovrapposizione fra prototipi con la stessa distanza
 usata per le righe, resa simmetrica:
@@ -170,19 +185,19 @@ B vale uno quando masse e frequenze coincidono e diminuisce quando divergono.
 È l'affinità di Bhattacharyya fra due distribuzioni. La CP usata attualmente è:
 
 $$
-z_i=F_i\sqrt{q_i},\qquad
-CP_* = B(\pi,F)\sqrt{\sum_iF_iq_i-z^TSz}.
+z_i=F_i\sqrt{\widetilde q_i},\qquad
+CP_* = B(\pi,F)\sqrt{\sum_iF_i\widetilde q_i-z^TSz}.
 $$
 
 Il termine sottratto evita di contare più volte evidenza condivisa da concetti
 sovrapposti. Per r copie identiche **con frequenze uguali** e masse uguali alle
-frequenze, la qualità q viene penalizzata così:
+frequenze, la qualità sostenuta viene penalizzata così:
 
 $$
-CP_*^{copie}=\sqrt{q/r},\qquad CP_*^{unico}=\sqrt q.
+CP_*^{copie}=\sqrt{\widetilde q/r},\qquad CP_*^{unico}=\sqrt{\widetilde q}.
 $$
 
-Per esempio, con q=0,81, quattro copie danno 0,45; un solo rappresentante dà
+Per esempio, con qualità sostenuta 0,81, quattro copie danno 0,45; un solo rappresentante dà
 0,9. È un motivo matematico concreto per preferire una descrizione unica alle
 sue copie, senza imporre il numero di cluster.
 
@@ -234,6 +249,7 @@ $$
 +\lambda\,\operatorname{media}_{\ell,t}(1-CP_{*,\ell,t}).
 $$
 
+Anche la somma delle assegnazioni al quadrato viene accumulata solo sul prefisso.
 Media, intervalli e riepiloghi sono aggiornati solo sul prefisso: il futuro non
 entra nella CP del token corrente. I conteggi e le somme precedenti vengono
 accumulati; le vecchie assegnazioni non sono ricalcolate con token futuri.
@@ -308,24 +324,18 @@ che il modello generalizzi né che il numero dei concetti sia quello desiderato.
 Un test usato ripetutamente per scegliere miglioramenti diventa uno strumento
 di sviluppo: serve poi una verifica indipendente.
 
-Su Gioco va distinto il protocollo. **Sulle 101 righe originali, senza target,
-la proposta produce 5 gruppi mentre il controllo precedente ne produce 4:**
-è una regressione ancora aperta. Sulle sole 100 righe con esito osservato entrambi
-producono quattro gruppi, con tutte e sei le colonne usate come attributi.
-Nel nucleo attuale la NLL è zero in entrambi i casi: non c'è supervisione.
+La CP corretta trova **4 gruppi sulle 101 righe originali di Gioco, senza target**,
+includendo la riga con valore mancante. La NLL è zero. L'app conserva tutte le
+righe per il clustering; il 20% separato resta per la previsione supervisionata.
+Sulle cinque prove di classificazione controllate, Gioco mantiene quattro concetti
+e 100%. Il numero atteso non viene fornito all'ottimizzatore.
 
-Indicando invece Gioco come classe da prevedere, la riga priva di esito non
-partecipa al training; i cinque split controllati danno quattro concetti e 100%
-in classificazione. Togliendo del tutto la colonna Gioco, il clustering sui
-cinque attributi rimasti produce 14 gruppi. Nessuno di questi ultimi confronti
-può sostituire la verifica sul file originale completo.
-
-Letter gerarchico raggiunge **92,70%** sulle 4.000 righe di test completo e
-**89,85%** nel campione web di 2.000 righe di test. Il **95,78%** storico non è
-stato recuperato. Il totale dei prototipi scende da 4.339 a 3.703 sul file completo,
-ma la proliferazione non è risolta in generale. Adult e Titanic migliorano nella
-media dei tre split iniziali; Breast Cancer resta debole, Iris e Vote peggiorano
-rispetto alla prima proposta. Uno split aggiuntivo non conferma tutti i vantaggi.
+Letter gerarchico misura **92,325%** sulle 4.000 righe di test completo e
+**91,05%** nel campione web di 2.000 righe. I prototipi sono rispettivamente
+3.346 e 1.387. Rispetto alla versione immediatamente precedente, il test completo
+perde 0,375 punti, mentre il campione web guadagna 1,20 punti e usa meno prototipi.
+Il **95,78%** storico non è stato recuperato. Sugli altri file i risultati sono
+misti: la correzione non garantisce un miglioramento su ogni distribuzione.
 
 Questi risultati misurano classificazione tabulare. Non provano un miglioramento
 della qualità linguistica. Nel generativo bisogna confrontare lo stesso test,

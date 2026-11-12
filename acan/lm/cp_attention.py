@@ -36,10 +36,12 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
         all_cp = []
         all_relevance = []
         saved_content = []
+        saved_square_counts = []
         saved_overlaps = []
         for batch_index in range(b):
             count = previous['mass'][batch_index,:,None] if previous else x.new_zeros(self.k,1)
             content = previous['cp_x'][batch_index] if previous else x.new_zeros(self.k,d)
+            square_count = previous['cp_square_mass'][batch_index] if previous else x.new_zeros(self.k,1)
             pieces = []
             prefix_cp = []
             prefix_relevance = []
@@ -55,6 +57,7 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
                         self.log_beta.clamp(0,9).exp().double(),
                         slice(None),lambda value,floor: value.clamp_min(floor),torch.clamp,
                         lambda scores: scores.softmax(0),base_counts=count,base_sums=content,
+                        base_square_counts=square_count,
                         masses=self.masses.double(),exponential=torch.exp,
                         distinct=(1-torch.eye(self.k,device=x.device,dtype=torch.float64) if self.training else None),
                         compute_cp=self.training)
@@ -73,6 +76,7 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
                         normalized_cluster_probability(solved['F'].T, solved['R'].clamp(0, 1),
                             lambda value, floor: value.clamp_min(floor)))
                 count = count+assignment[:,None]
+                square_count = square_count+assignment[:,None].square()
                 content = content+assignment[:,None]*routing_x[batch_index,index]
             all_assignments.append(torch.stack(pieces))
             if prefix_cp:
@@ -80,6 +84,7 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
             if prefix_relevance:
                 all_relevance.append(torch.stack(prefix_relevance))
             saved_content.append(content)
+            saved_square_counts.append(square_count)
             if 'overlap' in solved:
                 saved_overlaps.append(solved['overlap'].detach())
         assignments = torch.stack(all_assignments)
@@ -141,7 +146,8 @@ class CPUnifiedAttention(ACANConceptAttentionLayer):
                               local_values=values[:, -keep:].detach().clone() if keep else values[:, :0].detach().clone())
         if use_cache:
             self.cache.update(cp_sum=cp_sums[:,-1].detach().clone(),cp_min=cp_min[:,-1].detach().clone(),
-                cp_max=cp_max[:,-1].detach().clone(),cp_x=torch.stack(saved_content).detach().clone())
+                cp_max=cp_max[:,-1].detach().clone(),cp_x=torch.stack(saved_content).detach().clone(),
+                cp_square_mass=torch.stack(saved_square_counts).detach().clone())
         self.last_info = dict(active_slots=active[:, -1].sum(-1).detach().clone(),
                               relevance=final_relevance[:, -1].detach().clone(), masses=mass[:, -1].detach().clone(),
                               assignments=assignments[:, -1].detach().clone())
