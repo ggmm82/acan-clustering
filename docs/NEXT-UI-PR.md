@@ -1,3 +1,10 @@
+> Aggiornamento: le correzioni principali sono ora incluse nella PR11 insieme al
+> modello CP: classi numeriche esplicite, controlli attivi, riepilogo del grafo,
+> panoramica dello storico e finestre esatte. Il testo seguente conserva il piano
+> originario. Esportazione completa e registro dei tentativi restano sviluppi
+> ulteriori; la panoramica attuale usa campionamento regolare, non conserva tutti
+> gli estremi. La finestra permette di verificare i punti originali.
+
 # Prossima PR: un percorso comprensibile per usare e verificare ACAN
 
 Piano per un **run successivo**. Questa PR non ridisegna l'interfaccia e non

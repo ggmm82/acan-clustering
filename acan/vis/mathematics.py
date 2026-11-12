@@ -236,10 +236,11 @@ Le teste categoriche usano softmax e vengono inizializzate con il logaritmo dell
 probabilità, così non si introduce una sicurezza artificiale nei valori iniziali.
 
 Una classe può essere scritta come numero: 0/1 oppure codici 1…26 restano
-categorie se il numero è un nome. Nell'app scegliere **Classificazione** per
-questo caso. «Automatico» riconosce soltanto codici interi fino a 20 valori;
-un valore continuo da stimare è invece regressione, non ancora supportata da
-questa testa categorica. Il formato numerico da solo non determina il compito.
+categorie se il numero è un nome. Nell'app ogni target indicato viene trattato
+come classe, anche quando contiene numeri decimali o più di 20 valori distinti.
+Per scoprire gruppi senza supervisione basta svuotare il target. Stimare un
+valore continuo è invece regressione, non supportata da questa testa categorica.
+Il formato numerico da solo non determina il compito.
 
 **Linguaggio auto-supervisionato.** Si apprende a continuare un testo; ogni parola
 successiva fornisce il target. Ogni layer mantiene concetti del contesto già letto:

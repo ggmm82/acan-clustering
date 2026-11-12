@@ -37,7 +37,7 @@ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:pa
       await page.waitForFunction(root=>!!document.getElementById('org-chart')._cyreg.cy.$id(`${root}_G0`).length,root);
       const zoom=await page.evaluate(()=>document.getElementById('org-chart')._cyreg.cy.zoom());
       await page.locator('#graph-zoom-in').click();
-      assert((await page.evaluate(()=>document.getElementById('org-chart')._cyreg.cy.zoom()))>zoom);
+      await page.waitForFunction(previous=>document.getElementById('org-chart')._cyreg.cy.zoom()>previous,zoom);
       await page.locator('#graph-fullscreen').click();
       await page.waitForFunction(()=>document.fullscreenElement?.id==='graph-panel'||document.getElementById('graph-panel').classList.contains('graph-fullscreen'));
       await page.locator('#graph-focus').click();

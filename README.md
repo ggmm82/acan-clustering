@@ -315,3 +315,18 @@ ultimi possono ancora contribuire alle previsioni soft. Il rendering non elimina
 o accorpa i prototipi del modello. Nel nuovo training la selezione avviene tramite le masse
 del nucleo condiviso, come descritto in [CP-SELECTION.md](docs/CP-SELECTION.md); il conteggio
 non certifica un numero semanticamente corretto di concetti su qualunque dataset.
+
+### Usare il modello e leggere il training
+
+Nella scheda Model, lasciare il target vuoto per scoprire gruppi oppure scegliere
+una colonna da prevedere come classe. Le classi numeriche, anche decimali o oltre
+20 codici, sono accettate senza passare dalle impostazioni avanzate. I controlli
+inattivi sono nascosti o disabilitati; i parametri effettivi hanno spiegazioni.
+Il riepilogo del grafo distingue i prototipi dell'albero dai gruppi del nodo.
+
+Nel generativo, **Intero percorso** mostra la panoramica dall'inizio alla fine;
+**Esamina una finestra di 500 passi** consente di leggere i punti esatti, inserire
+un passo iniziale e navigare avanti/indietro. Il polling conserva lo zoom. Per
+serie lunghe la panoramica è campionata e non garantisce di mostrare ogni picco:
+la finestra contiene le misure esatte dell'intervallo. Frontend e worker devono
+includere questo aggiornamento; i progetti esistenti non vengono riaddestrati.

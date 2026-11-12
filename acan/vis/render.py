@@ -501,15 +501,23 @@ def create_legend():
         ], className="p-2")
     ], className="mb-3", style={"fontSize": "12px"})
 
+PARAMETER_HELP = {'input-lr': 'Ampiezza degli aggiornamenti: riduci se il training è instabile.',
+ 'input-max-batch': 'Righe per aggiornamento, massimo effettivo 300.',
+ 'train-depth': 'Più livelli possono moltiplicare i prototipi. Parti da uno.',
+ 'train-min-samples': 'Evita approfondimenti su pochissime righe.',
+ 'train-purity': 'Più vicina a uno può inseguire il rumore nelle classi.',
+ 'train-epochs': 'Più epoche aumentano apprendimento e rischio di sovradattamento.'}
+
+
 def parameter(label, id, value, lo, hi, step):
     return dbc.Col([dbc.Label(label), dbc.Input(id=id, type='number', value=value,
-                    min=lo, max=hi, step=step)], md=4, className='mb-2',
+                    min=lo, max=hi, step=step), html.Small(PARAMETER_HELP.get(id,''),className='text-muted')], md=4, className='mb-2',
                    style={'display':'none'} if id in ('train-tau','train-alpha') else {})
 
 
 model_layout = dbc.Container([
     html.H4('Scopri i concetti, poi approfondisci soltanto dove serve', className='mt-3'),
-    html.P('Avvia il modello iniziale. Doppio clic su un gruppo per creare un solo livello aggiuntivo sui suoi campioni. La radice rimane unica. Confronta la validazione in Evaluation e rimuovi i rami senza benefici.'),
+    html.P('Senza target scopri gruppi su tutte le righe; con un target apprendi a prevederne la classe su uno split 80/20. Anche numeri come 0/1 o 1…26 possono essere nomi di classe. Avvia il modello iniziale. Doppio clic su un gruppo per creare un solo livello aggiuntivo sui suoi campioni. La radice rimane unica. Confronta la validazione in Evaluation e rimuovi i rami senza benefici.'),
     uplModel,
     dbc.Row([
         dbc.Col([dbc.Label('Target (svuota per scoperta non supervisionata)'),
@@ -527,24 +535,23 @@ model_layout = dbc.Container([
                      dbc.Button('Svuota', id='btn-clear-filter', color='link', size='sm'),
                      dbc.Button('Ripristina filtri suggeriti', id='btn-suggest-filter', color='link', size='sm')], md=6),
         ]),
-        dbc.Label('Tipo di previsione del target'),
-        dcc.Dropdown(id='target-task', value='auto', clearable=False, options=[{'label':'Automatico (codici interi fino a 20 classi: classificazione)', 'value':'auto'}, {'label':'Classificazione', 'value':'classification'}, {'label':'Regressione numerica', 'value':'regression'}]),
-        dbc.Label('Routing ACAN'),
-        dcc.Dropdown(id='tabular-routing-profile',value='cp-joint-v1',clearable=False,options=[
-            {'label':'CP condivisa con selezione dei concetti · comune al generativo','value':'cp-joint-v1'}]),
+        html.Div([
+            dcc.Dropdown(id='target-task',value='classification',options=[{'label':'Classificazione','value':'classification'}]),
+            dcc.Dropdown(id='tabular-routing-profile',value='cp-joint-v1',options=[{'label':'CP condivisa','value':'cp-joint-v1'}]),
+        ],style={'display':'none'}),
         html.P('Un solo nucleo CP per i nuovi modelli tabulari e generativi. Il numero di concetti attivi viene appreso; 256 è il limite di capacità, non il numero richiesto. Target categorici. Le misure, i limiti sperimentali e la formula estesa sono nella scheda Matematica. I modelli precedenti restano caricabili.',className='small text-muted'),
         dbc.Row([parameter(*args) for args in [
             ('Epoche', 'train-epochs', 100, 1, 1000, 1),
             ('Learning rate', 'input-lr', .08, .001, 1, .01),
-            ('Batch (solo training iniziale a un livello)', 'input-max-batch', 300, 10, 10000, 10),
+            ('Righe per aggiornamento', 'input-max-batch', 300, 10, 300, 10),
             ('Temperatura τ (solo versione precedente)', 'train-tau', .2, .01, 10, .01),
             ('Miscela α (solo versione precedente)', 'train-alpha', .5, 0, 1, .05),
             ('Campioni minimi del ramo', 'train-min-samples', 12, 2, 10000, 1),
             ('Livelli iniziali automatici (predefinito: 1)', 'train-depth', 1, 1, 6, 1),
             ('Soglia purezza (solo livelli automatici)', 'train-purity', .92, 0, 1, .01),
         ]]),
-        html.P('Backend NumPy CPU. gLearn usa il proprio batch nativo di 300; i livelli automatici rispettano i criteri nativi di split e le epoche max(40, epoche padre / 2). Ogni approfondimento richiesto addestra un solo nodo nativo nella normalizzazione originale.', className='small text-muted'),
-        daq.BooleanSwitch(disabled=True, id='bsId', label='Bilanciamento automatico disattivato', on=False),
+        html.P('Il batch è modificabile per il primo livello; la gerarchia usa aggiornamenti fino a 300 righe. La purezza e i campioni minimi agiscono solo con più livelli automatici. Approfondire può aumentare i prototipi: confronta il risultato nella validazione.', className='small text-muted'),
+        html.Div(daq.BooleanSwitch(disabled=True,id='bsId',on=False),style={'display':'none'}),
     ], title='Impostazioni avanzate')], start_collapsed=True, className='mb-3'),
     dcc.Store(id='model-store'), dcc.Store(id='label-store'),
     dcc.Store(id='evaluation-trigger', data=0), dcc.Store(id='refine-request'), dcc.Store(id='graph-viewport'),
@@ -756,6 +763,17 @@ def update_labels(data, lbs):
     filter_options = [item for item in options if item['value'] not in labels]
     return options, labels, options, filters, filter_options
 
+
+
+@app.callback(Output('button-learn','children'),Input('dpdnLabel','value'))
+def training_action_label(labels):
+    return 'Apprendi a prevedere le classi' if labels else 'Scopri gruppi senza target'
+
+
+@app.callback(Output('input-max-batch','disabled'),Output('train-min-samples','disabled'),Output('train-purity','disabled'),Input('train-depth','value'),Input('dpdnLabel','value'))
+def active_training_parameters(depth,labels):
+    hierarchical=int(depth or 1)>1
+    return hierarchical,not hierarchical,not hierarchical or not labels
 
 
 @app.callback(Output('train-tau','disabled'),Output('train-alpha','disabled'),Input('tabular-routing-profile','value'))

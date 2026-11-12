@@ -12,6 +12,19 @@ import plotly.graph_objects as go
 from flask import request as flask_request, jsonify, Response, stream_with_context
 
 
+TRAINING_HELP = {'lm-length': 'Token letti insieme: più contesto richiede più memoria.',
+ 'lm-batch': 'Blocchi elaborati insieme.',
+ 'lm-accum': 'Batch accumulati prima di aggiornare i pesi.',
+ 'lm-lr': 'Ampiezza degli aggiornamenti: riduci se instabile.',
+ 'lm-slots': 'Limite di capacità; la CP apprende gli slot attivi.',
+ 'lm-window': 'Token recenti accessibili direttamente.',
+ 'lm-rank': 'Capacità dei pesi aggiuntivi LoRA e memoria richiesta.',
+ 'lm-save': 'Frequenza dei checkpoint dai quali puoi generare.',
+ 'lm-patience': 'Controlli senza progresso prima della pausa automatica.',
+ 'lm-min-delta': 'Quanto deve diminuire la NLL per contare come progresso.',
+ 'lm-cp-weight': 'Compromesso fra previsione e organizzazione. Zero: sola NLL.'}
+
+
 MODELS = ['HuggingFaceTB/SmolLM2-135M', 'HuggingFaceTB/SmolLM2-360M', 'HuggingFaceTB/SmolLM2-1.7B']
 
 
@@ -41,7 +54,7 @@ def backend(workspace, path, method='GET', data=None, raw=False, headers=None, t
 
 layout = dbc.Container([
     html.H4('Laboratorio generativo · ACAN-LM Hybrid', className='mt-3'),
-    html.P('Continued pre-training con LoRA e WSD su pesi SmolLM2. Nel profilo predefinito il 50% superiore usa il porting ACAN causale corretto; il profilo al 100% è sperimentale. Qualità linguistica e riduzione della cache sono da misurare: non sono garantite dal grafting.'),
+    html.P('Questo laboratorio adatta un modello a continuare testi simili al corpus. Scegli un testo, osserva la validazione e prova un checkpoint. Continued pre-training con LoRA e WSD su pesi SmolLM2. Nel profilo predefinito il 50% superiore usa il porting ACAN causale corretto; il profilo al 100% è sperimentale. Qualità linguistica e riduzione della cache sono da misurare: non sono garantite dal grafting.'),
     dcc.Store(id='lm-workspace', storage_type='local'), dcc.Store(id='lm-state'),
     dcc.Store(id='lm-active-job', storage_type='session'),
     dcc.Store(id='lm-upload-state'), dcc.Store(id='lm-generation-id'), dcc.Store(id='lm-browser-ready'), dcc.Store(id='lm-evaluation-id'), dcc.Store(id='lm-evaluation-report'),
@@ -77,15 +90,15 @@ layout = dbc.Container([
     ]),
     dbc.Accordion([dbc.AccordionItem([
         html.P('Ogni passo aggiorna pesi/ottimizzatore dopo l’accumulo completo. Il budget WSD e questi parametri restano fissi durante la ripresa.'),
-        dbc.Row([dbc.Col([dbc.Label(label), dbc.Input(id=id, type='number', value=value, min=lo, max=hi)], md=4, className='mb-2')
+        dbc.Row([dbc.Col([dbc.Label(label), dbc.Input(id=id, type='number', value=value, min=lo, max=hi),html.Small(TRAINING_HELP.get(id,''),className='text-muted')], md=4, className='mb-2')
                  for label,id,value,lo,hi in [('Token per blocco','lm-length',128,16,2048),('Batch','lm-batch',1,1,8),
                      ('Accumulo gradienti','lm-accum',8,1,256),('Learning rate','lm-lr',.0001,.0000001,.01),
                      ('Capacità massima dei concetti','lm-slots',16,2,64),('Finestra locale','lm-window',16,1,128),
                      ('Rank LoRA','lm-rank',8,2,64),('Checkpoint ogni N passi','lm-save',100,1,10000),
                      ('Controlli senza miglioramento prima della pausa (0: disattiva)','lm-patience',3,0,20),('Miglioramento minimo NLL','lm-min-delta',.01,0,1),
                      ('Peso CP sperimentale (0: sola NLL)','lm-cp-weight',.1,0,1)]]),
-        dbc.Label('Attenzione ACAN nei nuovi progetti'),
-        dcc.Dropdown(id='lm-routing',value='cp-joint-v1',clearable=False,options=[{'label':'CP condivisa con selezione dei concetti · comune al tabulare','value':'cp-joint-v1'}]),
+        dbc.Label('Unico nucleo CP condiviso con il modello tabulare'),
+        dcc.Dropdown(id='lm-routing',value='cp-joint-v1',clearable=False,style={'display':'none'},options=[{'label':'CP condivisa con selezione dei concetti · comune al tabulare','value':'cp-joint-v1'}]),
         dcc.Dropdown(id='lm-fraction',value=.5,clearable=False,options=[{'label':'50% dei livelli · ibrido predefinito','value':.5},{'label':'100% dei livelli · sperimentale; CP su CPU massimo 32 token','value':1.}]),
         dbc.Checkbox(id='lm-distill', value=False, label='Distillazione: imita anche il modello originale (più memoria e tempo, facoltativa su CPU)'),
         html.P('Nuovi progetti: documenti separati in training/validazione/test, duplicati esatti rimossi, miglior checkpoint conservato e pausa automatica dopo tre controlli senza miglioramenti sufficienti. Il progetto legacy conserva il metodo originale.', className='small text-muted'),
@@ -97,7 +110,16 @@ layout = dbc.Container([
     dcc.Dropdown(id='lm-job', placeholder='Scegli un progetto per controllarlo o riprenderlo'),
     dbc.Button('Pausa e salva', id='lm-pause', color='warning', className='m-1'),
     dbc.Button('Riprendi dal checkpoint', id='lm-resume', className='m-1'),
-    html.Div(id='lm-action-status', role='status'), html.Div(id='lm-progress'), dcc.Graph(id='lm-loss'),
+    html.Div(id='lm-action-status', role='status'), html.Div(id='lm-progress'),
+    dbc.Row([
+        dbc.Col([dbc.Label('Percorso di apprendimento'),dcc.Dropdown(id='lm-history-mode',value='overview',clearable=False,
+            options=[{'label':'Intero percorso · panoramica','value':'overview'},{'label':'Esamina una finestra di 500 passi','value':'window'}])],md=6),
+        dbc.Col([dbc.Label('Dal passo'),dbc.Input(id='lm-history-start',type='number',min=0,value=0,step=1),
+            dbc.Button('500 passi prima',id='lm-history-prev',size='sm',outline=True),
+            dbc.Button('500 passi dopo',id='lm-history-next',size='sm',outline=True)],md=6),
+    ]),
+    html.P('La panoramica mostra tutto il percorso con campionamento per serie lunghe. Usa la finestra per leggere ogni punto. Lo zoom resta fermo durante gli aggiornamenti. Le metriche precedenti non implicano che i pesi di ogni passo siano ancora disponibili.',className='small text-muted'),
+    dcc.Graph(id='lm-loss'),
     dbc.Accordion([dbc.AccordionItem([html.Pre(id='lm-debug-view', style={'whiteSpace':'pre-wrap'}),
         dbc.Button('Scarica diagnostica', id='lm-debug-download'), dcc.Download(id='lm-debug-file'),
         dcc.Store(id='lm-debug-data')], title='Diagnostica del progetto e log')], start_collapsed=True),
@@ -377,19 +399,38 @@ def register(app):
         except ValueError as exc:
             return dash.no_update, str(exc)
 
+    @app.callback(Output('lm-history-start','value'),Input('lm-history-prev','n_clicks'),
+                  Input('lm-history-next','n_clicks'),Input('lm-job','value'),State('lm-history-start','value'),prevent_initial_call=True)
+    def history_navigation(previous,next_,job,start):
+        if dash.ctx.triggered_id=='lm-job':return 0
+        return max(0,int(start or 0)+(500 if dash.ctx.triggered_id=='lm-history-next' else -500))
+
+    @app.callback(Output('lm-history-start','disabled'),Output('lm-history-prev','disabled'),
+                  Output('lm-history-next','disabled'),Input('lm-history-mode','value'))
+    def history_controls(mode):
+        return (mode!='window',)*3
+
     @app.callback(Output('lm-progress','children'), Output('lm-loss','figure'),
                   Output('lm-checkpoint','options'), Output('lm-checkpoint','value'),
-                  Input('lm-state','data'), Input('lm-job','value'), State('lm-checkpoint','value'))
-    def progress(state, selected, checkpoint):
+                  Input('lm-state','data'), Input('lm-job','value'), State('lm-checkpoint','value'),
+                  Input('lm-history-mode','value'),Input('lm-history-start','value'),State('lm-workspace','data'))
+    def progress(state, selected, checkpoint, history_mode, history_start, workspace):
         job = next((j for j in (state or {}).get('jobs',[]) if j['id']==selected), None)
         if not job:
             return 'Seleziona un progetto.', go.Figure(), [], None
         metrics = job['progress']
         figure = go.Figure()
+        history=job['history']
+        history_error=None
+        if history_mode=='overview' and job.get('history_view')!='full_overview':
+            history_error='Il worker collegato fornisce lo storico precedente: aggiornalo per accedere all’intero percorso.'
+        if history_mode=='window':
+            try:history=backend(workspace,f'/jobs/{selected}/history?start={max(0,int(history_start or 0))}&end={max(0,int(history_start or 0))+499}&limit=500')['rows']
+            except ValueError as exc:history=[];history_error=str(exc)
         for key, label in [('training_nll','Training NLL'),('validation_nll','Validation NLL')]:
-            rows = [row for row in job['history'] if key in row]
+            rows = [row for row in history if key in row]
             figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows], mode='lines', name=label)
-        figure.update_layout(title='Errore di previsione · più basso è meglio', xaxis_title='Passi', yaxis_title='NLL')
+        figure.update_layout(title='Errore di previsione · più basso è meglio', xaxis_title='Passi', yaxis_title='NLL',uirevision=f'{selected}:{history_mode}:{history_start if history_mode=="window" else 0}',xaxis={'rangeslider':{'visible':True}})
         protected=next((item for item in job['snapshots'] if item.get('best')),None)
         if protected and protected.get('validation_nll') is not None:
             figure.add_hline(y=protected['validation_nll'],line_dash='dot',line_color='purple',annotation_text='Migliore conservato')
@@ -397,7 +438,7 @@ def register(app):
         if baseline is not None:
             figure.add_hline(y=baseline, line_dash='dash', line_color='green', annotation_text='Modello originale sullo stesso corpus')
         text = f"{job['status']} · passo {metrics.get('step',0)}/{job['config']['total_steps']} · token elaborati {metrics.get('tokens_trained',0):,} · ultimo checkpoint {job['checkpoint'] or 'ancora nessuno'}"
-        detail = [html.P(text), html.P(job['error'], className='text-danger') if job['error'] else None]
+        detail = [dbc.Alert(history_error,color='warning') if history_error else None,html.P(text), html.P(job['error'], className='text-danger') if job['error'] else None]
         for key,label in [('training_nll','NLL training'),('training_objective','Obiettivo training'),('training_cp_penalty','Penalità CP media'),('cp_weight','Peso CP'),('validation_nll','NLL validazione'),('validation_perplexity','Perplessità validazione'),
                           ('baseline_nll','NLL base prima del graft'),('tokens_per_second','Token/s misurati'),('trainable_parameters','Parametri trainabili'),('total_parameters','Parametri totali del modello innestato'),('process_peak_rss_kib','Picco RAM del processo di training (KiB)')]:
             if metrics.get(key) is not None:
