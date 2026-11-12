@@ -88,6 +88,14 @@ def objective(params, x, groups, state, weight=WEIGHT, gradients=True):
         root_denominator = np.maximum(quality,1e-12)**.5
         root_derivative = 1/root_denominator-.5*quality/root_denominator**3*(quality>1e-12)
         dquality = scale*freq+d_z*freq*root_derivative
+        # Differentiate the same distinct-observation support factor as Torch.
+        count_square=counts*counts
+        support_den=np.maximum(count_square,1e-24)
+        support_numerator=count_square-shared['square_counts']
+        support_raw=support_numerator/support_den
+        dsupport=(2*counts-2*t)/support_den-2*counts*support_numerator/support_den**2*(count_square>1e-24)
+        dt += dquality*(q/s)*dsupport*((support_raw>=0)&(support_raw<=1))
+        dquality = dquality*shared['evidence']
         dfrequency = scale*quality+d_z*roots
         frequency_den = np.maximum(freq,1e-300)**.5
         frequency_derivative = 1/frequency_den-.5*freq/frequency_den/np.maximum(freq,1e-300)*(freq>1e-300)
@@ -252,7 +260,7 @@ def train(learner, epochs):
     learner.k_active = int((learner.Counts>0).sum())
     anchors,_ = probabilities(best['G'],groups,state['lo'],state['span'])
     learner.variational_state = dict(objective='categorical-nll-cp-v1' if groups else 'normalized-cp-v1',cp_weight=WEIGHT,
-        cp_definition='exclusive-cp-v1',masses=best['masses'].tolist(),
+        cp_definition='pair-supported-cp-v1',masses=best['masses'].tolist(),
         hierarchy_readout='conditional-mixture-v1',
         candidate_budget=candidate_budget,
         beta=float(np.exp(np.clip(best['log_beta'],0,9))),features=np.flatnonzero(features).tolist(),

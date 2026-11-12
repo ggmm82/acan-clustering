@@ -129,7 +129,12 @@ def split_for_training(data, labels, filters=(), categories=(), task='auto', see
         counts = frame[labels[0]].value_counts()
         if counts.min() >= 2 and len(counts) <= math.ceil(len(frame)*.2) and len(counts) <= math.floor(len(frame)*.8):
             stratify = frame[labels[0]]
-    train, validation = train_test_split(frame,test_size=.2,random_state=seed,stratify=stratify)
+    if labels:
+        train, validation = train_test_split(frame,test_size=.2,random_state=seed,stratify=stratify)
+    else:
+        # Discover concepts in the uploaded population. A classification
+        # holdout silently changes that population when there is no target.
+        train, validation = frame, frame.iloc[:0].copy()
     info = dict(raw_rows=raw_rows, usable_rows=len(frame), excluded_missing_targets=raw_rows-len(frame),
                 excluded_columns=list(filters or []), target_types=types, stratified=stratify is not None,
                 train_rows=len(train), validation_rows=len(validation), seed=seed)

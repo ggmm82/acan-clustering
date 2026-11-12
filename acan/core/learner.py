@@ -29,16 +29,27 @@ class _NumpyAdam:
         self.m = {k: np.zeros_like(v) for k, v in params_dict.items()}
         self.v = {k: np.zeros_like(v) for k, v in params_dict.items()}
         self.t = 0
+        self._root_second_moments = set()
 
     def step(self, grads_dict):
         self.t += 1
         for k, p in self.params.items():
             g = grads_dict[k]
             self.m[k] = self.b1 * self.m[k] + (1.0 - self.b1) * g
-            self.v[k] = self.b2 * self.v[k] + (1.0 - self.b2) * (g * g)
+            # Keep the ordinary path bit-identical until squaring a finite
+            # gradient would overflow. Then represent sqrt(v) with hypot;
+            # this is the same Adam update, without clipping its direction.
+            if k not in self._root_second_moments and np.max(np.abs(g),initial=0)>np.sqrt(np.finfo(g.dtype).max):
+                self.v[k] = np.sqrt(self.v[k])
+                self._root_second_moments.add(k)
+            if k in self._root_second_moments:
+                self.v[k] = np.hypot(np.sqrt(self.b2)*self.v[k],np.sqrt(1-self.b2)*g)
+            else:
+                self.v[k] = self.b2 * self.v[k] + (1.0 - self.b2) * (g * g)
             m_hat = self.m[k] / (1.0 - self.b1 ** self.t)
-            v_hat = self.v[k] / (1.0 - self.b2 ** self.t)
-            p -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
+            v_root = (self.v[k]/np.sqrt(1-self.b2**self.t) if k in self._root_second_moments
+                      else np.sqrt(self.v[k]/(1-self.b2**self.t)))
+            p -= self.lr * m_hat / (v_root + self.eps)
 
 
 class AlgebraicClusterLearner:

@@ -72,8 +72,15 @@ def worker(args):
         predictions, fitted = predict(payload, test), predict(payload, train)
         restored = GraphClusterModel.loadModel(payload)
         before = restored.to_json()
-        identical = bool(np.array_equal(predict(payload, test.head(20))[labels[0]],
-            predict(before, test.head(20))[labels[0]]))
+        # Exercise the restored object itself: serializing it and predicting
+        # through gui_infer would only test a different, freshly loaded object.
+        from acan.preprocessing import transform_features
+        probe = test.head(20)
+        probe_features = transform_features(probe.drop(columns=labels), restored.preprocessing)
+        restored_probabilities, _, _ = restored.predictDataset(probe_features, labels)
+        root = restored.clusterModel[restored.rootId]
+        restored_labels = restored_probabilities[root.fullLabels([labels[0]])].idxmax(axis=1).str[len(str(labels[0]))+1:]
+        identical = bool(np.array_equal(predict(payload, probe)[labels[0]], restored_labels))
     result = dict(dataset=source.name, variant=args.variant, seed=args.seed,
         source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(), code_sha256=fingerprint,
         labels=labels, filters=filters, info=info, options=options, seconds=seconds,
@@ -85,6 +92,7 @@ def worker(args):
         train_accuracy=accuracy_score(train[labels[0]], fitted[labels[0]]),
         majority_baseline=float((test[labels[0]] == train[labels[0]].mode()[0]).mean()),
         persistence_identical=identical, inference_does_not_mutate_model=before == restored.to_json(),
+        persistence_check='restored-instance',
         gui_inference_issues=sorted(set(issues)))
     args.output.write_text(json.dumps(result, indent=2)+'\n')
 

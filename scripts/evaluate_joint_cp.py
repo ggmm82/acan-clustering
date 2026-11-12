@@ -48,12 +48,17 @@ def main():
             restored=GraphClusterModel.loadModel(payload)
             before=restored.to_json()
             probe=test.head(20)
-            roundtrip_identical=np.array_equal(infer(payload,probe)['class'],infer(restored.to_json(),probe)['class'])
+            from acan.preprocessing import transform_features
+            probe_features=transform_features(probe.drop(columns=['class']),restored.preprocessing)
+            probabilities,_,_=restored.predictDataset(probe_features,['class'])
+            restored_labels=probabilities.idxmax(axis=1).str[len('class_'):]
+            roundtrip_identical=np.array_equal(infer(payload,probe)['class'],restored_labels)
             record=dict(sample=sample,train_rows=len(train),held_out_rows=len(test),options=options,
                 accuracy=accuracy_score(test['class'],predicted),balanced_accuracy=balanced_accuracy_score(test['class'],predicted),
                 training_seconds=seconds,stats=graph_stats(graph),
                 training_nll=root.routing_parameters['training_nll'],training_objective=root.routing_parameters['training_objective'],
                 roundtrip_predictions_identical=roundtrip_identical,inference_does_not_mutate_model=before==restored.to_json(),
+                persistence_check='restored-instance',
                 history=root.history)
             report['runs'].append(record)
             print({key:value for key,value in record.items() if key not in ('options','history')},flush=True)
