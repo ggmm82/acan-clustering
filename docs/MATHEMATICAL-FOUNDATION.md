@@ -299,33 +299,37 @@ anche sulle assegnazioni e non solo sul punteggio. Sotto l'ipotesi nulla
 $\eta^2$ si corregge con $1-(1-\eta^2)\tfrac{n-1}{n-K}$, che ha media zero in
 assenza di struttura **[V]** ($-4\cdot10^{-6}$ sui 48 attributi di rumore).
 
-**Massa e estinzione [D] per la forma, [S] per l'effetto.** Il passo M esatto
-per le masse è $\pi_i=F_i$: il fattore di Bhattacharyya $B(\pi,F)$ diventa
-superfluo, perché vale 1 nel punto fisso. Con un prior che penalizza i
-parametri di ogni concetto (criterio MML di Figueiredo–Jain, o Dirichlet con
-$\alpha<1$):
+**Numero di concetti: generalizzazione giudicata da chi non ha visto [D] per
+la forma, [V] per l'effetto.** Il passo M esatto per le masse è $\pi_i=F_i$:
+il fattore di Bhattacharyya $B(\pi,F)$ diventa superfluo. Per il numero di
+concetti la revisione ha implementato una regola senza costanti di penalità:
 
-$$
-\pi_i\;\propto\;\max\!\left(0,\;C_i-\tfrac{N_p}2\right),
-$$
+1. si parte da molti concetti specifici e si **generalizza**: la coppia fusa è
+   quella con il minimo aumento di lunghezza di descrizione,
+   $\Delta_{il}=\ell(i\cup l)-\ell(i)-\ell(l)$ con
+   $\ell(i)=\tfrac12\sum_j\omega_jC_{ij}\log v_{ij}-\sum_{j,v}\omega_jN_{ijv}\log p_{ijv}-C_i\log C_i$.
+   Due copie dello stesso concetto hanno sempre $\Delta<0$: l'aggregazione
+   della CP originale è una conseguenza, non un termine aggiunto;
+2. ogni livello è **giudicato** dalla log-probabilità di ciò che va previsto,
+   calcolata per ciascuna osservazione dopo aver sottratto il suo contributo
+   dalle statistiche (possibile perché sono additive);
+3. resta il livello più generale entro un errore standard dal migliore.
 
-con $N_p$ numero di parametri liberi di un concetto ($2m$ per medie e varianze
-di $m$ attributi numerici). Un concetto sostenuto da meno di $N_p/2$
-osservazioni riceve massa **esattamente zero**: è la disattivazione senza
-soglie di similarità che il progetto già persegue con la proiezione sul
-simplesso, ma ottenuta in forma chiusa e senza le prove di trasferimento
-accettate per confronto dell'obiettivo. È anche la versione derivata del
-Teorema 3: il collasso dei concetti ridondanti avviene per sottrazione, non per
-un esponente $\gamma>1$. Previsione da verificare: su Letter ($m=16$) un
-concetto richiede più di 16 righe, contro le circa 5 attuali.
+La sequenza delle fusioni è l'albero di generalizzazione della tesi. La regola
+MML di Figueiredo–Jain, $\pi_i\propto\max(0,C_i-N_p/2)$, resta l'alternativa in
+forma chiusa: non è stata adottata perché su tabelle con molti attributi e
+poche righe (Sonar: 60 attributi, 166 righe) ammette al più due concetti.
+Misure e limiti in [CP-V9-RESULTS.md](CP-V9-RESULTS.md): Letter passa da 1.539
+a 412–476 concetti con accuratezza maggiore; senza target il conteggio non è
+garantito in presenza di rumore non gaussiano.
 
 ### B.6 Obiettivi nelle tre modalità
 
 | Modalità | Attuale | Proposto |
 |---|---|---|
-| Senza target | $\lambda(1-CP_*)$ | $\mathcal F(T,\theta)$ con prior di B.5; $CP$ è il valore riportato |
-| Classificazione | $\mathrm{NLL}(y\mid x)+\lambda(1-CP_*)$ | $\mathrm{NLL}(y\mid x)+\lambda\,\mathcal F/(nm)$: il secondo termine è la verosimiglianza per attributo degli stessi concetti |
-| Regressione | dispersione pesata $+\lambda(1-CP_*)$ | come sopra: il target numerico è un attributo gaussiano letto ma escluso da $O$ |
+| Senza target | $\lambda(1-CP_*)$ | verosimiglianza congiunta; giudizio: log-probabilità di tutti gli attributi di ogni riga non vista; $CP$ è il valore riportato |
+| Classificazione | $\mathrm{NLL}(y\mid x)+\lambda(1-CP_*)$ | stessa verosimiglianza con il target pesato quanto tutti gli attributi; giudizio: log-probabilità del target dati gli attributi |
+| Regressione | dispersione pesata $+\lambda(1-CP_*)$ | come sopra: il target numerico è un attributo gaussiano letto ma escluso dal routing |
 | Linguaggio | $\mathrm{NLL}+\lambda\,\overline{(1-CP_*)}$ | solo NLL (ed eventuale KL del teacher); i concetti non sono un regolarizzatore ma la *memoria*, e la loro qualità è l'errore di approssimazione di C.3 |
 
 Per la classificazione la forma proposta è un ibrido generativo–discriminativo:
@@ -480,12 +484,18 @@ Verifica su chiavi sintetiche raggruppate ($L=2048$, $k=16$, stato pari allo
 0,0072 con $\log C_i$; 0,0071 con la correzione gaussiana; **1,06 senza il
 termine di massa**; il limite del Teorema 6 è rispettato in tutte le 200 query.
 È un caso ideale: indica che la derivazione è corretta, non che le chiavi di un
-modello reale siano altrettanto raggruppabili. Quest'ultima è la domanda
-sperimentale decisiva (piano, fase 2).
+modello reale siano altrettanto raggruppabili.
+
+**La misura sul modello reale è negativa.** A pesi invariati, su SmolLM2-135M,
+lo strato derivato peggiora la sola finestra (NLL 5,81 contro 5,51; densa
+2,76) e il termine $\log C_i$ è dannoso: le chiavi in cache sono ruotate dalla
+posizione e non stanno vicino al proprio centroide, quindi l'ipotesi del
+Teorema 6 non vale. Dettagli in [CP-V9-RESULTS.md](CP-V9-RESULTS.md). Il
+teorema resta corretto; la sua applicabilità a un modello con RoPE no.
 
 ### C.4 Questioni aperte, da non presentare come risolte
 
-- **RoPE [C].** Le chiavi sono ruotate in funzione della posizione; il centroide
+- **RoPE [S], misurato: è l'ostacolo principale.** Le chiavi sono ruotate in funzione della posizione; il centroide
   di chiavi ruotate a posizioni lontane attenua le componenti ad alta frequenza.
   Occorre scegliere fra statistiche su chiavi non ruotate con una posizione
   media per slot, e slot separati per bande di posizione. Va misurato.

@@ -1,0 +1,106 @@
+{
+ "model": "HuggingFaceTB/SmolLM2-135M",
+ "length": 2048,
+ "segments": 4,
+ "scored_from": 256,
+ "block": 16,
+ "note": "exact keys cover [block_start-window, t]: mean exact span is window+block/2",
+ "results": {
+  "denso": {
+   "nll": 2.7583680152893066,
+   "standard_error": 0.03341422230005264,
+   "per_segment": [
+    2.305683135986328,
+    2.761849880218506,
+    3.0272445678710938,
+    2.9386954307556152
+   ],
+   "seconds": 33.86491697500014,
+   "state_vectors_per_key_head": 2048
+  },
+  "finestra 64": {
+   "nll": 5.506145000457764,
+   "standard_error": 0.04597564786672592,
+   "per_segment": [
+    5.281325340270996,
+    5.09621524810791,
+    5.841948509216309,
+    5.805093765258789
+   ],
+   "seconds": 10.418722128000354,
+   "state_vectors_per_key_head": 64
+  },
+  "finestra 128": {
+   "nll": 4.980537414550781,
+   "standard_error": 0.044636186212301254,
+   "per_segment": [
+    4.721416473388672,
+    4.7480292320251465,
+    5.21804666519165,
+    5.234659194946289
+   ],
+   "seconds": 10.41046362599991,
+   "state_vectors_per_key_head": 128
+  },
+  "finestra 64 + 64 concetti": {
+   "nll": 5.813432216644287,
+   "standard_error": 0.053009066730737686,
+   "per_segment": [
+    5.822295665740967,
+    5.2613959312438965,
+    6.382019519805908,
+    5.788017749786377
+   ],
+   "seconds": 186.75785928999994,
+   "state_vectors_per_key_head": 128
+  },
+  "finestra 64 + 64 blocchi temporali": {
+   "nll": 5.645906925201416,
+   "standard_error": 0.05510568991303444,
+   "per_segment": [
+    5.503042221069336,
+    5.296511650085449,
+    5.7640862464904785,
+    6.0199875831604
+   ],
+   "seconds": 24.654151827000078,
+   "state_vectors_per_key_head": 128
+  },
+  "finestra 64 + 64 concetti, senza log C": {
+   "nll": 5.450667858123779,
+   "standard_error": 0.048657722771167755,
+   "per_segment": [
+    5.4202094078063965,
+    4.919260025024414,
+    5.794163227081299,
+    5.669039726257324
+   ],
+   "seconds": 245.16976888599993,
+   "state_vectors_per_key_head": 128
+  },
+  "finestra 64 + 64 concetti, correzione gaussiana": {
+   "nll": 6.634538650512695,
+   "standard_error": 0.05088686943054199,
+   "per_segment": [
+    6.77964973449707,
+    5.899502754211426,
+    6.119093894958496,
+    7.739908695220947
+   ],
+   "seconds": 287.6327601219996,
+   "state_vectors_per_key_head": 128
+  },
+  "finestra 64 + 16 concetti": {
+   "nll": 5.722375869750977,
+   "standard_error": 0.05032147467136383,
+   "per_segment": [
+    5.445857524871826,
+    5.577679634094238,
+    6.196390151977539,
+    5.669574737548828
+   ],
+   "seconds": 220.888398909,
+   "state_vectors_per_key_head": 80
+  }
+ }
+}

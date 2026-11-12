@@ -4,6 +4,16 @@ Base matematica: [MATHEMATICAL-FOUNDATION.md](MATHEMATICAL-FOUNDATION.md).
 Questo piano dice che cosa cambiare, in che ordine, e con quali criteri
 misurabili decidere se proseguire.
 
+## Stato
+
+| Fase | Stato |
+|---|---|
+| 0 Misura affidabile | in corso in questa revisione |
+| 1 Nucleo sul tabulare | **fatta**: profilo `cp-v9`, predefinito nell'app. Criterio rispettato sui dati disponibili, con Titanic in regressione ([CP-V9-RESULTS.md](CP-V9-RESULTS.md)). Selezione dei concetti per generalizzazione giudicata, al posto della regola MML prevista in 1.4; gerarchia solo su richiesta |
+| 2a Raggruppabilità a pesi invariati | **eseguita, esito negativo**: lo strato a concetti non approssima l'attenzione densa di SmolLM2 senza addestramento; causa principale la rotazione posizionale delle chiavi |
+| 2b Strato a concetti | subordinata alle due verifiche indicate in CP-V9-RESULTS.md |
+| 3–4 | non iniziate; richiedono GPU |
+
 ## 1. Obiettivo, riformulato
 
 L'obiettivo dichiarato è un modello linguistico che «risolve il problema

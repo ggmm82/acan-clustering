@@ -836,6 +836,225 @@
      "seconds": 351.3059461449998
     }
    }
+  },
+  {
+   "dataset": "GiocoSet.xlsx",
+   "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+   "seed": 42,
+   "target": "Gioco",
+   "train_rows": 80,
+   "test_rows": 20,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9 (app)": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.09368697299987616
+    }
+   }
+  },
+  {
+   "dataset": "GiocoSet.xlsx",
+   "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+   "seed": 7,
+   "target": "Gioco",
+   "train_rows": 80,
+   "test_rows": 20,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9 (app)": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.0834792710002148
+    }
+   }
+  },
+  {
+   "dataset": "GiocoSet.xlsx",
+   "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+   "seed": 21,
+   "target": "Gioco",
+   "train_rows": 80,
+   "test_rows": 20,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9 (app)": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.13010358500014263
+    }
+   }
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+   "seed": 42,
+   "target": "income",
+   "train_rows": 399,
+   "test_rows": 100,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9 (app)": {
+     "accuracy": 0.78,
+     "balanced_accuracy": 0.78,
+     "concepts": 4,
+     "seconds": 0.6212958520000029
+    }
+   }
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+   "seed": 7,
+   "target": "income",
+   "train_rows": 399,
+   "test_rows": 100,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9 (app)": {
+     "accuracy": 0.76,
+     "balanced_accuracy": 0.76,
+     "concepts": 4,
+     "seconds": 0.5665972900001179
+    }
+   }
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+   "seed": 21,
+   "target": "income",
+   "train_rows": 399,
+   "test_rows": 100,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9 (app)": {
+     "accuracy": 0.72,
+     "balanced_accuracy": 0.72,
+     "concepts": 4,
+     "seconds": 0.6059291899996424
+    }
+   }
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+   "seed": 42,
+   "target": "Class",
+   "train_rows": 166,
+   "test_rows": 42,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9 (app)": {
+     "accuracy": 0.8571428571428571,
+     "balanced_accuracy": 0.8568181818181818,
+     "concepts": 13,
+     "seconds": 2.0989080790000116
+    }
+   }
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+   "seed": 7,
+   "target": "Class",
+   "train_rows": 166,
+   "test_rows": 42,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9 (app)": {
+     "accuracy": 0.8095238095238095,
+     "balanced_accuracy": 0.8090909090909091,
+     "concepts": 15,
+     "seconds": 2.166334216999985
+    }
+   }
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+   "seed": 21,
+   "target": "Class",
+   "train_rows": 166,
+   "test_rows": 42,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9 (app)": {
+     "accuracy": 0.8571428571428571,
+     "balanced_accuracy": 0.8545454545454545,
+     "concepts": 20,
+     "seconds": 2.0531948570001077
+    }
+   }
+  },
+  {
+   "dataset": "titanic.csv",
+   "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+   "seed": 42,
+   "target": "Survived",
+   "train_rows": 712,
+   "test_rows": 179,
+   "excluded_columns": [
+    "PassengerId",
+    "Name",
+    "Ticket",
+    "Cabin"
+   ],
+   "methods": {
+    "cp-v9 (app)": {
+     "accuracy": 0.7150837988826816,
+     "balanced_accuracy": 0.6574440052700923,
+     "concepts": 3,
+     "seconds": 1.4761168180002642
+    }
+   }
+  },
+  {
+   "dataset": "titanic.csv",
+   "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+   "seed": 7,
+   "target": "Survived",
+   "train_rows": 712,
+   "test_rows": 179,
+   "excluded_columns": [
+    "PassengerId",
+    "Name",
+    "Ticket",
+    "Cabin"
+   ],
+   "methods": {
+    "cp-v9 (app)": {
+     "accuracy": 0.8156424581005587,
+     "balanced_accuracy": 0.7878787878787878,
+     "concepts": 2,
+     "seconds": 1.7089362260003327
+    }
+   }
+  },
+  {
+   "dataset": "titanic.csv",
+   "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+   "seed": 21,
+   "target": "Survived",
+   "train_rows": 712,
+   "test_rows": 179,
+   "excluded_columns": [
+    "PassengerId",
+    "Name",
+    "Ticket",
+    "Cabin"
+   ],
+   "methods": {
+    "cp-v9 (app)": {
+     "accuracy": 0.770949720670391,
+     "balanced_accuracy": 0.7407114624505928,
+     "concepts": 33,
+     "seconds": 1.8098582509996959
+    }
+   }
   }
  ]
 }
