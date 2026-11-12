@@ -185,21 +185,34 @@ $$
 \hat y(x)=\sum_iT_i(x)\,g_{i,y}.
 $$
 
-**Linguaggio.** In un prefisso di testo ogni token è già «non visto» dai
-riassunti che lo precedono: la regola della sezione 5 e la causalità del
-linguaggio sono la stessa regola. In uno strato di attenzione i concetti
-riassumono le chiavi più vecchie di una finestra esatta, e la lettura è
-un'unica competizione fra chiavi recenti e concetti:
+**Linguaggio: lo stesso modello.** Tabella e attenzione sono un caso solo.
+Il peso di un concetto è la sua massa per la somiglianza attesa fra ciò che si
+osserva e i suoi membri:
+
+$$
+T_i(o)\;\propto\;C_i\;\mathbb E_{z\sim i}[\kappa(o,z)].
+$$
+
+In una tabella la riga è osservata esattamente e questa formula è
+l'appartenenza della sezione 2. In uno strato di attenzione il prefisso è una
+tabella: ogni token passato è una riga con una chiave $k$ e un valore $v$, e la
+query $q$ è una riga di cui si cerca il valore. La somiglianza è
+$\exp(q^\top k)$ e si ottiene:
 
 $$
 \mathrm{out}(q)=\frac{\sum_{\tau\in W}e^{q^\top k_\tau}v_\tau+\sum_iC_i\,e^{q^\top g_i}\,\bar v_i}
 {\sum_{\tau\in W}e^{q^\top k_\tau}+\sum_iC_i\,e^{q^\top g_i}} .
 $$
 
-L'errore rispetto all'attenzione completa è limitato dalla distanza delle
-chiavi dal centro del proprio concetto. **Questa parte non è ancora un
-risultato:** la prova sul modello preaddestrato è negativa (sezione 7).
-Uno stato di dimensione fissa, inoltre, non può conservare tutto un contesto
+I token recenti $W$ sono concetti di un solo membro; quelli più vecchi vengono
+generalizzati come le righe, unendo la coppia con $\Delta$ minimo. Con un
+concetto per token la formula **è** l'attenzione ordinaria: per questo un
+modello innestato con finestra sufficiente coincide con quello di partenza.
+In un prefisso ogni token è già «non visto» dai riassunti che lo precedono:
+la regola della sezione 5 e la causalità sono la stessa regola. L'errore
+introdotto dai concetti è limitato dalla distanza delle chiavi dal centro del
+proprio concetto, cioè da quanta variabilità delle chiavi i concetti spiegano.
+Uno stato di dimensione fissa non può conservare tutto un contesto
 arbitrariamente lungo: si può ridurre la perdita, non annullarla.
 
 ### 7. Cosa dimostrano le verifiche
@@ -233,11 +246,13 @@ Limiti misurati:
 - Senza target, se gli attributi irrilevanti non somigliano a una campana, il
   modello può aggiungere uno o due concetti oltre quelli attesi. Le
   combinazioni vere non vengono mescolate, ma il conteggio non è garantito.
-- **Linguaggio.** Sostituendo l'attenzione di un modello preaddestrato con
-  finestra e concetti, senza addestrare nulla, l'errore di previsione aumenta
-  invece di diminuire rispetto alla sola finestra. Le chiavi di quel modello
-  dipendono dalla posizione e non si raggruppano attorno a un centro. Il
-  criterio unico è verificato sul tabulare e non ancora sul generativo.
+- **Linguaggio.** Sostituendo l'attenzione di un modello preaddestrato con 64
+  token esatti e 64 concetti, senza addestrare nulla, l'errore di previsione
+  passa da 5,51 (soli token esatti) a 5,26: i concetti aiutano, e unire per
+  contenuto vale più che unire per vicinanza nel testo (5,51). L'attenzione
+  completa misura però 2,76, e raddoppiare i token esatti (4,98) rende più dei
+  concetti. Il modello è lo stesso e l'innesto conserva la funzione; che con
+  l'addestramento i concetti recuperino il divario non è ancora misurato.
 
 Le formule spiegano il comportamento e i suoi limiti; i risultati sui dati
 stabiliscono quanto quel comportamento sia utile nel problema concreto.

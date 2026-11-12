@@ -55,6 +55,9 @@ class ConceptAttentionTests(unittest.TestCase):
                     pieces.append(layer.attend(x[:, start:start+size], part, use_cache=True)); start += size
             torch.testing.assert_close(full.detach(), torch.cat(pieces, 1), atol=2e-5, rtol=2e-4)
         self.assertLess(layer.cache['keys'].shape[2], 4+2*layer.block)                 # bounded state
+        from acan.lm.concept_attention import merge_costs
+        state = layer.cache['state']
+        torch.testing.assert_close(state['cost'], merge_costs(state, layer.kappa), atol=1e-4, rtol=1e-4)   # incremental = full
 
     def test_tabular_and_attention_share_the_same_operators(self):
         import torch
@@ -73,7 +76,7 @@ class ConceptAttentionTests(unittest.TestCase):
         table = model._merge_costs(s, ones)
         root = np.ones(5)                                      # the tabular core standardizes: root variance one
         state = dict(C=torch.tensor(s['C'])[None, None], U=torch.tensor(s['U'])[None, None], Q=torch.tensor(s['Q'])[None, None],
-                     root_n=1., root_u=torch.zeros(1, 1, 5, dtype=torch.float64), root_q=torch.tensor(root)[None, None])
+                     root=torch.tensor(root)[None, None])
         attention = merge_costs(state, 1.)[0, 0].numpy()
         off = ~np.eye(6, dtype=bool)
         np.testing.assert_allclose(table[off], attention[off], rtol=1e-9, atol=1e-9)

@@ -37,28 +37,36 @@ def rotate(keys, positions, inverse_frequency):
     return keys*angles.cos()+torch.cat((-keys[..., half:], keys[..., :half]), -1)*angles.sin()
 
 
+def pair_costs(state, rows, kappa):
+    """Increase of description length when each concept in ``rows`` is added to each concept (… x m x n)."""
+    root = state['root'][:, :, None]
+    length = lambda c, u, q: description_length(c[..., None], centre_variance(c[..., None], u, q, root if u.dim() == 4 else root[:, :, None], kappa, torch)[1], c, torch)
+    own = length(state['C'], state['U'], state['Q'])
+    take = lambda name: state[name] if rows is None else state[name][:, :, rows]
+    c, u, q = take('C'), take('U'), take('Q')
+    together = length(c[:, :, :, None]+state['C'][:, :, None], u[:, :, :, None]+state['U'][:, :, None],
+                      q[:, :, :, None]+state['Q'][:, :, None])
+    return together-(own if rows is None else own[:, :, rows])[:, :, :, None]-own[:, :, None]
+
+
 def merge_costs(state, kappa):
-    """Increase of description length for every pair of concepts (batch x heads x n x n)."""
-    root = (state['root_q']/state['root_n']-(state['root_u']/state['root_n'])**2).clamp_min(1e-8)[:, :, None]
-    c = state['C'][..., None]
-    own = description_length(c, centre_variance(c, state['U'], state['Q'], root, kappa, torch)[1], state['C'], torch)
-    pair_c = state['C'][:, :, :, None]+state['C'][:, :, None]
-    pair_variance = centre_variance(pair_c[..., None], state['U'][:, :, :, None]+state['U'][:, :, None],
-                                    state['Q'][:, :, :, None]+state['Q'][:, :, None], root[:, :, None], kappa, torch)[1]
-    together = description_length(pair_c[..., None], pair_variance, pair_c, torch)
-    return together-own[:, :, :, None]-own[:, :, None]
+    """All pairs (batch x heads x n x n); a concept cannot be merged with itself."""
+    n = state['C'].shape[2]
+    return pair_costs(state, None, kappa).masked_fill(torch.eye(n, dtype=torch.bool, device=state['C'].device), torch.inf)
 
 
 def generalize(state, budget, kappa):
-    """Add together the cheapest pair, in every batch element and head, until the budget holds."""
+    """Add together the cheapest pair, in every batch element and head, until the budget holds.
+
+    The structure is discrete and chosen without gradient; the statistics stay
+    differentiable. After a merge only the costs of the merged concept change.
+    """
     while state['C'].shape[2] > budget:
         n = state['C'].shape[2]
-        with torch.no_grad():                                   # the structure is discrete; contents stay differentiable
-            parts = [merge_costs({key: value[i:i+1] for key, value in state.items() if key != 'root_n'} | {'root_n': state['root_n']}, kappa)
-                     for i in range(state['C'].shape[0])]
-            cost = torch.cat(parts).masked_fill(torch.ones(n, n, dtype=torch.bool, device=state['C'].device).tril(), torch.inf)
-            flat = cost.flatten(2).argmin(-1)
-            first, second = flat//n, flat % n
+        with torch.no_grad():
+            flat = state['cost'].flatten(2).argmin(-1)
+            a, c = flat//n, flat % n
+            first, second = torch.minimum(a, c), torch.maximum(a, c)
             kept = torch.arange(n-1, device=flat.device)
             kept = kept+(kept >= second[..., None])
         for name in STATISTICS:
@@ -67,6 +75,16 @@ def generalize(state, budget, kappa):
             index = lambda where: where.reshape(*where.shape, *([1]*len(tail))).expand(*where.shape, *tail)
             value = value.scatter_add(2, index(first[..., None]), value.gather(2, index(second[..., None])))
             state[name] = value.gather(2, index(kept))
+        with torch.no_grad():
+            cost = state['cost'].gather(2, kept[..., None].expand(-1, -1, -1, n)).gather(3, kept[:, :, None].expand(-1, -1, n-1, -1))
+            one = {name: state[name].gather(2, first.reshape(*first.shape, 1, *([1]*(state[name].dim()-3))).expand(
+                *first.shape, 1, *state[name].shape[3:])) for name in ('C', 'U', 'Q')}
+            merged = dict(root=state['root'], C=torch.cat((one['C'], state['C']), 2), U=torch.cat((one['U'], state['U']), 2),
+                          Q=torch.cat((one['Q'], state['Q']), 2))
+            row = pair_costs(merged, slice(0, 1), kappa)[:, :, 0, 1:]
+            row = row.scatter(2, first[..., None], torch.inf)
+            cost = cost.scatter(2, first[..., None, None].expand(-1, -1, 1, n-1), row[:, :, None])
+            state['cost'] = cost.scatter(3, first[..., None, None].expand(-1, -1, n-1, 1), row[..., None])
     return state
 
 
@@ -143,13 +161,24 @@ class ConceptSlotAttention(ACANConceptAttentionLayer):
         b, heads, count, _ = keys.shape
         new = dict(C=keys.new_ones(b, heads, count), U=keys, Q=keys*keys, V=values,
                    P=positions.expand(b, heads, count))
-        if state is None:
-            state = dict(new, root_n=float(count), root_u=keys.sum(2), root_q=(keys*keys).sum(2))
-        else:
-            state = dict({name: torch.cat((state[name], new[name]), 2) for name in STATISTICS},
-                         root_n=state['root_n']+count, root_u=state['root_u']+keys.sum(2),
-                         root_q=state['root_q']+(keys*keys).sum(2))
-        return generalize(state, self.k, self.kappa)
+        with torch.no_grad():
+            if state is None:
+                # Scale of the keys, fixed by the first tokens that leave the window (as training
+                # statistics fix the scale of a table).
+                root = ((keys*keys).mean(2)-keys.mean(2)**2).clamp_min(1e-8)
+                state = dict(new, root=root.detach())
+                state['cost'] = merge_costs(state, self.kappa)
+                return generalize(state, self.k, self.kappa)
+            old = state['C'].shape[2]
+        merged = dict({name: torch.cat((state[name], new[name]), 2) for name in STATISTICS}, root=state['root'])
+        with torch.no_grad():
+            rows = pair_costs(merged, slice(old, old+count), self.kappa)          # new concepts against all
+            cost = merged['C'].new_full((b, heads, old+count, old+count), torch.inf)
+            cost[:, :, :old, :old] = state['cost']
+            cost[:, :, old:] = rows
+            cost[:, :, :, old:] = rows.transpose(-1, -2)
+            merged['cost'] = cost.masked_fill(torch.eye(old+count, dtype=torch.bool, device=cost.device), torch.inf)
+        return generalize(merged, self.k, self.kappa)
 
     def _info(self, state, slot_weight, b, d, device):
         """Inspection in the shape the workbench expects: masses, last-token memberships, relevance per channel."""
@@ -159,7 +188,7 @@ class ConceptSlotAttention(ACANConceptAttentionLayer):
         active = torch.zeros(b, dtype=torch.long, device=device)
         if state is not None:
             n = state['C'].shape[2]
-            root = (state['root_q']/state['root_n']-(state['root_u']/state['root_n'])**2).clamp_min(1e-8)[:, :, None]
+            root = state['root'][:, :, None]
             within = centre_variance(state['C'][..., None], state['U'], state['Q'], root, 0., torch)[1]
             masses[:, :n] = state['C'].detach().mean(1)
             relevance[:, :n] = (1-within/root).clamp(0, 1).detach().permute(0, 2, 1, 3).reshape(b, n, d)

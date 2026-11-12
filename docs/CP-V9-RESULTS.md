@@ -102,60 +102,107 @@ Lettura:
   riportate sono la prima esecuzione, senza aggiustamenti successivi, ma non
   sostituiscono un test su dataset mai usati.
 
-## Linguaggio: prova a pesi invariati
+## Linguaggio: lo stesso modello nello strato di attenzione
 
-Domanda (fase 2a del piano): le stesse operazioni, applicate alle chiavi di
-attenzione di un modello preaddestrato, approssimano l'attenzione densa?
-Nessun parametro è addestrato. In **tutti** i 30 livelli di SmolLM2-135M le
-chiavi più vecchie della finestra esatta sono riassunte da concetti; lettura
-con un'unica softmax su chiavi esatte e concetti. Con finestra ≥ lunghezza lo
-strato coincide con l'attenzione della libreria (scarto massimo sui logit
-8·10⁻⁵). WikiText-2 test, 4 segmenti da 2.048 token, NLL sulle posizioni ≥ 256.
+Lo strato [`acan/lm/concept_attention.py`](../acan/lm/concept_attention.py)
+applica gli stessi operatori al prefisso: i token recenti sono concetti di un
+solo membro (attenzione esatta), quelli più vecchi vengono generalizzati per
+fusione. Nel laboratorio generativo è il profilo `cp-v9`, predefinito per i
+nuovi progetti.
 
-```bash
-python scripts/probe_slot_attention.py --text wikitext2-test.txt --output reports/slot-probe.json
-```
+**Proprietà verificate dai test** (`tests/test_lm_concepts.py`,
+`tests/test_lm_controlled.py`):
+
+- con finestra o numero di concetti ≥ lunghezza lo strato coincide con
+  l'attenzione densa della libreria entro 2·10⁻⁵;
+- un modello innestato (50% o 100% dei livelli) con finestra sufficiente
+  riproduce i logit del modello di partenza: l'innesto non distrugge la
+  funzione preaddestrata;
+- causalità: cambiare i token futuri non cambia le uscite passate;
+- decodifica incrementale identica al prefisso intero per qualunque
+  spezzettamento; stato limitato;
+- gradienti finiti verso le proiezioni; addestramento nel laboratorio con
+  ripresa esatta dopo una pausa;
+- i costi di fusione dell'attenzione e della tabella sono numericamente la
+  stessa funzione.
+
+### Innesto su SmolLM2-135M, senza addestramento
+
+1.024 token di WikiText-2 test, NLL sulle posizioni ≥ 256, un segmento.
+
+| Modello al passo 0 | NLL |
+|---|---:|
+| Denso di partenza | 2,111 |
+| `cp-v9`, finestra 1.024 (50% e 100% dei livelli) | 2,111 |
+| `cp-v9`, 50% dei livelli, finestra 256 + 64 concetti | 3,606 |
+| `cp-v9`, 50% dei livelli, finestra 64 + 64 concetti | 4,659 |
+| `cp-v9`, 100% dei livelli, finestra 256 + 64 concetti | 3,803 |
+| `cp-v9`, 100% dei livelli, finestra 64 + 64 concetti | 4,516 |
+| Profilo precedente (`shared-algebra-v1`), 50%, finestra 64 + 64 slot | 6,946 |
+
+A parità di stato il punto di partenza passa da 6,95 a 4,66, ed è esatto quando
+la finestra copre il contesto. Resta però lontano dal denso: la compressione
+costa.
+
+### Che cosa aggiungono i concetti, a pesi invariati
+
+Tutti i 30 livelli sostituiti, 4 segmenti da 2.048 token, NLL sulle posizioni
+≥ 256, nessun parametro addestrato
+([`scripts/probe_slot_attention.py`](../scripts/probe_slot_attention.py)).
 
 | Configurazione | NLL | errore std |
 |---|---:|---:|
 | Attenzione densa | 2,758 | 0,033 |
 | Finestra 64 | 5,506 | 0,046 |
 | Finestra 128 | 4,981 | 0,045 |
-| Finestra 64 + 64 concetti (formula derivata, con $\log C$) | 5,813 | 0,053 |
-| Finestra 64 + 64 blocchi temporali | 5,646 | 0,055 |
-| Finestra 64 + 64 concetti, senza $\log C$ | 5,451 | 0,049 |
-| Finestra 64 + 64 concetti, correzione gaussiana | 6,635 | 0,051 |
+| Finestra 64 + 64 concetti, chiavi **non ruotate** (modello adottato) | **5,260** | 0,049 |
+| idem, senza il termine di massa $\log C$ | 5,181 | 0,048 |
+| Finestra 64 + 64 blocchi temporali, chiavi non ruotate | 5,509 | 0,047 |
+| idem, senza $\log C$ | 5,808 | 0,052 |
+| Finestra 64 + 64 concetti, chiavi ruotate | 5,813 | 0,053 |
+| idem, senza $\log C$ | 5,451 | 0,049 |
+| idem, con correzione di secondo ordine | 6,635 | 0,051 |
+| Finestra 64 + 16 concetti, chiavi ruotate | 5,722 | 0,057 |
+| Finestra 64 + 64 blocchi temporali, chiavi ruotate | 5,646 | 0,055 |
 
-**Esito: negativo.** Il criterio 2a (aumento di NLL ≤ 0,10 e almeno metà di
-quello della sola finestra) non è rispettato.
+Lettura:
 
-- A pesi invariati questo modello dipende fortemente dal contesto lontano: la
-  sola finestra porta la NLL da 2,76 a 5,5.
-- Lo strato derivato **peggiora** la sola finestra. Senza il termine di massa
-  migliora di 0,055, entro circa un errore standard: non è un effetto
-  dimostrato. A parità di stato, raddoppiare la finestra (4,98) è molto meglio
-  di aggiungere 64 concetti.
-- Il Teorema 6 resta vero ma qui è vuoto: richiede chiavi vicine al proprio
-  centroide, e le chiavi in cache sono ruotate dalla posizione (RoPE). Il
-  centroide di chiavi a posizioni diverse si contrae, il suo punteggio sale
-  verso zero mentre quello delle chiavi vere è spesso molto negativo, e il
-  fattore $C_i$ amplifica l'errore. La correzione di secondo ordine lo
-  amplifica ancora.
-- È la questione che la fondazione segnalava come aperta (C.4, RoPE). La misura
-  dice che non è un dettaglio: è l'ostacolo principale.
+- **I concetti aiutano, ma poco.** Con chiavi non ruotate migliorano la sola
+  finestra di 0,25 (circa cinque errori standard). Riassumere chiavi già
+  ruotate dalla posizione invece peggiora: è il motivo per cui il modello
+  riassume le chiavi prima della rotazione.
+- **Il contenuto conta.** Fondere per costo di generalizzazione (5,26) è meglio
+  che fondere token vicini nel testo (5,51, pari alla sola finestra):
+  l'operatore di generalizzazione porta informazione.
+- **La massa.** Con blocchi temporali il termine $\log C$ è necessario (5,51
+  contro 5,81); con concetti di contenuto toglierlo dà 5,18 contro 5,26,
+  differenza di circa un errore standard e mezzo: non distinguibile. Il modello
+  mantiene la forma derivata.
+- **Non basta.** A parità di stato raddoppiare la finestra (4,98) rende più dei
+  concetti (5,26), e l'attenzione densa è a 2,76. Il criterio 2a del piano
+  (aumento di NLL ≤ 0,10) **non è rispettato**.
+- La correzione di secondo ordine peggiora sulle chiavi ruotate e non è stata
+  adottata: lo strato usa l'ordine zero, quello coperto dal limite d'errore.
 
-Conseguenze per il progetto:
+### Velocità
 
-1. Il criterio unico è **verificato sul tabulare** e **non verificato sul
-   linguaggio**. L'unificazione è reale a livello di operazioni e di codice;
-   non è ancora un risultato sul modello generativo.
-2. Non si può dichiarare che uno strato a concetti sostituisca l'attenzione
-   densa di un modello preaddestrato senza addestramento.
-3. Restano due strade, entrambe da misurare prima di investire: concetti su
-   chiavi **non ruotate** con posizione trattata a parte, e addestramento
-   (LoRA con distillazione dal modello denso) partendo da uno strato che
-   conserva la funzione entro la finestra. I controlli necessari per leggerne
-   l'esito sono il passo successivo di questa revisione.
+Sulla CPU di prova, 1.024 token, un solo passaggio in avanti: denso circa 520
+token/s; `cp-v9` con finestra 64 + 64 concetti fra 10 e 24 token/s; con finestra
+256 fra 32 e 63. Il costo per token non cresce con la lunghezza, ma la costante
+è alta: una fusione per token assorbito, eseguita in Python per ogni livello.
+**Oggi lo strato non è più veloce dell'attenzione densa a queste lunghezze.**
+La riduzione prevista è fondere più coppie reciprocamente più vicine per passo.
+
+### Conclusione sul linguaggio
+
+1. Il modello è **uno solo**, nel codice e nelle formule, ed è esatto nel limite
+   senza compressione.
+2. La qualità con compressione, senza addestramento, è insufficiente: i
+   concetti recuperano una piccola parte di ciò che la finestra perde.
+3. Che l'addestramento (LoRA, con distillazione dal denso) chiuda il divario è
+   la domanda aperta. Il laboratorio ora permette di misurarla correttamente:
+   si parte dalla funzione del modello originale e si confronta con il
+   controllo denso dello stesso budget.
 
 Metriche aggregate: [`results/cp-v9-tabular.json`](results/cp-v9-tabular.json),
 [`results/slot-probe.json`](results/slot-probe.json). Nessuna riga dei file

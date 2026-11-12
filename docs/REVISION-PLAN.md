@@ -10,9 +10,10 @@ misurabili decidere se proseguire.
 |---|---|
 | 0 Misura affidabile | in corso in questa revisione |
 | 1 Nucleo sul tabulare | **fatta**: profilo `cp-v9`, predefinito nell'app. Criterio rispettato sui dati disponibili, con Titanic in regressione ([CP-V9-RESULTS.md](CP-V9-RESULTS.md)). Selezione dei concetti per generalizzazione giudicata, al posto della regola MML prevista in 1.4; gerarchia solo su richiesta |
-| 2a Raggruppabilità a pesi invariati | **eseguita, esito negativo**: lo strato a concetti non approssima l'attenzione densa di SmolLM2 senza addestramento; causa principale la rotazione posizionale delle chiavi |
-| 2b Strato a concetti | subordinata alle due verifiche indicate in CP-V9-RESULTS.md |
-| 3–4 | non iniziate; richiedono GPU |
+| 2a Misura a pesi invariati | **eseguita**: con chiavi non ruotate i concetti migliorano la sola finestra (5,26 contro 5,51) ma restano lontani dal denso (2,76); criterio non rispettato |
+| 2b Strato a concetti | **fatta come modello unico**: `acan/concept_algebra.py` è condiviso da tabella e attenzione; profilo `cp-v9` predefinito nel generativo; esatto senza compressione, innesto che conserva la funzione. Velocità ancora insufficiente |
+| 3 Addestramento e valutazione | non iniziata; richiede GPU. È ora la verifica decisiva: i concetti recuperano il divario con l'addestramento? |
+| 4 Pubblicazione | non iniziata |
 
 ## 1. Obiettivo, riformulato
 

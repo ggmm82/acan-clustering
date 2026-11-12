@@ -15,11 +15,14 @@ osservazioni non viste. Non richiede numero di concetti, soglie o epoche.
 - Piano e stato delle fasi: [docs/REVISION-PLAN.md](docs/REVISION-PLAN.md)
 - Affermazioni dei paper da non citare: [docs/ERRATA.md](docs/ERRATA.md)
 
-Il criterio unico è verificato sul tabulare. Sul modello linguistico la prova a
-pesi invariati è negativa: lo strato a concetti non sostituisce l'attenzione
-densa di un modello preaddestrato senza addestramento. Le sezioni seguenti che
-citano `cp-joint-v1` descrivono il profilo precedente, ancora caricabile e
-tuttora usato dal laboratorio generativo.
+Tabella e attenzione sono lo stesso modello: `acan/concept_algebra.py` definisce
+appartenenza, generalizzazione e giudizio, usati sia dal nucleo tabulare sia
+dallo strato di attenzione del laboratorio generativo. Senza compressione lo
+strato coincide con l'attenzione densa e l'innesto conserva il modello di
+partenza. Con compressione e senza addestramento la qualità è ancora lontana
+dal denso e lo strato non è più veloce: sono i due limiti aperti. Le sezioni
+seguenti che citano `cp-joint-v1` descrivono il profilo precedente, ancora
+caricabile.
 
 ## Development setup
 

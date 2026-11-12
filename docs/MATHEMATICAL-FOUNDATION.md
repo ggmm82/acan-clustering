@@ -18,6 +18,105 @@ Ogni affermazione numerica è riproducibile sul nucleo di produzione:
 python scripts/verify_math_foundation.py
 ```
 
+## Il modello unico
+
+Questa sezione è l'enunciato definitivo. Le parti A, B e C che seguono ne sono
+la motivazione e la derivazione. Codice: un solo file di operatori,
+[`acan/concept_algebra.py`](../acan/concept_algebra.py), chiamato dal nucleo
+tabulare ([`acan/core/concepts.py`](../acan/core/concepts.py), NumPy) e dallo
+strato di attenzione ([`acan/lm/concept_attention.py`](../acan/lm/concept_attention.py),
+PyTorch).
+
+**Oggetti.** Un'*osservazione* è una coppia $(z,y)$: una parte $z$ con cui la si
+riconosce e una parte $y$ che si vuole leggere. Un *concetto* è la somma delle
+statistiche dei suoi membri,
+
+$$
+C_i=\sum_{t\in i}w_t,\qquad U_i=\sum_{t\in i}w_tz_t,\qquad Q_i=\sum_{t\in i}w_tz_t^2,\qquad
+Y_i=\sum_{t\in i}w_t\,\phi(y_t),
+$$
+
+con centro $g_i=U_i/C_i$, varianza $s_i^2=Q_i/C_i-g_i^2$ e lettura
+$\bar y_i=Y_i/C_i$.
+
+| | Tabella | Attenzione |
+|---|---|---|
+| osservazione | una riga | un token del prefisso |
+| $z$ | attributi osservati | chiave |
+| $y$ | target (o gli attributi mancanti) | valore |
+| interrogazione | riga con $y$ ignoto | query |
+| somiglianza $\kappa$ | identità: la riga è osservata esattamente | $\exp(s\,q^\top k)$ |
+
+**Operatore 1 — appartenenza.** Il peso di un concetto per un'interrogazione
+$o$ è la sua massa per la somiglianza attesa con i suoi membri:
+
+$$
+\boxed{\;T_i(o)=\frac{C_i\;\mathbb E_{z\sim i}[\kappa(o,z)]}{\sum_lC_l\;\mathbb E_{z\sim l}[\kappa(o,z)]},
+\qquad \hat y(o)=\sum_iT_i(o)\,\bar y_i\;}
+$$
+
+**Operatore 2 — generalizzazione.** Due concetti si generalizzano sommando le
+statistiche. Fra tutte le coppie si sceglie quella con il minimo aumento della
+lunghezza di descrizione $\ell(i)=\tfrac12C_i\sum_j\log v_{ij}-C_i\log C_i$
+(più il termine categorico nel tabulare):
+$\Delta_{il}=\ell(i\cup l)-\ell(i)-\ell(l)$.
+
+**Operatore 3 — giudizio.** Un concetto è valutato solo su osservazioni che non
+contiene. Il criterio è la log-probabilità di ciò che va letto:
+$J=\frac1n\sum_t\log p^{(-t)}(y_t\mid z_t)$.
+
+**Proposizione U1 (tabella) [D][V].** Con $\kappa$ identità e membri gaussiani
+di varianza predittiva $v_{ij}=(C_is_{ij}^2+\kappa_0\sigma_j^2)/(C_i+\kappa_0)$,
+$\mathbb E_{z\sim i}[\kappa(o,z)]=\prod_j\mathcal N(o_j;g_{ij},v_{ij})$:
+l'appartenenza è la posterior di una miscela e $\hat y$ la sua media
+condizionata. Omettere un attributo dal prodotto lo marginalizza esattamente,
+quindi lo stesso modello completa ogni sottoinsieme di attributi.
+
+**Proposizione U2 (attenzione) [D][V].** Con $\kappa(q,k)=e^{s\,q^\top k}$ e
+membri gaussiani, $\mathbb E_{k\sim i}[\kappa]=\exp(s\,q^\top g_i+\tfrac12s^2q^\top V_iq)$.
+Con un concetto per token ($C=1$, $V=0$) l'operatore 1 è **esattamente**
+l'attenzione softmax densa. Il termine $\log C_i$ nei logit non è un'ipotesi: è
+la massa dell'operatore 1. *Verifica:* lo strato coincide con l'attenzione della
+libreria entro $2\cdot10^{-5}$ quando la finestra o il numero di concetti copre
+il prefisso; un modello innestato con finestra sufficiente riproduce i logit del
+modello di partenza.
+
+**Proposizione U3 (aggregazione) [D][V].** Per due concetti con le stesse
+statistiche normalizzate $\Delta_{il}=-[(C_i+C_l)\log(C_i+C_l)-C_i\log C_i-C_l\log C_l]<0$:
+unire copie conviene sempre, in tabella e in attenzione. È la proprietà
+aggregante della CP originale, ottenuta senza un termine dedicato.
+
+**Proposizione U4 (errore della generalizzazione) [D][V].** Per l'ordine zero
+($V_i$ omesso), se ogni membro dista al più $\rho$ dal centro del proprio
+concetto, $\lVert\hat y_{denso}(q)-\hat y(q)\rVert\le(e^{2s\lVert q\rVert\rho}-1)\max\lVert y\rVert$
+(Teorema 6). La quantità che limita l'errore è la dispersione entro i concetti,
+cioè $1-\eta^2$: la varianza spiegata è la misura di qualità comune.
+
+**Proposizione U5 (giudizio = causalità) [D].** Poiché le statistiche sono
+additive, $p^{(-t)}$ si ottiene sottraendo il contributo di $t$. In un prefisso
+ordinato le statistiche al tempo $t$ contengono solo $\tau<t$: il giudizio
+dell'operatore 3 è la verosimiglianza del token successivo. Escludere la riga
+nel tabulare ed essere causali nel linguaggio sono la stessa condizione.
+
+**Proposizione U6 (limite) [D].** Uno stato di $P$ numeri a $b$ bit non può
+restituire esattamente più di $Pb$ bit del passato (Proposizione 5). Un numero
+fisso di concetti è quindi una compressione con perdita; la perdita è quella
+limitata da U4.
+
+**Dove i due casi differiscono, e perché.**
+
+| | Tabella | Attenzione |
+|---|---|---|
+| varianza usata nell'appartenenza | predittiva, $\kappa_0=1$: si giudicano righe nuove | ordine zero: i membri sono dati memorizzati, non un campione |
+| riassegnazione dei membri | sì (le righe non hanno ordine) | no: il passato non si rilegge, pena la causalità |
+| quante generalizzazioni | scelte dall'operatore 3, con la regola dell'errore standard | fissate dal budget di stato: è la risorsa che si vuole limitare |
+| posizione | assente | i concetti riassumono chiavi non ruotate e vengono ruotati alla posizione media dei membri: è un'approssimazione, non coperta da U4 |
+| ciò che si addestra | nulla oltre le statistiche | le proiezioni del modello linguistico; i concetti non hanno parametri |
+
+Che cosa **non** è dimostrato: che con pochi concetti l'errore di U4 sia piccolo
+sulle chiavi di un modello reale. Le misure sono in
+[CP-V9-RESULTS.md](CP-V9-RESULTS.md).
+
 Legenda: **[D]** dimostrato qui, **[V]** verificato numericamente dallo script,
 **[C]** congettura o argomento euristico da formalizzare, **[S]** da misurare.
 Il piano operativo è in [REVISION-PLAN.md](REVISION-PLAN.md).
@@ -486,16 +585,17 @@ termine di massa**; il limite del Teorema 6 è rispettato in tutte le 200 query.
 È un caso ideale: indica che la derivazione è corretta, non che le chiavi di un
 modello reale siano altrettanto raggruppabili.
 
-**La misura sul modello reale è negativa.** A pesi invariati, su SmolLM2-135M,
-lo strato derivato peggiora la sola finestra (NLL 5,81 contro 5,51; densa
-2,76) e il termine $\log C_i$ è dannoso: le chiavi in cache sono ruotate dalla
-posizione e non stanno vicino al proprio centroide, quindi l'ipotesi del
-Teorema 6 non vale. Dettagli in [CP-V9-RESULTS.md](CP-V9-RESULTS.md). Il
-teorema resta corretto; la sua applicabilità a un modello con RoPE no.
+**Misura sul modello reale.** A pesi invariati, su SmolLM2-135M, riassumere
+chiavi già ruotate dalla posizione peggiora la sola finestra (NLL 5,81 contro
+5,51): quelle chiavi non stanno vicino al proprio centroide e l'ipotesi del
+Teorema 6 non vale. Riassumendo le chiavi **prima** della rotazione e ruotando
+il concetto alla posizione media dei membri, i concetti migliorano la finestra
+(5,26), ma restano lontani dall'attenzione densa (2,76). È la forma adottata
+nel modello unico. Dettagli in [CP-V9-RESULTS.md](CP-V9-RESULTS.md).
 
 ### C.4 Questioni aperte, da non presentare come risolte
 
-- **RoPE [S], misurato: è l'ostacolo principale.** Le chiavi sono ruotate in funzione della posizione; il centroide
+- **RoPE [S], misurato.** Riassumere chiavi ruotate è dannoso; il modello riassume chiavi non ruotate. Le chiavi sono ruotate in funzione della posizione; il centroide
   di chiavi ruotate a posizioni lontane attenua le componenti ad alta frequenza.
   Occorre scegliere fra statistiche su chiavi non ruotate con una posizione
   media per slot, e slot separati per bande di posizione. Va misurato.
