@@ -49,8 +49,20 @@ def create_app(root=None, token=None):
         jobs = store.jobs(request.workspace)
         for job in jobs:
             job['snapshots'] = snapshots(store, job)
-            job['history'] = store.history(job['id'], request.workspace)
+            job['history'] = store.history(job['id'], request.workspace,overview=True)
+            job['history_view'] = 'full_overview'
         return jsonify(jobs=jobs, corpora=store.corpora(request.workspace), busy=store.busy())
+
+    @app.get('/jobs/<identifier>/history')
+    def history(identifier):
+        try:
+            start=int(request.args.get('start','0'))
+            limit=int(request.args.get('limit','500'))
+            end=int(request.args['end']) if 'end' in request.args else None
+        except ValueError:
+            raise ValueError('Intervallo dello storico non valido.') from None
+        rows=store.history(identifier,request.workspace,start=start,limit=limit,end=end)
+        return jsonify(rows=rows,next_step=rows[-1]['step']+1 if rows else None)
 
     @app.get('/capabilities')
     def capabilities():

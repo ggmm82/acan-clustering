@@ -4,7 +4,7 @@ PDF_SHA256 = '1fdd1a5f6e235d291c29364cae2dd1bd138df74db42256bb9ec36dd528f40396'
 CONFORMANCE = 'partial'
 GAPS = [
     {'id': 'joint-cp-core', 'status': 'qualified',
-     'detail': 'cp-joint-v1 shares bounded root-shift relevance, learned simplex masses, routing, summaries and exclusive-cp-v1/NLL between tabular and LM adapters. The extension adds explicit overlap exclusion and probability affinity; it is not a proof of the paper theorems or general language quality. It omits paper-specific dual relevance and mass/bilinear routing. Values, derivatives, causality and resume are tested.'},
+     'detail': 'cp-joint-v1 shares bounded root-shift relevance, learned simplex masses, routing, summaries and pair-supported-cp-v1/NLL between tabular and LM adapters. The extension adds explicit overlap exclusion, distinct-observation support and probability affinity; it is not a proof of the paper theorems or general language quality. It omits paper-specific dual relevance and mass/bilinear routing. Values, derivatives, causality and resume are tested.'},
     {'id': 'backend-initialization', 'status': 'qualified',
      'detail': 'CPU forward/gradient parity is checked with identical parameters; native initializers differ. GPU execution and bitwise cross-backend training equivalence are not certified.'},
     {'id': 'routing', 'status': 'qualified',

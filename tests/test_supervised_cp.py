@@ -21,6 +21,7 @@ class SupervisedCPTests(unittest.TestCase):
         def node(identifier,readouts,masses):
             result=AlgebraicClusterModel()
             result.id=identifier;result.cols=['x','label_a','label_b']
+            result.Root=np.zeros((1,3));result.RootError=np.zeros((1,3))
             result.Groups=np.column_stack([np.zeros(2),readouts])
             result.Freqs=np.asarray(masses).reshape(1,-1)
             result.routing_profile='cp-joint-v1'
@@ -37,6 +38,12 @@ class SupervisedCPTests(unittest.TestCase):
         np.testing.assert_allclose(result,np.tile([.12,.88],(257,1)),atol=1e-12)
         np.testing.assert_allclose(confidence,.48,atol=1e-12)
         self.assertTrue(np.all(paths=='1_G1'))
+        restored=GraphClusterModel.loadModel(graph.to_json())
+        before=restored.to_json()
+        actual=restored.assignLabel(restored.clusterModel[0],data,labels)
+        for expected,observed in zip((result,confidence,paths),actual):
+            np.testing.assert_array_equal(expected,observed)
+        self.assertEqual(before,restored.to_json())
         child.Groups[:,1:]=[1.,0.]
         expanded=graph.assignLabel(root,data,labels)[0]
         root.children={}
