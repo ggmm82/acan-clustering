@@ -1,13 +1,16 @@
 """The complete timeline remains reachable without returning it on every poll."""
 import json
+import importlib.util
 import tempfile
 import unittest
-from acan.lm.service import create_app
 from acan.lm.store import owner_key
 
 
+@unittest.skipUnless(all(importlib.util.find_spec(name) for name in ('torch','transformers','peft')),
+                     'Requires the generative worker dependencies')
 class HistoryNavigationTests(unittest.TestCase):
     def test_overview_and_exact_pages_reach_all_steps_and_enforce_ownership(self):
+        from acan.lm.service import create_app
         with tempfile.TemporaryDirectory() as directory:
             app=create_app(directory,token='x'*32)
             store=app.store;owner=owner_key('a'*64)
