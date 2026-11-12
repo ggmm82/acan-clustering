@@ -130,9 +130,12 @@ def predict_assignments(model, rows, cix):
         centre, variance = np.asarray(attribute['centre']), np.asarray(attribute['variance'])
         logits = logits-.5*((z[:, None]-centre)**2/variance+np.log(variance)+LOG_2PI)
     for block in state['blocks']:
-        if not all(column in position for column in block['columns']):
-            continue
-        onehot = (rows[:, [position[column] for column in block['columns']]] > .5).astype(float)
+        # A single completed row is encoded with only its own level: absent
+        # levels are zeros, and a block without any level is unobserved.
+        onehot = np.zeros((len(rows), len(block['columns'])))
+        for place, column in enumerate(block['columns']):
+            if column in position:
+                onehot[:, place] = rows[:, position[column]] > .5
         logits = logits+onehot@np.asarray(block['log_probability']).T
     return _softmax(logits)[0].T
 

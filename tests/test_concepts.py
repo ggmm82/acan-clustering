@@ -105,6 +105,9 @@ class ConceptApplicationTest(unittest.TestCase):
         frame = game(seed=6)
         graph = train_native(frame, [], OPTIONS)
         self.assertTrue(4 <= graph.clusterModel[graph.rootId].k() <= 6)
+        hidden = game(40, seed=8)
+        completed = infer(graph.to_json(), hidden.assign(play=np.nan), 'complete')
+        self.assertTrue((completed['play'].astype(str) == hidden['play']).all())   # any attribute can be the unknown
         rng = np.random.default_rng(0)
         priced = frame.assign(price=np.where(frame.play == 'yes', 30., 10.)+rng.normal(0, 1, len(frame)))
         graph = train_native(priced.iloc[:90], ['price'], OPTIONS)
