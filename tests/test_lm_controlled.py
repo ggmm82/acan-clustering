@@ -107,6 +107,29 @@ class ControlledTrainingTests(unittest.TestCase):
             self.assertEqual(set(a),set(b))
             for key in a:self.assertTrue(torch.equal(a[key],b[key]),key)
 
+    def test_concept_profile_trains_and_resumes_exactly(self):
+        from safetensors.torch import load_file
+        from acan.lm import research_trainer as trainer
+        from acan.lm.store import Store
+        with tempfile.TemporaryDirectory() as one,tempfile.TemporaryDirectory() as two:
+            s1,j1,path,base=self.fixture(one,routing='cp-v9',distillation=0);s2,j2,_,_=self.fixture(two,base_path=path,routing='cp-v9',distillation=0)
+            self.run_job(s1,j1,path,base)
+            done=s1.job(j1['id'])
+            self.assertEqual(done['status'],'completed')
+            self.assertEqual(done['progress']['graft']['algebra'],'cp-v9')
+            stop=threading.Event();original=Store.record
+            def record(store,id,step,values):
+                original(store,id,step,values)
+                if str(store.root)==str(s2.root) and step==2:stop.set()
+            with patch.object(Store,'record',record):self.run_job(s2,j2,path,base,stop)
+            self.assertEqual(s2.job(j2['id'])['status'],'paused')
+            s2.update(j2['id'],pause=0);self.run_job(s2,j2,path,base)
+            import torch
+            a=load_file(s1.directory('jobs',j1['id'])/'checkpoints'/done['checkpoint']/'trainables.safetensors')
+            b=load_file(s2.directory('jobs',j2['id'])/'checkpoints'/s2.job(j2['id'])['checkpoint']/'trainables.safetensors')
+            self.assertEqual(set(a),set(b))
+            for key in a:self.assertTrue(torch.equal(a[key],b[key]),key)
+
     def test_cp_routing_resume_preserves_exact_parameters(self):
         from safetensors.torch import load_file
         from acan.lm import research_trainer as trainer

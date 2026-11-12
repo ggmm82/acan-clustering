@@ -11,12 +11,18 @@ LEGACY_TRAINING = (
 )
 PRE_JOINT_TRAINING = '8acbb6907ceb994e7963a9008b7ada33840a00b2c83f130d7d4e43baef336282'
 PRE_JOINT_INFERENCE = 'cbbb435f05f9f757587b483918039b802dc79ddd4c26d7d4095ec6d9ba68023a'
+# Sources immediately before the cp-v9 attention profile was added. Projects of
+# every earlier profile keep their trainer and inference equations unchanged.
+PRE_V9_TRAINING = '0516a223d3601f35e8cae79453948217937366a241bd2c1858c6272bd17e5c66'
+PRE_V9_INFERENCE = 'fdd4c2cbc515abf90feeb2a7a96f99f9f413ce8561c00344c2f03c920fe4215f'
 
 
 def training_identity(values, config, checkpoint_root, selected, current):
     from pathlib import Path
     from . import checkpoints
     candidates = [current]
+    if config.get('routing_profile') != 'cp-v9':
+        candidates.append(PRE_V9_TRAINING)
     if 'cp_weight' not in config and config.get('routing_profile') in ('shared-algebra-v1','legacy-causal-v1','cp-routing-v1'):
         candidates.append(PRE_JOINT_TRAINING)
     if 'routing_profile' not in config:

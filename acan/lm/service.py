@@ -41,7 +41,7 @@ def create_app(root=None, token=None):
 
     @app.get('/healthz')
     def health():
-        return jsonify(status='ok',version='8.3.0',build_revision=os.environ.get('ACAN_BUILD_REVISION','development'))
+        return jsonify(status='ok',version='8.4.0',build_revision=os.environ.get('ACAN_BUILD_REVISION','development'))
 
     @app.get('/state')
     def state():

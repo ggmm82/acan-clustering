@@ -99,7 +99,7 @@ class AlgebraicClusterModel:
         """
         v7-compatible hard cluster assignment using linear row-normalized Relevance R.
         """
-        if getattr(self,'routing_profile','legacy-v8') in ('paper-routing-v1','cp-routing-v1','cp-joint-v1'):
+        if getattr(self,'routing_profile','legacy-v8') in ('paper-routing-v1','cp-routing-v1','cp-joint-v1','cp-v9'):
             weights, confidence, best = self.predictTupleSoft(rowTuple,cix)
             return best, float(-np.log(max(confidence,1e-12)))
         t = np.asarray(rowTuple, dtype=np.float64).reshape(1, -1)
@@ -118,6 +118,9 @@ class AlgebraicClusterModel:
         """
         if getattr(self,'routing_profile','legacy-v8') == 'cp-routing-v1':
             from .variational import predict
+            return predict(self,rowTuple,cix)
+        if getattr(self,'routing_profile','legacy-v8') == 'cp-v9':
+            from .concept_adapter import predict
             return predict(self,rowTuple,cix)
         if getattr(self,'routing_profile','legacy-v8') == 'cp-joint-v1':
             from .supervised import predict
@@ -304,7 +307,7 @@ class GraphClusterModel:
         return Y_pred, Y_conf, path
 
     def assignLabel(self, node, normDataset, fullLabels, use_soft_attention=True):
-        if (use_soft_attention and getattr(node,'routing_profile',None)=='cp-joint-v1'
+        if (use_soft_attention and getattr(node,'routing_profile',None) in ('cp-joint-v1','cp-v9')
                 and (node.routing_parameters or {}).get('hierarchy_readout')=='conditional-mixture-v1'):
             return self._assign_joint_mixture(node,normDataset,fullLabels)
         res = np.zeros((len(normDataset), len(fullLabels)), dtype=np.float64)
@@ -358,7 +361,10 @@ class GraphClusterModel:
         latent path; its probability is not a calibrated class confidence.
         Bounded batches keep the routing workspace independent of query size.
         """
-        from .supervised import predict_assignments
+        if getattr(node,'routing_profile',None)=='cp-v9':
+            from .concept_adapter import predict_assignments
+        else:
+            from .supervised import predict_assignments
         if len(dataset)>256:
             chunks=[self._assign_joint_mixture(node,dataset.iloc[start:start+256],labels)
                     for start in range(0,len(dataset),256)]
