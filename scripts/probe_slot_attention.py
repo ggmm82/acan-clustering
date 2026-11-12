@@ -29,9 +29,11 @@ class Slots:
         self.C = self.U = self.Q = self.V = None
         self.root = None                                        # count, sum, square sum of all absorbed keys
 
-    def absorb(self, keys, values):
+    def absorb(self, keys, values, positions=None):
         ones = keys.new_ones(len(keys))
         parts = (ones, keys, keys*keys, values)
+        positions = ones*0 if positions is None else positions.to(keys.dtype)
+        self.P = positions if self.C is None else torch.cat((self.P, positions))
         if self.C is None:
             self.C, self.U, self.Q, self.V = parts
             self.root = [float(len(keys)), keys.sum(0), (keys*keys).sum(0)]
@@ -44,11 +46,11 @@ class Slots:
             keep = torch.ones(len(self.C), dtype=torch.bool)
             left = torch.tensor([i for i, _ in pairs])
             right = torch.tensor([j for _, j in pairs])
-            for name in ('C', 'U', 'Q', 'V'):
+            for name in ('C', 'U', 'Q', 'V', 'P'):
                 value = getattr(self, name)
                 value[left] = value[left]+value[right]
             keep[right] = False
-            self.C, self.U, self.Q, self.V = self.C[keep], self.U[keep], self.Q[keep], self.V[keep]
+            self.C, self.U, self.Q, self.V, self.P = (getattr(self, name)[keep] for name in ('C', 'U', 'Q', 'V', 'P'))
 
     def _variance(self, c, u, q):
         mean = self.root[1]/self.root[0]
@@ -86,8 +88,10 @@ class Slots:
                     break
         return pairs
 
-    def read(self, queries, scale, mass, gaussian):
+    def read(self, queries, scale, mass, gaussian, rotate=None):
         mean = self.U/self.C[:, None]
+        if rotate is not None:                                  # unrotated keys: place the centroid at the mean position
+            mean = rotate(mean, self.P/self.C)
         logits = queries@mean.T*scale
         if mass:
             logits = logits+self.C.log()
@@ -97,8 +101,12 @@ class Slots:
         return logits, self.V/self.C[:, None]
 
 
-def attend(q, k, v, scale, cfg):
-    """q: heads x L x d; k, v: key heads x L x d. Causal; exact keys in [block_start-window, t]."""
+def attend(q, k, v, scale, cfg, raw=None, rotate=None):
+    """q: heads x L x d; k, v: key heads x L x d. Causal; exact keys in [block_start-window, t].
+
+    With ``raw`` (keys before the positional rotation) the concepts summarize
+    position-free keys and are rotated to their mean position when read.
+    """
     heads, length, _ = q.shape
     groups = k.shape[0]
     repeat = heads//groups
@@ -111,7 +119,8 @@ def attend(q, k, v, scale, cfg):
         low = max(0, start-window)
         if slots and low > absorbed:
             for g in range(groups):
-                slots[g].absorb(k[g, absorbed:low].clone(), v[g, absorbed:low].clone())
+                slots[g].absorb((k if raw is None else raw)[g, absorbed:low].clone(), v[g, absorbed:low].clone(),
+                                torch.arange(absorbed, low))
             absorbed = low
         mask = torch.arange(low, end)[None] > torch.arange(start, end)[:, None]
         for g in range(groups):
@@ -120,7 +129,8 @@ def attend(q, k, v, scale, cfg):
             values = v[g, low:end]
             if slots and absorbed:
                 flat = queries.reshape(-1, queries.shape[-1])
-                slot_logits, slot_values = slots[g].read(flat, scale, cfg['mass'], cfg['gaussian'])
+                slot_logits, slot_values = slots[g].read(flat, scale, cfg['mass'], cfg['gaussian'],
+                                                         rotate if raw is not None else None)
                 logits = torch.cat((logits, slot_logits.view(repeat, end-start, -1)), -1)
                 values = torch.cat((values, slot_values))
             out[g*repeat:(g+1)*repeat, start:end] = logits.softmax(-1)@values
@@ -135,10 +145,20 @@ def install(model, cfg):
         q = self.q_proj(hidden_states).view(shape).transpose(1, 2)
         k = self.k_proj(hidden_states).view(shape).transpose(1, 2)
         v = self.v_proj(hidden_states).view(shape).transpose(1, 2)
-        q, k = apply_rotary_pos_emb(q, k, *position_embeddings)   # slots hold keys as a KV cache stores them
-        out = attend(q[0], k[0], v[0], self.scaling, cfg)
+        raw = k[0] if cfg.get('unrotated') else None
+        q, k = apply_rotary_pos_emb(q, k, *position_embeddings)   # by default slots hold keys as a KV cache stores them
+
+        def rotate(keys, positions):
+            angles = positions[:, None]*inverse_frequency[None].to(keys.dtype)
+            angles = torch.cat((angles, angles), -1)
+            half = keys.shape[-1]//2
+            turned = torch.cat((-keys[:, half:], keys[:, :half]), -1)
+            return keys*angles.cos()+turned*angles.sin()
+
+        out = attend(q[0], k[0], v[0], self.scaling, cfg, raw, rotate)
         return self.o_proj(out.transpose(0, 1).reshape(1, hidden_states.shape[1], -1)), None
 
+    inverse_frequency = model.model.rotary_emb.inv_freq.detach()
     layers = model.model.layers
     for layer in layers[cfg.get('first_layer', 0):]:
         layer.self_attn.forward = forward.__get__(layer.self_attn)
@@ -153,6 +173,10 @@ CONFIGS = {
     'finestra 64 + 64 concetti, senza log C': dict(window=64, slots=64, mass=False),
     'finestra 64 + 64 concetti, correzione gaussiana': dict(window=64, slots=64, gaussian=True),
     'finestra 64 + 16 concetti': dict(window=64, slots=16),
+    'finestra 64 + 64 concetti su chiavi non ruotate': dict(window=64, slots=64, unrotated=True),
+    'finestra 64 + 64 concetti su chiavi non ruotate, senza log C': dict(window=64, slots=64, unrotated=True, mass=False),
+    'finestra 64 + 64 blocchi temporali su chiavi non ruotate': dict(window=64, slots=64, unrotated=True, policy='chunk'),
+    'finestra 64 + 64 blocchi temporali su chiavi non ruotate, senza log C': dict(window=64, slots=64, unrotated=True, policy='chunk', mass=False),
     'finestra 64 + 256 concetti': dict(window=64, slots=256),
 }
 
@@ -175,9 +199,10 @@ def main():
     segments = [ids[i*args.length:(i+1)*args.length] for i in range(args.segments)]
     if len(segments[-1]) < args.length:
         parser.error('text too short for the requested segments')
+    previous = json.loads(args.output.read_text())['results'] if args.output.exists() else {}
     report = dict(model=args.model, length=args.length, segments=args.segments, scored_from=args.skip,
                   block=args.block, note='exact keys cover [block_start-window, t]: mean exact span is window+block/2',
-                  results={})
+                  results=previous)
     for name in args.configs:
         cfg = dict(dense=False, window=0, slots=0, policy='concept', mass=True, gaussian=False, block=args.block)
         cfg.update(CONFIGS[name])
