@@ -4,8 +4,10 @@ Il nucleo matematico e i parametri del modello non sono modificati da queste
 correzioni. I job generativi in corso non sono avviati, fermati o riaddestrati.
 
 - **Model:** target vuoto significa clustering; un target presente significa
-  classificazione, compresi numeri interi e decimali. La scelta nascosta in
-  Automatico che oltre20 codici diventava regressione è rimossa dal flusso web.
+  classificazione, compresi numeri interi e decimali. Il significato del target è una scelta visibile: classi anche numeriche oppure
+  quantità continue. Automatico è un suggerimento; la regressione usa medie
+  pesate e metriche MAE/RMSE/R². La precedente imposizione di classificazione
+  su tutti i numeri è corretta. Cambiare compito richiede riaddestramento.
 - I menu con un solo modello e le opzioni non disponibili sono nascosti. Batch,
   purezza e righe minime vengono disabilitati quando non agiscono sul percorso
   scelto. Il batch richiesto ha massimo300, coerente con il limite effettivo.

@@ -319,8 +319,10 @@ non certifica un numero semanticamente corretto di concetti su qualunque dataset
 ### Usare il modello e leggere il training
 
 Nella scheda Model, lasciare il target vuoto per scoprire gruppi oppure scegliere
-una colonna da prevedere come classe. Le classi numeriche, anche decimali o oltre
-20 codici, sono accettate senza passare dalle impostazioni avanzate. I controlli
+una colonna da prevedere. La scelta visibile distingue classi (anche codici numerici)
+e quantità continue: per un prezzo si usa regressione con media pesata nei prototipi,
+per i codici selezionare Classi. Automatico è un suggerimento da verificare.
+Cambiare il compito richiede riaddestramento, non converte i JSON esistenti. I controlli
 inattivi sono nascosti o disabilitati; i parametri effettivi hanno spiegazioni.
 Il riepilogo del grafo distingue i prototipi dell'albero dai gruppi del nodo.
 
@@ -330,3 +332,8 @@ un passo iniziale e navigare avanti/indietro. Il polling conserva lo zoom. Per
 serie lunghe la panoramica è campionata e non garantisce di mostrare ogni picco:
 la finestra contiene le misure esatte dell'intervallo. Frontend e worker devono
 includere questo aggiornamento; i progetti esistenti non vengono riaddestrati.
+
+La lettura numerica continua usa le appartenenze del training per stimare una
+media per prototipo. Su autoPrice (127 training,32 test,seed42), la verifica
+misura MAE1797,48,RMSE2522,45 e R²0,6424; baseline della media training RMSE4315,01.
+È un controllo di sviluppo su uno split, non una garanzia generale.

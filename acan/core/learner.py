@@ -104,8 +104,9 @@ class AlgebraicClusterLearner:
         if routing_profile in ('cp-routing-v1','cp-joint-v1'):
             from .supervised import target_groups
             self._supervised_groups = target_groups(self)
-            if routing_profile=='cp-joint-v1' and self.labels and not self._supervised_groups:
-                raise ValueError('Il modello congiunto richiede target categorici; per regressione usare un altro profilo.')
+            self._regression_indices=[self.cols.index(label) for label in self.labels if label in self.cols]
+            if routing_profile=='cp-joint-v1' and self.labels and not (self._supervised_groups or self._regression_indices):
+                raise ValueError('Target assente dalla codifica dei dati.')
             self.k = min(self.k, 256 if routing_profile=='cp-joint-v1' else 32)
             device = "numpy"
 
@@ -380,11 +381,13 @@ class AlgebraicClusterLearner:
                         # Learned class readouts can be confident even when a
                         # branch contains mixed labels. Split on observed
                         # training purity, never on a fitted readout or test.
-                        max_class_prob = min(float(sub_df.iloc[:,indices].mean().max())
-                                             for indices in acl._supervised_groups)
+                        max_class_prob = min((float(sub_df.iloc[:,indices].mean().max())
+                                             for indices in acl._supervised_groups),default=1.)
                     else:
                         max_class_prob = float(np.max(node.Groups[k_idx, [node.cols.index(c) for c in full_lbls]]))
                     needs_split = max_class_prob < similarity_threshold
+                    if routing_profile=='cp-joint-v1' and acl._regression_indices:
+                        needs_split |= float(np.mean(np.std(sub_df.iloc[:,acl._regression_indices].to_numpy(),axis=0)))>.15
                 else:
                     needs_split = float(np.mean(np.std(sub_df.to_numpy(), axis=0))) > 0.15
 

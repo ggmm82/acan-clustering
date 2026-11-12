@@ -16,6 +16,8 @@ WEIGHT = .1
 def target_groups(learner):
     groups = []
     for label in learner.labels:
+        if label in learner.cols:
+            continue
         indices = [i for i, col in enumerate(learner.cols) if str(col).startswith(str(label) + '_')]
         if len(indices) < 2:
             return []
@@ -60,16 +62,30 @@ def objective(params, x, groups, state, weight=WEIGHT, gradients=True):
     freq = shared['F'].T
     cp = shared['normalized_cp']
     nll = 0.
+    regression=state.get('regression',[])
+    target_count=max(1,len(groups)+len(regression))
     da = np.zeros_like(a); dt = np.zeros_like(t)
     for indices in groups:
         raw_prediction = t.T@a[:, indices]
         prediction = raw_prediction.clip(1e-12)
-        nll -= float((x[:, indices]*np.log(prediction)).sum())/n/len(groups)
-        dp = -x[:, indices]/prediction/n/len(groups)*(raw_prediction>1e-12)
+        nll -= float((x[:, indices]*np.log(prediction)).sum())/n/target_count
+        dp = -x[:, indices]/prediction/n/target_count*(raw_prediction>1e-12)
         da[:, indices] += t@dp
         dt += a[:, indices]@dp.T
-    loss = prediction_cp_objective(nll, cp, weight)
-    result = dict(loss=loss, nll=nll, normalized_cp=cp, T=t, G=a, R=r, F=freq.T)
+    mse=0.
+    if regression:
+        means=centroid[:,regression]
+        # Profile weighted least squares: the exact optimum of each readout
+        # is its assignment-weighted training mean. Its mean derivative cancels.
+        errors=x[None,:,regression]-means[:,None,:]
+        squared=(errors*errors).sum(axis=2)
+        mse=float((t*squared).sum())/n/target_count
+        dt+=squared/n/target_count
+        dmeans=2*means*(counts-mass)/n/target_count
+        dt+=(dmeans/mass)@x[:,regression].T-(dmeans*means).sum(1,keepdims=True)/mass*(counts>1e-12)
+    loss = prediction_cp_objective(nll+mse, cp, weight)
+    result = dict(loss=loss, nll=nll, mse=mse, normalized_cp=cp, T=t, G=a, R=r, F=freq.T)
+    if regression:result['regression_means']=means
     if masses is not None:
         result['overlap'] = shared['overlap']
     if not gradients:
@@ -141,6 +157,8 @@ def train(learner, epochs):
     features = np.ones(learner.m, dtype=bool)
     for indices in groups:
         features[indices] = False
+    regression=getattr(learner,'_regression_indices',[])
+    features[regression]=False
     if not features.any():
         raise ValueError('Il training supervisionato richiede attributi oltre al target.')
     rng = np.random.default_rng(learner.random_state)
@@ -165,9 +183,9 @@ def train(learner, epochs):
         # Log odds would sharpen a binary .99/.01 seed to .9999/.0001.
         params['G'][:, indices] = np.log(initial[:, indices])
     den = span/2+np.abs(learner.Root-(learner.RootMin+span/2))
-    omega = compute_group_behavior_coupling(x,~features if groups else None)
+    omega = compute_group_behavior_coupling(x,~features if learner.labels else None)
     state = dict(features=features, root=learner.Root, den=np.where(den>1e-8,den,1.),
-                 omega=omega*(den>1e-8),lo=learner.RootMin,span=span)
+                 omega=omega*(den>1e-8),lo=learner.RootMin,span=span,regression=regression)
     optimizer = _NumpyAdam({key:params[key] for key in ('G','log_beta')}, lr=learner.lr)
     mass_optimizer = _NumpyAdam({'masses':params['masses']}, lr=learner.lr)
     best, best_loss = {k:v.copy() for k,v in params.items()}, float('inf')
@@ -237,6 +255,7 @@ def train(learner, epochs):
             else:
                 params['masses'][:] = old
         learner.history.append(dict(epoch=epoch,loss=result['loss'],nll=result['nll'],
+            mse=result['mse'],prediction_loss=result['nll']+result['mse'],
             normalized_cp=result['normalized_cp'],cp=result['normalized_cp']*np.sqrt(learner.m),
             cp_weight=WEIGHT,k_active=int((params['masses']>0).sum())))
         if result['loss'] < best_loss:
@@ -252,6 +271,7 @@ def train(learner, epochs):
     sample = learner.NormDataset
     view = objective(best,sample,groups,state,gradients=False)
     learner.Groups,learner.Relevance = result['G'],result['R']
+    if regression:learner.Groups[:,regression]=result['regression_means']
     learner.Transformation = view['T']
     hard = np.zeros_like(view['T']); hard[view['T'].argmax(0),np.arange(len(sample))] = 1
     learner.Transformation_hard = hard
@@ -259,12 +279,14 @@ def train(learner, epochs):
     learner.Freqs = result['F']; learner.cp = result['normalized_cp']*np.sqrt(learner.m)
     learner.k_active = int((learner.Counts>0).sum())
     anchors,_ = probabilities(best['G'],groups,state['lo'],state['span'])
-    learner.variational_state = dict(objective='categorical-nll-cp-v1' if groups else 'normalized-cp-v1',cp_weight=WEIGHT,
+    learner.variational_state = dict(objective='mixed-nll-mse-cp-v1' if regression and groups else 'expected-mse-cp-v1' if regression else 'categorical-nll-cp-v1' if groups else 'normalized-cp-v1',cp_weight=WEIGHT,
         cp_definition='pair-supported-cp-v1',masses=best['masses'].tolist(),
         hierarchy_readout='conditional-mixture-v1',
         candidate_budget=candidate_budget,
         beta=float(np.exp(np.clip(best['log_beta'],0,9))),features=np.flatnonzero(features).tolist(),
         routing_relevance=np.clip(np.abs(anchors-state['root'])/state['den']*state['omega'],0,1).tolist(),
+        numeric_targets=regression,numeric_readout='weighted-training-mean',
+        numeric_anchor_values=anchors[:,regression].tolist(),training_mse=result['mse'],
         training_rows=len(x),training_nll=result['nll'],training_objective=result['loss'])
     return learner.setModel()
 

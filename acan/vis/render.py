@@ -517,7 +517,7 @@ def parameter(label, id, value, lo, hi, step):
 
 model_layout = dbc.Container([
     html.H4('Scopri i concetti, poi approfondisci soltanto dove serve', className='mt-3'),
-    html.P('Senza target scopri gruppi su tutte le righe; con un target apprendi a prevederne la classe su uno split 80/20. Anche numeri come 0/1 o 1…26 possono essere nomi di classe. Avvia il modello iniziale. Doppio clic su un gruppo per creare un solo livello aggiuntivo sui suoi campioni. La radice rimane unica. Confronta la validazione in Evaluation e rimuovi i rami senza benefici.'),
+    html.P('Senza target scopri gruppi su tutte le righe; con un target apprendi a prevederne la classe su uno split 80/20. Scegli se il target è una classe (anche numerica) oppure una quantità continua. Avvia il modello iniziale. Doppio clic su un gruppo per creare un solo livello aggiuntivo sui suoi campioni. La radice rimane unica. Confronta la validazione in Evaluation e rimuovi i rami senza benefici.'),
     uplModel,
     dbc.Row([
         dbc.Col([dbc.Label('Target (svuota per scoperta non supervisionata)'),
@@ -527,6 +527,14 @@ model_layout = dbc.Container([
                  dbc.Button('Salva modello', id='btn-download', n_clicks=0, className='m-1', outline=True),
                  dcc.Download(id='download-model')], md=5),
     ], className='my-3'),
+    html.Div([
+        dbc.Label('Che cosa rappresenta il target?'),
+        dcc.RadioItems(id='target-task',value='auto',options=[
+            {'label':' Automatico · verifica il compito nella diagnostica','value':'auto'},
+            {'label':' Classi, anche codici numerici','value':'classification'},
+            {'label':' Una quantità da stimare, per esempio un prezzo','value':'regression'}]),
+        html.P('Un numero può essere un nome di classe oppure una quantità. Per i prezzi si usa la media nei prototipi e si valutano MAE, RMSE e R². Cambiare compito richiede un nuovo training.',className='small text-muted'),
+    ],id='target-task-panel',className='mb-3'),
     dbc.Accordion([dbc.AccordionItem([
         dbc.Row([
             dbc.Col([dbc.Label('Colonne categoriche'), dcc.Dropdown(id='dpdnCategory', value=[], multi=True),
@@ -536,10 +544,10 @@ model_layout = dbc.Container([
                      dbc.Button('Ripristina filtri suggeriti', id='btn-suggest-filter', color='link', size='sm')], md=6),
         ]),
         html.Div([
-            dcc.Dropdown(id='target-task',value='classification',options=[{'label':'Classificazione','value':'classification'}]),
+
             dcc.Dropdown(id='tabular-routing-profile',value='cp-joint-v1',options=[{'label':'CP condivisa','value':'cp-joint-v1'}]),
         ],style={'display':'none'}),
-        html.P('Un solo nucleo CP per i nuovi modelli tabulari e generativi. Il numero di concetti attivi viene appreso; 256 è il limite di capacità, non il numero richiesto. Target categorici. Le misure, i limiti sperimentali e la formula estesa sono nella scheda Matematica. I modelli precedenti restano caricabili.',className='small text-muted'),
+        html.P('Un solo nucleo CP per i nuovi modelli tabulari e generativi. Il numero di concetti attivi viene appreso; 256 è il limite di capacità, non il numero richiesto. Target categorici o quantità numeriche. Le misure, i limiti sperimentali e la formula estesa sono nella scheda Matematica. I modelli precedenti restano caricabili.',className='small text-muted'),
         dbc.Row([parameter(*args) for args in [
             ('Epoche', 'train-epochs', 100, 1, 1000, 1),
             ('Learning rate', 'input-lr', .08, .001, 1, .01),
@@ -765,9 +773,9 @@ def update_labels(data, lbs):
 
 
 
-@app.callback(Output('button-learn','children'),Input('dpdnLabel','value'))
-def training_action_label(labels):
-    return 'Apprendi a prevedere le classi' if labels else 'Scopri gruppi senza target'
+@app.callback(Output('button-learn','children'),Output('target-task-panel','style'),Input('dpdnLabel','value'),Input('target-task','value'))
+def training_action_label(labels,task):
+    return ('Apprendi a prevedere valori' if task=='regression' else 'Apprendi a prevedere il target',{}) if labels else ('Scopri gruppi senza target',{'display':'none'})
 
 
 @app.callback(Output('input-max-batch','disabled'),Output('train-min-samples','disabled'),Output('train-purity','disabled'),Input('train-depth','value'),Input('dpdnLabel','value'))

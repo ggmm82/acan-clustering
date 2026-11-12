@@ -235,12 +235,34 @@ si fa la media delle rispettive NLL. Nel tabulare lambda vale 0,1.
 Le teste categoriche usano softmax e vengono inizializzate con il logaritmo delle
 probabilità, così non si introduce una sicurezza artificiale nei valori iniziali.
 
-Una classe può essere scritta come numero: 0/1 oppure codici 1…26 restano
-categorie se il numero è un nome. Nell'app ogni target indicato viene trattato
-come classe, anche quando contiene numeri decimali o più di 20 valori distinti.
-Per scoprire gruppi senza supervisione basta svuotare il target. Stimare un
-valore continuo è invece regressione, non supportata da questa testa categorica.
-Il formato numerico da solo non determina il compito.
+**Regressione: una quantità, non un codice di classe.** Un prezzo è un valore
+da stimare. Per ciascun concetto la lettura numerica è la media pesata dei
+valori osservati nel solo training:
+
+$$
+\mu_i=\frac{\sum_tT_{it}y_t}{C_i},\qquad
+\hat y(x)=\sum_iT_i(x)\mu_i.
+$$
+
+Questa media minimizza esattamente la somma degli errori quadratici pesati del
+concetto. Durante l'apprendimento usiamo quella dispersione come errore di
+previsione, insieme alla stessa CP:
+
+$$
+\mathcal L_{reg}=\frac1n\sum_{i,t}T_{it}(y_t-\mu_i)^2+\lambda(1-CP_*).
+$$
+
+La dispersione contiene l'errore della previsione media e la variabilità fra le
+letture dei concetti: non è soltanto l'errore quadratico della miscela finale.
+Il valore da prevedere non entra nel routing. La normalizzazione usa solo il
+training; le predizioni vengono riportate nelle unità originali. Si misurano
+MAE, RMSE e R², senza matrice di confusione o accuracy.
+
+Un numero può anche essere un nome di classe, come 0/1 oppure codici 1…26:
+in quel caso scegliere esplicitamente **Classi, anche codici numerici**. Per
+un prezzo scegliere **Una quantità da stimare**. Automatico è una proposta da
+verificare, non una deduzione certa del significato dei numeri. Cambiare il
+compito richiede un nuovo training; non converte un modello già salvato.
 
 **Linguaggio auto-supervisionato.** Si apprende a continuare un testo; ogni parola
 successiva fornisce il target. Ogni layer mantiene concetti del contesto già letto:
