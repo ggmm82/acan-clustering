@@ -1,0 +1,841 @@
+{
+ "protocol": "application split 80/20 stratified, application target and column filters; cp-v9 defaults, no per-dataset setting; cp-joint-v1 depth 3, 100 epochs, lr .08, batch 300, purity .92, min 12 rows; concepts of cp-joint-v1 = prototypes with at least one hard-assigned training row over all nodes",
+ "runs": [
+  {
+   "dataset": "GiocoSet.xlsx",
+   "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+   "seed": 42,
+   "target": "Gioco",
+   "train_rows": 80,
+   "test_rows": 20,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.0863617139998496,
+     "selection": {
+      "best_k": 4,
+      "best_score": -0.09024337985713923,
+      "standard_error": 0.004019806898922015,
+      "chosen_k": 4,
+      "chosen_score": -0.09024337985713923
+     },
+     "train_accuracy": 1.0,
+     "cp": 0.7176253912783063
+    },
+    "knn5": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "seconds": 0.005550231999905009
+    },
+    "random_forest": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "seconds": 0.1706620740001199
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.55,
+     "balanced_accuracy": 0.5303030303030303,
+     "seconds": 0.031116176000068663
+    }
+   }
+  },
+  {
+   "dataset": "GiocoSet.xlsx",
+   "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+   "seed": 7,
+   "target": "Gioco",
+   "train_rows": 80,
+   "test_rows": 20,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.06815518500002327,
+     "selection": {
+      "best_k": 4,
+      "best_score": -0.08914841765686439,
+      "standard_error": 0.004155240194910819,
+      "chosen_k": 4,
+      "chosen_score": -0.08914841765686439
+     },
+     "train_accuracy": 1.0,
+     "cp": 0.7149547913016943
+    },
+    "knn5": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "seconds": 0.006280501999981425
+    },
+    "random_forest": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "seconds": 0.1787588780000533
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.55,
+     "balanced_accuracy": 0.5303030303030303,
+     "seconds": 0.020716610999897966
+    }
+   }
+  },
+  {
+   "dataset": "GiocoSet.xlsx",
+   "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+   "seed": 21,
+   "target": "Gioco",
+   "train_rows": 80,
+   "test_rows": 20,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.07746288300018023,
+     "selection": {
+      "best_k": 4,
+      "best_score": -0.08717436429600775,
+      "standard_error": 0.0036687195058588648,
+      "chosen_k": 4,
+      "chosen_score": -0.08717436429600775
+     },
+     "train_accuracy": 1.0,
+     "cp": 0.7175019023119625
+    },
+    "knn5": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "seconds": 0.0041797880001013255
+    },
+    "random_forest": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "seconds": 0.169114633999925
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.55,
+     "balanced_accuracy": 0.5606060606060606,
+     "seconds": 0.02006892499980495
+    }
+   }
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+   "seed": 42,
+   "target": "income",
+   "train_rows": 399,
+   "test_rows": 100,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.78,
+     "balanced_accuracy": 0.78,
+     "concepts": 4,
+     "seconds": 0.5475106310000228,
+     "selection": {
+      "best_k": 55,
+      "best_score": -0.5105790139093853,
+      "standard_error": 0.026373294339196225,
+      "chosen_k": 4,
+      "chosen_score": -0.5334859233586166
+     },
+     "train_accuracy": 0.7694235588972431,
+     "cp": 0.7266706736378237
+    },
+    "knn5": {
+     "accuracy": 0.79,
+     "balanced_accuracy": 0.79,
+     "seconds": 0.004315875000202141
+    },
+    "random_forest": {
+     "accuracy": 0.74,
+     "balanced_accuracy": 0.74,
+     "seconds": 0.22779030299989245
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.81,
+     "balanced_accuracy": 0.81,
+     "seconds": 0.056347591000076136
+    }
+   }
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+   "seed": 7,
+   "target": "income",
+   "train_rows": 399,
+   "test_rows": 100,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.76,
+     "balanced_accuracy": 0.76,
+     "concepts": 4,
+     "seconds": 0.5121198850001747,
+     "selection": {
+      "best_k": 75,
+      "best_score": -0.49795697039388087,
+      "standard_error": 0.026114949273782575,
+      "chosen_k": 4,
+      "chosen_score": -0.5115459953122069
+     },
+     "train_accuracy": 0.7769423558897243,
+     "cp": 0.7343026185665794
+    },
+    "knn5": {
+     "accuracy": 0.73,
+     "balanced_accuracy": 0.73,
+     "seconds": 0.003845197999908123
+    },
+    "random_forest": {
+     "accuracy": 0.73,
+     "balanced_accuracy": 0.73,
+     "seconds": 0.1794345550001708
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.75,
+     "balanced_accuracy": 0.75,
+     "seconds": 0.04726634500002547
+    }
+   }
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+   "seed": 21,
+   "target": "income",
+   "train_rows": 399,
+   "test_rows": 100,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.72,
+     "balanced_accuracy": 0.72,
+     "concepts": 4,
+     "seconds": 0.47353120100001433,
+     "selection": {
+      "best_k": 49,
+      "best_score": -0.4774159316216816,
+      "standard_error": 0.026303865199791342,
+      "chosen_k": 4,
+      "chosen_score": -0.4903912918753626
+     },
+     "train_accuracy": 0.7919799498746867,
+     "cp": 0.7292653183262902
+    },
+    "knn5": {
+     "accuracy": 0.7,
+     "balanced_accuracy": 0.7,
+     "seconds": 0.0040021520001118915
+    },
+    "random_forest": {
+     "accuracy": 0.7,
+     "balanced_accuracy": 0.7,
+     "seconds": 0.17140777999998136
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.72,
+     "balanced_accuracy": 0.72,
+     "seconds": 0.04663048899988098
+    }
+   }
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+   "seed": 42,
+   "target": "Class",
+   "train_rows": 166,
+   "test_rows": 42,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.8571428571428571,
+     "balanced_accuracy": 0.8568181818181818,
+     "concepts": 13,
+     "seconds": 2.011775793999959,
+     "selection": {
+      "best_k": 17,
+      "best_score": -0.2473580396688828,
+      "standard_error": 0.05096358891496215,
+      "chosen_k": 13,
+      "chosen_score": -0.2908031469312213
+     },
+     "train_accuracy": 1.0,
+     "cp": 0.7101050483316272
+    },
+    "knn5": {
+     "accuracy": 0.7380952380952381,
+     "balanced_accuracy": 0.7363636363636363,
+     "seconds": 0.006809860999965167
+    },
+    "random_forest": {
+     "accuracy": 0.8571428571428571,
+     "balanced_accuracy": 0.85,
+     "seconds": 0.2039440899998226
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.8095238095238095,
+     "balanced_accuracy": 0.8022727272727272,
+     "seconds": 0.06221411599995008
+    }
+   }
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+   "seed": 7,
+   "target": "Class",
+   "train_rows": 166,
+   "test_rows": 42,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.8333333333333334,
+     "balanced_accuracy": 0.8318181818181818,
+     "concepts": 18,
+     "seconds": 2.2139567700000953,
+     "selection": {
+      "best_k": 22,
+      "best_score": -0.2548755915724984,
+      "standard_error": 0.05105441904590995,
+      "chosen_k": 18,
+      "chosen_score": -0.28273504945207395
+     },
+     "train_accuracy": 0.9819277108433735,
+     "cp": 0.7397528472406603
+    },
+    "knn5": {
+     "accuracy": 0.7619047619047619,
+     "balanced_accuracy": 0.759090909090909,
+     "seconds": 0.004141320999906384
+    },
+    "random_forest": {
+     "accuracy": 0.8333333333333334,
+     "balanced_accuracy": 0.8272727272727273,
+     "seconds": 0.2029973080000218
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.8809523809523809,
+     "balanced_accuracy": 0.8795454545454545,
+     "seconds": 0.0630499559999862
+    }
+   }
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+   "seed": 21,
+   "target": "Class",
+   "train_rows": 166,
+   "test_rows": 42,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.9047619047619048,
+     "balanced_accuracy": 0.9022727272727273,
+     "concepts": 13,
+     "seconds": 1.9209159279998858,
+     "selection": {
+      "best_k": 32,
+      "best_score": -0.26413031134390946,
+      "standard_error": 0.047299825072794774,
+      "chosen_k": 13,
+      "chosen_score": -0.30520596738469147
+     },
+     "train_accuracy": 0.9819277108433735,
+     "cp": 0.688618229036897
+    },
+    "knn5": {
+     "accuracy": 0.7380952380952381,
+     "balanced_accuracy": 0.7340909090909091,
+     "seconds": 0.004275187999837726
+    },
+    "random_forest": {
+     "accuracy": 0.7619047619047619,
+     "balanced_accuracy": 0.7545454545454545,
+     "seconds": 0.1808187280000766
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.8571428571428571,
+     "balanced_accuracy": 0.8545454545454545,
+     "seconds": 0.051150587999927666
+    }
+   }
+  },
+  {
+   "dataset": "titanic.csv",
+   "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+   "seed": 42,
+   "target": "Survived",
+   "train_rows": 712,
+   "test_rows": 179,
+   "excluded_columns": [
+    "PassengerId",
+    "Name",
+    "Ticket",
+    "Cabin"
+   ],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.770949720670391,
+     "balanced_accuracy": 0.7353096179183136,
+     "concepts": 32,
+     "seconds": 1.3207674899999802,
+     "selection": {
+      "best_k": 78,
+      "best_score": -0.46511500409071493,
+      "standard_error": 0.033636862233092035,
+      "chosen_k": 78,
+      "chosen_score": -0.46511500409071493
+     },
+     "train_accuracy": 0.8314606741573034,
+     "cp": 0.8462992829647578
+    },
+    "knn5": {
+     "accuracy": 0.8100558659217877,
+     "balanced_accuracy": 0.7806324110671936,
+     "seconds": 0.006360720999964542
+    },
+    "random_forest": {
+     "accuracy": 0.8212290502793296,
+     "balanced_accuracy": 0.7978260869565217,
+     "seconds": 0.29005591999998614
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.8268156424581006,
+     "balanced_accuracy": 0.8104743083003952,
+     "seconds": 0.09191828400003033
+    }
+   }
+  },
+  {
+   "dataset": "titanic.csv",
+   "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+   "seed": 7,
+   "target": "Survived",
+   "train_rows": 712,
+   "test_rows": 179,
+   "excluded_columns": [
+    "PassengerId",
+    "Name",
+    "Ticket",
+    "Cabin"
+   ],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.7932960893854749,
+     "balanced_accuracy": 0.7642951251646903,
+     "concepts": 37,
+     "seconds": 1.4046361210000669,
+     "selection": {
+      "best_k": 71,
+      "best_score": -0.5018817650942033,
+      "standard_error": 0.03550302725086125,
+      "chosen_k": 71,
+      "chosen_score": -0.5018817650942033
+     },
+     "train_accuracy": 0.8342696629213483,
+     "cp": 0.8514282687233726
+    },
+    "knn5": {
+     "accuracy": 0.7318435754189944,
+     "balanced_accuracy": 0.7196969696969697,
+     "seconds": 0.0050596379999205965
+    },
+    "random_forest": {
+     "accuracy": 0.7988826815642458,
+     "balanced_accuracy": 0.7850461133069828,
+     "seconds": 0.19365121999999246
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.8156424581005587,
+     "balanced_accuracy": 0.7986824769433465,
+     "seconds": 0.07325783100009176
+    }
+   }
+  },
+  {
+   "dataset": "titanic.csv",
+   "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+   "seed": 21,
+   "target": "Survived",
+   "train_rows": 712,
+   "test_rows": 179,
+   "excluded_columns": [
+    "PassengerId",
+    "Name",
+    "Ticket",
+    "Cabin"
+   ],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.7653631284916201,
+     "balanced_accuracy": 0.7334650856389986,
+     "concepts": 35,
+     "seconds": 1.3464695939999274,
+     "selection": {
+      "best_k": 45,
+      "best_score": -0.5073295262447916,
+      "standard_error": 0.033987811801175105,
+      "chosen_k": 35,
+      "chosen_score": -0.5391936317372109
+     },
+     "train_accuracy": 0.8174157303370787,
+     "cp": 0.8360440071655614
+    },
+    "knn5": {
+     "accuracy": 0.776536312849162,
+     "balanced_accuracy": 0.7587615283267457,
+     "seconds": 0.004804401000001235
+    },
+    "random_forest": {
+     "accuracy": 0.776536312849162,
+     "balanced_accuracy": 0.7641633728590251,
+     "seconds": 0.24478170299994417
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.7932960893854749,
+     "balanced_accuracy": 0.7777997364953887,
+     "seconds": 0.1057530670000233
+    }
+   }
+  },
+  {
+   "dataset": "GiocoSet.xlsx",
+   "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+   "seed": 42,
+   "target": "Gioco",
+   "train_rows": 80,
+   "test_rows": 20,
+   "excluded_columns": [],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.5749260449999838
+    }
+   }
+  },
+  {
+   "dataset": "GiocoSet.xlsx",
+   "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+   "seed": 7,
+   "target": "Gioco",
+   "train_rows": 80,
+   "test_rows": 20,
+   "excluded_columns": [],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.40485884300005637
+    }
+   }
+  },
+  {
+   "dataset": "GiocoSet.xlsx",
+   "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+   "seed": 21,
+   "target": "Gioco",
+   "train_rows": 80,
+   "test_rows": 20,
+   "excluded_columns": [],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.45383537900011106
+    }
+   }
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+   "seed": 42,
+   "target": "income",
+   "train_rows": 399,
+   "test_rows": 100,
+   "excluded_columns": [],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 0.64,
+     "balanced_accuracy": 0.64,
+     "concepts": 66,
+     "seconds": 9.422284682999816
+    }
+   }
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+   "seed": 7,
+   "target": "income",
+   "train_rows": 399,
+   "test_rows": 100,
+   "excluded_columns": [],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 0.7,
+     "balanced_accuracy": 0.7,
+     "concepts": 68,
+     "seconds": 8.416362423999999
+    }
+   }
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+   "seed": 21,
+   "target": "income",
+   "train_rows": 399,
+   "test_rows": 100,
+   "excluded_columns": [],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 0.69,
+     "balanced_accuracy": 0.69,
+     "concepts": 69,
+     "seconds": 9.047927740999967
+    }
+   }
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+   "seed": 42,
+   "target": "Class",
+   "train_rows": 166,
+   "test_rows": 42,
+   "excluded_columns": [],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 0.8571428571428571,
+     "balanced_accuracy": 0.8522727272727273,
+     "concepts": 34,
+     "seconds": 2.0274758890000157
+    }
+   }
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+   "seed": 7,
+   "target": "Class",
+   "train_rows": 166,
+   "test_rows": 42,
+   "excluded_columns": [],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 0.8571428571428571,
+     "balanced_accuracy": 0.8568181818181818,
+     "concepts": 31,
+     "seconds": 1.9660350740000467
+    }
+   }
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+   "seed": 21,
+   "target": "Class",
+   "train_rows": 166,
+   "test_rows": 42,
+   "excluded_columns": [],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 0.7619047619047619,
+     "balanced_accuracy": 0.7545454545454545,
+     "concepts": 35,
+     "seconds": 2.3355180179999024
+    }
+   }
+  },
+  {
+   "dataset": "titanic.csv",
+   "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+   "seed": 42,
+   "target": "Survived",
+   "train_rows": 712,
+   "test_rows": 179,
+   "excluded_columns": [
+    "PassengerId",
+    "Name",
+    "Ticket",
+    "Cabin"
+   ],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 0.8379888268156425,
+     "balanced_accuracy": 0.8195652173913044,
+     "concepts": 139,
+     "seconds": 13.018768087999888
+    }
+   }
+  },
+  {
+   "dataset": "titanic.csv",
+   "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+   "seed": 7,
+   "target": "Survived",
+   "train_rows": 712,
+   "test_rows": 179,
+   "excluded_columns": [
+    "PassengerId",
+    "Name",
+    "Ticket",
+    "Cabin"
+   ],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 0.8156424581005587,
+     "balanced_accuracy": 0.7959815546772069,
+     "concepts": 137,
+     "seconds": 14.075109732999863
+    }
+   }
+  },
+  {
+   "dataset": "titanic.csv",
+   "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+   "seed": 21,
+   "target": "Survived",
+   "train_rows": 712,
+   "test_rows": 179,
+   "excluded_columns": [
+    "PassengerId",
+    "Name",
+    "Ticket",
+    "Cabin"
+   ],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 0.7597765363128491,
+     "balanced_accuracy": 0.7532279314888011,
+     "concepts": 147,
+     "seconds": 12.884260221999966
+    }
+   }
+  },
+  {
+   "dataset": "letter.arff",
+   "sha256": "a31f2d9ad119a53e182e7371d48981982dbb2b0a5e9f0aa7b73f373857b64e2e",
+   "seed": 42,
+   "target": "class",
+   "train_rows": 16000,
+   "test_rows": 4000,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.9325,
+     "balanced_accuracy": 0.932156367355392,
+     "concepts": 476,
+     "seconds": 68.42799149300004,
+     "selection": {
+      "best_k": 554,
+      "best_score": -0.20298709295294542,
+      "standard_error": 0.015770461918480454,
+      "chosen_k": 476,
+      "chosen_score": -0.21192420678785395
+     },
+     "train_accuracy": 0.9664375,
+     "cp": 0.9350834872271215
+    },
+    "knn5": {
+     "accuracy": 0.95625,
+     "balanced_accuracy": 0.9560298843241106,
+     "seconds": 0.2519000299998879
+    },
+    "random_forest": {
+     "accuracy": 0.96725,
+     "balanced_accuracy": 0.9669564667410488,
+     "seconds": 3.305635944999949
+    },
+    "hist_gradient_boosting": {
+     "accuracy": 0.966,
+     "balanced_accuracy": 0.9657186352751693,
+     "seconds": 8.643329641000037
+    }
+   }
+  },
+  {
+   "dataset": "letter.arff",
+   "sha256": "a31f2d9ad119a53e182e7371d48981982dbb2b0a5e9f0aa7b73f373857b64e2e",
+   "seed": 7,
+   "target": "class",
+   "train_rows": 16000,
+   "test_rows": 4000,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.93475,
+     "balanced_accuracy": 0.9343981560151309,
+     "concepts": 456,
+     "seconds": 67.96131065399982,
+     "selection": {
+      "best_k": 531,
+      "best_score": -0.19292093168735103,
+      "standard_error": 0.01509089993893786,
+      "chosen_k": 456,
+      "chosen_score": -0.2051998348867224
+     },
+     "train_accuracy": 0.9625625,
+     "cp": 0.9329755426755604
+    }
+   }
+  },
+  {
+   "dataset": "letter.arff",
+   "sha256": "a31f2d9ad119a53e182e7371d48981982dbb2b0a5e9f0aa7b73f373857b64e2e",
+   "seed": 21,
+   "target": "class",
+   "train_rows": 16000,
+   "test_rows": 4000,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.933,
+     "balanced_accuracy": 0.9328998052462046,
+     "concepts": 412,
+     "seconds": 63.75936714499994,
+     "selection": {
+      "best_k": 529,
+      "best_score": -0.2015328731470438,
+      "standard_error": 0.016058882017839022,
+      "chosen_k": 412,
+      "chosen_score": -0.20968261604432434
+     },
+     "train_accuracy": 0.9620625,
+     "cp": 0.9293724128645188
+    }
+   }
+  },
+  {
+   "dataset": "letter.arff",
+   "sha256": "a31f2d9ad119a53e182e7371d48981982dbb2b0a5e9f0aa7b73f373857b64e2e",
+   "seed": 42,
+   "target": "class",
+   "train_rows": 16000,
+   "test_rows": 4000,
+   "excluded_columns": [],
+   "methods": {
+    "cp-joint-v1": {
+     "accuracy": 0.92275,
+     "balanced_accuracy": 0.9229034398884074,
+     "concepts": 1539,
+     "seconds": 351.3059461449998
+    }
+   }
+  }
+ ]
+}
