@@ -206,7 +206,8 @@ b,?,no
                    snapshots=[dict(step=7, name='saved')], status='running',
                    config=dict(total_steps=1000), checkpoint='saved', error=None)
         result = self.invoke('..lm-progress.children', [('lm-state', 'data', {'jobs':[job]}),
-                             ('lm-job', 'value', 'job')], [('lm-checkpoint', 'value', None)])
+                             ('lm-job', 'value', 'job'),('lm-history-mode','value','overview'),
+                             ('lm-history-start','value',0)], [('lm-checkpoint', 'value', None),('lm-workspace','data','a'*64)])
         figure = result['lm-loss']['figure']
         self.assertEqual(figure['layout']['shapes'][0]['y0'], 4.683)
         text = str(result['lm-progress']['children'])

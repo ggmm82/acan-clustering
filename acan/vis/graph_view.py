@@ -42,7 +42,7 @@ def navigation(graph, focus=None, page=1, include_empty=False, action=None):
     active = len(group_indices(node))
     shown = len(groups[(page-1)*PAGE_SIZE:page*PAGE_SIZE])
     path = next(option['label'] for option in options if option['value']==focus)
-    summary = (f'{path}. {active} gruppi con record assegnati, {node.k()-active} prototipi senza assegnazioni hard. '
+    summary = (f'Albero: {len(graph.clusterModel)} nodi, {sum(n.k() for n in graph.clusterModel.values())} prototipi locali complessivi (non classi globali). {path}. {active} gruppi con record assegnati, {node.k()-active} prototipi senza assegnazioni hard. '
                f'Pagina {page}/{pages}: {shown} gruppi mostrati su {len(groups)}. '
                'I prototipi senza assegnazioni hard possono comunque contribuire alle previsioni soft.')
     return options,focus,page_options,page,summary

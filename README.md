@@ -265,22 +265,36 @@ file utente.
 ### Unico nucleo CP per modello interattivo e generativo
 
 I nuovi training web usano un’unica proposta `cp-joint-v1`, identificata nei checkpoint da
-`exclusive-cp-v1`. Tabulare e generativo condividono routing, masse sul simplesso,
+`pair-supported-cp-v1`. Tabulare e generativo condividono routing, masse sul simplesso,
 statistiche, CP estesa e obiettivo NLL + lambda × (1 − CP*). Le masse esattamente zero
 definiscono gli slot inattivi; non vengono fusi prototipi né imposto un numero di gruppi.
-La scheda **Matematica** espone la formula e distingue le proprietà dimostrate dalle ipotesi.
+La scheda **Matematica** spiega prototipi, rilevanza, appartenenza, CP e gerarchia con
+esempi e limiti. Senza target si ottimizza la sola CP; con target la NLL introduce
+supervisione. Questi due compiti non devono essere confusi.
 I vecchi checkpoint e le API storiche rimangono compatibili; nuovi rami non mescolano formule diverse.
 
-**Risultati della proposta:** Gioco produce quattro concetti; Letter gerarchico completo
-sale da 91,425% a **92,025%**, con 4.339 prototipi invece di 7.391. Sul campione GUI
-scende da 90,60% a **89,00%**. Il 95,78% storico resta non riprodotto. Su sette altri file,
-63 confronti esplorativi mostrano miglioramenti e regressioni: **non è una sostituzione
-universalmente migliore**. Il training è più costoso; in decoding LM il termine quadratico
-usato per la loss viene saltato senza cambiare l’output. La qualità linguistica su LLM
-preaddestrati non è ancora dimostrata.
+**La CP ora esclude l'auto-sostegno dei singoli esempi.** La frazione di coppie
+provenienti da osservazioni diverse pesa la qualità del concetto, senza K imposto
+né regole per dataset. La stessa formula è usata nel tabulare e nei prefissi del
+linguaggio. Gioco completo, **101 righe e nessun target: 4 gruppi**, compresa la
+riga con valore mancante. Il clustering web usa l'intera popolazione caricata;
+lo split 80/20 resta per la classificazione.
+
+Letter gerarchico: **92,325%** completo, **91,05%** nel campione web, con 3.346 e
+1.387 prototipi. La versione precedente misurava 92,70% e 89,85%: migliorano
+il campione web e la dimensione del modello, mentre il completo perde 0,375 punti.
+Il 95,78% storico resta non recuperato. I confronti sugli altri file restano misti.
+La qualità linguistica su LLM preaddestrati non è ancora dimostrata.
+
+Dettagli della correzione e ricevute: [CP-PAIR-SUPPORT.md](docs/CP-PAIR-SUPPORT.md).
+I modelli precedenti restano utilizzabili in inferenza; per addestrare nuovi rami
+con la nuova CP occorre un nuovo training coerente.
 
 Formule, precisazioni dei teoremi originali, risultati completi, limiti e istruzioni per
 provare la PR dal web: [CP-SELECTION.md](docs/CP-SELECTION.md).
+Il [piano di semplificazione dell’interfaccia](docs/NEXT-UI-PR.md) è destinato alla
+prossima PR, in un run successivo; comprende classi numeriche e storico generativo
+navigabile oltre i 500 punti attualmente restituiti dal server.
 I protocolli e i risultati della versione precedente sono conservati in
 [JOINT-CP.md](docs/JOINT-CP.md) e [LETTER-DIAGNOSIS.md](docs/LETTER-DIAGNOSIS.md).
 
@@ -301,3 +315,18 @@ ultimi possono ancora contribuire alle previsioni soft. Il rendering non elimina
 o accorpa i prototipi del modello. Nel nuovo training la selezione avviene tramite le masse
 del nucleo condiviso, come descritto in [CP-SELECTION.md](docs/CP-SELECTION.md); il conteggio
 non certifica un numero semanticamente corretto di concetti su qualunque dataset.
+
+### Usare il modello e leggere il training
+
+Nella scheda Model, lasciare il target vuoto per scoprire gruppi oppure scegliere
+una colonna da prevedere come classe. Le classi numeriche, anche decimali o oltre
+20 codici, sono accettate senza passare dalle impostazioni avanzate. I controlli
+inattivi sono nascosti o disabilitati; i parametri effettivi hanno spiegazioni.
+Il riepilogo del grafo distingue i prototipi dell'albero dai gruppi del nodo.
+
+Nel generativo, **Intero percorso** mostra la panoramica dall'inizio alla fine;
+**Esamina una finestra di 500 passi** consente di leggere i punti esatti, inserire
+un passo iniziale e navigare avanti/indietro. Il polling conserva lo zoom. Per
+serie lunghe la panoramica è campionata e non garantisce di mostrare ogni picco:
+la finestra contiene le misure esatte dell'intervallo. Frontend e worker devono
+includere questo aggiornamento; i progetti esistenti non vengono riaddestrati.

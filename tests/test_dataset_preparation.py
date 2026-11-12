@@ -11,6 +11,14 @@ from acan.preprocessing import fit_features, transform_features
 OPTIONS=dict(max_depth=1,max_epochs=25,min_samples_split=5,similarity_threshold=.92,lr=.08,tau=.2,alpha=.5,device='numpy',batch_size=300)
 
 class DatasetPreparationTests(unittest.TestCase):
+    def test_unsupervised_training_retains_the_population_and_missing_cells(self):
+        frame=pd.DataFrame(dict(x=range(11),attribute=['a','b']*5+[None]))
+        train,validation,info=split_for_training(frame,[])
+        self.assertEqual(len(train),11)
+        self.assertTrue(validation.empty)
+        self.assertEqual(train.attribute.isna().sum(),1)
+        self.assertEqual(info['excluded_missing_targets'],0)
+
     def test_arff_decodes_categories_accepts_whitespace_and_keeps_missing_indicators(self):
         import json
         raw=b"""@relation fixture
