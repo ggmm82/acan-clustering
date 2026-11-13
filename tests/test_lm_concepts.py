@@ -72,7 +72,7 @@ class ConceptAttentionTests(unittest.TestCase):
         model = ConceptModel()
         model.labels = []
         model.encoder = type('E', (), dict(numeric=list('abcde'), categorical=[], width=0))()
-        model.root_p = np.zeros(0)
+        model.root_p = model.root_g = np.zeros(0)
         s = model._statistics(t, (x, np.ones_like(x), np.zeros((40, 0))))
         first, second = np.triu_indices(6, 1)
         table = model._pair_costs(s, first, second)            # reads received by a concept of a table: its mass
@@ -81,9 +81,8 @@ class ConceptAttentionTests(unittest.TestCase):
                      A=tensor(s['C']), root=torch.ones(1, 1, 5, dtype=torch.float64))
         attention = reader_costs(state, 0.)[0, 0].numpy()      # rate = A/(now-position+1) = mass
         floor = s['C'].mean()*1e-3+1e-12
-        radius = model._radius(s['Cm'], s['U'], s['Q'], s['N'])
-        together = model._radius(s['Cm'][first]+s['Cm'][second], s['U'][first]+s['U'][second],
-                                 s['Q'][first]+s['Q'][second], s['N'][first]+s['N'][second])
+        radius = model._radius(s)
+        together = model._radius({key: value[first]+value[second] for key, value in s.items()})
         expected = reader_cost(s['C'][first]+floor, radius[first], s['C'][second]+floor, radius[second], together)
         np.testing.assert_allclose(attention[first, second], expected, rtol=1e-9, atol=1e-9)
         np.testing.assert_allclose(table, expected, rtol=5e-3)   # identical but for the floor on the reads

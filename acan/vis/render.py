@@ -444,6 +444,13 @@ orgChartData=cyto.Cytoscape(
                 'target-arrow-shape': 'triangle'
             }
         },
+        {'selector': '.level-concept', 'style': {
+            'shape': 'round-rectangle', 'width': 120, 'height': 54, 'background-color': '#e0e7ff',
+            'font-size': 12, 'font-weight': 'bold', 'text-wrap': 'wrap', 'text-max-width': 112,
+            'text-valign': 'center', 'text-halign': 'center', 'label': 'data(label)',
+            'border-width': 2, 'border-color': '#4338ca'}},
+        {'selector': '.level-edge', 'style': {'line-color': '#6366f1', 'width': 'data(strength)', 'curve-style': 'bezier',
+                                              'target-arrow-shape': 'triangle', 'target-arrow-color': '#6366f1', 'opacity': .7}},
         {'selector': '.concept-edge', 'style': {'line-color': '#d97706', 'line-style': 'dashed', 'width': 'data(strength)', 'curve-style': 'unbundled-bezier', 'target-arrow-shape': 'none', 'opacity': .75}},
             {
                 'selector': '.directed',

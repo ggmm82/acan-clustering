@@ -40,10 +40,24 @@ conserva prodotti fra attributi diversi: memoria e tempo sono lineari nel
 numero di attributi e nel numero di osservazioni, e quadratici soltanto nel
 numero di concetti durante la generalizzazione.
 
-Un **arco** collega due concetti fra cui qualche osservazione esita:
-$E_{il}=\frac1n\sum_tT_{it}T_{lt}$ sulle due appartenenze maggiori di ogni
-osservazione. Gli archi sono la struttura ispezionabile di ciò che è stato
-appreso; sono salvati con il modello e mostrati nel grafo dell'app.
+Un **arco** collega due concetti dello stesso livello fra cui qualche
+osservazione esita: $E_{il}=\frac1n\sum_tT_{it}T_{lt}$ sulle due appartenenze
+maggiori di ogni osservazione.
+
+I concetti sono disposti in **livelli**. La radice è la tabella intera. Il
+livello 1 contiene i concetti generali; ogni livello successivo contiene i
+comportamenti particolari, cioè ciò che è distinto solo dopo aver tolto quello
+che il livello sopra già spiega. Due livelli consecutivi sono uniti da una
+**matrice densa**
+
+$$
+P^{(\ell)}_{pi}=\frac{\sum_tT^{(\ell-1)}_{pt}\,T^{(\ell)}_{it}}{\sum_tT^{(\ell)}_{it}}
+=\Pr(\text{concetto }p\text{ del livello sopra}\mid\text{concetto }i),
+$$
+
+quindi un concetto può discendere da più concetti del livello sopra: il grafo
+non è un albero. Livelli, matrici e archi sono salvati con il modello e
+mostrati nell'app.
 
 ## 2. Tre operazioni
 
@@ -66,7 +80,60 @@ con $a_i$ le letture ricevute dal concetto e $\sigma_j$ la scala della radice.
 
 **Giudicare.** Un concetto è valutato solo su osservazioni che non contiene:
 $J=\frac1n\sum_t\log p^{(-t)}(y_t\mid z_t)$, con $p^{(-t)}$ ottenuta sottraendo
-il contributo di $t$ dalle somme.
+il contributo di $t$ dalle somme. Senza target ogni attributo è letto a turno
+dagli altri, come quando si completa una tabella.
+
+### Livelli: ogni livello è il contesto del successivo
+
+La radice standardizza la tabella: toglie la media e divide per la deviazione.
+Un livello fa lo stesso per il livello sotto, con il centro e la dispersione
+del concetto di ogni osservazione:
+
+$$
+z'_t=z_t-\sum_pT^{(\ell)}_{pt}\,g_p,\qquad
+\sigma'^2_{tj}=\sum_pT^{(\ell)}_{pt}\,s^2_{pj}.
+$$
+
+Sul livello sotto operano le stesse tre operazioni, sulla tabella $z'$ e con
+scala $\sigma'$ al posto della scala della radice. Le somme in più che un
+concetto conserva sono le somme della scala dei propri membri: restano
+additive e lineari negli attributi. Per gli attributi categorici il contesto
+dà frequenze e impurità del concetto sopra (non c'è un centro da togliere).
+
+Quanto un livello aggiunge al livello sopra si misura con il **criterio a
+coppie** (la CP quadratica):
+
+$$
+CP^\circ=\frac1{n(n-1)}\sum_iC_i(C_i-1)\Bigl(1-\frac1m\sum_j\frac{\hat s^2_{ij}}{\bar\sigma'^2_{ij}}\Bigr),
+$$
+
+la media, su tutte le coppie di osservazioni, di «stesso concetto» per
+somiglianza centrata sulla coppia media del livello sopra ($\hat s^2$ è la
+dispersione stimata sulle coppie di membri distinti, $\bar\sigma'^2_{ij}$ la
+scala media dei membri; la somiglianza è limitata fra $-1$ e $1$).
+
+Come si scelgono i livelli:
+
+1. **Livello 1.** Lungo la generalizzazione, il taglio con $CP^\circ$ massimo
+   sulla scala della radice; fra tagli a meno del 5% dal massimo, quello con
+   meno concetti. Se nessun taglio è positivo, c'è un solo concetto.
+2. **Seconda ricerca.** La stessa generalizzazione sulla tabella vista
+   attraverso il livello 1 ($z'$, $\sigma'$).
+3. **Livello di lavoro.** Fra tutti i passi delle due ricerche che leggono le
+   osservazioni non viste entro un errore standard dal migliore, quello con
+   meno nodi nel grafo.
+4. **Livelli intermedi.** Lungo la generalizzazione che ha prodotto il livello
+   di lavoro, il massimo di $CP^\circ$ contro il livello corrente, poi contro
+   quello appena scelto, e così via. Ci si ferma quando il massimo è sotto il
+   5% di quello del livello 1, o quando il livello, come descrizione della
+   tabella, non legge le osservazioni non viste meglio del livello sopra.
+5. **Pari merito.** Un livello intermedio le cui coppie non sono più simili
+   nel livello di lavoro (meno del 5%) non è un livello distinto. Senza target
+   nient'altro giustifica il livello di lavoro: se è in pari con il livello
+   sopra, il livello sopra prende il suo posto.
+
+Le due tolleranze (5% per i pari merito, $10^{-6}$ di varianza standardizzata
+per «attributo costante») sono le uniche costanti della costruzione.
 
 ## 3. Proposizioni
 
@@ -114,6 +181,31 @@ $r_{ij}=1-s_{ij}^2/\sigma_j^2$ ha media $\eta_j^2\in[0,1]$, la frazione di
 variabilità spiegata; $CP=\sqrt{\frac1m\sum_j\eta_j^2}$ è riportata, non
 ottimizzata. Sugli attributi categorici coincide con la Category Utility.
 
+**M8 (un livello non aggiunge nulla a sé stesso).** Misurato contro il
+contesto dato da sé stesso, un livello ha $CP^\circ=0$; così un solo concetto
+e i concetti di una sola osservazione. *Dimostrazione.* Tolto il proprio
+centro, la dispersione di un concetto è la sua dispersione, che è la scala che
+esso stesso dà ai propri membri: ogni rapporto vale uno. Con un membro non ci
+sono coppie. ∎ Dividere a caso un concetto dà valore atteso nullo, perché
+$\hat s^2$ è stimata sulle coppie. *Verifica:* `tests/test_concept_graph.py`.
+Il criterio ha un solo massimo interno lungo una generalizzazione e non si
+ferma da solo ([CONCEPT-GRAPH.md](CONCEPT-GRAPH.md), G3 e G6): per questo
+l'arresto è affidato al giudizio.
+
+**M9 (un comportamento condiviso è un solo nodo).** Se le osservazioni sono
+$z=g_p+\delta_b+\varepsilon$, con $K_1$ concetti generali e $K_2$ scostamenti
+che si ripetono in più concetti generali, nella tabella $z'$ le osservazioni
+con lo stesso scostamento hanno lo stesso centro qualunque sia $p$. Il livello
+sotto ha quindi $K_2$ concetti, ciascuno con più genitori, e il grafo ha
+$K_1+K_2$ nodi dove un albero ne ha $K_1K_2$. *Verifica:* due famiglie con gli
+stessi tre gruppi interni danno i livelli 2 e 3 (con un livello intermedio di
+2), e la matrice verso le famiglie vale $\tfrac12$ in ogni cella; un albero
+darebbe sei frammenti.
+
+**M10 (le matrici conservano la massa).** Ogni colonna di $P^{(\ell)}$ somma a
+uno e $P^{(\ell)}m^{(\ell)}=m^{(\ell-1)}$, con $m$ le masse dei concetti. La
+discendenza attraverso più livelli è il prodotto delle matrici.
+
 **M7 (limite).** Uno stato di $P$ numeri a $b$ bit non può restituire
 esattamente più di $Pb$ bit del passato. Un numero fisso di concetti è una
 compressione con perdita; la perdita è quella limitata da M3.
@@ -128,6 +220,7 @@ problema, non dal modello.
 | letture ricevute $a_i$ | la massa $C_i$ | attenzione ricevuta dalle query passate | in una tabella ogni riga legge i concetti a cui appartiene |
 | quanti concetti | scelti dal giudizio, con la regola dell'errore standard | fissati dalla memoria disponibile | nel linguaggio la memoria è la risorsa da limitare |
 | riassegnazione dei membri | sì | no | il passato di una sequenza non si rilegge |
+| livelli | scelti dal criterio a coppie | due: i concetti del prefisso e, sotto, la finestra esatta in cui ogni token è un concetto | i livelli intermedi nell'attenzione non sono stati realizzati |
 | varianza nel riconoscere | predittiva (M1) | ordine zero | i membri di un concetto di attenzione sono dati memorizzati, non un campione |
 
 Nell'attenzione i concetti riassumono le chiavi prima della rotazione di
@@ -139,7 +232,8 @@ un'approssimazione, non coperta da M3.
 | Tolto | Motivo |
 |---|---|
 | Covarianza fra attributi dentro il concetto | costo cubico nel numero di attributi. Su Letter dava 97,8% contro 93,6%: la qualità persa è nota e accettata |
-| Livelli automatici costruiti dall'alto | una seconda struttura, con un secondo adattamento per ogni concetto; sui dati reali provati non veniva quasi mai adottata |
+| Livelli costruiti dall'alto, un sottomodello per concetto | frammentavano: lo stesso comportamento veniva riscoperto sotto ogni concetto, con meno dati ogni volta. I livelli ora sono dello stesso modello (sezione 2) e un comportamento condiviso è un solo nodo (M9) |
+| Albero di tagli sopra i concetti (`acan/core/graph.py`) | era un albero: un concetto aveva un solo genitore. Sostituito dai livelli con matrici dense |
 | Punteggi normali | toglievano i concetti spurii con rumore uniforme e cancellavano i vuoti fra gruppi separati |
 | Fusione per lunghezza di descrizione | sostituita dall'unico costo del lettore, con risultati equivalenti sul tabulare e migliori nell'attenzione |
 | Termine di varianza e smorzamento di fase nell'attenzione | misurati: il primo peggiora, il secondo non cambia nulla |
@@ -147,11 +241,15 @@ un'approssimazione, non coperta da M3.
 ## 6. Ciò che il modello non fa
 
 - Non rappresenta relazioni fra attributi dentro un concetto: gruppi allungati
-  in diagonale richiedono più concetti.
-- A un solo livello non separa gruppi molto vicini rispetto alla scala della
-  tabella; l'approfondimento resta manuale.
-- Senza target non garantisce il numero di concetti quando il rumore non è
-  gaussiano.
-- Nell'attenzione i concetti sono per testa: gli archi fra concetti non
-  attraversano teste e layer.
+  in diagonale richiedono più concetti (Letter: 93,6% contro 97,8% con la
+  covarianza, che ha costo cubico ed è stata tolta).
+- Il criterio a coppie preferisce concetti grandi: gruppi adiacenti lungo una
+  direzione compaiono prima uniti e sono separati al livello successivo.
+- Il contesto di un livello toglie il centro solo agli attributi numerici; per
+  i categorici dà frequenze e impurità.
+- I livelli sono scelti, non garantiti: con poche osservazioni il loro numero
+  cambia con il seme.
+- Nell'attenzione i concetti sono per testa e a un solo livello sopra la
+  finestra esatta: livelli intermedi e archi fra teste e layer non sono
+  realizzati.
 - Con compressione, e senza addestramento, non eguaglia l'attenzione densa.

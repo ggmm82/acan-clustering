@@ -1,11 +1,9 @@
-import itertools
 import unittest
 
 import numpy as np
 import pandas as pd
 
-from acan.core.concepts import ConceptMixture
-from acan.core.graph import ConceptGraph
+from acan.core.concepts import ConceptModel, Encoder
 
 
 def nested(seed=0, rows=40):
@@ -17,108 +15,118 @@ def nested(seed=0, rows=40):
     return pd.DataFrame(dict(a=x[:, 0], b=x[:, 1], noise=rng.normal(size=len(group)))), group
 
 
-class ConceptGraphTest(unittest.TestCase):
-    def fit(self, frame, labels):
-        """Leaves given by a hard assignment, so the test does not depend on a search."""
-        from acan.core.concepts import Encoder
-        model = ConceptMixture()
+def shared(seed=0, rows=60):
+    """Two families that differ in ``family``; the same two behaviours (``mode``) occur in both."""
+    rng = np.random.default_rng(seed)
+    family, mode = np.repeat([0, 1], 2*rows), np.tile(np.repeat([0, 1], rows), 2)
+    return pd.DataFrame(dict(family=family*10+rng.normal(0, .3, 4*rows), other=family*10+rng.normal(0, .3, 4*rows),
+                             mode=mode*1.5+rng.normal(0, .1, 4*rows), again=mode*1.5+rng.normal(0, .1, 4*rows))), family, mode
+
+
+class ConceptLevelsTest(unittest.TestCase):
+    def given(self, frame):
+        model = ConceptModel()
         model.labels, model.encoder = [], Encoder().fit(frame)
-        model.root_p = np.zeros(0)
-        data = model.encoder.transform(frame)
-        weights = model._weights(1.)
-        statistics = model._statistics(np.eye(labels.max()+1)[labels], data)
-        return model, ConceptGraph(model, statistics, weights)
+        model.root_p = model.root_g = np.zeros(0)
+        return model, model.encoder.transform(frame), model._weights(1.)
 
-    def halves(self, group, seed=0):
-        return group*2+np.random.default_rng(seed).integers(0, 2, len(group))
-
-    def test_levels_are_nested_and_additive(self):
+    def test_general_concepts_then_particular_behaviours(self):
         frame, group = nested()
-        model, graph = self.fit(frame, self.halves(group))        # twelve leaves: every true group arbitrarily halved
-        for node in range(graph.leaves, graph.root+1):
-            below = graph.members(node)
-            for key in graph.keys:
-                np.testing.assert_allclose(graph.s[key][node], graph.s[key][below].sum(0), rtol=1e-9, atol=1e-9)
-        levels = graph.levels()
-        self.assertEqual(levels[0]['concepts'], 2)                # the two families: finer groups are below the resolution of the root
-        self.assertGreater(levels[1]['concepts'], 2)              # finer levels exist below the two families
-        self.assertLess(levels[0]['pair_criterion'], .5)
-        for coarse, fine in zip(levels, levels[1:]):
-            cover = [set(graph.members(node)) for node in coarse['nodes']]
-            for node in fine['nodes']:
-                self.assertEqual(sum(set(graph.members(node)) <= part for part in cover), 1)
-        self.assertEqual(sorted(leaf for node in levels[-1]['nodes'] for leaf in graph.members(node)), list(range(graph.leaves)))
+        model = ConceptModel(seed=0).fit(frame)
+        self.assertGreaterEqual(len(model.levels), 2)
+        self.assertEqual(model.levels[0]['concepts'], 2)             # the families: all that is distinct at the scale of the root
+        family = model._route(model.levels[0]['statistics'], model.encoder.transform(frame), model.train_weights)[0].argmax(1)
+        self.assertEqual(len(set(zip(family, group//3))), 2)         # level 1 never mixes the two families
+        # The three groups are placed in the same way inside both families: seen through the
+        # families they are three behaviours, not six fragments, and each descends from both.
+        self.assertEqual(model.levels[-1]['concepts'], 3)
+        concept = model.assignments(frame, observed_only=False).argmax(1)
+        self.assertEqual(len(set(zip(concept, group % 3))), 3)       # a behaviour never mixes two placements
+        descent = model.levels[1]['parents']                          # P(family | behaviour), through the levels between
+        for level in model.levels[2:]:
+            descent = descent@level['parents']
+        np.testing.assert_allclose(descent, .5, atol=.05)
+        self.assertTrue(all(level['pair_criterion'] > 0 for level in model.levels))
 
-    def test_cut_is_the_best_partition_of_the_subtree(self):
-        frame, group = nested(seed=1, rows=12)
-        model, graph = self.fit(frame, self.halves(group)[:len(frame)] % 7)
-        chosen, value = graph._cut(graph.root)
+    def test_levels_are_joined_by_dense_matrices(self):
+        frame, _ = nested(seed=1)
+        model = ConceptModel(seed=0).fit(frame)
+        for above, level in zip(model.levels, model.levels[1:]):
+            self.assertEqual(level['parents'].shape, (above['concepts'], level['concepts']))
+            np.testing.assert_allclose(level['parents'].sum(0), 1, atol=1e-9)        # P(parent | concept)
+            np.testing.assert_allclose(level['parents']@level['mass'], above['mass'], atol=1e-6)   # mass flows up exactly
+        self.assertIsNone(model.levels[0]['parents'])
+        self.assertAlmostEqual(sum(model.levels[-1]['mass']), 1.)
 
-        def partitions(node):
-            yield [node]
-            if graph.left[node] >= 0:
-                for a, b in itertools.product(partitions(graph.left[node]), partitions(graph.right[node])):
-                    yield a+b
-        from acan.concept_algebra import pair_mass
-        score = lambda nodes: float((pair_mass(graph.s['C'][nodes], np)*graph.relevance(np.asarray(nodes), graph.root)).sum())
-        best = max(score(part) for part in partitions(graph.root) if part != [graph.root])
-        self.assertAlmostEqual(value, best, places=9)
-        self.assertAlmostEqual(score(chosen), best, places=9)
-        self.assertAlmostEqual(score([graph.root]), 0., places=9)  # one concept explains nothing about itself
+    def test_one_behaviour_found_in_two_families_is_one_concept_with_two_parents(self):
+        frame, family, mode = shared()
+        model, data, weights = self.given(frame)
+        # Level 1: the two families. Level 2, on the scale of the families: the two behaviours.
+        families = model._statistics(np.eye(2)[family], data)
+        scale = model._context(families, data, weights, hard=True)
+        behaviours = model._statistics(np.eye(2)[mode], scale)
+        fragments = model._statistics(np.eye(4)[2*family+mode], scale)        # a tree: each behaviour once per family
+        # The pair criterion against the level above prefers one node per behaviour to its fragments.
+        self.assertGreater(model.pair_criterion(behaviours), model.pair_criterion(fragments))
+        parents = (np.eye(2)[family].T@np.eye(2)[mode])/np.eye(2)[mode].sum(0)
+        np.testing.assert_allclose(parents, .5)                               # each behaviour descends from both families
 
-    def test_a_level_without_support_falls_back_on_its_parent(self):
-        frame, group = nested()
-        model, graph = self.fit(frame, self.halves(group))
-        g, v, _ = graph.parameters()
-        self.assertTrue((v > 0).all() and np.isfinite(v).all())
-        parent = {child: node for node, kids in graph.children.items() for child in kids}
-        leaf = 0
-        for key in graph.keys:
-            graph.s[key][leaf] = graph.s[key][leaf]*1e-9             # no evidence of its own
-        _, weak, _ = graph.parameters()
-        up = parent[leaf]
-        if up == graph.root:
-            expected = np.ones(v.shape[1])
-        else:
-            chain, node = [], up
-            while node != graph.root:
-                chain.append(node); node = parent[node]
-            from acan.concept_algebra import centre_variance
-            expected = np.ones(v.shape[1])
-            for node in reversed(chain):
-                _, expected = centre_variance(graph.s['Cm'][node], graph.s['U'][node], graph.s['Q'][node], expected, model.kappa, np)
-        np.testing.assert_allclose(weak[leaf], expected, rtol=1e-6)
+    def test_a_level_adds_nothing_to_itself(self):
+        frame, group = nested(seed=2)
+        model, data, weights = self.given(frame)
+        level = model._statistics(np.eye(6)[group], data)
+        scale = model._context(level, data, weights, hard=True)
+        own = model._hard(model._route(level, data, weights)[0])              # the level as a partition
+        self.assertAlmostEqual(model.pair_criterion(model._statistics(own, scale)), 0., places=9)
+        self.assertGreater(model.pair_criterion(level), 0)                    # against the root it is a level
+        halves = group*2+np.random.default_rng(0).integers(0, 2, len(group))  # arbitrary halves of every group
+        self.assertLess(abs(model.pair_criterion(model._statistics(np.eye(12)[halves], scale))), .01)
 
-
-if __name__ == '__main__':
-    unittest.main()
+    def test_statistics_of_the_level_above_are_additive(self):
+        frame, group = nested(seed=3)
+        model, data, weights = self.given(frame)
+        families = model._statistics(np.eye(2)[group//3], data)
+        scale = model._context(families, data, weights, hard=True)
+        fine, coarse = model._statistics(np.eye(6)[group], scale), model._statistics(np.eye(2)[group//3], scale)
+        for key in fine:
+            np.testing.assert_allclose(fine[key].reshape(2, 3, -1).sum(1), coarse[key].reshape(2, -1), rtol=1e-9, atol=1e-9)
+        # A concept without members of its own takes the scale of the level above.
+        empty = {key: value[:1]*1e-6 for key, value in fine.items()}
+        np.testing.assert_allclose(model._parameters(empty)[1], model._prior(fine)[0][:1], rtol=1e-3)
 
 
 class SavedGraphTest(unittest.TestCase):
-    def test_application_saves_nodes_edges_and_levels(self):
+    def test_application_saves_levels_matrices_and_edges(self):
         from acan import GraphClusterModel
+        from acan.vis import graph_view
         from acan.vis.inference import infer
         from acan.vis.training import train_native
         options = dict(lr=.08, tau=.2, alpha=.5, device='numpy', batch_size=300, max_depth=3, max_epochs=100,
                        min_samples_split=12, similarity_threshold=.92, routing_profile='concept-graph-v1')
-        rng = np.random.default_rng(0)
-        centre = np.repeat(np.arange(4), 60)
-        frame = pd.DataFrame(dict(x=centre*2+rng.normal(0, .6, 240), noise=rng.normal(size=240)))
-        frame['kind'] = np.asarray(list('abab'))[centre]
+        frame, group = nested()
+        frame['kind'] = np.asarray(list('abcabc'))[group]             # the same three kinds in both families
         graph = train_native(frame, ['kind'], options)
         root = graph.clusterModel[graph.rootId]
         state = root.routing_parameters
         self.assertEqual(root.routing_profile, 'concept-graph-v1')
-        self.assertTrue(state['edges'] and all(0 <= edge['first'] < edge['second'] < root.k() for edge in state['edges']))
-        levels = state['pair_levels']
-        self.assertTrue(levels)
-        for level in levels:                                        # every level is a partition of the concepts
-            self.assertEqual(sorted(i for group in level['members'] for i in group), list(range(root.k())))
+        self.assertTrue(all(0 <= edge['first'] < edge['second'] < root.k() for edge in state['edges']))
+        levels = state['levels']
+        self.assertGreaterEqual(len(levels), 2)
+        self.assertEqual(levels[-1]['concepts'], root.k())
+        for above, level in zip(levels, levels[1:]):
+            parents = np.asarray(level['parents'])
+            self.assertEqual(parents.shape, (above['concepts'], level['concepts']))
+            np.testing.assert_allclose(parents.sum(0), 1, atol=1e-3)
+        drawn = graph_view.elements(graph)
+        classes = [element.get('classes', '') for element in drawn]
+        self.assertEqual(classes.count('level-concept'), sum(level['concepts'] for level in levels[:-1]))
+        self.assertIn('level-edge', classes)
+        self.assertIn('livello 1', graph_view.navigation(graph)[4])
         payload = graph.to_json()
-        predicted = infer(payload, frame.drop(columns=['kind']).assign(kind=np.nan).iloc[:40], 'complete')['kind']
-        self.assertGreater((predicted.astype(str).to_numpy() == frame.kind.iloc[:40].to_numpy()).mean(), .8)
-        self.assertEqual(GraphClusterModel.loadModel(payload).clusterModel[graph.rootId].routing_parameters['edges'],
-                         state['edges'])
+        predicted = infer(payload, frame.drop(columns=['kind']).assign(kind=np.nan).iloc[::6], 'complete')['kind']
+        self.assertGreater((predicted.astype(str).to_numpy() == frame.kind.iloc[::6].to_numpy()).mean(), .8)
+        self.assertEqual(GraphClusterModel.loadModel(payload).clusterModel[graph.rootId].routing_parameters['levels'],
+                         levels)
 
 
 if __name__ == '__main__':

@@ -23,6 +23,7 @@ class ConceptMixtureTest(unittest.TestCase):
         # The count is never given. Uniform noise is fitted slightly better by extra
         # Gaussians, so one or two surplus concepts can pass the one-standard-error
         # rule (documented limit); the four combinations must never be mixed.
+        self.assertEqual(model.levels[0]['concepts'], 4)             # the general concepts are the four combinations
         self.assertTrue(4 <= model.concepts <= 6)
         concept = model.assignments(frame, observed_only=False).argmax(1)
         table = pd.crosstab([frame.weather, frame.place], concept)
@@ -58,14 +59,18 @@ class ConceptMixtureTest(unittest.TestCase):
         centre = np.repeat(np.arange(4.), 60)                            # four groups in a row: 0-1-2-3
         frame = pd.DataFrame(dict(x=centre*2+rng.normal(0, .6, 240), noise=rng.normal(size=240)))
         model = ConceptMixture(seed=0).fit(frame)
-        centres = model._parameters(model.statistics)[0]
+        membership = model.assignments(frame, observed_only=False)
+        table = model._statistics(membership, model.encoder.transform(frame))
+        centres = table['U']/table['Cm']                                 # in the units of the table
         distance = np.sqrt(((centres[:, None]-centres[None])**2).sum(-1))
         self.assertTrue(model.edges)
         strongest = max(model.edges, key=lambda edge: edge[2])
         typical = np.median(distance[np.triu_indices(model.concepts, 1)])
         self.assertLess(distance[strongest[0], strongest[1]], typical)    # neighbours, not distant groups
         self.assertTrue(all(first < second and weight > 0 for first, second, weight in model.edges))
-        self.assertFalse(any(key not in ('C', 'Cm', 'U', 'Q', 'N') for key in model.statistics))   # linear in the attributes
+        # Linear in the attributes: sums of values, squares and counts, and of the scale of the level above.
+        self.assertFalse(any(key not in ('C', 'Cm', 'U', 'Q', 'N', 'PV', 'PP', 'PG') for key in model.statistics))
+        self.assertTrue(all(value.ndim <= 2 for value in model.statistics.values()))
 
     def test_missing_attributes_are_marginalized(self):
         train = game(seed=4)
@@ -81,11 +86,13 @@ class ConceptMixtureTest(unittest.TestCase):
         frame = game(40)
         model = ConceptMixture(seed=0).fit(frame)
         data = model.encoder.transform(frame)
-        own = {key: value.copy() for key, value in model.statistics.items()}
         rows = np.arange(len(frame))
-        seen = model._route(own, data, model.train_weights)[1]
-        unseen = model._score(own, data, model.train_weights, rows)
-        self.assertLess(unseen.mean(), seen.mean())                      # no self-support
+        one = model._statistics(np.ones((len(frame), 1)), data)
+        each = model._statistics(np.eye(len(frame)), data)               # every row is its own concept
+        seen = model._route(each, data, model.train_weights)[1]
+        self.assertGreater(seen.mean(), model._route(one, data, model.train_weights)[1].mean())   # memorizing fits
+        unseen = model._score(each, data, model.train_weights, rows)
+        self.assertLess(unseen.mean(), model._score(one, data, model.train_weights, rows).mean())  # and reads nothing
 
 
 if __name__ == '__main__':

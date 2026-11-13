@@ -60,7 +60,6 @@ def attribute_blocks(learner):
 
 def train(learner, epochs):
     """Fit the concept graph on the encoded table and fill one node of the application's graph."""
-    from .graph import ConceptGraph
     x = learner.full_dataset.to_numpy(dtype=np.float64)
     blocks = attribute_blocks(learner)
     encoder = MatrixEncoder(learner.cols, blocks, x)
@@ -89,10 +88,12 @@ def train(learner, epochs):
         gain = ((p-root)**2).sum(1)/impurity if impurity > 1e-12 else np.zeros(k)
         relevance[:, indices] = np.clip(gain, 0, 1)[:, None]
     data = encoder.transform(x)
-    full_t = model._route(s, data, model.train_weights)[0]
-    view_t = model._route(s, encoder.transform(learner.NormDataset), model.train_weights)[0].T
+    full_t = model._route(s, model._seen(data)[0], model.train_weights)[0]
+    view_t = model._route(s, model._seen(encoder.transform(learner.NormDataset))[0], model.train_weights)[0].T
+    # Prototypes are shown in the units of the table, whatever level the concepts are seen through.
+    table = model._statistics(full_t, data)
+    groups[:, encoder.numeric_index] = table['U']/np.maximum(table['Cm'], 1e-12)*encoder.std+encoder.mean
     explained = model.explained_variance(x)
-    graph = ConceptGraph(model, s, model.train_weights) if k > 1 else None
     learner.k = k
     learner.Groups, learner.Relevance = groups, relevance
     learner.Transformation = view_t
@@ -114,16 +115,40 @@ def train(learner, epochs):
         numeric_targets=[learner.cols.index(label) for label in learner.labels if label in learner.cols],
         numeric_readout='weighted-training-mean',
         edges=[dict(first=i, second=j, weight=w) for i, j, w in model.edges],
-        pair_levels=[dict(depth=level['depth'], concepts=level['concepts'], pair_criterion=level['pair_criterion'],
-                          members=[list(map(int, graph.members(node))) for node in level['nodes']])
-                     for level in graph.levels()] if graph else [],
+        levels=[_level(model, encoder, level) for level in model.levels],
         explained={name: value for name, value in explained.items() if name != 'CP'},
+        # The level through which the concepts read a row (None when they read the table directly).
+        context=None if model.above is None else _recognition(model, encoder, model.above, feature_numeric, feature_blocks),
+        **_recognition(model, encoder, s, feature_numeric, feature_blocks))
+    return learner.setModel()
+
+
+def _recognition(model, encoder, s, feature_numeric, feature_blocks):
+    """What is needed to recognize the concepts of a level from the observed features of a row."""
+    g, v, log_p = model._parameters(s)
+    shift = s['U']/np.maximum(s['Cm'], 1e-12)                      # the centre this level takes away from its rows
+    return dict(
         log_prior=np.log(s['C']/s['C'].sum()).tolist(),
         numeric=[dict(column=encoder.numeric_index[j], mean=float(encoder.mean[j]), std=float(encoder.std[j]),
-                      centre=g[:, j].tolist(), variance=v[:, j].tolist()) for j in feature_numeric],
+                      centre=g[:, j].tolist(), variance=v[:, j].tolist(), shift=shift[:, j].tolist()) for j in feature_numeric],
         blocks=[dict(name=name, columns=encoder.blocks[name], log_probability=log_p[:, encoder.block(name)].tolist())
                 for name in feature_blocks])
-    return learner.setModel()
+
+
+def _level(model, encoder, level):
+    """One level of the graph as it is saved: its concepts and the dense matrix towards the level above."""
+    _, _, log_p = model._parameters(level['statistics'])
+    reads = []
+    for name in encoder.categorical:
+        if name in model.labels:
+            columns = [str(encoder.columns[index]) for index in encoder.blocks[name]]
+            values = [column[len(name)+1:] if column.startswith(name+'_') else column for column in columns]
+            reads.append([f'{name}: {values[place]}' for place in log_p[:, encoder.block(name)].argmax(1)])
+    return dict(depth=level['depth'], concepts=level['concepts'], pair_criterion=float(level['pair_criterion']),
+                mass=np.round(level['mass'], 6).tolist(),
+                reads=['\n'.join(parts) for parts in zip(*reads)] if reads else [],
+                # parents[i][j] = P(concept i of the level above | concept j): every column sums to one
+                parents=None if level['parents'] is None else np.round(level['parents'], 4).tolist())
 
 
 def predict_assignments(model, rows, cix):
@@ -131,11 +156,21 @@ def predict_assignments(model, rows, cix):
     state = model.routing_parameters
     rows = np.asarray(rows, float)
     position = {index: place for place, index in enumerate(cix)}
+    shift = None
+    if state.get('context'):                                     # recognize the level above, take its centre away
+        above = _posterior(state['context'], rows, position)
+        shift = {attribute['column']: above@np.asarray(attribute['shift']) for attribute in state['context']['numeric']}
+    return _posterior(state, rows, position, shift).T
+
+
+def _posterior(state, rows, position, shift=None):
     logits = np.repeat(np.asarray(state['log_prior'])[None], len(rows), axis=0)
     for attribute in state['numeric']:
         if attribute['column'] not in position:
             continue
         z = (rows[:, position[attribute['column']]]-attribute['mean'])/attribute['std']
+        if shift is not None:
+            z = z-shift[attribute['column']]
         centre, variance = np.asarray(attribute['centre']), np.asarray(attribute['variance'])
         logits = logits-.5*((z[:, None]-centre)**2/variance+np.log(variance)+LOG_2PI)
     for block in state['blocks']:
@@ -146,7 +181,7 @@ def predict_assignments(model, rows, cix):
             if column in position:
                 onehot[:, place] = rows[:, position[column]] > .5
         logits = logits+onehot@np.asarray(block['log_probability']).T
-    return _softmax(logits)[0].T
+    return _softmax(logits)[0]
 
 
 def predict(model, row, cix):
