@@ -73,6 +73,9 @@ def main():
                 model = ConceptModel(seed=seed).fit(train, labels)
                 predicted = model.predict(test, target)
                 run['methods']['concept-graph'] = dict(metrics(truth, predicted), concepts=model.concepts, edges=len(model.edges),
+                    levels=[dict(concepts=level['concepts'], pair_criterion=level['pair_criterion'],
+                                 several_parents=None if level['parents'] is None else
+                                 float(((level['parents'] > .1).sum(0) > 1).mean())) for level in model.levels],
                     seconds=time.monotonic()-started, selection=model.selection,
                     train_accuracy=float(accuracy_score(train[target].astype(str), model.predict(train, target))),
                     cp=model.explained_variance(train)['CP'])

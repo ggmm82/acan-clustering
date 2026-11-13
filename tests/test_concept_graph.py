@@ -120,6 +120,8 @@ class SavedGraphTest(unittest.TestCase):
         drawn = graph_view.elements(graph)
         classes = [element.get('classes', '') for element in drawn]
         self.assertEqual(classes.count('level-concept'), sum(level['concepts'] for level in levels[:-1]))
+        shifted = min(element['position']['y'] for element in drawn if element.get('classes', '').startswith('local-group'))
+        self.assertGreater(shifted, max(element['position']['y'] for element in drawn if element.get('classes') == 'level-concept'))
         self.assertIn('level-edge', classes)
         self.assertIn('livello 1', graph_view.navigation(graph)[4])
         payload = graph.to_json()
