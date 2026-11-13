@@ -1,5 +1,7 @@
 # Fondazione matematica di ACAN: validazione, correzioni ed estensione
 
+> **Documento storico.** Il modello attuale è uno solo ed è descritto in [MODEL.md](MODEL.md), con le misure in [MODEL-RESULTS.md](MODEL-RESULTS.md). Dove questa pagina differisce, vale MODEL.md: in particolare la covarianza nel concetto, i livelli automatici e la fusione per lunghezza di descrizione sono stati tolti.
+
 Questo documento esamina il principio matematico esposto nella scheda
 **Matematica** dell'app ([`acan/vis/mathematics.py`](../acan/vis/mathematics.py)),
 nel nucleo [`acan/algebra.py`](../acan/algebra.py), nei layer linguistici
