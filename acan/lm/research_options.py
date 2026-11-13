@@ -10,7 +10,7 @@ def validate_options(options):
     extra={key:options.get(key,value) for key,value in EXTRA.items()}
     if isinstance(extra['graft_fraction'],bool) or extra['graft_fraction'] not in (.5,1.):
         raise ValueError('Frazione ACAN ammessa: 0.5 oppure 1.0.')
-    if extra['routing_profile'] not in ('legacy-causal-v1','shared-algebra-v1','cp-routing-v1','cp-joint-v1','cp-v9'):
+    if extra['routing_profile'] not in ('legacy-causal-v1','shared-algebra-v1','cp-routing-v1','cp-joint-v1','cp-v9','concept-graph-v1'):
         raise ValueError('Profilo algebrico non valido.')
     if extra['architecture'] not in ('hybrid','dense-control'):
         raise ValueError('Architettura non supportata.')
