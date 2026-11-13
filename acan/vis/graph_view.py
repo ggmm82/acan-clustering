@@ -86,4 +86,13 @@ def elements(graph, focus=None, page=1, include_empty=False):
             group['classes'] += ' has-child'
         group['position'] = dict(x=(position%3)*175,y=140+(position//3)*115)
         result.extend([group,all_elements[f'N{focus}G{index}']])
+    # Edges of the concept graph: concepts between which some observation hesitates.
+    shown = set(indices)
+    links = [edge for edge in (getattr(node,'routing_parameters',None) or {}).get('edges') or []
+             if edge['first'] in shown and edge['second'] in shown]
+    strongest = max((edge['weight'] for edge in links),default=1.) or 1.
+    for edge in links:
+        result.append(dict(data=dict(id=f"E{focus}_{edge['first']}_{edge['second']}",source=f"{focus}_G{edge['first']}",
+                                     target=f"{focus}_G{edge['second']}",strength=1+4*edge['weight']/strongest),
+                           classes='concept-edge'))
     return result

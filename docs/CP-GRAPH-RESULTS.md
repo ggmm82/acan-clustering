@@ -1,5 +1,7 @@
 # Grafo dei concetti a livelli: che cosa è stato misurato
 
+> **Documento storico.** Il modello attuale è uno solo ed è descritto in [MODEL.md](MODEL.md), con le misure in [MODEL-RESULTS.md](MODEL-RESULTS.md). Dove questa pagina differisce, vale MODEL.md: in particolare la covarianza nel concetto, i livelli automatici e la fusione per lunghezza di descrizione sono stati tolti.
+
 Fondamento: [CONCEPT-GRAPH.md](CONCEPT-GRAPH.md). Piano e criteri:
 [NEXT-PR-PLAN.md](NEXT-PR-PLAN.md). Misure precedenti:
 [CP-V9-RESULTS.md](CP-V9-RESULTS.md).

@@ -1,4 +1,4 @@
-"""Held-out comparison of the cp-v9 concept mixture with the current model and baselines.
+"""Held-out comparison of the concept graph with the previous model and baselines.
 
 Example: python scripts/evaluate_concepts.py data/*.xlsx data/*.csv --output reports/concepts.json
 Splits, targets and column filters are the application's own. Only aggregate
@@ -18,7 +18,7 @@ from sklearn.metrics import accuracy_score, balanced_accuracy_score
 from sklearn.neighbors import KNeighborsClassifier
 from threadpoolctl import threadpool_limits
 
-from acan.core.concepts import ConceptMixture, fit_tree
+from acan.core.concepts import ConceptModel
 from acan.vis.datasets import clean_frame, read_arff, split_for_training, target_and_filters
 from acan.vis.evaluation import encode
 
@@ -55,7 +55,6 @@ def main():
     parser.add_argument('--seeds', nargs='+', type=int, default=[42, 7, 21])
     parser.add_argument('--current', action='store_true', help='Also train the previous cp-joint-v1 hierarchy.')
     parser.add_argument('--app', action='store_true', help='Also train cp-v9 through the application path.')
-    parser.add_argument('--tree', action='store_true', help='Also train the layered concept tree.')
     parser.add_argument('--no-baselines', action='store_true')
     args = parser.parse_args()
     runs = []
@@ -71,23 +70,13 @@ def main():
                            target=target, train_rows=len(train), test_rows=len(test),
                            excluded_columns=info['excluded_columns'], methods={})
                 started = time.monotonic()
-                model = ConceptMixture(seed=seed).fit(train, labels)
+                model = ConceptModel(seed=seed).fit(train, labels)
                 predicted = model.predict(test, target)
-                run['methods']['cp-v9'] = dict(metrics(truth, predicted), concepts=model.concepts,
+                run['methods']['concept-graph'] = dict(metrics(truth, predicted), concepts=model.concepts, edges=len(model.edges),
                     seconds=time.monotonic()-started, selection=model.selection,
                     train_accuracy=float(accuracy_score(train[target].astype(str), model.predict(train, target))),
                     cp=model.explained_variance(train)['CP'])
-                if args.tree:
-                    for name, normal in (('cp-graph', False), ('cp-graph con punteggi normali', True)):
-                        started = time.monotonic()
-                        tree = fit_tree(train, labels, seed=seed, normal_scores=normal)
-                        classes = sorted(train[target].astype(str).unique())
-                        rows = tree.scores_map.transform(test) if normal else test
-                        predicted = np.asarray(classes)[tree.predict_proba(rows, target, classes).argmax(1)]
-                        run['methods'][name] = dict(metrics(truth, predicted), concepts=tree.concepts, levels=tree.levels,
-                                                    nodes=tree.nodes(), root_concepts=tree.model.concepts,
-                                                    seconds=time.monotonic()-started)
-                for flag, profile in ((args.app, 'cp-v9 (app)'), (args.current, 'cp-joint-v1')):
+                for flag, profile in ((args.app, 'concept-graph-v1 (app)'), (args.current, 'cp-joint-v1')):
                     if flag:
                         started = time.monotonic()
                         predicted, prototypes, stats = app_model(train, test, labels, profile.split()[0])

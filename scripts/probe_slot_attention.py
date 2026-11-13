@@ -33,11 +33,19 @@ class Slots:
         self.now = now
         received = keys.new_zeros(len(keys)) if received is None else received.to(keys.dtype)
         self.A = received if self.C is None else torch.cat((self.A, received))   # attention received so far: additive
+        old = 0 if self.C is None else len(self.C)             # edges: concepts read together by the same query
+        edges = keys.new_zeros(old+len(keys), old+len(keys))
+        if old:
+            edges[:old, :old] = self.E
+        self.E = edges
         ones = keys.new_ones(len(keys))
         parts = (ones, keys, keys*keys, values)
         positions = ones*0 if positions is None else positions.to(keys.dtype)
         self.P = positions if self.C is None else torch.cat((self.P, positions))
         self.P2 = positions*positions if self.C is None else torch.cat((self.P2, positions*positions))
+        square = (values*values).sum(-1)                         # read part: its spread needs one more sum
+        self.W = square if self.C is None else torch.cat((self.W, square))
+        self.value_root = ((values*values).sum()+(0 if self.C is None else self.value_root[0]), values.sum(0)+(0 if self.C is None else self.value_root[1]), len(values)+(0 if self.C is None else self.value_root[2]))
         if self.C is None:
             self.C, self.U, self.Q, self.V = parts
             self.root = [float(len(keys)), keys.sum(0), (keys*keys).sum(0)]
@@ -48,15 +56,18 @@ class Slots:
             excess = len(self.C)-self.budget
             count = max(min(excess, len(self.C)//8), 1)
             pairs = (self._adjacent(excess) if self.policy == 'chunk' else
-                     self._reader(count) if self.policy == 'reader' else self._cheapest(count))
+                     self._reader(count) if self.policy.startswith('reader') else self._cheapest(count))
             keep = torch.ones(len(self.C), dtype=torch.bool)
             left = torch.tensor([i for i, _ in pairs])
             right = torch.tensor([j for _, j in pairs])
-            for name in ('C', 'U', 'Q', 'V', 'P', 'A', 'P2'):
+            for name in ('C', 'U', 'Q', 'V', 'P', 'A', 'P2', 'W'):
                 value = getattr(self, name)
                 value[left] = value[left]+value[right]
             keep[right] = False
-            for name in ('C', 'U', 'Q', 'V', 'P', 'A', 'P2'):
+            self.E[left] = self.E[left]+self.E[right]
+            self.E[:, left] = self.E[:, left]+self.E[:, right]
+            self.E = self.E[keep][:, keep]
+            for name in ('C', 'U', 'Q', 'V', 'P', 'A', 'P2', 'W'):
                 setattr(self, name, getattr(self, name)[keep])
 
     def _variance(self, c, u, q):
@@ -99,13 +110,26 @@ class Slots:
 
     def _reader(self, count):
         """Generalize where the reader loses least: attention received x spread (the error bound)."""
-        radius = lambda c, u, q: ((q.sum(-1)/c-((u/c[..., None])**2).sum(-1)).clamp_min(0)).sqrt()
+        spread = lambda c, u, q: (q/c-((u/c[..., None])**2).sum(-1)).clamp_min(0)
+        if self.policy == 'reader-both':                        # recognition (key) and read (value) parts count equally
+            key_root = (self.root[2].sum()/self.root[0]-((self.root[1]/self.root[0])**2).sum()).clamp_min(1e-8)
+            total, vsum, count = self.value_root
+            value_root = (total/count-((vsum/count)**2).sum()).clamp_min(1e-8)
+            radius = lambda c, u, q, v, w: (spread(c, u, q.sum(-1))/key_root+spread(c, v, w)/value_root).sqrt()
+        else:
+            radius = lambda c, u, q, v, w: spread(c, u, q.sum(-1)).sqrt()
         rate = self.A/(self.now-self.P/self.C+1)                # attention per query since the members were written
         rate = rate+rate.mean()*1e-3+1e-12
-        own = rate*radius(self.C, self.U, self.Q)
+        own = rate*radius(self.C, self.U, self.Q, self.V, self.W)
         together = (rate[:, None]+rate[None])*radius(self.C[:, None]+self.C[None], self.U[:, None]+self.U[None],
-                                                     self.Q[:, None]+self.Q[None])
-        return self._disjoint(together-own[:, None]-own[None], count)
+                                                     self.Q[:, None]+self.Q[None], self.V[:, None]+self.V[None],
+                                                     self.W[:, None]+self.W[None])
+        cost = together-own[:, None]-own[None]
+        if self.policy == 'reader-edges':                       # only concepts that some query read together
+            linked = (self.E+self.E.T) > 0
+            if int(torch.triu(linked, 1).sum()) >= count:
+                cost = cost.masked_fill(~linked, float('inf'))
+        return self._disjoint(cost, count)
 
     def _adjacent(self, count):
         """Control: pool neighbours in time, ignoring content (smallest combined count first)."""
@@ -181,6 +205,11 @@ def attend(q, k, v, scale, cfg, raw=None, rotate=None, frequency=None):
             received[g, exact] += mass[:len(exact)]
             if slots and absorbed > first and slots[g].C is not None:
                 slots[g].A = slots[g].A+mass[len(exact):]
+                read = weights[..., len(exact):].reshape(-1, weights.shape[-1]-len(exact))
+                if read.shape[1] > 1:
+                    top = read.topk(2, dim=1)
+                    i, j = top.indices.min(1).values, top.indices.max(1).values
+                    slots[g].E.index_put_((i, j), top.values[:, 0]*top.values[:, 1], accumulate=True)
     return out
 
 
@@ -224,6 +253,8 @@ CONFIGS = {
     'primi 4 + finestra 124': dict(window=124, slots=0, first=4),
     'primi 4 + finestra 60 + 64 concetti su chiavi non ruotate': dict(window=60, slots=64, unrotated=True, first=4),
     'finestra 64 + 64 concetti su chiavi non ruotate, fusione per il lettore': dict(window=64, slots=64, unrotated=True, policy='reader'),
+    'lettore, solo coppie collegate': dict(window=64, slots=64, unrotated=True, policy='reader-edges'),
+    'lettore, chiave e valore alla pari': dict(window=64, slots=64, unrotated=True, policy='reader-both'),
     'lettore + smorzamento di fase': dict(window=64, slots=64, unrotated=True, policy='reader', damping=True),
     'lettore + smorzamento di fase + correzione gaussiana': dict(window=64, slots=64, unrotated=True, policy='reader', damping=True, gaussian=True),
     'lettore + correzione gaussiana': dict(window=64, slots=64, unrotated=True, policy='reader', gaussian=True),

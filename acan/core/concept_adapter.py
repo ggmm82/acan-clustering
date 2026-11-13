@@ -1,4 +1,4 @@
-"""Tabular adapter of the cp-v9 concept mixture (acan/core/concepts.py).
+"""Tabular adapter of the concept graph (acan/core/concepts.py).
 
 The interactive graph keeps its encoded, min-max normalized matrix. Numeric
 columns are Gaussian attributes; each one-hot block is one categorical
@@ -6,9 +6,9 @@ attribute. Targets are read from the concepts and never used for routing.
 """
 import numpy as np
 
-from .concepts import LOG_2PI, ConceptMixture, _softmax
+from .concepts import LOG_2PI, ConceptModel, _softmax
 
-PROFILE = 'cp-v9'
+PROFILE = 'concept-graph-v1'
 
 
 class MatrixEncoder:
@@ -58,102 +58,28 @@ def attribute_blocks(learner):
     return blocks
 
 
-def normal_score_maps(matrix, columns, knots=64):
-    """Rank-based Gaussian scale of the numeric feature columns of the encoded matrix (training rows only)."""
-    from scipy.special import ndtri
-    maps = []
-    for column in columns:
-        values = np.sort(matrix[:, column])
-        unique, first, counts = np.unique(values, return_index=True, return_counts=True)
-        if len(unique) < 3:                                     # constants and indicators keep their scale
-            continue
-        score = ndtri((first+(counts-1)/2+.5)/len(values))
-        if len(unique) > knots:
-            keep = np.unique(np.round(np.linspace(0, len(unique)-1, knots)).astype(int))
-            unique, score = unique[keep], score[keep]
-        maps.append(dict(column=int(column), values=unique.tolist(), score=score.tolist()))
-    return maps
-
-
-def apply_scores(matrix, maps):
-    matrix = np.array(matrix, float)
-    for item in maps:
-        matrix[:, item['column']] = np.interp(matrix[:, item['column']], item['values'], item['score'])
-    return matrix
-
-
 def train(learner, epochs):
-    """Root concepts, then the judged levels below them when the learner asks for automatic levels."""
-    from .concepts import ConceptTree, judged_covariance
-    from .learner import AlgebraicClusterLearner
-    frame = learner.full_dataset
-    x = frame.to_numpy(dtype=np.float64)
-    blocks = attribute_blocks(learner)
-    labels = [str(label) for label in learner.labels]
-    member = {index for indices in blocks.values() for index in indices}
-    features = [i for i, name in enumerate(learner.cols) if i not in member and str(name) not in labels]
-    maps = normal_score_maps(x, features) if getattr(learner, 'normal_scores', False) else []
-    z = apply_scores(x, maps)
-    learner.history = []
-    first = [True]
-
-    def factory(rows, child, covariance=None):
-        def progress(step):
-            if first[0]:
-                learner.iteration = len(learner.history)
-                learner.history.append(dict(epoch=len(learner.history), loss=-step['score'], nll=-step['score'], mse=0.,
-                    prediction_loss=-step['score'], normalized_cp=float('nan'), cp=float('nan'), cp_weight=0.,
-                    k_active=step['k']))
-            return not learner._should_stop
-        model = ConceptMixture(seed=learner.random_state, judged_fraction=.5 if child else 1.,
-                               covariance=use[0] if covariance is None else covariance).fit(
-            rows, labels, encoder=MatrixEncoder(learner.cols, blocks, rows), progress=progress)
-        first[0] = False
-        return model
-
-    # Concepts with covariance are used only when they predict the judged rows better.
-    use = [False]
-    if len(features) > 1 and not getattr(learner, '_should_stop', False):
-        history = list(learner.history)
-        plain, correlated = factory(z, False, False), factory(z, False, True)
-        use[0] = judged_covariance(plain, correlated, z)
-        learner.history, first[0] = history, True
-
-    automatic = getattr(learner, 'automatic_levels', False)
-    tree = ConceptTree(factory, z, budget=[getattr(learner, 'node_budget', 64) if automatic else 1])
-    root = export(learner, tree.model, x, z, maps, labels)
-    for row in learner.history:
-        row['normalized_cp'], row['cp'] = root.cp/np.sqrt(len(learner.cols)), root.cp
-    learner.tree_nodes = []
-
-    def attach(node, parent, rows):
-        for concept, child in node.children.items():
-            index = rows[node.rows[concept]]
-            sub = AlgebraicClusterLearner(frame.iloc[index], labels=learner.labels, routing_profile=PROFILE,
-                                          batch_size=learner.batch_size, random_state=learner.random_state)
-            sub.categorical_names = getattr(learner, 'categorical_names', None)
-            sub.history = []
-            model = export(sub, child.model, x[index], z[index], maps, labels)
-            model.history = []
-            parent.children[int(concept)] = model.id
-            learner.tree_nodes.append(model)
-            attach(child, model, index)
-    attach(tree, root, np.arange(len(x)))
-    root.routing_parameters.update(levels=tree.levels, terminal_concepts=tree.concepts, nodes=tree.nodes())
-    return root
-
-
-def export(learner, model, x, z, maps, labels):
-    """Fill one graph node from a fitted concept model (centres shown in the application's units)."""
+    """Fit the concept graph on the encoded table and fill one node of the application's graph."""
     from .graph import ConceptGraph
-    encoder = model.encoder
+    x = learner.full_dataset.to_numpy(dtype=np.float64)
+    blocks = attribute_blocks(learner)
+    encoder = MatrixEncoder(learner.cols, blocks, x)
+    labels = [str(label) for label in learner.labels]
+    learner.history = []
+
+    def progress(step):
+        learner.iteration = len(learner.history)
+        learner.history.append(dict(epoch=len(learner.history), loss=-step['score'], nll=-step['score'], mse=0.,
+            prediction_loss=-step['score'], normalized_cp=float('nan'), cp=float('nan'), cp_weight=0.,
+            k_active=step['k']))
+        return not learner._should_stop
+
+    model = ConceptModel(seed=learner.random_state).fit(x, labels, encoder=encoder, progress=progress)
     s = model.statistics
     g, v, log_p = model._parameters(s)
     k, m = len(s['C']), len(learner.cols)
     groups, relevance = np.zeros((k, m)), np.zeros((k, m))
     groups[:, encoder.numeric_index] = g*encoder.std+encoder.mean
-    for item in maps:                                           # back from the Gaussian scale to the encoded one
-        groups[:, item['column']] = np.interp(groups[:, item['column']], item['score'], item['values'])
     relevance[:, encoder.numeric_index] = np.where(encoder.constant, 0., np.clip(1-v, 0, 1))
     for name in encoder.categorical:
         block, indices = encoder.block(name), encoder.blocks[name]
@@ -162,10 +88,10 @@ def export(learner, model, x, z, maps, labels):
         impurity = 1-(root*root).sum()
         gain = ((p-root)**2).sum(1)/impurity if impurity > 1e-12 else np.zeros(k)
         relevance[:, indices] = np.clip(gain, 0, 1)[:, None]
-    full_t = model._route(s, encoder.transform(z), model.train_weights)[0]
-    sample = apply_scores(learner.NormDataset, maps)
-    view_t = model._route(s, encoder.transform(sample), model.train_weights)[0].T
-    explained = model.explained_variance(z)
+    data = encoder.transform(x)
+    full_t = model._route(s, data, model.train_weights)[0]
+    view_t = model._route(s, encoder.transform(learner.NormDataset), model.train_weights)[0].T
+    explained = model.explained_variance(x)
     graph = ConceptGraph(model, s, model.train_weights) if k > 1 else None
     learner.k = k
     learner.Groups, learner.Relevance = groups, relevance
@@ -177,22 +103,19 @@ def export(learner, model, x, z, maps, labels):
     learner.Freqs = (s['C']/s['C'].sum())[None]
     learner.cp = explained['CP']*np.sqrt(m)
     learner.k_active = int((learner.Counts > 0).sum())
-    correlated = set(model.cov.tolist())
-    feature_numeric = [j for j, name in enumerate(encoder.numeric) if name not in labels and j not in correlated]
-    block = None
-    if len(model.cov):
-        centre, covariance = model._covariance(s['C'], s['U'][:, model.cov], s['S'])
-        block = dict(columns=[int(encoder.numeric_index[j]) for j in model.cov], mean=encoder.mean[model.cov].tolist(),
-                     std=encoder.std[model.cov].tolist(), centre=centre.tolist(), covariance=covariance.tolist())
+    for row in learner.history:
+        row['normalized_cp'], row['cp'] = explained['CP'], learner.cp
+    feature_numeric = [j for j, name in enumerate(encoder.numeric) if name not in labels]
     feature_blocks = [name for name in encoder.categorical if name not in labels]
     learner.variational_state = dict(
-        objective='predictive-concepts-v1', cp_definition='explained-variance-v1',
+        objective='predictive-concepts-v1', cp_definition='explained-variance-v1', generalization='reader-loss-v1',
         hierarchy_readout='conditional-mixture-v1', selection=model.selection,
         training_rows=len(x), training_score=model.final_score,
         numeric_targets=[learner.cols.index(label) for label in learner.labels if label in learner.cols],
-        numeric_readout='weighted-training-mean', level_prior='parent-concept-v1',
-        normal_scores=maps, correlated=block,
-        pair_levels=[dict(depth=level['depth'], concepts=level['concepts'], pair_criterion=level['pair_criterion'])
+        numeric_readout='weighted-training-mean',
+        edges=[dict(first=i, second=j, weight=w) for i, j, w in model.edges],
+        pair_levels=[dict(depth=level['depth'], concepts=level['concepts'], pair_criterion=level['pair_criterion'],
+                          members=[list(map(int, graph.members(node))) for node in level['nodes']])
                      for level in graph.levels()] if graph else [],
         explained={name: value for name, value in explained.items() if name != 'CP'},
         log_prior=np.log(s['C']/s['C'].sum()).tolist(),
@@ -208,32 +131,13 @@ def predict_assignments(model, rows, cix):
     state = model.routing_parameters
     rows = np.asarray(rows, float)
     position = {index: place for place, index in enumerate(cix)}
-    scores = {item['column']: item for item in state.get('normal_scores') or []}
     logits = np.repeat(np.asarray(state['log_prior'])[None], len(rows), axis=0)
     for attribute in state['numeric']:
         if attribute['column'] not in position:
             continue
-        z = rows[:, position[attribute['column']]]
-        if attribute['column'] in scores:
-            z = np.interp(z, scores[attribute['column']]['values'], scores[attribute['column']]['score'])
-        z = (z-attribute['mean'])/attribute['std']
+        z = (rows[:, position[attribute['column']]]-attribute['mean'])/attribute['std']
         centre, variance = np.asarray(attribute['centre']), np.asarray(attribute['variance'])
         logits = logits-.5*((z[:, None]-centre)**2/variance+np.log(variance)+LOG_2PI)
-    block = state.get('correlated')
-    if block:                                                   # observed part of the correlated attributes
-        seen = [place for place, column in enumerate(block['columns']) if column in position]
-        if seen:
-            z = rows[:, [position[block['columns'][place]] for place in seen]]
-            for where, place in enumerate(seen):
-                column = block['columns'][place]
-                if column in scores:
-                    z[:, where] = np.interp(z[:, where], scores[column]['values'], scores[column]['score'])
-            z = (z-np.asarray(block['mean'])[seen])/np.asarray(block['std'])[seen]
-            centre = np.asarray(block['centre'])[:, seen]
-            covariance = np.asarray(block['covariance'])[:, seen][:, :, seen]
-            inverse, volume = np.linalg.inv(covariance), np.linalg.slogdet(covariance)[1]
-            d = z[:, None]-centre[None]
-            logits = logits-.5*(np.einsum('nkp,kpq,nkq->nk', d, inverse, d)+volume+len(seen)*LOG_2PI)
     for block in state['blocks']:
         # A single completed row is encoded with only its own level: absent
         # levels are zeros, and a block without any level is unobserved.

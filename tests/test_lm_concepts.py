@@ -61,30 +61,35 @@ class ConceptAttentionTests(unittest.TestCase):
             torch.testing.assert_close(full.detach(), torch.cat(pieces, 1), atol=2e-5, rtol=2e-4)
         self.assertLess(layer.cache['keys'].shape[2], 4+2*layer.block)                 # bounded state
 
-    def test_tabular_and_attention_share_the_same_operators(self):
+    def test_tabular_and_attention_share_the_same_criterion(self):
         import torch
-        from acan import concept_algebra as algebra
-        from acan.core.concepts import ConceptMixture
-        from acan.lm.concept_attention import merge_costs
+        from acan.concept_algebra import reader_cost
+        from acan.core.concepts import ConceptModel
+        from acan.lm.concept_attention import reader_costs
         rng = np.random.default_rng(0)
         x = rng.normal(size=(40, 5))
         t = np.eye(6)[rng.integers(0, 6, 40)]
-        model = ConceptMixture()
-        model.encoder = type('E', (), dict(categorical=[], width=0))()
+        model = ConceptModel()
+        model.labels = []
+        model.encoder = type('E', (), dict(numeric=list('abcde'), categorical=[], width=0))()
         model.root_p = np.zeros(0)
-        data = (x, np.ones_like(x), np.zeros((40, 0)))
-        s = model._statistics(t, data)
-        ones = (np.ones(5), np.ones(0))
-        table = model._merge_costs(s, ones)
-        root = np.ones(5)                                      # the tabular core standardizes: root variance one
-        state = dict(C=torch.tensor(s['C'])[None, None], U=torch.tensor(s['U'])[None, None], Q=torch.tensor(s['Q'])[None, None],
-                     root=torch.tensor(root)[None, None])
-        attention = merge_costs(state, 1.)[0, 0].numpy()
-        off = ~np.eye(6, dtype=bool)
-        np.testing.assert_allclose(table[off], attention[off], rtol=1e-9, atol=1e-9)
-        g, v = algebra.centre_variance(s['Cm'], s['U'], s['Q'], 1., 1., np)
-        direct = algebra.exact_similarity(x[:, None], g[None], v[None], np)
-        np.testing.assert_allclose(direct, model._log_density(s, data, ones), rtol=1e-9, atol=1e-9)
+        s = model._statistics(t, (x, np.ones_like(x), np.zeros((40, 0))))
+        first, second = np.triu_indices(6, 1)
+        table = model._pair_costs(s, first, second)            # reads received by a concept of a table: its mass
+        tensor = lambda value: torch.tensor(value)[None, None]
+        state = dict(C=tensor(s['C']), U=tensor(s['U']), Q=tensor(s['Q']), P=tensor(np.zeros(6)),
+                     A=tensor(s['C']), root=torch.ones(1, 1, 5, dtype=torch.float64))
+        attention = reader_costs(state, 0.)[0, 0].numpy()      # rate = A/(now-position+1) = mass
+        floor = s['C'].mean()*1e-3+1e-12
+        radius = model._radius(s['Cm'], s['U'], s['Q'], s['N'])
+        together = model._radius(s['Cm'][first]+s['Cm'][second], s['U'][first]+s['U'][second],
+                                 s['Q'][first]+s['Q'][second], s['N'][first]+s['N'][second])
+        expected = reader_cost(s['C'][first]+floor, radius[first], s['C'][second]+floor, radius[second], together)
+        np.testing.assert_allclose(attention[first, second], expected, rtol=1e-9, atol=1e-9)
+        np.testing.assert_allclose(table, expected, rtol=5e-3)   # identical but for the floor on the reads
+        self.assertTrue((table > -1e-12).all())                  # generalizing never helps the reader for free
+        copies = {key: np.concatenate([value/2, value/2]) for key, value in s.items()}
+        self.assertTrue(np.allclose(model._pair_costs(copies, np.arange(6), np.arange(6)+6), 0, atol=1e-9))
 
     def test_grafted_model_keeps_the_pretrained_function_inside_the_window(self):
         import tempfile
@@ -125,7 +130,7 @@ class ConceptAttentionTests(unittest.TestCase):
 class ConceptGraphAttentionTests(ConceptAttentionTests):
     """The same guarantees with generalization guided by the reader."""
     graph = True
-    profile = 'cp-graph-v1'
+    profile = 'concept-graph-v1'
 
     def test_tokens_the_queries_keep_reading_stay_exact(self):
         import torch
@@ -133,7 +138,7 @@ class ConceptGraphAttentionTests(ConceptAttentionTests):
         torch.manual_seed(0)
         keys = torch.randn(1, 1, 6, 4)
         state = dict(C=torch.ones(1, 1, 6), U=keys, Q=keys*keys, P=torch.arange(6.)[None, None],
-                     A=torch.tensor([[[50., 0., 0., 0., 0., 0.]]]))
+                     A=torch.tensor([[[50., 0., 0., 0., 0., 0.]]]), root=torch.ones(1, 1, 4))
         cost = reader_costs(state, 10.)
         cheapest = divmod(int(cost.flatten().argmin()), 6)
         self.assertNotIn(0, cheapest)                              # the heavily read token is not the one generalized

@@ -88,3 +88,23 @@ def cross_similarity(ga, va, gb, vb, scale, xp):
     closer than an average pair, and adding them together raises the pair criterion.
     """
     return 1-(((ga-gb)**2+va+vb)/(2*scale)).mean(-1)
+
+
+def reader_radius(recognition, xp):
+    """Radius of a concept for whoever reads it.
+
+    ``recognition`` is the mean squared distance of the members from the centre in the
+    part that is matched (attributes of a row, key of a token), on the scale of the root.
+    It is the quantity that bounds the error of reading the concept instead of its members.
+    """
+    return xp.sqrt(recognition)
+
+
+def reader_cost(reads_first, radius_first, reads_second, radius_second, radius_together):
+    """Loss of the reader when two concepts are added together: reads received times radius.
+
+    The error of reading a concept instead of its members is bounded by the reads it
+    receives times the distance of its members from the centre. The cost is never
+    negative and is zero only for two copies of one concept.
+    """
+    return (reads_first+reads_second)*radius_together-reads_first*radius_first-reads_second*radius_second

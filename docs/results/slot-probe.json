@@ -257,6 +257,30 @@
    ],
    "seconds": 154.62607859199852,
    "state_vectors_per_key_head": 128
+  },
+  "lettore, chiave e valore alla pari": {
+   "nll": 5.1647467613220215,
+   "standard_error": 0.04616808891296387,
+   "per_segment": [
+    5.017826557159424,
+    4.987489700317383,
+    5.408852577209473,
+    5.24481725692749
+   ],
+   "seconds": 390.8660234250001,
+   "state_vectors_per_key_head": 128
+  },
+  "lettore, solo coppie collegate": {
+   "nll": 5.368976593017578,
+   "standard_error": 0.04739425703883171,
+   "per_segment": [
+    5.149494647979736,
+    5.231384754180908,
+    5.606276988983154,
+    5.488749027252197
+   ],
+   "seconds": 296.05335543600086,
+   "state_vectors_per_key_head": 128
   }
  }
 }

@@ -24,11 +24,11 @@ import math
 
 import torch
 
-from acan.concept_algebra import centre_variance, description_length, dot_similarity
+from acan.concept_algebra import centre_variance, description_length, dot_similarity, reader_cost, reader_radius
 from .attention import ACANConceptAttentionLayer
 
 PROFILE = 'cp-v9'
-GRAPH_PROFILE = 'cp-graph-v1'
+GRAPH_PROFILE = 'concept-graph-v1'
 STATISTICS = ('C', 'U', 'Q', 'V', 'P', 'A')
 
 
@@ -59,25 +59,26 @@ def merge_costs(state, kappa):
 
 
 def reader_costs(state, now):
-    """Loss of the reader when two concepts are added together: attention received x spread.
+    """Loss of the reader for every pair of concepts: reads received times radius (reader_cost).
 
-    The error of reading a concept instead of its members is bounded by the
-    attention it receives times the distance of its members from the centre
-    (docs/MATHEMATICAL-FOUNDATION.md, U4). ``A`` accumulates the attention each
-    concept and each of its members has received from the queries seen so far, so
-    the rate is causal. Tokens that queries keep reading stay fine on their own.
+    The same criterion as the tabular model. The radius is the spread of the keys around
+    the centre on the scale of the root; ``A`` accumulates the attention each concept and
+    each of its members has received from the queries seen so far, so the rate is causal.
+    Tokens that queries keep reading stay fine on their own.
     """
-    c, u = state['C'], state['U']
+    c = state['C']
+    scale = state['root'].rsqrt()[:, :, None]
+    u = state['U']*scale
     gram = u@u.transpose(-1, -2)
-    square, spread = gram.diagonal(dim1=-2, dim2=-1), state['Q'].sum(-1)
-    radius = lambda count, centre, total: (total/count-centre/(count*count)).clamp_min(0).sqrt()
+    square, total = gram.diagonal(dim1=-2, dim2=-1), (state['Q']*scale*scale).sum(-1)
+    size = state['U'].shape[-1]
+    radius = lambda count, centre, spread: reader_radius(((spread/count-centre/(count*count)).clamp_min(0))/size, torch)
     rate = state['A']/(now-state['P']/c+1)
     rate = rate+rate.mean(-1, keepdim=True)*1e-3+1e-12
-    own = rate*radius(c, square, spread)
-    together = (rate[..., :, None]+rate[..., None, :])*radius(
-        c[..., :, None]+c[..., None, :], square[..., :, None]+square[..., None, :]+2*gram,
-        spread[..., :, None]+spread[..., None, :])
-    cost = together-own[..., :, None]-own[..., None, :]
+    together = radius(c[..., :, None]+c[..., None, :], square[..., :, None]+square[..., None, :]+2*gram,
+                      total[..., :, None]+total[..., None, :])
+    own = radius(c, square, total)
+    cost = reader_cost(rate[..., :, None], own[..., :, None], rate[..., None, :], own[..., None, :], together)
     return cost.masked_fill(torch.eye(c.shape[2], dtype=torch.bool, device=c.device), torch.inf)
 
 
@@ -217,5 +218,5 @@ class ConceptSlotAttention(ACANConceptAttentionLayer):
 
 
 class ConceptGraphAttention(ConceptSlotAttention):
-    """cp-graph-v1: concepts are generalized where the reader loses least."""
+    """concept-graph-v1: the one model; concepts are generalized where the reader loses least."""
     policy = 'reader'

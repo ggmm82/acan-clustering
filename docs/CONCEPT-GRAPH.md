@@ -1,5 +1,7 @@
 # Il grafo dei concetti a livelli: studio della funzione e fondamento rivisto
 
+> **Documento storico.** Il modello attuale è uno solo ed è descritto in [MODEL.md](MODEL.md), con le misure in [MODEL-RESULTS.md](MODEL-RESULTS.md). Dove questa pagina differisce, vale MODEL.md: in particolare la covarianza nel concetto, i livelli automatici e la fusione per lunghezza di descrizione sono stati tolti.
+
 Questo documento rivede il fondamento di
 [MATHEMATICAL-FOUNDATION.md](MATHEMATICAL-FOUNDATION.md) dopo lo studio della
 CP proposta in «Riportare la Cluster Probability al centro dell'apprendimento»
