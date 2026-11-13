@@ -553,20 +553,24 @@ model_layout = dbc.Container([
         ]),
         html.Div([
 
-            dcc.Dropdown(id='tabular-routing-profile',value='concept-graph-v1',options=[{'label':'Grafo dei concetti','value':'concept-graph-v1'},{'label':'CP condivisa precedente','value':'cp-joint-v1'}]),
+            dcc.Dropdown(id='tabular-routing-profile',value='concept-graph-v1',options=[{'label':'Grafo dei concetti','value':'concept-graph-v1'}]),
         ],style={'display':'none'}),
-        html.P('Un solo modello per tabulare e generativo, il grafo dei concetti: ogni concetto è un nodo che riassume le osservazioni che gli appartengono; due concetti sono collegati quando qualche osservazione esita fra loro; i concetti collegati vengono uniti dove chi legge perde meno, e resta il livello più generale che prevede altrettanto bene le osservazioni non viste. Non servono numero di concetti, soglie o profondità. Epoche, learning rate, livelli, purezza e campioni minimi non agiscono su questo modello: restano per i modelli precedenti, che rimangono caricabili. Formule, misure e limiti nella scheda Matematica.',className='small text-muted'),
+        html.P('Il grafo dei concetti sceglie da solo il numero di concetti e di livelli, giudicando ogni scelta su righe '
+               'che non ha usato: non ci sono epoche, learning rate o profondità da impostare. L\'unico parametro vale '
+               'per l\'approfondimento a mano con il doppio clic.', className='small text-muted'),
         dbc.Row([parameter(*args) for args in [
+            ('Campioni minimi del ramo', 'train-min-samples', 12, 2, 10000, 1),
+        ]]),
+        # Parameters of the earlier models: kept, hidden, because callbacks and saved sessions read them.
+        html.Div([dbc.Row([parameter(*args) for args in [
             ('Epoche', 'train-epochs', 100, 1, 1000, 1),
             ('Learning rate', 'input-lr', .08, .001, 1, .01),
             ('Righe per aggiornamento', 'input-max-batch', 300, 10, 300, 10),
-            ('Temperatura τ (solo versione precedente)', 'train-tau', .2, .01, 10, .01),
-            ('Miscela α (solo versione precedente)', 'train-alpha', .5, 0, 1, .05),
-            ('Campioni minimi del ramo', 'train-min-samples', 12, 2, 10000, 1),
-            ('Livelli iniziali automatici (predefinito: 1)', 'train-depth', 1, 1, 6, 1),
-            ('Soglia purezza (solo livelli automatici)', 'train-purity', .92, 0, 1, .01),
-        ]]),
-        html.P('Il batch è modificabile per il primo livello; la gerarchia usa aggiornamenti fino a 300 righe. La purezza e i campioni minimi agiscono solo con più livelli automatici. Approfondire può aumentare i prototipi: confronta il risultato nella validazione.', className='small text-muted'),
+            ('Temperatura τ', 'train-tau', .2, .01, 10, .01),
+            ('Miscela α', 'train-alpha', .5, 0, 1, .05),
+            ('Livelli iniziali automatici', 'train-depth', 1, 1, 6, 1),
+            ('Soglia purezza', 'train-purity', .92, 0, 1, .01),
+        ]])], style={'display':'none'}),
         html.Div(daq.BooleanSwitch(disabled=True,id='bsId',on=False),style={'display':'none'}),
     ], title='Impostazioni avanzate')], start_collapsed=True, className='mb-3'),
     dcc.Store(id='model-store'), dcc.Store(id='label-store'),
@@ -792,8 +796,8 @@ def training_action_label(labels,task):
 
 @app.callback(Output('input-max-batch','disabled'),Output('train-min-samples','disabled'),Output('train-purity','disabled'),Input('train-depth','value'),Input('dpdnLabel','value'))
 def active_training_parameters(depth,labels):
-    hierarchical=int(depth or 1)>1
-    return hierarchical,not hierarchical,not hierarchical or not labels
+    # The concept graph needs only the minimum rows of a manually deepened branch.
+    return True,False,True
 
 
 @app.callback(Output('train-tau','disabled'),Output('train-alpha','disabled'),Input('tabular-routing-profile','value'))
