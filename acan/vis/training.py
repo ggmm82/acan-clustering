@@ -14,7 +14,7 @@ def train_native(data, labels, options):
     graph.preprocessing = fit_features(data, labels)
     common = {k: options[k] for k in ('lr', 'tau', 'alpha', 'device')}
     common['routing_profile'] = options.get('routing_profile','legacy-v8')
-    if options['max_depth'] == 1 or common['routing_profile'] == 'cp-v9':
+    if options['max_depth'] == 1 or common['routing_profile'] in ('cp-v9', 'concept-graph-v1'):
         learner = AlgebraicClusterLearner(normalized, labels=labels,
                                          batch_size=options['batch_size'], **common)
         # One-hot blocks are single categorical attributes for the concept core.
