@@ -274,7 +274,7 @@ Misure su split 80/20, senza impostazioni per dataset:
 | Adult minimale | 75,3% | 4 | 75,3% | 4 |
 | Sonar | 86,5% | 13–18 | 86,5% | 13–18 |
 | Titanic | 77,7% | 32–37 | 77,7% | 32–37 |
-| Letter | 98,0% | 158 | 93,3% | 412–476 |
+| Letter | 97,8% | 153–171 | 93,3% | 412–476 |
 
 Su Letter gli attributi variano insieme e il modello lo usa: supera il
 **95,78%** storico e i metodi di confronto. Sugli altri dati la descrizione più

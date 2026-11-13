@@ -659,6 +659,94 @@
      "seconds": 887.0337833839999
     }
    }
+  },
+  {
+   "dataset": "letter.arff",
+   "sha256": "a31f2d9ad119a53e182e7371d48981982dbb2b0a5e9f0aa7b73f373857b64e2e",
+   "seed": 7,
+   "target": "class",
+   "train_rows": 16000,
+   "test_rows": 4000,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.93475,
+     "balanced_accuracy": 0.9343981560151309,
+     "concepts": 456,
+     "seconds": 69.22186657700013,
+     "selection": {
+      "best_k": 531,
+      "best_score": -0.19292093168735103,
+      "standard_error": 0.01509089993893786,
+      "chosen_k": 456,
+      "chosen_score": -0.2051998348867224
+     },
+     "train_accuracy": 0.9625625,
+     "cp": 0.9329755426755604
+    },
+    "cp-graph": {
+     "accuracy": 0.9785,
+     "balanced_accuracy": 0.9783649754863902,
+     "concepts": 153,
+     "levels": 2,
+     "nodes": 5,
+     "root_concepts": 145,
+     "seconds": 864.8542356170001
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 0.9725,
+     "balanced_accuracy": 0.9724007429188085,
+     "concepts": 147,
+     "levels": 2,
+     "nodes": 3,
+     "root_concepts": 145,
+     "seconds": 937.697143073
+    }
+   }
+  },
+  {
+   "dataset": "letter.arff",
+   "sha256": "a31f2d9ad119a53e182e7371d48981982dbb2b0a5e9f0aa7b73f373857b64e2e",
+   "seed": 21,
+   "target": "class",
+   "train_rows": 16000,
+   "test_rows": 4000,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.933,
+     "balanced_accuracy": 0.9328998052462046,
+     "concepts": 412,
+     "seconds": 76.50891717100058,
+     "selection": {
+      "best_k": 529,
+      "best_score": -0.2015328731470438,
+      "standard_error": 0.016058882017839022,
+      "chosen_k": 412,
+      "chosen_score": -0.20968261604432434
+     },
+     "train_accuracy": 0.9620625,
+     "cp": 0.9293724128645188
+    },
+    "cp-graph": {
+     "accuracy": 0.9755,
+     "balanced_accuracy": 0.975381906978758,
+     "concepts": 171,
+     "levels": 3,
+     "nodes": 13,
+     "root_concepts": 141,
+     "seconds": 920.9110220450002
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 0.978,
+     "balanced_accuracy": 0.9778517345566748,
+     "concepts": 198,
+     "levels": 2,
+     "nodes": 7,
+     "root_concepts": 177,
+     "seconds": 957.3125037310001
+    }
+   }
   }
  ]
 }
