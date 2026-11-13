@@ -90,13 +90,16 @@ class Slots:
 
     def read(self, queries, scale, mass, gaussian, rotate=None):
         mean = self.U/self.C[:, None]
+        variance = (self.Q/self.C[:, None]-mean*mean).clamp_min(0)
         if rotate is not None:                                  # unrotated keys: place the centroid at the mean position
             mean = rotate(mean, self.P/self.C)
+            half = variance.shape[-1]//2                        # a rotation mixes each pair of dimensions
+            pair = (variance[:, :half]+variance[:, half:])/2
+            variance = torch.cat((pair, pair), -1)
         logits = queries@mean.T*scale
         if mass:
             logits = logits+self.C.log()
         if gaussian:
-            variance = (self.Q/self.C[:, None]-mean*mean).clamp_min(0)
             logits = logits+.5*(queries*queries)@variance.T*scale*scale
         return logits, self.V/self.C[:, None]
 
@@ -175,6 +178,7 @@ CONFIGS = {
     'finestra 64 + 16 concetti': dict(window=64, slots=16),
     'finestra 64 + 64 concetti su chiavi non ruotate': dict(window=64, slots=64, unrotated=True),
     'finestra 64 + 64 concetti su chiavi non ruotate, senza log C': dict(window=64, slots=64, unrotated=True, mass=False),
+    'finestra 64 + 64 concetti su chiavi non ruotate, correzione gaussiana': dict(window=64, slots=64, unrotated=True, gaussian=True),
     'finestra 64 + 64 blocchi temporali su chiavi non ruotate': dict(window=64, slots=64, unrotated=True, policy='chunk'),
     'finestra 64 + 64 blocchi temporali su chiavi non ruotate, senza log C': dict(window=64, slots=64, unrotated=True, policy='chunk', mass=False),
     'finestra 64 + 256 concetti': dict(window=64, slots=256),

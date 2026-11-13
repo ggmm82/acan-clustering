@@ -14,6 +14,8 @@ osservazioni non viste. Non richiede numero di concetti, soglie o epoche.
 - Misure, compresi i risultati negativi: [docs/CP-V9-RESULTS.md](docs/CP-V9-RESULTS.md)
 - Piano e stato delle fasi: [docs/REVISION-PLAN.md](docs/REVISION-PLAN.md)
 - Affermazioni dei paper da non citare: [docs/ERRATA.md](docs/ERRATA.md)
+- Studio del multilivello e del grafo dei concetti, anche per i layer del modello linguistico: [docs/CONCEPT-GRAPH.md](docs/CONCEPT-GRAPH.md)
+- Piano della prossima revisione: [docs/NEXT-PR-PLAN.md](docs/NEXT-PR-PLAN.md)
 
 Tabella e attenzione sono lo stesso modello: `acan/concept_algebra.py` definisce
 appartenenza, generalizzazione e giudizio, usati sia dal nucleo tabulare sia
