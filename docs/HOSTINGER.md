@@ -40,7 +40,7 @@ tabs can train on different datasets independently.
    docker compose -f compose.hostinger.yaml logs --tail 50
    ```
 
-Open the HTTPS URL and use Data → Model → Inference.
+Open the HTTPS URL and use Dati → Modello → Previsione.
 The image healthcheck calls the internal `/healthz` endpoint. The browser session
 cookie is marked Secure in this deployment, so use HTTPS.
 
@@ -67,7 +67,7 @@ DNS, certificate issuance and Hostinger routing must be validated after deployme
 repository CI does not have access to that infrastructure.
 
 
-For the optional Generative tab, retain the normal frontend deployment and
+For the optional **Generativo** tab, retain the normal frontend deployment and
 configure a durable worker. For the bundled CPU worker, deploy the single sealed
 `compose.generative.hostinger.yaml` instead of the normal frontend-only Compose.
 It includes both images and the persistent worker volume, with no Docker profile.

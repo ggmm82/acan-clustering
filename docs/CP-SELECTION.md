@@ -1,4 +1,7 @@
 > Aggiornamento: il modello corrente usa la CP con sostegno fra osservazioni diverse.
+
+> **Documento storico.** Descrive una versione precedente del modello. Il modello attuale è in [MODEL.md](MODEL.md), con le misure in [MODEL-RESULTS.md](MODEL-RESULTS.md); dove questa pagina differisce, valgono quelle.
+
 > Recupera quattro gruppi su tutte le 101 righe di Gioco senza target.
 > Formula e nuove misure: [CP-PAIR-SUPPORT.md](CP-PAIR-SUPPORT.md).
 > Questa pagina conserva la diagnosi delle versioni precedenti.

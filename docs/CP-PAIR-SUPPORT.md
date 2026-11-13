@@ -1,5 +1,8 @@
 # CP sostenuta da osservazioni diverse
 
+> **Documento storico.** Descrive una versione precedente del modello. Il modello attuale è in [MODEL.md](MODEL.md), con le misure in [MODEL-RESULTS.md](MODEL-RESULTS.md); dove questa pagina differisce, valgono quelle.
+
+
 La correzione modifica il nucleo comune, senza imporre un numero di concetti.
 Un concetto non può ottenere qualità dalla sola riga che rappresenta.
 Date le appartenenze T, si calcola la frazione di coppie che provengono da

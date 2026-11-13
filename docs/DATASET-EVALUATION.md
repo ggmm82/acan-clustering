@@ -1,5 +1,8 @@
 # Verifica sui dataset forniti
 
+> **Documento storico.** Descrive una versione precedente del modello. Il modello attuale è in [MODEL.md](MODEL.md), con le misure in [MODEL-RESULTS.md](MODEL-RESULTS.md); dove questa pagina differisce, valgono quelle.
+
+
 Misure locali CPU con ACAN nativo, configurazione iniziale GUI: un livello, 100 epoche, learning rate 0,08, tau 0,2, alpha 0,5, batch 300. Split 80/20 stratificato quando possibile, seed 42. Nessuna ricerca dei parametri. Le percentuali descrivono un singolo split, non una garanzia di generalizzazione.
 
 | Dataset | Training / validazione | ACAN accuracy | KNN | Migliore baseline misurata |
