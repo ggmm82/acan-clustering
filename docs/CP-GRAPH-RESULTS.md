@@ -33,11 +33,11 @@ python scripts/evaluate_concepts.py file.xlsx file.csv --tree --app --output rep
 | Adult minimale | 75,33 | 4 / 4 / 4 | 75,33 | 4 / 4 / 4 | 74,00 | 72,33 | 76,00 |
 | Sonar | 86,51 | 13 / 18 / 13 | 86,51 | 13 / 18 / 13 | 74,60 | 81,75 | 84,92 |
 | Titanic | 77,65 | 32 / 37 / 35 | 77,65 | 32 / 37 / 35 | 77,28 | 79,89 | 81,19 |
-| Letter | 97,97 (seme 42) | 158 | 93,34 | 476 / 456 / 412 | 95,62 | 96,73 | 96,60 |
+| Letter | 97,79 | 158 / 153 / 171 | 93,34 | 476 / 456 / 412 | 95,62 | 96,73 | 96,60 |
 
 Percorso dell'app (codifica dell'interfaccia, salvataggio e inferenza JSON):
 Gioco 100,00 (4 concetti), Adult 75,33, Sonar 84,92, Titanic 78,21.
-Le baseline su Letter sono sul solo seme 42.
+Le baseline su Letter sono sul solo seme 42; il grafo a livelli sui tre semi 42 / 7 / 21.
 
 Lettura:
 
