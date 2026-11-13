@@ -37,6 +37,7 @@ class Slots:
         parts = (ones, keys, keys*keys, values)
         positions = ones*0 if positions is None else positions.to(keys.dtype)
         self.P = positions if self.C is None else torch.cat((self.P, positions))
+        self.P2 = positions*positions if self.C is None else torch.cat((self.P2, positions*positions))
         if self.C is None:
             self.C, self.U, self.Q, self.V = parts
             self.root = [float(len(keys)), keys.sum(0), (keys*keys).sum(0)]
@@ -51,11 +52,12 @@ class Slots:
             keep = torch.ones(len(self.C), dtype=torch.bool)
             left = torch.tensor([i for i, _ in pairs])
             right = torch.tensor([j for _, j in pairs])
-            for name in ('C', 'U', 'Q', 'V', 'P', 'A'):
+            for name in ('C', 'U', 'Q', 'V', 'P', 'A', 'P2'):
                 value = getattr(self, name)
                 value[left] = value[left]+value[right]
             keep[right] = False
-            self.C, self.U, self.Q, self.V, self.P, self.A = (getattr(self, name)[keep] for name in ('C', 'U', 'Q', 'V', 'P', 'A'))
+            for name in ('C', 'U', 'Q', 'V', 'P', 'A', 'P2'):
+                setattr(self, name, getattr(self, name)[keep])
 
     def _variance(self, c, u, q):
         mean = self.root[1]/self.root[0]
@@ -117,11 +119,15 @@ class Slots:
                     break
         return pairs
 
-    def read(self, queries, scale, mass, gaussian, rotate=None):
+    def read(self, queries, scale, mass, gaussian, rotate=None, damping=None):
         mean = self.U/self.C[:, None]
         variance = (self.Q/self.C[:, None]-mean*mean).clamp_min(0)
         if rotate is not None:                                  # unrotated keys: place the centroid at the mean position
             mean = rotate(mean, self.P/self.C)
+            if damping is not None:                             # positions of the members are spread: fast phases average out
+                spread = (self.P2/self.C-(self.P/self.C)**2).clamp_min(0)
+                factor = torch.exp(-.5*spread[:, None]*damping[None]**2)
+                mean = mean*torch.cat((factor, factor), -1)
             half = variance.shape[-1]//2                        # a rotation mixes each pair of dimensions
             pair = (variance[:, :half]+variance[:, half:])/2
             variance = torch.cat((pair, pair), -1)
@@ -133,7 +139,7 @@ class Slots:
         return logits, self.V/self.C[:, None]
 
 
-def attend(q, k, v, scale, cfg, raw=None, rotate=None):
+def attend(q, k, v, scale, cfg, raw=None, rotate=None, frequency=None):
     """q: heads x L x d; k, v: key heads x L x d. Causal; exact keys in [block_start-window, t].
 
     With ``raw`` (keys before the positional rotation) the concepts summarize
@@ -165,7 +171,8 @@ def attend(q, k, v, scale, cfg, raw=None, rotate=None):
             if slots and absorbed > first:
                 flat = queries.reshape(-1, queries.shape[-1])
                 slot_logits, slot_values = slots[g].read(flat, scale, cfg['mass'], cfg['gaussian'],
-                                                         rotate if raw is not None else None)
+                                                         rotate if raw is not None else None,
+                                                         frequency if cfg.get('damping') else None)
                 logits = torch.cat((logits, slot_logits.view(repeat, end-start, -1)), -1)
                 values = torch.cat((values, slot_values))
             weights = logits.softmax(-1)
@@ -195,7 +202,7 @@ def install(model, cfg):
             turned = torch.cat((-keys[:, half:], keys[:, :half]), -1)
             return keys*angles.cos()+turned*angles.sin()
 
-        out = attend(q[0], k[0], v[0], self.scaling, cfg, raw, rotate)
+        out = attend(q[0], k[0], v[0], self.scaling, cfg, raw, rotate, inverse_frequency)
         return self.o_proj(out.transpose(0, 1).reshape(1, hidden_states.shape[1], -1)), None
 
     inverse_frequency = model.model.rotary_emb.inv_freq.detach()
@@ -217,6 +224,9 @@ CONFIGS = {
     'primi 4 + finestra 124': dict(window=124, slots=0, first=4),
     'primi 4 + finestra 60 + 64 concetti su chiavi non ruotate': dict(window=60, slots=64, unrotated=True, first=4),
     'finestra 64 + 64 concetti su chiavi non ruotate, fusione per il lettore': dict(window=64, slots=64, unrotated=True, policy='reader'),
+    'lettore + smorzamento di fase': dict(window=64, slots=64, unrotated=True, policy='reader', damping=True),
+    'lettore + smorzamento di fase + correzione gaussiana': dict(window=64, slots=64, unrotated=True, policy='reader', damping=True, gaussian=True),
+    'lettore + correzione gaussiana': dict(window=64, slots=64, unrotated=True, policy='reader', gaussian=True),
     'primi 4 + finestra 60 + 64 concetti, fusione per il lettore': dict(window=60, slots=64, unrotated=True, policy='reader', first=4),
     'finestra 64 + 64 concetti su chiavi non ruotate': dict(window=64, slots=64, unrotated=True),
     'finestra 64 + 64 concetti su chiavi non ruotate, senza log C': dict(window=64, slots=64, unrotated=True, mass=False),

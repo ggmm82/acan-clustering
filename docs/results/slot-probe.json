@@ -221,6 +221,42 @@
    ],
    "seconds": 130.2052375080002,
    "state_vectors_per_key_head": 124
+  },
+  "lettore + smorzamento di fase": {
+   "nll": 3.0061380863189697,
+   "standard_error": 0.03426528722047806,
+   "per_segment": [
+    2.8993661403656006,
+    2.852599620819092,
+    3.1058549880981445,
+    3.166731595993042
+   ],
+   "seconds": 215.02507389900165,
+   "state_vectors_per_key_head": 128
+  },
+  "lettore + smorzamento di fase + correzione gaussiana": {
+   "nll": 3.5489556789398193,
+   "standard_error": 0.0346592478454113,
+   "per_segment": [
+    3.47983980178833,
+    3.2451624870300293,
+    3.589271068572998,
+    3.881549596786499
+   ],
+   "seconds": 155.14081047499894,
+   "state_vectors_per_key_head": 128
+  },
+  "lettore + correzione gaussiana": {
+   "nll": 3.5937724113464355,
+   "standard_error": 0.03474672511219978,
+   "per_segment": [
+    3.5794663429260254,
+    3.2559814453125,
+    3.6190056800842285,
+    3.9206368923187256
+   ],
+   "seconds": 154.62607859199852,
+   "state_vectors_per_key_head": 128
   }
  }
 }
