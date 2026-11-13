@@ -78,7 +78,10 @@ class ConceptModel:
     max_levels = 8                                              # capacity limit, not a requested depth
 
     def __init__(self, max_concepts=1024, rows_per_concept=4, kappa=1., seed=0,
-                 judged_rows=2000, merge_fraction=.05, em_steps=3, restarts=5, restart_rows=5000):
+                 judged_rows=2000, merge_fraction=.05, em_steps=3, restarts=5, restart_rows=5000,
+                 covariance=True, covariance_attributes=128):
+        self.covariance, self.covariance_attributes = covariance, covariance_attributes
+        self.cross, self.cov = None, np.zeros(0, int)            # cross products of the working level, if adopted
         self.max_concepts, self.rows_per_concept = max_concepts, rows_per_concept
         self.kappa, self.seed, self.judged_rows = kappa, seed, judged_rows
         self.merge_fraction, self.em_steps = merge_fraction, em_steps
@@ -126,8 +129,84 @@ class ConceptModel:
         wn, wc = weights
         g, v, log_p = self._parameters(s)
         a = 1/v
+        together = self.cross is not None and s is self.statistics
+        if together:                                             # these attributes are recognized together
+            wn = wn.copy()
+            wn[self.cov] = 0
         numeric = -.5*(((x*x)*wn)@a.T-2*(x*wn)@(g*a).T+(mask*wn)@(g*g*a+np.log(v)+LOG_2PI).T)
+        if together:
+            numeric = numeric+self._block_density(x, mask)
         return numeric+(onehot*wc)@log_p.T
+
+    # ---- attributes that vary together, in the working level only ---------------
+    def _cross(self, t, data):
+        """Sum over the members of the products between features: still additive."""
+        xc = data[0][:, self.cov]
+        p = len(self.cov)
+        return (t.T@(xc[:, :, None]*xc[:, None, :]).reshape(len(xc), p*p)).reshape(-1, p, p)
+
+    def _covariance(self):
+        """Centre and covariance of the features of each concept, shrunk to the scale of the root."""
+        c, u = self.statistics['C'], self.statistics['U'][:, self.cov]
+        g = u/np.maximum(c, 1e-12)[:, None]
+        scatter = self.cross-c[:, None, None]*g[:, :, None]*g[:, None, :]
+        return g, (scatter+self.kappa*np.eye(len(self.cov)))/(c+self.kappa)[:, None, None]
+
+    def _block_density(self, x, mask):
+        """Log-density of the features taken together; a missing one is dropped from the Gaussian exactly."""
+        g, sigma = self._covariance()
+        xc, mc = x[:, self.cov], mask[:, self.cov] > 0
+        out = np.zeros((len(xc), len(g)))
+        patterns, which = np.unique(mc, axis=0, return_inverse=True)
+        for index, pattern in enumerate(patterns):
+            rows = np.flatnonzero(which.reshape(-1) == index)
+            if not pattern.any():
+                continue
+            factor = np.linalg.cholesky(sigma[:, pattern][:, :, pattern])
+            volume = 2*np.log(np.diagonal(factor, axis1=1, axis2=2)).sum(1)
+            for i in range(len(g)):
+                d = np.linalg.solve(factor[i], (xc[rows][:, pattern]-g[i, pattern]).T)
+                out[rows, i] = -.5*((d*d).sum(0)+volume[i]+pattern.sum()*LOG_2PI)
+        return out
+
+    def _block_unseen(self, x, mask, t):
+        """The same log-density from concepts that do not contain the row: a rank-one change, in closed form."""
+        p = len(self.cov)
+        _, sigma = self._covariance()
+        volume = np.linalg.slogdet(sigma)[1]
+        distance = -2*self._block_density(x, mask)-volume-p*LOG_2PI
+        c = self.statistics['C'][None]
+        rest = np.maximum(c-t, 0)
+        safe = np.maximum(rest, 1e-12)
+        q = distance/(c+self.kappa)
+        left = np.maximum(1-t*c/safe*q, 1e-12)
+        away = (c/safe)**2*(rest+self.kappa)*q/left
+        unseen = volume[None]+p*np.log(c+self.kappa)+np.log(left)-p*np.log(rest+self.kappa)
+        alone = rest < 1e-9                                      # nobody else: the scale of the root
+        away = np.where(alone, (x[:, self.cov]**2).sum(1)[:, None], away)
+        unseen = np.where(alone, 0., unseen)
+        return -.5*(away+unseen+p*LOG_2PI)
+
+    def _together(self, data, weights, judged):
+        """Let the features of a concept vary together, if unseen rows are then read better.
+
+        Only the working level, after the search: the search stays linear in the attributes.
+        """
+        block = np.array([j for j, name in enumerate(self.encoder.numeric) if name not in self.labels], int)
+        if not (self.covariance and self.labels and 1 < len(block) <= self.covariance_attributes
+                and bool((data[1][:, block] > 0).all())):
+            return
+        plain, before = self.statistics, self._score(self.statistics, data, weights, judged)
+        self.cov = block
+        t = self._route(plain, data, weights)[0]
+        for _ in range(4):
+            self.statistics = self._statistics(t, data)
+            self.cross = self._cross(t, data)
+            t = self._route(self.statistics, data, weights)[0]
+        self.statistics, self.cross = self._statistics(t, data), self._cross(t, data)
+        gain = self._score(self.statistics, data, weights, judged)-before
+        if gain.mean() <= gain.std()/np.sqrt(len(gain))+1e-9:
+            self.statistics, self.cross, self.cov = plain, None, np.zeros(0, int)
 
     def _route(self, s, data, weights):
         prior = np.log(np.maximum(s['C'], 1e-300)/s['C'].sum())
@@ -292,6 +371,9 @@ class ConceptModel:
                 terms.append((value*hs[..., block]).sum(-1))
                 read.append(name in self.labels)
             terms = np.stack(terms, -1)
+            if self.cross is not None and s is self.statistics:  # the features are read together
+                terms[..., self.cov] = 0
+                terms[..., self.cov[0]] = self._block_unseen(x[part], mask[part], t[part])
             observed = np.concatenate((ms[:, 0], *[hs[:, 0, block].sum(-1, keepdims=True) for block in self._blocks()]), -1) > 0
             read = np.asarray(read, bool)
             prior = np.log(np.maximum(rest['C'], 1e-300))
@@ -480,6 +562,9 @@ class ConceptModel:
             else:
                 break
         levels.append(working)
+        self.cross, self.cov = None, np.zeros(0, int)
+        if data is root:
+            self._together(data, weights, judged)
         chosen = levels[-1]
         self.path = [dict(k=step['k'], score=step['score'], restart=step['restart']) for step in general if np.isfinite(step['score'])]
         self.selection = dict(best_k=best['k'], best_score=best['score'], standard_error=best['error'],

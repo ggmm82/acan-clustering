@@ -72,6 +72,42 @@ class ConceptMixtureTest(unittest.TestCase):
         self.assertFalse(any(key not in ('C', 'Cm', 'U', 'Q', 'N', 'PV', 'PP', 'PG') for key in model.statistics))
         self.assertTrue(all(value.ndim <= 2 for value in model.statistics.values()))
 
+    def test_features_that_vary_together_are_read_together_when_judged_better(self):
+        def crossed(rows, seed):
+            """Two classes with the same margins: they differ only in how two attributes vary together."""
+            rng = np.random.default_rng(seed)
+            kind = rng.integers(0, 2, rows)
+            a = rng.normal(size=rows)
+            b = np.where(kind, a, -a)+rng.normal(0, .3, rows)
+            return pd.DataFrame(dict(a=a, b=b, noise=rng.normal(size=rows), kind=np.where(kind, 'along', 'across')))
+        train, test = crossed(400, 0), crossed(300, 1)
+        together = ConceptMixture(seed=0).fit(train, ['kind'])
+        alone = ConceptMixture(seed=0, covariance=False).fit(train, ['kind'])
+        self.assertIsNotNone(together.cross)                             # adopted: unseen rows are read better
+        self.assertIsNone(alone.cross)
+        accuracy = lambda model: float((model.predict(test, 'kind') == test.kind).mean())
+        self.assertGreater(accuracy(together), .8)                       # the two classes cross at the origin
+        self.assertGreater(accuracy(together), accuracy(alone)-.03)       # here many concepts do as well; see Letter
+        self.assertLessEqual(together.concepts, alone.concepts)
+        # The score of an unseen row equals the score after taking the row out of the sums by hand.
+        data = together.encoder.transform(train)
+        t = together._route(together.statistics, data, together.train_weights)[0]
+        full_s, full_c = together.statistics, together.cross
+        together.statistics, together.cross = together._statistics(t, data), together._cross(t, data)
+        fast = together._block_unseen(data[0][:3], data[1][:3], t[:3])
+        for row in range(3):
+            keep = np.ones(len(train), bool)
+            keep[row] = False
+            part = tuple(value[keep] for value in data)
+            together.statistics = together._statistics(t[keep], part)
+            together.cross = together._cross(t[keep], part)
+            np.testing.assert_allclose(fast[row], together._block_density(data[0][row:row+1], data[1][row:row+1])[0], rtol=1e-6, atol=1e-6)
+        together.statistics, together.cross = full_s, full_c
+        # A missing feature is dropped from the Gaussian: predictions stay finite and sensible.
+        partial = together.predict_proba(test.assign(noise=np.nan), 'kind')[0]
+        self.assertTrue(np.isfinite(partial).all())
+        self.assertGreater(float((np.asarray(together.encoder.categories['kind'])[partial.argmax(1)] == test.kind).mean()), .8)
+
     def test_missing_attributes_are_marginalized(self):
         train = game(seed=4)
         train.loc[::7, 'day'] = np.nan
@@ -104,6 +140,21 @@ OPTIONS = dict(lr=.08, tau=.2, alpha=.5, device='numpy', batch_size=300, max_dep
 
 
 class ConceptApplicationTest(unittest.TestCase):
+    def test_application_reads_features_together(self):
+        from acan.vis.inference import infer
+        from acan.vis.training import train_native
+        rng = np.random.default_rng(0)
+        kind = rng.integers(0, 2, 500)
+        a = rng.normal(size=500)
+        frame = pd.DataFrame(dict(a=a, b=np.where(kind, a, -a)+rng.normal(0, .3, 500), noise=rng.normal(size=500),
+                                  kind=np.where(kind, 'along', 'across')))
+        graph = train_native(frame.iloc[:350], ['kind'], OPTIONS)
+        state = graph.clusterModel[graph.rootId].routing_parameters
+        self.assertEqual(len(state['correlated']['columns']), 3)
+        test = frame.iloc[350:]
+        predicted = infer(graph.to_json(), test.assign(kind=np.nan), 'complete')['kind']
+        self.assertGreater((predicted.astype(str).to_numpy() == test.kind.to_numpy()).mean(), .8)
+
     def test_application_path_classification_round_trip(self):
         from acan import GraphClusterModel
         from acan.vis.inference import infer

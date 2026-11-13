@@ -127,7 +127,15 @@ def _recognition(model, encoder, s, feature_numeric, feature_blocks):
     """What is needed to recognize the concepts of a level from the observed features of a row."""
     g, v, log_p = model._parameters(s)
     shift = s['U']/np.maximum(s['Cm'], 1e-12)                      # the centre this level takes away from its rows
+    block = None
+    if model.cross is not None and s is model.statistics:        # features recognized together
+        together = set(model.cov.tolist())
+        feature_numeric = [j for j in feature_numeric if j not in together]
+        centre, covariance = model._covariance()
+        block = dict(columns=[int(encoder.numeric_index[j]) for j in model.cov], mean=encoder.mean[model.cov].tolist(),
+                     std=encoder.std[model.cov].tolist(), centre=centre.tolist(), covariance=covariance.tolist())
     return dict(
+        correlated=block,
         log_prior=np.log(s['C']/s['C'].sum()).tolist(),
         numeric=[dict(column=encoder.numeric_index[j], mean=float(encoder.mean[j]), std=float(encoder.std[j]),
                       centre=g[:, j].tolist(), variance=v[:, j].tolist(), shift=shift[:, j].tolist()) for j in feature_numeric],
@@ -173,6 +181,17 @@ def _posterior(state, rows, position, shift=None):
             z = z-shift[attribute['column']]
         centre, variance = np.asarray(attribute['centre']), np.asarray(attribute['variance'])
         logits = logits-.5*((z[:, None]-centre)**2/variance+np.log(variance)+LOG_2PI)
+    block = state.get('correlated')
+    if block:                                                    # the observed part of the features read together
+        seen = [place for place, column in enumerate(block['columns']) if column in position]
+        if seen:
+            z = rows[:, [position[block['columns'][place]] for place in seen]]
+            z = (z-np.asarray(block['mean'])[seen])/np.asarray(block['std'])[seen]
+            centre = np.asarray(block['centre'])[:, seen]
+            covariance = np.asarray(block['covariance'])[:, seen][:, :, seen]
+            inverse, volume = np.linalg.inv(covariance), np.linalg.slogdet(covariance)[1]
+            d = z[:, None]-centre[None]
+            logits = logits-.5*(np.einsum('nkp,kpq,nkq->nk', d, inverse, d)+volume+len(seen)*LOG_2PI)
     for block in state['blocks']:
         # A single completed row is encoded with only its own level: absent
         # levels are zeros, and a block without any level is unobserved.
