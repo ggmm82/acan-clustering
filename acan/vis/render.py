@@ -346,7 +346,7 @@ def to_svg(ele):
 
 uplData=dcc.Upload(
             id="upload-data",
-            children=html.Div(["Drag and Drop or ", html.A("Select Dataset Files (Max 150MB)")]),
+            children=html.Div(["Trascina qui o ", html.A("scegli i file dei dati (massimo 150 MB)")]),
             style={
                 "lineHeight": "60px",
                 "borderWidth": "1px",
@@ -362,7 +362,7 @@ uplData=dcc.Upload(
 
 uplModel=dcc.Upload(
             id="upload-model",
-            children=html.Div(["Drag and Drop or ", html.A("Load Model JSON")]),
+            children=html.Div(["Trascina qui o ", html.A("carica un modello salvato (JSON)")]),
             style={
                 "lineHeight": "40px",
                 "borderWidth": "1px",
@@ -525,7 +525,7 @@ def parameter(label, id, value, lo, hi, step):
 
 model_layout = dbc.Container([
     html.H4('Scopri i concetti, poi approfondisci soltanto dove serve', className='mt-3'),
-    html.P('Senza target scopri gruppi su tutte le righe; con un target apprendi a prevederne la classe su uno split 80/20. Scegli se il target è una classe (anche numerica) oppure una quantità continua. Avvia il modello iniziale. Doppio clic su un gruppo per creare un solo livello aggiuntivo sui suoi campioni. La radice rimane unica. Confronta la validazione in Evaluation e rimuovi i rami senza benefici.'),
+    html.P('Senza target scopri gruppi su tutte le righe; con un target apprendi a prevederne la classe su uno split 80/20. Scegli se il target è una classe (anche numerica) oppure una quantità continua. Il modello costruisce da solo i livelli: sotto la radice i concetti generali, poi i comportamenti particolari, uniti da frecce che mostrano da quali concetti generali discende ciascuno. Un doppio clic su un gruppo lo approfondisce a mano; in Valutazione confronti il risultato e rimuovi i rami che non aiutano.'),
     uplModel,
     dbc.Row([
         dbc.Col([dbc.Label('Target (svuota per scoperta non supervisionata)'),
@@ -587,7 +587,9 @@ model_layout = dbc.Container([
         dbc.Col(dcc.RadioItems(id='graph-view', options=[{'label': ' Concetti e gruppi', 'value': 'full'},
                    {'label': ' Solo gerarchia', 'value': 'hierarchy'}], value='full', inline=True), md=7),
         dbc.Col([dbc.Label('Disposizione panoramica', html_for='graph-layout'),
-            dcc.Dropdown(id='graph-layout', options=['breadthfirst', 'cose', 'concentric'],
+            dcc.Dropdown(id='graph-layout', options=[{'label': 'Albero dall\'alto', 'value': 'breadthfirst'},
+                                                     {'label': 'Libera, per vicinanza', 'value': 'cose'},
+                                                     {'label': 'Cerchi concentrici', 'value': 'concentric'}],
                    value='cose', clearable=False)], md=5),
     ], className='mb-3'),
     dbc.Row([
@@ -651,7 +653,9 @@ inference_layout = dbc.Container([
 _page_layout = dbc.Container([
     html.Div([html.H1('ACAN · Concept Explorer'), html.P('Dati → concetti → gerarchia → predizione e completamento', className='text-muted')], className='p-4 mb-3 bg-light border rounded'),
     dcc.Tabs(id='tabs', value='Data', children=[
-        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative', 'Matematica']
+        # Labels for the reader; values stay as they are because callbacks and saved links use them.
+        dcc.Tab(label=label, value=name) for name, label in [('Data', 'Dati'), ('Model', 'Modello'), ('Evaluation', 'Valutazione'),
+                                                           ('Inference', 'Previsione'), ('Generative', 'Generativo'), ('Matematica', 'Matematica')]
     ]),
     # Keep the graph mounted when switching tabs: destroying Cytoscape while
     # asynchronous layout/resize callbacks are pending causes browser errors.
@@ -1118,7 +1122,7 @@ def load_model_json(contents, filename, tab_id):
         if model.rootId not in model.clusterModel:
             raise ValueError('Il modello non contiene un nodo radice valido.')
         options = [{'label': label, 'value': label} for label in model.labels]
-        return model_json, options, model.labels, '✅ Modello caricato: pronto per Inference.'
+        return model_json, options, model.labels, '✅ Modello caricato: pronto per Previsione.'
     except Exception as exc:
         return dash.no_update, dash.no_update, dash.no_update, f'❌ Modello non valido: {exc}'
 
@@ -1149,7 +1153,7 @@ def run_inference(n_clicks, model_json, csv_text, mode):
         return None, [], 'Pronto: premere Esegui inferenza.', True
     try:
         if not csv_text:
-            raise ValueError('Caricare prima un CSV nella scheda Inference.')
+            raise ValueError('Caricare prima un CSV nella scheda Previsione.')
         result = infer(model_json, pd.read_csv(io.StringIO(csv_text)), mode)
         table = dbc.Table.from_dataframe(result.head(100).fillna(''), striped=True, bordered=True)
         return (result.to_csv(index=False), table,
@@ -1575,7 +1579,7 @@ def edit_hierarchy(request, refine_clicks, remove_clicks, selected, model_json, 
             if context:
                 context.base_model = model_json
                 context.graph = graph
-            return graph.to_json(), 'Ramo rimosso. Evaluation confronta ora prima e dopo la rimozione.', True, True
+            return graph.to_json(), 'Ramo rimosso. Valutazione confronta ora prima e dopo la rimozione.', True, True
         if context is None:
             raise ValueError('Per approfondire servono i dati di training di questa pagina. Un JSON caricato da solo non li contiene: addestra il modello sul tuo CSV.')
         from acan.vis.refinement import parse_group

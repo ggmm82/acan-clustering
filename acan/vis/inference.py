@@ -8,7 +8,7 @@ from acan import GraphClusterModel
 
 def infer(model_json, dataset, mode='predict'):
     if not model_json:
-        raise ValueError('Caricare o addestrare un modello nella scheda Model.')
+        raise ValueError('Caricare o addestrare un modello nella scheda Modello.')
     if dataset.empty:
         raise ValueError('Il CSV non contiene righe.')
     model = GraphClusterModel.loadModel(model_json)
