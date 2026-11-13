@@ -149,6 +149,18 @@
    ],
    "seconds": 494.8374760329999,
    "state_vectors_per_key_head": 128
+  },
+  "finestra 64 + 64 concetti su chiavi non ruotate, correzione gaussiana": {
+   "nll": 5.819472789764404,
+   "standard_error": 0.04446437209844589,
+   "per_segment": [
+    5.693134307861328,
+    5.137975692749023,
+    5.888768196105957,
+    6.558011531829834
+   ],
+   "seconds": 169.907401467,
+   "state_vectors_per_key_head": 128
   }
  }
 }
