@@ -71,17 +71,49 @@ def _softmax(logits):
 class ConceptMixture:
     def __init__(self, max_concepts=1024, rows_per_concept=4, kappa=1., seed=0,
                  judged_rows=2000, merge_fraction=.05, em_steps=3,
-                 restarts=5, restart_rows=5000, judged_fraction=1.):
+                 restarts=5, restart_rows=5000, judged_fraction=1., covariance=False):
         self.max_concepts, self.rows_per_concept = max_concepts, rows_per_concept
         self.kappa, self.seed, self.judged_rows = kappa, seed, judged_rows
         self.merge_fraction, self.em_steps = merge_fraction, em_steps
         self.restarts, self.restart_rows = restarts, restart_rows
         self.judged_fraction = judged_fraction                  # share of the rows that choose the level
+        self.covariance = covariance                            # numeric features of a concept vary together
+        self.cov = np.zeros(0, int)                             # their positions among the numeric attributes
 
     # ---- sufficient statistics -------------------------------------------------
     def _statistics(self, t, data):
         x, mask, onehot = data
-        return dict(C=t.sum(0), Cm=t.T@mask, U=t.T@x, Q=t.T@(x*x), N=t.T@onehot)
+        s = dict(C=t.sum(0), Cm=t.T@mask, U=t.T@x, Q=t.T@(x*x), N=t.T@onehot)
+        if len(self.cov):                                       # cross products: still a sum over the members
+            xc = x[:, self.cov]
+            p = len(self.cov)
+            s['S'] = (t.T@(xc[:, :, None]*xc[:, None, :]).reshape(len(xc), p*p)).reshape(-1, p, p)
+        return s
+
+    def _covariance(self, c, u, cross):
+        """Centre and covariance of the correlated block, shrunk to the unit diagonal of its level."""
+        g = u/np.maximum(c, 1e-12)[..., None]
+        scatter = cross-c[..., None, None]*g[..., :, None]*g[..., None, :]
+        return g, (scatter+self.kappa*np.eye(u.shape[-1]))/(c+self.kappa)[..., None, None]
+
+    def _block_density(self, s, x, mask):
+        """Log-density of the correlated block; a missing attribute is dropped from the Gaussian exactly."""
+        g, sigma = self._covariance(s['C'], s['U'][:, self.cov], s['S'])
+        xc, mc = x[:, self.cov], mask[:, self.cov] > 0
+        out = np.zeros((len(xc), len(g)))
+        patterns, which = np.unique(mc, axis=0, return_inverse=True)
+        for index, pattern in enumerate(patterns):
+            rows = np.flatnonzero(which.reshape(-1) == index)
+            if not pattern.any():
+                continue
+            sub = sigma[:, pattern][:, :, pattern]
+            inverse, logdet = np.linalg.inv(sub), np.linalg.slogdet(sub)[1]
+            for start in range(0, len(g), 32):
+                part = slice(start, start+32)
+                d = xc[rows][:, None, pattern]-g[None, part][:, :, pattern]
+                distance = np.einsum('nkp,kpq,nkq->nk', d, inverse[part], d)
+                out[rows, part] = -.5*(distance+logdet[part]+pattern.sum()*LOG_2PI)
+        return out
 
     def _parameters(self, s):
         """Posterior means; variances and frequencies shrink to the root by kappa."""
@@ -96,10 +128,25 @@ class ConceptMixture:
     def _log_density(self, s, data, weights):
         x, mask, onehot = data
         wn, wc = weights
+        wn = self._diagonal(wn)
         g, v, log_p = self._parameters(s)
         a = 1/v
         numeric = -.5*(((x*x)*wn)@a.T-2*(x*wn)@(g*a).T+(mask*wn)@(g*g*a+np.log(v)+LOG_2PI).T)
+        if len(self.cov):
+            numeric = numeric+self._block_density(s, x, mask)
         return numeric+(onehot*wc)@log_p.T
+
+    def _diagonal(self, wn):
+        """Weights of the attributes still treated one by one."""
+        if not len(self.cov):
+            return wn
+        wn = wn.copy()
+        wn[self.cov] = 0
+        return wn
+
+    def _block_length(self, c, u, cross):
+        """Code length of the correlated block: half the mass times the log-volume."""
+        return .5*c*np.linalg.slogdet(self._covariance(c, u, cross)[1])[1]
 
     def _route(self, s, data, weights):
         prior = np.log(np.maximum(s['C'], 1e-300)/s['C'].sum())
@@ -109,9 +156,12 @@ class ConceptMixture:
     def _merge_costs(self, s, weights, rows=None):
         """Increase of description length when two concepts are summed (k x k, or the given rows x k)."""
         wn, wc = weights
+        wn = self._diagonal(wn)
         g, v, log_p = self._parameters(s)
         k = len(s['C'])
         own = description_length(s['Cm'], v, s['C'], np, wn)-(s['N']*log_p*wc).sum(1)
+        if len(self.cov):
+            own = own+self._block_length(s['C'], s['U'][:, self.cov], s['S'])
         index = np.arange(k) if rows is None else np.asarray(rows)
         cost = np.empty((len(index), k))
         for start in range(0, len(index), 64):
@@ -126,6 +176,8 @@ class ConceptMixture:
             lp = np.log((merged['N']+self.kappa*self.root_p)/(ca+self.kappa))
             c = s['C'][part, None]+s['C'][None]
             together = description_length(cm, vm, c, np, wn)-(merged['N']*lp*wc).sum(-1)
+            if len(self.cov):
+                together = together+self._block_length(c, merged['U'][..., self.cov], s['S'][part, None]+s['S'][None])
             cost[start:start+64] = together-own[part, None]-own[None]
         cost[np.arange(len(index)), index] = np.inf
         return cost
@@ -182,6 +234,14 @@ class ConceptMixture:
         t = self._route(s, (x, mask, onehot), weights)[0]
         k, encoder = len(s['C']), self.encoder
         numeric_targets = np.array([c in self.labels for c in encoder.numeric], bool)
+        one_by_one = ~numeric_targets
+        one_by_one[self.cov] = False
+        if len(self.cov):
+            p = len(self.cov)
+            block = -2*self._block_density(s, x, mask)             # distance + log-volume + p log 2 pi, all members included
+            logdet = np.linalg.slogdet(self._covariance(s['C'], s['U'][:, self.cov], s['S'])[1])[1]
+            distance = block-logdet-p*LOG_2PI
+            norm = (x[:, self.cov]**2).sum(1)
         scores = np.empty(len(x))
         size = max(int(4e6//(k*max(x.shape[1]+onehot.shape[1], 1))), 1)
         for start in range(0, len(x), size):
@@ -194,7 +254,20 @@ class ConceptMixture:
             numeric = -.5*((xs-g)**2/v+np.log(v)+LOG_2PI)*ms
             counts = np.maximum(s['N'][None]-r*hs, 0)
             prior = np.log(np.maximum(s['C'][None]-t[part], 1e-300))
-            feature = prior+numeric[:, :, ~numeric_targets].sum(-1)
+            feature = prior+numeric[:, :, one_by_one].sum(-1)
+            if len(self.cov):
+                # Removing a member is a rank-one change of the scatter: closed form in the distance.
+                c, own = s['C'][None], t[part]
+                rest = np.maximum(c-own, 0)
+                safe = np.maximum(rest, 1e-12)
+                q = distance[part]/(c+self.kappa)
+                left = np.maximum(1-own*c/safe*q, 1e-12)
+                away = (c/safe)**2*(rest+self.kappa)*q/left
+                volume = logdet[None]+p*np.log(c+self.kappa)+np.log(left)-p*np.log(rest+self.kappa)
+                alone = rest < 1e-9                              # nobody else: the level's own prior
+                away = np.where(alone, norm[part, None], away)
+                volume = np.where(alone, 0., volume)
+                feature = feature-.5*(away+volume+p*LOG_2PI)
             target = numeric[:, :, numeric_targets].sum(-1)
             for c in encoder.categorical:
                 block = encoder.block(c)
@@ -224,6 +297,9 @@ class ConceptMixture:
             observed[block] = max(data[2][:, block].sum(), 1)
         self.root_p = np.maximum(data[2].sum(0)/observed, 1e-12)
         features = len(self.encoder.numeric)+len(self.encoder.categorical)-len(self.labels)
+        block = np.array([j for j, name in enumerate(self.encoder.numeric) if name not in self.labels], int)
+        complete = len(block) and bool((data[1][:, block] > 0).all())
+        self.cov = block if self.covariance and len(block) > 1 and complete else np.zeros(0, int)
         weights = self._weights(float(max(features, 1)))        # targets weigh as much as all features
         rng = np.random.default_rng(self.seed)
         judged = np.sort(rng.choice(n, max(min(int(round(n*self.judged_fraction)), self.judged_rows), 1), replace=False))
@@ -432,10 +508,26 @@ class ConceptTree:
         return out
 
 
-def fit_tree(frame, labels=(), seed=0, normal_scores=False, **options):
-    """Convenience for tables: the judged tree, optionally on normal scores of the features."""
+def judged_covariance(plain, correlated, data):
+    """True when concepts with covariance predict the judged rows better by more than one standard error."""
+    if not len(correlated.cov):
+        return False
+    scores = [model._score(model.statistics, model.encoder.transform(data), model.train_weights, plain.judged)
+              for model in (plain, correlated)]
+    gain = scores[1]-scores[0]
+    return bool(gain.mean() > gain.std()/np.sqrt(len(gain))+1e-9)
+
+
+def fit_tree(frame, labels=(), seed=0, normal_scores=False, covariance='judged', **options):
+    """Convenience for tables: the judged tree; covariance inside the concepts when judged better."""
     scores = NormalScores().fit(frame, skip=labels) if normal_scores else None
     data = scores.transform(frame) if scores else frame
-    tree = ConceptTree(lambda rows, child: ConceptMixture(seed=seed, judged_fraction=.5 if child else 1., **options).fit(rows, labels), data)
+    make = lambda rows, child, cov: ConceptMixture(seed=seed, judged_fraction=.5 if child else 1., covariance=cov,
+                                                   **options).fit(rows, labels)
+    use = covariance is True
+    if covariance == 'judged':
+        use = judged_covariance(make(data, False, False), make(data, False, True), data)
+    tree = ConceptTree(lambda rows, child: make(rows, child, use), data)
+    tree.covariance = use
     tree.scores_map = scores
     return tree

@@ -84,7 +84,7 @@ def apply_scores(matrix, maps):
 
 def train(learner, epochs):
     """Root concepts, then the judged levels below them when the learner asks for automatic levels."""
-    from .concepts import ConceptTree
+    from .concepts import ConceptTree, judged_covariance
     from .learner import AlgebraicClusterLearner
     frame = learner.full_dataset
     x = frame.to_numpy(dtype=np.float64)
@@ -97,7 +97,7 @@ def train(learner, epochs):
     learner.history = []
     first = [True]
 
-    def factory(rows, child):
+    def factory(rows, child, covariance=None):
         def progress(step):
             if first[0]:
                 learner.iteration = len(learner.history)
@@ -105,10 +105,19 @@ def train(learner, epochs):
                     prediction_loss=-step['score'], normalized_cp=float('nan'), cp=float('nan'), cp_weight=0.,
                     k_active=step['k']))
             return not learner._should_stop
-        model = ConceptMixture(seed=learner.random_state, judged_fraction=.5 if child else 1.).fit(
+        model = ConceptMixture(seed=learner.random_state, judged_fraction=.5 if child else 1.,
+                               covariance=use[0] if covariance is None else covariance).fit(
             rows, labels, encoder=MatrixEncoder(learner.cols, blocks, rows), progress=progress)
         first[0] = False
         return model
+
+    # Concepts with covariance are used only when they predict the judged rows better.
+    use = [False]
+    if len(features) > 1 and not getattr(learner, '_should_stop', False):
+        history = list(learner.history)
+        plain, correlated = factory(z, False, False), factory(z, False, True)
+        use[0] = judged_covariance(plain, correlated, z)
+        learner.history, first[0] = history, True
 
     automatic = getattr(learner, 'automatic_levels', False)
     tree = ConceptTree(factory, z, budget=[getattr(learner, 'node_budget', 64) if automatic else 1])
@@ -168,7 +177,13 @@ def export(learner, model, x, z, maps, labels):
     learner.Freqs = (s['C']/s['C'].sum())[None]
     learner.cp = explained['CP']*np.sqrt(m)
     learner.k_active = int((learner.Counts > 0).sum())
-    feature_numeric = [j for j, name in enumerate(encoder.numeric) if name not in labels]
+    correlated = set(model.cov.tolist())
+    feature_numeric = [j for j, name in enumerate(encoder.numeric) if name not in labels and j not in correlated]
+    block = None
+    if len(model.cov):
+        centre, covariance = model._covariance(s['C'], s['U'][:, model.cov], s['S'])
+        block = dict(columns=[int(encoder.numeric_index[j]) for j in model.cov], mean=encoder.mean[model.cov].tolist(),
+                     std=encoder.std[model.cov].tolist(), centre=centre.tolist(), covariance=covariance.tolist())
     feature_blocks = [name for name in encoder.categorical if name not in labels]
     learner.variational_state = dict(
         objective='predictive-concepts-v1', cp_definition='explained-variance-v1',
@@ -176,7 +191,7 @@ def export(learner, model, x, z, maps, labels):
         training_rows=len(x), training_score=model.final_score,
         numeric_targets=[learner.cols.index(label) for label in learner.labels if label in learner.cols],
         numeric_readout='weighted-training-mean', level_prior='parent-concept-v1',
-        normal_scores=maps,
+        normal_scores=maps, correlated=block,
         pair_levels=[dict(depth=level['depth'], concepts=level['concepts'], pair_criterion=level['pair_criterion'])
                      for level in graph.levels()] if graph else [],
         explained={name: value for name, value in explained.items() if name != 'CP'},
@@ -204,6 +219,21 @@ def predict_assignments(model, rows, cix):
         z = (z-attribute['mean'])/attribute['std']
         centre, variance = np.asarray(attribute['centre']), np.asarray(attribute['variance'])
         logits = logits-.5*((z[:, None]-centre)**2/variance+np.log(variance)+LOG_2PI)
+    block = state.get('correlated')
+    if block:                                                   # observed part of the correlated attributes
+        seen = [place for place, column in enumerate(block['columns']) if column in position]
+        if seen:
+            z = rows[:, [position[block['columns'][place]] for place in seen]]
+            for where, place in enumerate(seen):
+                column = block['columns'][place]
+                if column in scores:
+                    z[:, where] = np.interp(z[:, where], scores[column]['values'], scores[column]['score'])
+            z = (z-np.asarray(block['mean'])[seen])/np.asarray(block['std'])[seen]
+            centre = np.asarray(block['centre'])[:, seen]
+            covariance = np.asarray(block['covariance'])[:, seen][:, :, seen]
+            inverse, volume = np.linalg.inv(covariance), np.linalg.slogdet(covariance)[1]
+            d = z[:, None]-centre[None]
+            logits = logits-.5*(np.einsum('nkp,kpq,nkq->nk', d, inverse, d)+volume+len(seen)*LOG_2PI)
     for block in state['blocks']:
         # A single completed row is encoded with only its own level: absent
         # levels are zeros, and a block without any level is unobserved.

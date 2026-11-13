@@ -173,3 +173,96 @@ class ConceptTreeTest(unittest.TestCase):
         again = infer(GraphClusterModel.loadModel(payload).to_json(), test)['kind'].astype(str).to_numpy()
         self.assertTrue((again == predicted).all())
         self.assertGreaterEqual(graph_stats(graph)['groups'], 6)
+
+
+class CovarianceTest(unittest.TestCase):
+    def setup(self, labels=()):
+        from acan.core.concepts import Encoder
+        rng = np.random.default_rng(3)
+        mix = rng.normal(size=(3, 3))
+        x = rng.normal(size=(60, 3))@mix
+        frame = pd.DataFrame(x, columns=list('abc'))
+        if labels:
+            frame['y'] = np.where(x[:, 0]+x[:, 1] > 0, 'p', 'n')
+        model = ConceptMixture(covariance=True)
+        model.labels, model.encoder = list(labels), Encoder().fit(frame)
+        data = model.encoder.transform(frame)
+        counts = np.maximum(data[2].sum(0), 1)
+        model.root_p = np.maximum(data[2].sum(0)/counts.sum() if len(counts) else np.zeros(0), 1e-12)
+        model.cov = np.arange(3)
+        t = np.eye(3)[rng.integers(0, 3, 60)]*.9+.1/3            # soft memberships
+        weights = model._weights(3. if labels else 1.)
+        return model, data, t, weights
+
+    def test_block_density_is_the_gaussian_of_the_shrunk_covariance(self):
+        from scipy.stats import multivariate_normal
+        model, data, t, weights = self.setup()
+        s = model._statistics(t, data)
+        g, sigma = model._covariance(s['C'], s['U'], s['S'])
+        expected = np.stack([multivariate_normal(g[i], sigma[i]).logpdf(data[0]) for i in range(3)], 1)
+        np.testing.assert_allclose(model._block_density(s, data[0], data[1]), expected, rtol=1e-9, atol=1e-9)
+        missing = data[1].copy(); missing[:, 1] = 0             # an unobserved attribute is marginalized exactly
+        expected = np.stack([multivariate_normal(g[i][[0, 2]], sigma[i][[0, 2]][:, [0, 2]]).logpdf(data[0][:, [0, 2]])
+                             for i in range(3)], 1)
+        np.testing.assert_allclose(model._block_density(s, data[0], missing), expected, rtol=1e-9, atol=1e-9)
+
+    def test_judgment_in_closed_form_equals_removing_each_row(self):
+        for labels in ((), ('y',)):
+            model, data, t, weights = self.setup(labels)
+            s = model._statistics(t, data)
+            routed = model._route(s, data, weights)[0]
+            fast = model._score(s, data, weights, np.arange(8))
+            for row in range(8):
+                one = tuple(part[row:row+1] for part in data)
+                removed = model._statistics(routed[row:row+1], one)
+                rest = {key: s[key]-removed[key] for key in s}
+                feature_weights = model._weights(0.) if labels else weights
+                logits = model._log_density(rest, one, feature_weights)+np.log(rest['C'])
+                if labels:
+                    post = np.exp(logits-logits.max()); post /= post.sum()
+                    _, _, log_p = model._parameters(rest)
+                    block = model.encoder.block('y')
+                    slow = np.log((post[0]*(np.exp(log_p[:, block])@one[2][0, block])).sum())
+                else:
+                    slow = np.log(np.exp(logits-logits.max()).sum())+logits.max()-np.log(len(data[0])-1)
+                self.assertAlmostEqual(fast[row], slow, places=8)
+
+    def test_correlated_concepts_are_chosen_only_when_judged_better(self):
+        from acan.core.concepts import fit_tree
+        rng = np.random.default_rng(0)
+        base = rng.normal(size=(300, 1))
+        along = pd.DataFrame(dict(a=base[:, 0], b=base[:, 0]+rng.normal(0, .1, 300)))
+        along['side'] = np.where(along.b-along.a > 0, 'above', 'below')      # only the joint position decides
+        tree = fit_tree(along, ['side'], seed=0)
+        self.assertTrue(tree.covariance)
+        test = pd.DataFrame(dict(a=np.linspace(-2, 2, 60)))
+        test['b'] = test.a+np.tile([.15, -.15], 30)
+        predicted = np.asarray(['above', 'below'])[tree.predict_proba(test, 'side', ['above', 'below']).argmax(1)]
+        self.assertGreater((predicted == np.where(test.b > test.a, 'above', 'below')).mean(), .9)
+        import sys
+        sys.path.insert(0, 'tests')
+        from test_concepts import game
+        self.assertFalse(fit_tree(game(seed=2), ['play'], seed=0).covariance)   # nothing to gain: the simpler concept stays
+
+    def test_application_uses_and_saves_correlated_concepts(self):
+        from acan import GraphClusterModel
+        from acan.vis.inference import infer
+        from acan.vis.training import train_native
+        options = dict(lr=.08, tau=.2, alpha=.5, device='numpy', batch_size=300, max_depth=3, max_epochs=100,
+                       min_samples_split=12, similarity_threshold=.92, routing_profile='cp-v9')
+        rng = np.random.default_rng(0)
+        base = rng.normal(size=300)
+        frame = pd.DataFrame(dict(a=base, b=base+rng.normal(0, .1, 300)))
+        frame['side'] = np.where(frame.b-frame.a > 0, 'above', 'below')
+        graph = train_native(frame, ['side'], options)
+        root = graph.clusterModel[graph.rootId]
+        self.assertIsNotNone(root.routing_parameters['correlated'])
+        test = pd.DataFrame(dict(a=np.linspace(base.min()*.8, base.max()*.8, 60)))
+        test['b'] = test.a+np.tile([.15, -.15], 30)
+        payload = graph.to_json()
+        predicted = infer(payload, test)['side'].astype(str).to_numpy()
+        self.assertGreater((predicted == np.where(test.b > test.a, 'above', 'below')).mean(), .9)
+        again = infer(GraphClusterModel.loadModel(payload).to_json(), test)['side'].astype(str).to_numpy()
+        self.assertTrue((again == predicted).all())
+        partial = infer(payload, test.assign(b=np.nan))['side']     # one correlated attribute unknown: marginalized
+        self.assertEqual(len(partial), len(test))

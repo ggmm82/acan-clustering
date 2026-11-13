@@ -20,8 +20,9 @@ class ConceptGraph:
         k = len(statistics['C'])
         self.leaves = k
         size = 2*k-1
-        self.s = {key: np.zeros((size,)+statistics[key].shape[1:]) for key in KEYS}
-        for key in KEYS:
+        self.keys = tuple(statistics)                           # every statistic is additive, whatever the concept holds
+        self.s = {key: np.zeros((size,)+statistics[key].shape[1:]) for key in self.keys}
+        for key in self.keys:
             self.s[key][:k] = statistics[key]
         self.left, self.right = np.full(size, -1), np.full(size, -1)
         self._agglomerate(k)
@@ -33,7 +34,7 @@ class ConceptGraph:
     # ---- bottom-up: generalization without reassignment ------------------------
     def _agglomerate(self, k):
         alive = list(range(k))                                  # node ids of the current concepts
-        current = {key: self.s[key][:k].copy() for key in KEYS}
+        current = {key: self.s[key][:k].copy() for key in self.keys}
         cost = self.model._merge_costs(current, self.weights)
         for step in range(k-1):
             n = len(alive)
@@ -41,7 +42,7 @@ class ConceptGraph:
             i, j = sorted(divmod(flat, n))
             node = k+step
             self.left[node], self.right[node] = alive[i], alive[j]
-            for key in KEYS:
+            for key in self.keys:
                 current[key][i] += current[key][j]
                 self.s[key][node] = current[key][i]
                 current[key] = np.delete(current[key], j, 0)
