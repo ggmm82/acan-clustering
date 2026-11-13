@@ -105,16 +105,17 @@ class ConceptMixture:
         return _softmax(self._log_density(s, data, weights)+prior)
 
     # ---- generalization --------------------------------------------------------
-    def _merge_costs(self, s, weights):
-        """Increase of description length when two concepts are summed (k x k)."""
+    def _merge_costs(self, s, weights, rows=None):
+        """Increase of description length when two concepts are summed (k x k, or the given rows x k)."""
         wn, wc = weights
         g, v, log_p = self._parameters(s)
         k = len(s['C'])
         own = description_length(s['Cm'], v, s['C'], np, wn)-(s['N']*log_p*wc).sum(1)
-        cost = np.empty((k, k))
-        for start in range(0, k, 64):
-            rows = slice(start, start+64)
-            merged = {key: s[key][rows, None]+s[key][None] for key in ('Cm', 'U', 'Q', 'N')}
+        index = np.arange(k) if rows is None else np.asarray(rows)
+        cost = np.empty((len(index), k))
+        for start in range(0, len(index), 64):
+            part = index[start:start+64]
+            merged = {key: s[key][part, None]+s[key][None] for key in ('Cm', 'U', 'Q', 'N')}
             cm = merged['Cm']
             _, vm = centre_variance(cm, merged['U'], merged['Q'], 1., self.kappa, np)
             ca = np.zeros_like(merged['N'])
@@ -122,10 +123,10 @@ class ConceptMixture:
                 block = self.encoder.block(c)
                 ca[..., block] = merged['N'][..., block].sum(-1, keepdims=True)
             lp = np.log((merged['N']+self.kappa*self.root_p)/(ca+self.kappa))
-            c = s['C'][rows, None]+s['C'][None]
+            c = s['C'][part, None]+s['C'][None]
             together = description_length(cm, vm, c, np, wn)-(merged['N']*lp*wc).sum(-1)
-            cost[rows] = together-own[rows, None]-own[None]
-        cost[np.arange(k), np.arange(k)] = np.inf
+            cost[start:start+64] = together-own[part, None]-own[None]
+        cost[np.arange(len(index)), index] = np.inf
         return cost
 
     def _generalize(self, s, weights, count):
