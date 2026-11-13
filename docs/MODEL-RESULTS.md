@@ -11,17 +11,16 @@ impostazione per dataset.
 python scripts/evaluate_concepts.py file.xlsx file.csv --app --output reports/concepts.json
 ```
 
-| Dataset | Grafo dei concetti | concetti per livello (un seme) | concetti di lavoro | tempo per seme | un solo livello (revisione precedente) | con covarianza (tolta) | KNN 5 | Random Forest | HistGB |
+| Dataset | Grafo dei concetti | concetti per livello (un seme) | concetti di lavoro | tempo per seme | un solo livello, senza covarianza (revisione precedente) | covarianza dentro la ricerca (tolta) | KNN 5 | Random Forest | HistGB |
 |---|---:|---|---:|---:|---:|---:|---:|---:|---:|
 | Gioco | 100,00 | 4 | 4 / 4 / 4 | < 1 s | 100,00 | 100,00 | 100,00 | 100,00 | 55,00 |
 | Adult minimale | 75,33 | 3 → 5 | 5 / 5 / 6 | 1 s | 76,33 | 75,33 | 74,00 | 72,33 | 76,00 |
 | Sonar | 83,33 | 3 → 7 → 26 | 26 / 17 / 26 | 3 s | 83,33 | 86,51 | 74,60 | 81,75 | 84,92 |
 | Titanic | 78,96 | 3 → 9 → 32 | 32 / 37 / 31 | 3 s | 78,96 | 77,65 | 77,28 | 79,89 | 81,19 |
-| Letter | 93,62 | 3 → 12 → 37 → 91 → 614 | 614 / 563 / 562 | 160–175 s | 93,56 | 97,79 | 95,62 | 96,73 | 96,60 |
+| Letter | **97,92** | 3 → 12 → 37 → 91 → 614 | 614 / 563 / 562 | 164–169 s | 93,56 | 97,79 | 95,22 | 96,43 | 96,34 |
 
 Percorso dell'app (codifica dell'interfaccia, salvataggio e inferenza JSON):
-Gioco 100,00, Adult 74,67, Sonar 86,51, Titanic 74,49. Baseline su Letter sul
-solo seme 42.
+Gioco 100,00, Adult 74,67, Sonar 86,51, Titanic 74,49.
 
 ### Che cosa fanno i livelli
 
@@ -42,11 +41,15 @@ Lettura:
   senza intervento manuale; un comportamento condiviso è un solo nodo.
 - **Che cosa non cambiano.** L'accuratezza: il livello di lavoro è scelto dallo
   stesso giudizio di prima e, sui dati reali provati, è sempre risultato
-  migliore letto direttamente sulla tabella che attraverso il livello 1. Su
-  Letter i livelli organizzano 600 concetti in cinque righe ma non recuperano
-  le relazioni fra attributi: resta 93,6% contro 97,8% con la covarianza.
+  migliore letto direttamente sulla tabella che attraverso il livello 1.
+- **Attributi che variano insieme.** Nel livello di lavoro, a ricerca finita,
+  la covarianza è adottata quando legge meglio le osservazioni non viste. Su
+  Letter è adottata in 3 semi su 3 e porta l'accuratezza da 93,6% a **97,9%**
+  (98,15 / 97,80 / 97,80), sopra KNN, Random Forest e HistGB, in pochi secondi
+  in più; negli altri dataset il giudizio non la adotta (Titanic ha valori
+  mancanti, su Sonar 60 attributi sono troppi per concetti di poche righe).
   Sonar resta 3,2 punti sotto la versione con lunghezza di descrizione.
-- **Costo.** Due ricerche invece di una: su Letter 160–175 secondi contro 66. Il giudizio è la parte più costosa; ora è eseguito ogni dieci per cento
+- **Costo.** Due ricerche invece di una: su Letter 164–169 secondi contro 66. Il giudizio è la parte più costosa; ora è eseguito ogni dieci per cento
   di concetti in meno.
 - Nel percorso dell'app Titanic è più basso della libreria (74,5 contro 79,0):
   la codifica dei valori mancanti dell'interfaccia è diversa. Va indagato.
@@ -58,7 +61,7 @@ Lettura:
 |---|---|
 | La CP quadratica è aggregante e individua i concetti generali | confermata: è il criterio che sceglie il livello 1 e i successivi |
 | Da sola può fermare la generalizzazione | no: cresce con ogni suddivisione di un concetto reale e, per costruzione, premia i concetti grandi; l'arresto resta al giudizio su osservazioni non viste |
-| Letter da 66 s a 4,5 s | non riprodotta: con i livelli il tempo cresce a 160–175 s |
+| Letter da 66 s a 4,5 s | non riprodotta: con i livelli il tempo cresce a 164–169 s |
 | Sonar a 86,5–87,1% | non riprodotta: 83,3% |
 | Ottimizzare $-CP^\circ$ chiude il divario del linguaggio (3,01 → 2,76) | non verificabile senza addestramento; a pesi invariati i livelli non migliorano la lettura (sotto) |
 

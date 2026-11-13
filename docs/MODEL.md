@@ -35,10 +35,18 @@ $$
 da cui centro $g_i=U_i/C_i$, dispersione $s_i^2=Q_i/C_i-g_i^2$, lettura
 $\bar y_i=Y_i/C_i$. Per un attributo categorico le somme sono conteggi.
 
-**Costo.** Ogni somma ha la dimensione di un'osservazione. Il modello non
-conserva prodotti fra attributi diversi: memoria e tempo sono lineari nel
-numero di attributi e nel numero di osservazioni, e quadratici soltanto nel
-numero di concetti durante la generalizzazione.
+**Costo.** Ogni somma ha la dimensione di un'osservazione: durante la ricerca
+dei concetti memoria e tempo sono lineari nel numero di attributi e nel numero
+di osservazioni, e quadratici soltanto nel numero di concetti.
+
+**Attributi che variano insieme.** Solo il livello di lavoro, a ricerca
+finita, può conservare in più la somma dei prodotti fra gli attributi
+riconosciuti, $S_i=\sum_tT_{it}z_tz_t^\top$ (ancora una somma sui membri), e
+riconoscere con la covarianza $\Sigma_i=(S_i-C_ig_ig_i^\top+\kappa_0I)/(C_i+\kappa_0)$
+al posto delle varianze. È adottata solo se le osservazioni non viste sono
+lette meglio per più di un errore standard. Costa una passata sui dati,
+quadratica negli attributi, e una fattorizzazione per concetto: la ricerca
+non cambia.
 
 Un **arco** collega due concetti dello stesso livello fra cui qualche
 osservazione esita: $E_{il}=\frac1n\sum_tT_{it}T_{lt}$ sulle due appartenenze
@@ -206,6 +214,15 @@ darebbe sei frammenti.
 uno e $P^{(\ell)}m^{(\ell)}=m^{(\ell-1)}$, con $m$ le masse dei concetti. La
 discendenza attraverso più livelli è il prodotto delle matrici.
 
+**M11 (giudizio con covarianza).** Togliere un'osservazione di peso $w$ da un
+concetto è un aggiornamento di rango uno di $\Sigma_i$: con
+$q=\delta^\top\Sigma_i^{-1}\delta/(C_i+\kappa_0)$, $\delta=z-g_i$ e
+$C'=C_i-w$, la distanza diventa
+$(C_i/C')^2(C'+\kappa_0)\,q/(1-wC_iq/C')$ e il determinante si moltiplica per
+$1-wC_iq/C'$. Il giudizio su osservazioni non viste resta quindi in forma
+chiusa. *Verifica:* coincide con il ricalcolo senza la riga
+(`tests/test_concepts.py`).
+
 **M7 (limite).** Uno stato di $P$ numeri a $b$ bit non può restituire
 esattamente più di $Pb$ bit del passato. Un numero fisso di concetti è una
 compressione con perdita; la perdita è quella limitata da M3.
@@ -231,7 +248,7 @@ un'approssimazione, non coperta da M3.
 
 | Tolto | Motivo |
 |---|---|
-| Covarianza fra attributi dentro il concetto | costo cubico nel numero di attributi. Su Letter dava 97,8% contro 93,6%: la qualità persa è nota e accettata |
+| Covarianza dentro la ricerca dei concetti | costo cubico a ogni unione. La covarianza è ora solo nel livello di lavoro, a ricerca finita: su Letter dà 98,1% in pochi secondi in più |
 | Livelli costruiti dall'alto, un sottomodello per concetto | frammentavano: lo stesso comportamento veniva riscoperto sotto ogni concetto, con meno dati ogni volta. I livelli ora sono dello stesso modello (sezione 2) e un comportamento condiviso è un solo nodo (M9) |
 | Albero di tagli sopra i concetti (`acan/core/graph.py`) | era un albero: un concetto aveva un solo genitore. Sostituito dai livelli con matrici dense |
 | Punteggi normali | toglievano i concetti spurii con rumore uniforme e cancellavano i vuoti fra gruppi separati |
@@ -240,9 +257,9 @@ un'approssimazione, non coperta da M3.
 
 ## 6. Ciò che il modello non fa
 
-- Non rappresenta relazioni fra attributi dentro un concetto: gruppi allungati
-  in diagonale richiedono più concetti (Letter: 93,6% contro 97,8% con la
-  covarianza, che ha costo cubico ed è stata tolta).
+- I concetti sono cercati senza relazioni fra attributi; la covarianza entra
+  solo dopo, nel livello di lavoro, e solo con attributi numerici tutti
+  osservati (al più 128) e livello di lavoro letto direttamente sulla tabella.
 - Il criterio a coppie preferisce concetti grandi: gruppi adiacenti lungo una
   direzione compaiono prima uniti e sono separati al livello successivo.
 - Il contesto di un livello toglie il centro solo agli attributi numerici; per

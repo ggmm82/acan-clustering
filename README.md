@@ -26,7 +26,8 @@ nodo con più genitori, non un frammento per ramo.
 
 Gli altri documenti in `docs/` sono la storia di come ci si è arrivati. I
 profili precedenti (`cp-v9`, `cp-joint-v1` e più vecchi) restano caricabili.
-Limiti aperti: senza relazioni fra attributi Letter resta al 93,6%; nel
+Gli attributi che variano insieme sono descritti insieme solo nel livello di
+lavoro, a ricerca finita e se giudicato migliore: Letter 97,9%. Limiti aperti: nel
 linguaggio lo strato compresso non eguaglia l'attenzione densa senza
 addestramento ed è più lento, e i livelli con comportamenti condivisi, misurati
 sulle chiavi di un modello preaddestrato, non migliorano la lettura.

@@ -249,7 +249,7 @@ Misure su split 80/20 ripetuti tre volte, senza impostazioni per dataset:
 | Adult minimale | 75,3% | 3 → 5 | 1 s |
 | Sonar | 83,3% | 3 → 7 → 26 | 4 s |
 | Titanic | 79,0% | 3 → 9 → 32 | 3 s |
-| Letter | 93,6% | 3 → 12 → 37 → 91 → 614 | circa 3 minuti |
+| Letter | 97,9% | 3 → 12 → 37 → 91 → 614 | circa 3 minuti |
 
 Gioco **senza target** dà un solo livello di 4 concetti in otto tabelle su
 otto. Due famiglie lontane con gli stessi tre gruppi interni danno 2 concetti
@@ -257,10 +257,12 @@ generali e 3 comportamenti, ciascuno con due genitori: un albero ne darebbe 6.
 
 Limiti misurati:
 
-- **Letter.** Descrivere insieme gli attributi che variano insieme porterebbe
-  al 97,8% e oltre il **95,78%** storico, ma il costo cresce con il cubo del
-  numero di attributi: è stato escluso dal modello. I livelli organizzano i
-  concetti, non sostituiscono quella informazione: l'accuratezza resta 93,6%.
+- **Letter.** I concetti sono cercati descrivendo ogni attributo
+  separatamente, così la ricerca resta lineare nel numero di attributi. A
+  ricerca finita, il livello di lavoro può descrivere insieme gli attributi che
+  variano insieme; lo fa solo se le osservazioni non viste sono lette meglio.
+  Su Letter accade sempre e l'accuratezza passa da 93,6% a 97,9%, oltre il
+  **95,78%** storico. Richiede attributi numerici senza valori mancanti.
 - **Sonar** resta tre punti sotto la versione precedente; su 42 righe di prova
   la differenza è dentro il rumore, ma non è un miglioramento.
 - La CP a coppie preferisce concetti grandi: gruppi adiacenti lungo una
