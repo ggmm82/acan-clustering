@@ -105,6 +105,18 @@ degli attributi, così che il target conti quanto tutti gli altri insieme.
 La sequenza delle unioni è un albero di generalizzazione: in basso i casi
 particolari, in alto un solo concetto che descrive tutto.
 
+**Attributi che variano insieme.** Un concetto può conservare anche la somma dei
+prodotti fra attributi numerici, che si somma come le altre:
+
+$$
+S_i=\sum_tT_{it}\,x_tx_t^\top,\qquad
+\Sigma_i=\frac{S_i-C_i\,g_ig_i^\top+\kappa I}{C_i+\kappa}.
+$$
+
+Così un concetto descrive un gruppo allungato in diagonale con una sola forma,
+invece che con molti concetti a gradini. Questa descrizione più ricca si usa
+solo se prevede meglio le osservazioni non viste (sezione 5).
+
 ### 4. Rilevanza: quanta variabilità di un attributo spiegano i concetti
 
 Per ogni attributo la variabilità totale si divide esattamente in una parte
@@ -162,6 +174,27 @@ La ricerca è però un procedimento per passi successivi: fino a 5.000 righe vie
 ripetuta cinque volte da punti di partenza diversi, e lo stesso punteggio
 sceglie fra tutto ciò che è stato visitato.
 
+**Livelli.** A un solo livello la scala di riferimento è quella di tutta la
+tabella: gruppi vicini fra loro, per quanto compatti, restano fusi. Ogni
+concetto viene quindi riesaminato con lo stesso modello sulle proprie righe e
+sulla propria scala; il riferimento del livello fine è il concetto che lo
+contiene, non più la tabella intera:
+
+$$
+v_{figlio}=\frac{C\,s_{figlio}^2+\kappa\,v_{genitore}}{C+\kappa}.
+$$
+
+Un livello più fine sceglie i propri concetti con metà delle sue righe e viene
+tenuto solo se, sull'altra metà, prevede meglio del concetto che lo contiene
+di più di un errore standard. La previsione attraversa i livelli:
+
+$$
+p(y\mid x)=\sum_iT_i(x)\,p_i(y\mid x),
+$$
+
+dove $p_i$ è la lettura del concetto oppure, se è stato approfondito, quella dei
+suoi figli. Non ci sono soglie di purezza, di righe minime o di profondità.
+
 ### 6. Le tre modalità e il linguaggio
 
 **Clustering non supervisionato.** Va previsto ogni attributo: $J$ è la
@@ -205,9 +238,19 @@ $$
 $$
 
 I token recenti $W$ sono concetti di un solo membro; quelli più vecchi vengono
-generalizzati come le righe, unendo la coppia con $\Delta$ minimo. Con un
-concetto per token la formula **è** l'attenzione ordinaria: per questo un
-modello innestato con finestra sufficiente coincide con quello di partenza.
+generalizzati come le righe. La coppia da unire è quella che costa meno a chi
+legge: l'attenzione che i due concetti ricevono per la distanza dei loro membri
+dal centro comune,
+
+$$
+\Delta^{lettore}_{il}=(a_i+a_l)\,\rho_{i\cup l}-a_i\rho_i-a_l\rho_l .
+$$
+
+L'attenzione ricevuta $a$ è un'altra quantità che si somma. I token che le
+query continuano a leggere, come i primi del contesto, restano quindi esatti da
+soli. Con un concetto per token la formula **è** l'attenzione ordinaria: per
+questo un modello innestato con finestra sufficiente coincide con quello di
+partenza.
 In un prefisso ogni token è già «non visto» dai riassunti che lo precedono:
 la regola della sezione 5 e la causalità sono la stessa regola. L'errore
 introdotto dai concetti è limitato dalla distanza delle chiavi dal centro del
@@ -223,36 +266,40 @@ sole che il modello generalizzi. Un test usato ripetutamente per scegliere
 miglioramenti diventa uno strumento di sviluppo: serve poi una verifica
 indipendente, che per questi dati non esiste ancora.
 
-Misure su split 80/20 ripetuti tre volte, senza impostazioni per dataset:
+Misure su split 80/20, senza impostazioni per dataset:
 
-| Dataset | Nuovo nucleo | Concetti | Nucleo precedente | Prototipi |
+| Dataset | Modello attuale | Concetti | Un solo livello, attributi separati | Concetti |
 |---|---:|---:|---:|---:|
 | Gioco | 100% | 4 | 100% | 4 |
-| Adult minimale | 75,3% | 4 | 67,7% | 66–69 |
-| Sonar | 86,5% | 13–18 | 82,5% | 31–35 |
-| Titanic | 77,7% | 32–37 | 80,5% | 137–147 |
-| Letter | 93,3% | 412–476 | 92,3% | 1.539 |
+| Adult minimale | 75,3% | 4 | 75,3% | 4 |
+| Sonar | 86,5% | 13–18 | 86,5% | 13–18 |
+| Titanic | 77,7% | 32–37 | 77,7% | 32–37 |
+| Letter | 97,8% | 153–171 | 93,3% | 412–476 |
 
-Gioco **senza target** dà 4 concetti in dieci prove su dieci, con rilevanza
-0,99 su Tempo, Luogo e Gioco e 0,02 su giorno, mese e anno.
+Su Letter gli attributi variano insieme e il modello lo usa: supera il
+**95,78%** storico e i metodi di confronto. Sugli altri dati la descrizione più
+ricca non prevede meglio e non viene adottata. Gioco **senza target** dà 4
+concetti in dieci prove su dieci.
 
 Limiti misurati:
 
-- Titanic è peggiore del nucleo precedente. Quando il punteggio è quasi piatto
-  la regola sceglie il livello più generale, e il numero di concetti oscilla.
-- Su Letter restano circa tre punti dai migliori metodi di confronto, e il
-  **95,78%** storico non è stato recuperato. Un concetto descrive ogni attributo
-  separatamente: le relazioni fra attributi costano concetti in più.
+- I livelli automatici compaiono di rado su questi dati: servono quando la
+  tabella ha strutture a scale diverse. In un esempio con due famiglie di tre
+  gruppi vicini, un livello vede solo le due famiglie e il secondo livello i
+  sei gruppi.
 - Senza target, se gli attributi irrilevanti non somigliano a una campana, il
-  modello può aggiungere uno o due concetti oltre quelli attesi. Le
-  combinazioni vere non vengono mescolate, ma il conteggio non è garantito.
-- **Linguaggio.** Sostituendo l'attenzione di un modello preaddestrato con 64
-  token esatti e 64 concetti, senza addestrare nulla, l'errore di previsione
-  passa da 5,51 (soli token esatti) a 5,26: i concetti aiutano, e unire per
-  contenuto vale più che unire per vicinanza nel testo (5,51). L'attenzione
-  completa misura però 2,76, e raddoppiare i token esatti (4,98) rende più dei
-  concetti. Il modello è lo stesso e l'innesto conserva la funzione; che con
-  l'addestramento i concetti recuperino il divario non è ancora misurato.
+  modello può aggiungere concetti oltre quelli attesi. Riportare gli attributi
+  a una scala gaussiana per ranghi lo evita, ma cancella i vuoti fra gruppi
+  ben separati: è disponibile, non predefinito.
+- Titanic resta sotto i migliori metodi di confronto.
+- Con attributi che variano insieme l'apprendimento è molto più lento
+  (Letter: circa un quarto d'ora).
+- **Linguaggio.** Sostituendo l'attenzione di un modello preaddestrato in tutti
+  i livelli, senza addestrare nulla, l'errore di previsione è 2,76 con
+  l'attenzione completa, 3,23 tenendo esatti i primi token e gli ultimi 124, e
+  3,01 con 64 token esatti più 64 concetti generalizzati per il lettore.
+  I concetti recuperano parte del divario; non lo chiudono, e lo strato è
+  ancora più lento dell'attenzione completa.
 
 Le formule spiegano il comportamento e i suoi limiti; i risultati sui dati
 stabiliscono quanto quel comportamento sia utile nel problema concreto.

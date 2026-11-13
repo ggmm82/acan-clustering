@@ -49,7 +49,7 @@ benchmark_jobs = TrainingJobs(max_running=1)
 
 @app.server.get('/healthz')
 def health():
-    return {'status':'ok','version':'8.4.0','build_revision':os.environ.get('ACAN_BUILD_REVISION','development'),'dataset_filter_control':'checkbox-v1'}
+    return {'status':'ok','version':'8.5.0','build_revision':os.environ.get('ACAN_BUILD_REVISION','development'),'dataset_filter_control':'checkbox-v1'}
 
 @app.server.before_request
 def ensure_session():
@@ -547,7 +547,7 @@ model_layout = dbc.Container([
 
             dcc.Dropdown(id='tabular-routing-profile',value='cp-v9',options=[{'label':'Concetti predittivi (cp-v9)','value':'cp-v9'},{'label':'CP condivisa precedente','value':'cp-joint-v1'}]),
         ],style={'display':'none'}),
-        html.P('Un solo criterio per tabulare e generativo: i concetti partono specifici e vengono generalizzati per fusione; resta il livello più generale che prevede altrettanto bene le osservazioni non viste. Il numero di concetti non è richiesto né limitato da soglie. Epoche, learning rate, livelli, purezza e campioni minimi non agiscono su questo nucleo: restano per i modelli precedenti, che rimangono caricabili. Formule, misure e limiti nella scheda Matematica.',className='small text-muted'),
+        html.P('Un solo modello per tabulare e generativo: i concetti partono specifici e vengono generalizzati per fusione; resta il livello più generale che prevede altrettanto bene le osservazioni non viste. Un concetto viene approfondito in un livello più fine, e gli attributi numerici vengono descritti insieme, solo quando questo prevede meglio righe non viste: senza numero di concetti, soglie di purezza o profondità. Con molti attributi numerici correlati l’apprendimento può richiedere diversi minuti. Epoche, learning rate, livelli, purezza e campioni minimi non agiscono su questo nucleo: restano per i modelli precedenti, che rimangono caricabili. Formule, misure e limiti nella scheda Matematica.',className='small text-muted'),
         dbc.Row([parameter(*args) for args in [
             ('Epoche', 'train-epochs', 100, 1, 1000, 1),
             ('Learning rate', 'input-lr', .08, .001, 1, .01),

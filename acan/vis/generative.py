@@ -101,10 +101,11 @@ layout = dbc.Container([
                      ('Controlli senza miglioramento prima della pausa (0: disattiva)','lm-patience',3,0,20),('Miglioramento minimo NLL','lm-min-delta',.01,0,1),
                      ('Peso CP sperimentale (0: sola NLL)','lm-cp-weight',.1,0,1)]]),
         dbc.Label('Modello dei concetti'),
-        dcc.Dropdown(id='lm-routing',value='cp-v9',clearable=False,options=[
-            {'label':'cp-v9 · stesso modello del tabulare: finestra esatta più concetti generalizzati, sola NLL','value':'cp-v9'},
+        dcc.Dropdown(id='lm-routing',value='cp-graph-v1',clearable=False,options=[
+            {'label':'cp-graph-v1 · finestra esatta più concetti, generalizzati dove il lettore perde meno; sola NLL','value':'cp-graph-v1'},
+            {'label':'cp-v9 · finestra esatta più concetti generalizzati per lunghezza di descrizione','value':'cp-v9'},
             {'label':'CP condivisa precedente (cp-joint-v1) · su CPU massimo 32 token e 8 slot','value':'cp-joint-v1'}]),
-        html.P('Con cp-v9 i token recenti restano esatti e quelli più vecchi diventano concetti; con finestra pari o superiore al blocco il modello innestato coincide con quello di partenza. Il peso CP non si applica.',className='small text-muted'),
+        html.P('Con cp-graph-v1 e cp-v9 i token recenti restano esatti e quelli più vecchi diventano concetti; con finestra pari o superiore al blocco il modello innestato coincide con quello di partenza. Il peso CP non si applica.',className='small text-muted'),
         dcc.Dropdown(id='lm-fraction',value=.5,clearable=False,options=[{'label':'50% dei livelli · ibrido predefinito','value':.5},{'label':'100% dei livelli · sperimentale; CP su CPU massimo 32 token','value':1.}]),
         dbc.Checkbox(id='lm-distill', value=False, label='Distillazione: imita anche il modello originale (più memoria e tempo, facoltativa su CPU)'),
         html.P('Nuovi progetti: documenti separati in training/validazione/test, duplicati esatti rimossi, miglior checkpoint conservato e pausa automatica dopo tre controlli senza miglioramenti sufficienti. Il progetto legacy conserva il metodo originale.', className='small text-muted'),

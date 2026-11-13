@@ -149,6 +149,114 @@
    ],
    "seconds": 494.8374760329999,
    "state_vectors_per_key_head": 128
+  },
+  "finestra 64 + 64 concetti su chiavi non ruotate, correzione gaussiana": {
+   "nll": 5.819472789764404,
+   "standard_error": 0.04446437209844589,
+   "per_segment": [
+    5.693134307861328,
+    5.137975692749023,
+    5.888768196105957,
+    6.558011531829834
+   ],
+   "seconds": 169.907401467,
+   "state_vectors_per_key_head": 128
+  },
+  "primi 4 + finestra 64": {
+   "nll": 3.3872647285461426,
+   "standard_error": 0.03633465617895126,
+   "per_segment": [
+    3.279046058654785,
+    3.1965675354003906,
+    3.5062930583953857,
+    3.567152738571167
+   ],
+   "seconds": 829.9079191980004,
+   "state_vectors_per_key_head": 64
+  },
+  "primi 4 + finestra 124": {
+   "nll": 3.229275941848755,
+   "standard_error": 0.03560224920511246,
+   "per_segment": [
+    3.107302188873291,
+    3.065004825592041,
+    3.3235890865325928,
+    3.421207904815674
+   ],
+   "seconds": 44.89570561399978,
+   "state_vectors_per_key_head": 124
+  },
+  "primi 4 + finestra 60 + 64 concetti su chiavi non ruotate": {
+   "nll": 3.1414756774902344,
+   "standard_error": 0.03496396169066429,
+   "per_segment": [
+    3.0300848484039307,
+    2.916260242462158,
+    3.196549654006958,
+    3.4230079650878906
+   ],
+   "seconds": 166.9757398380002,
+   "state_vectors_per_key_head": 124
+  },
+  "finestra 64 + 64 concetti su chiavi non ruotate, fusione per il lettore": {
+   "nll": 3.0048604011535645,
+   "standard_error": 0.03419788181781769,
+   "per_segment": [
+    2.895845413208008,
+    2.8514187335968018,
+    3.1065561771392822,
+    3.165620803833008
+   ],
+   "seconds": 130.40234276699994,
+   "state_vectors_per_key_head": 128
+  },
+  "primi 4 + finestra 60 + 64 concetti, fusione per il lettore": {
+   "nll": 3.0056490898132324,
+   "standard_error": 0.03418087214231491,
+   "per_segment": [
+    2.9023120403289795,
+    2.8502960205078125,
+    3.105480194091797,
+    3.1645092964172363
+   ],
+   "seconds": 130.2052375080002,
+   "state_vectors_per_key_head": 124
+  },
+  "lettore + smorzamento di fase": {
+   "nll": 3.0061380863189697,
+   "standard_error": 0.03426528722047806,
+   "per_segment": [
+    2.8993661403656006,
+    2.852599620819092,
+    3.1058549880981445,
+    3.166731595993042
+   ],
+   "seconds": 215.02507389900165,
+   "state_vectors_per_key_head": 128
+  },
+  "lettore + smorzamento di fase + correzione gaussiana": {
+   "nll": 3.5489556789398193,
+   "standard_error": 0.0346592478454113,
+   "per_segment": [
+    3.47983980178833,
+    3.2451624870300293,
+    3.589271068572998,
+    3.881549596786499
+   ],
+   "seconds": 155.14081047499894,
+   "state_vectors_per_key_head": 128
+  },
+  "lettore + correzione gaussiana": {
+   "nll": 3.5937724113464355,
+   "standard_error": 0.03474672511219978,
+   "per_segment": [
+    3.5794663429260254,
+    3.2559814453125,
+    3.6190056800842285,
+    3.9206368923187256
+   ],
+   "seconds": 154.62607859199852,
+   "state_vectors_per_key_head": 128
   }
  }
 }

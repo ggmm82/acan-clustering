@@ -7,9 +7,11 @@ to be read. The query is a row whose value is unknown. Membership is
 
 * The last ``window`` tokens (plus the current block) are singleton concepts:
   for them the expectation is exp(scale · q·k), i.e. dense attention.
-* Older tokens are generalized bottom-up, exactly as table rows are: each
-  enters as its own concept, and above the ``slots`` budget the pair with the
-  smallest increase of description length is added together.
+* Older tokens are generalized bottom-up, as table rows are: each enters as
+  its own concept, and above the ``slots`` budget the pair whose merge costs
+  the reader least is added together (attention received x spread, the error
+  bound). Tokens that queries keep reading, such as the first tokens of the
+  context, therefore stay exact without being treated apart.
 * Keys are summarized before the positional rotation; a concept is rotated to
   the mean position of its members when it is read.
 
@@ -26,7 +28,8 @@ from acan.concept_algebra import centre_variance, description_length, dot_simila
 from .attention import ACANConceptAttentionLayer
 
 PROFILE = 'cp-v9'
-STATISTICS = ('C', 'U', 'Q', 'V', 'P')
+GRAPH_PROFILE = 'cp-graph-v1'
+STATISTICS = ('C', 'U', 'Q', 'V', 'P', 'A')
 
 
 def rotate(keys, positions, inverse_frequency):
@@ -55,16 +58,38 @@ def merge_costs(state, kappa):
     return pair_costs(state, None, kappa).masked_fill(torch.eye(n, dtype=torch.bool, device=state['C'].device), torch.inf)
 
 
-def generalize(state, budget, kappa):
+def reader_costs(state, now):
+    """Loss of the reader when two concepts are added together: attention received x spread.
+
+    The error of reading a concept instead of its members is bounded by the
+    attention it receives times the distance of its members from the centre
+    (docs/MATHEMATICAL-FOUNDATION.md, U4). ``A`` accumulates the attention each
+    concept and each of its members has received from the queries seen so far, so
+    the rate is causal. Tokens that queries keep reading stay fine on their own.
+    """
+    c, u = state['C'], state['U']
+    gram = u@u.transpose(-1, -2)
+    square, spread = gram.diagonal(dim1=-2, dim2=-1), state['Q'].sum(-1)
+    radius = lambda count, centre, total: (total/count-centre/(count*count)).clamp_min(0).sqrt()
+    rate = state['A']/(now-state['P']/c+1)
+    rate = rate+rate.mean(-1, keepdim=True)*1e-3+1e-12
+    own = rate*radius(c, square, spread)
+    together = (rate[..., :, None]+rate[..., None, :])*radius(
+        c[..., :, None]+c[..., None, :], square[..., :, None]+square[..., None, :]+2*gram,
+        spread[..., :, None]+spread[..., None, :])
+    cost = together-own[..., :, None]-own[..., None, :]
+    return cost.masked_fill(torch.eye(c.shape[2], dtype=torch.bool, device=c.device), torch.inf)
+
+
+def generalize(state, budget, costs):
     """Add together the cheapest pair, in every batch element and head, until the budget holds.
 
-    The structure is discrete and chosen without gradient; the statistics stay
-    differentiable. After a merge only the costs of the merged concept change.
+    The structure is discrete and chosen without gradient; the statistics stay differentiable.
     """
     while state['C'].shape[2] > budget:
         n = state['C'].shape[2]
         with torch.no_grad():
-            flat = state['cost'].flatten(2).argmin(-1)
+            flat = costs(state).flatten(2).argmin(-1)
             a, c = flat//n, flat % n
             first, second = torch.minimum(a, c), torch.maximum(a, c)
             kept = torch.arange(n-1, device=flat.device)
@@ -75,16 +100,6 @@ def generalize(state, budget, kappa):
             index = lambda where: where.reshape(*where.shape, *([1]*len(tail))).expand(*where.shape, *tail)
             value = value.scatter_add(2, index(first[..., None]), value.gather(2, index(second[..., None])))
             state[name] = value.gather(2, index(kept))
-        with torch.no_grad():
-            cost = state['cost'].gather(2, kept[..., None].expand(-1, -1, -1, n)).gather(3, kept[:, :, None].expand(-1, -1, n-1, -1))
-            one = {name: state[name].gather(2, first.reshape(*first.shape, 1, *([1]*(state[name].dim()-3))).expand(
-                *first.shape, 1, *state[name].shape[3:])) for name in ('C', 'U', 'Q')}
-            merged = dict(root=state['root'], C=torch.cat((one['C'], state['C']), 2), U=torch.cat((one['U'], state['U']), 2),
-                          Q=torch.cat((one['Q'], state['Q']), 2))
-            row = pair_costs(merged, slice(0, 1), kappa)[:, :, 0, 1:]
-            row = row.scatter(2, first[..., None], torch.inf)
-            cost = cost.scatter(2, first[..., None, None].expand(-1, -1, 1, n-1), row[:, :, None])
-            state['cost'] = cost.scatter(3, first[..., None, None].expand(-1, -1, n-1, 1), row[..., None])
     return state
 
 
@@ -92,6 +107,7 @@ class ConceptSlotAttention(ACANConceptAttentionLayer):
     """Same construction and graft boundary as the base layer; only ``attend`` differs."""
     block = 16
     kappa = 1.
+    policy = 'description'                                      # cp-v9: the tabular description length
 
     def attend(self, h, position_embeddings=None, use_cache=False):
         from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
@@ -118,8 +134,10 @@ class ConceptSlotAttention(ACANConceptAttentionLayer):
         if previous:
             key, raw_all, value_all = (torch.cat((previous[name], current), 2)
                                        for name, current in (('keys', key), ('raw', raw), ('values', value)))
+            received = torch.cat((previous['received'], key.new_zeros(b, heads, length)), 2)
         else:
             raw_all, value_all = raw, value
+            received = key.new_zeros(b, heads, length)           # attention each unabsorbed token has received
         outputs, slot_weight = [], None
         position = past
         while position < past+length:
@@ -129,8 +147,10 @@ class ConceptSlotAttention(ACANConceptAttentionLayer):
             if target > low:                                    # generalize the tokens leaving the exact window
                 part = slice(0, target-low)
                 state = self._absorb(state, raw_all[:, :, part], value_all[:, :, part],
-                                     torch.arange(low, target, device=h.device, dtype=torch.float32))
+                                     torch.arange(low, target, device=h.device, dtype=torch.float32),
+                                     received[:, :, part], float(start))
                 key, raw_all, value_all = key[:, :, target-low:], raw_all[:, :, target-low:], value_all[:, :, target-low:]
+                received = received[:, :, target-low:]
                 low = target
             queries = q[:, :, position-past:end-past]
             exact = slice(0, end-low)
@@ -145,40 +165,38 @@ class ConceptSlotAttention(ACANConceptAttentionLayer):
                 values = torch.cat((values, state['V']/state['C'][..., None]), 2)
             weights = logits.softmax(-1)
             outputs.append(weights@values)
+            with torch.no_grad():                               # what the queries read: guides later generalization
+                mass = weights.sum(2)
+                received = torch.cat((received[:, :, :end-low]+mass[:, :, :end-low], received[:, :, end-low:]), 2)
             if state is not None:
                 slot_weight = weights[:, :, -1, end-low:]
+                state['A'] = state['A']+mass[:, :, end-low:]
             position = end
         output = self.o_proj(torch.cat(outputs, 2).transpose(1, 2).reshape(b, length, d).to(h.dtype))
         if use_cache:
             detach = lambda item: item.detach().clone()
             self.cache = dict(seen=past+length, low=low, keys=detach(key), raw=detach(raw_all), values=detach(value_all),
+                              received=detach(received),
                               state=None if state is None else {name: (detach(item) if torch.is_tensor(item) else item)
                                                                 for name, item in state.items()})
         self.last_info = self._info(state, slot_weight, b, d, h.device)
         return output
 
-    def _absorb(self, state, keys, values, positions):
+    def _absorb(self, state, keys, values, positions, received, now):
         b, heads, count, _ = keys.shape
         new = dict(C=keys.new_ones(b, heads, count), U=keys, Q=keys*keys, V=values,
-                   P=positions.expand(b, heads, count))
-        with torch.no_grad():
-            if state is None:
-                # Scale of the keys, fixed by the first tokens that leave the window (as training
-                # statistics fix the scale of a table).
+                   P=positions.expand(b, heads, count), A=received)
+        if state is None:
+            # Scale of the keys, fixed by the first tokens that leave the window (as training
+            # statistics fix the scale of a table).
+            with torch.no_grad():
                 root = ((keys*keys).mean(2)-keys.mean(2)**2).clamp_min(1e-8)
-                state = dict(new, root=root.detach())
-                state['cost'] = merge_costs(state, self.kappa)
-                return generalize(state, self.k, self.kappa)
-            old = state['C'].shape[2]
-        merged = dict({name: torch.cat((state[name], new[name]), 2) for name in STATISTICS}, root=state['root'])
-        with torch.no_grad():
-            rows = pair_costs(merged, slice(old, old+count), self.kappa)          # new concepts against all
-            cost = merged['C'].new_full((b, heads, old+count, old+count), torch.inf)
-            cost[:, :, :old, :old] = state['cost']
-            cost[:, :, old:] = rows
-            cost[:, :, :, old:] = rows.transpose(-1, -2)
-            merged['cost'] = cost.masked_fill(torch.eye(old+count, dtype=torch.bool, device=cost.device), torch.inf)
-        return generalize(merged, self.k, self.kappa)
+            state = dict(new, root=root)
+        else:
+            state = dict({name: torch.cat((state[name], new[name]), 2) for name in STATISTICS}, root=state['root'])
+        costs = ((lambda current: reader_costs(current, now)) if self.policy == 'reader' else
+                 (lambda current: merge_costs(current, self.kappa)))
+        return generalize(state, self.k, costs)
 
     def _info(self, state, slot_weight, b, d, device):
         """Inspection in the shape the workbench expects: masses, last-token memberships, relevance per channel."""
@@ -196,3 +214,8 @@ class ConceptSlotAttention(ACANConceptAttentionLayer):
             if slot_weight is not None:
                 assignments[:, :n] = slot_weight.detach().mean(1)
         return dict(active_slots=active, relevance=relevance, masses=masses, assignments=assignments)
+
+
+class ConceptGraphAttention(ConceptSlotAttention):
+    """cp-graph-v1: concepts are generalized where the reader loses least."""
+    policy = 'reader'
