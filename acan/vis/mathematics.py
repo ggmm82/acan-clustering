@@ -263,9 +263,11 @@ Limiti misurati:
   variano insieme; lo fa solo se le osservazioni non viste sono lette meglio.
   Su Letter accade sempre e l'accuratezza passa da 93,6% a 97,9%, oltre il
   **95,78%** storico. Richiede attributi numerici senza valori mancanti.
-- **Titanic.** Su venti split il modello è a 78,1%, quattro o cinque punti
-  sotto i metodi ad alberi. Su Sonar, sugli stessi venti split, è a 85,5% ed è
-  il migliore fra quelli provati: tre soli split non bastavano a dirlo.
+- **Titanic.** Su venti split il modello è a 81,7%, uno o due punti sotto i
+  metodi ad alberi (82,5% e 83,0%). Era a 78,1% finché i numeri con pochi
+  valori (classe, familiari a bordo) potevano avere una varianza più piccola
+  della distanza fra due valori. Su Sonar, sugli stessi venti split, è a 85,5%
+  ed è il migliore fra quelli provati.
 - La CP a coppie preferisce concetti grandi: gruppi adiacenti lungo una
   direzione compaiono prima uniti e si separano al livello successivo.
 - Con poche osservazioni il numero di livelli cambia da una prova all'altra.

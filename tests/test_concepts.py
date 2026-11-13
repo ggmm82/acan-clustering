@@ -108,6 +108,22 @@ class ConceptMixtureTest(unittest.TestCase):
         self.assertTrue(np.isfinite(partial).all())
         self.assertGreater(float((np.asarray(together.encoder.categories['kind'])[partial.argmax(1)] == test.kind).mean()), .8)
 
+    def test_a_grade_is_not_split_finer_than_its_values(self):
+        rng = np.random.default_rng(0)
+        grade, kind = rng.integers(1, 4, 600), rng.integers(0, 2, 600)
+        chance = np.array([[.9, .5, .2], [.6, .2, .05]])[kind, grade-1]
+        frame = pd.DataFrame(dict(grade=grade, kind=np.where(kind, 'm', 'f'),
+                                  outcome=np.where(rng.random(600) < chance, 'yes', 'no')))
+        model = ConceptMixture(seed=0).fit(frame.iloc[:450], ['outcome'])
+        # Six combinations exist. A Gaussian narrower than the spacing of the grades would be a
+        # point mass whose density rewards ever smaller concepts.
+        self.assertLessEqual(model.concepts, 6)
+        variance = model._parameters(model.statistics)[1][:, model.encoder.numeric.index('grade')]
+        self.assertTrue((variance >= model.resolution[0]-1e-12).all() and model.resolution[0] > 0)
+        test = frame.iloc[450:]
+        best = (np.where(chance[450:] > .5, 'yes', 'no') == test.outcome).mean()
+        self.assertGreater((model.predict(test, 'outcome') == test.outcome).mean(), best-.05)
+
     def test_missing_attributes_are_marginalized(self):
         train = game(seed=4)
         train.loc[::7, 'day'] = np.nan

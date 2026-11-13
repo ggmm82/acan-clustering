@@ -76,6 +76,7 @@ def _softmax(logits):
 
 class ConceptModel:
     max_levels = 8                                              # capacity limit, not a requested depth
+    resolution = 0.
 
     def __init__(self, max_concepts=1024, rows_per_concept=4, kappa=1., seed=0,
                  judged_rows=2000, merge_fraction=.05, em_steps=3, restarts=5, restart_rows=5000,
@@ -118,11 +119,27 @@ class ConceptModel:
         """Centres; variances and frequencies shrink to the level above by kappa pseudo-members."""
         prior_v, prior_p = prior or self._prior(s)
         g, v = centre_variance(s['Cm'], s['U'], s['Q'], prior_v, self.kappa, np)
+        v = np.maximum(v, self.resolution)                       # no finer than the attribute is measured
         size = np.zeros_like(s['N'])
         for block in self._blocks():
             size[..., block] = s['N'][..., block].sum(-1, keepdims=True)
         log_p = np.log((s['N']+self.kappa*prior_p)/(size+self.kappa))
         return g, v, log_p
+
+    @staticmethod
+    def _resolution(data):
+        """Variance of one step of each numeric attribute: a value on a grid is known to within a step.
+
+        A count or a grade takes few values; a Gaussian narrower than their spacing is a point
+        mass, and its density says nothing. The spacing is the smallest gap between two values.
+        """
+        x, mask = data[:2]
+        floor = np.zeros(x.shape[1])
+        for j in range(x.shape[1]):
+            values = np.unique(x[mask[:, j] > 0, j])
+            if len(values) > 1:
+                floor[j] = np.diff(values).min()**2/12
+        return floor
 
     # ---- membership ------------------------------------------------------------
     def _log_density(self, s, data, weights):
@@ -473,6 +490,7 @@ class ConceptModel:
             observed[block] = max(base[2][:, block].sum(), 1)
         self.root_p = np.maximum(base[2].sum(0)/observed, 1e-12)
         self.root_g = np.array([1-(self.root_p[block]**2).sum() for block in self._blocks()])
+        self.resolution = self._resolution(base)
         features = len(self.encoder.numeric)+len(self.encoder.categorical)-len(self.labels)
         weights = self.train_weights = self._weights(float(max(features, 1)))   # targets weigh as much as all features
         rng = np.random.default_rng(self.seed)

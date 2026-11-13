@@ -35,6 +35,13 @@ $$
 da cui centro $g_i=U_i/C_i$, dispersione $s_i^2=Q_i/C_i-g_i^2$, lettura
 $\bar y_i=Y_i/C_i$. Per un attributo categorico le somme sono conteggi.
 
+**Risoluzione.** Un attributo numerico è noto solo entro il passo $\Delta_j$
+con cui è misurato (la distanza minima fra due suoi valori): la varianza di un
+concetto non scende sotto $\Delta_j^2/12$, la varianza di un passo. Per un
+attributo continuo il limite è trascurabile; per un conteggio o un grado
+impedisce che un concetto diventi una massa puntuale, la cui densità cresce
+senza limite e premia concetti sempre più piccoli.
+
 **Costo.** Ogni somma ha la dimensione di un'osservazione: durante la ricerca
 dei concetti memoria e tempo sono lineari nel numero di attributi e nel numero
 di osservazioni, e quadratici soltanto nel numero di concetti.
