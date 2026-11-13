@@ -126,7 +126,8 @@ Come si scelgono i livelli:
    sulla scala della radice; fra tagli a meno del 5% dal massimo, quello con
    meno concetti. Se nessun taglio è positivo, c'è un solo concetto.
 2. **Seconda ricerca.** La stessa generalizzazione sulla tabella vista
-   attraverso il livello 1 ($z'$, $\sigma'$).
+   attraverso il livello 1 ($z'$, $\sigma'$), a partire da al più 128 concetti:
+   i comportamenti condivisi da più concetti generali sono pochi.
 3. **Livello di lavoro.** Fra tutti i passi delle due ricerche che leggono le
    osservazioni non viste entro un errore standard dal migliore, quello con
    meno nodi nel grafo.

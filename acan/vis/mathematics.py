@@ -249,7 +249,7 @@ Misure su split 80/20 ripetuti tre volte, senza impostazioni per dataset:
 | Adult minimale | 75,3% | 3 → 5 | 1 s |
 | Sonar | 83,3% | 3 → 7 → 26 | 4 s |
 | Titanic | 79,0% | 3 → 9 → 32 | 3 s |
-| Letter | 97,9% | 3 → 12 → 37 → 91 → 614 | circa 3 minuti |
+| Letter | 97,9% | 3 → 12 → 37 → 91 → 614 | circa 2 minuti |
 
 Gioco **senza target** dà un solo livello di 4 concetti in otto tabelle su
 otto. Due famiglie lontane con gli stessi tre gruppi interni danno 2 concetti
@@ -263,12 +263,13 @@ Limiti misurati:
   variano insieme; lo fa solo se le osservazioni non viste sono lette meglio.
   Su Letter accade sempre e l'accuratezza passa da 93,6% a 97,9%, oltre il
   **95,78%** storico. Richiede attributi numerici senza valori mancanti.
-- **Sonar** resta tre punti sotto la versione precedente; su 42 righe di prova
-  la differenza è dentro il rumore, ma non è un miglioramento.
+- **Titanic.** Su venti split il modello è a 78,1%, quattro o cinque punti
+  sotto i metodi ad alberi. Su Sonar, sugli stessi venti split, è a 85,5% ed è
+  il migliore fra quelli provati: tre soli split non bastavano a dirlo.
 - La CP a coppie preferisce concetti grandi: gruppi adiacenti lungo una
   direzione compaiono prima uniti e si separano al livello successivo.
 - Con poche osservazioni il numero di livelli cambia da una prova all'altra.
-- L'addestramento fa due ricerche invece di una: su Letter quasi tre minuti
+- L'addestramento fa due ricerche invece di una: su Letter circa due minuti
   contro uno.
 - **Linguaggio.** Sostituendo l'attenzione di un modello preaddestrato in tutti
   i livelli, senza addestrare nulla, l'errore di previsione è 2,76 con

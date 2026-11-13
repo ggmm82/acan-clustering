@@ -17,7 +17,7 @@ python scripts/evaluate_concepts.py file.xlsx file.csv --app --output reports/co
 | Adult minimale | 75,33 | 3 → 5 | 5 / 5 / 6 | 1 s | 76,33 | 75,33 | 74,00 | 72,33 | 76,00 |
 | Sonar | 83,33 | 3 → 7 → 26 | 26 / 17 / 26 | 3 s | 83,33 | 86,51 | 74,60 | 81,75 | 84,92 |
 | Titanic | 78,96 | 3 → 9 → 32 | 32 / 37 / 31 | 3 s | 78,96 | 77,65 | 77,28 | 79,89 | 81,19 |
-| Letter | **97,92** | 3 → 12 → 37 → 91 → 614 | 614 / 563 / 562 | 164–169 s | 93,56 | 97,79 | 95,22 | 96,43 | 96,34 |
+| Letter | **97,92** | 3 → 12 → 37 → 91 → 614 | 614 / 563 / 562 | circa 130 s | 93,56 | 97,79 | 95,22 | 96,43 | 96,34 |
 
 Percorso dell'app (codifica dell'interfaccia, salvataggio e inferenza JSON):
 Gioco 100,00, Adult 74,67, Sonar 86,51, Titanic 74,49.
@@ -48,11 +48,33 @@ Lettura:
   (98,15 / 97,80 / 97,80), sopra KNN, Random Forest e HistGB, in pochi secondi
   in più; negli altri dataset il giudizio non la adotta (Titanic ha valori
   mancanti, su Sonar 60 attributi sono troppi per concetti di poche righe).
-  Sonar resta 3,2 punti sotto la versione con lunghezza di descrizione.
-- **Costo.** Due ricerche invece di una: su Letter 164–169 secondi contro 66. Il giudizio è la parte più costosa; ora è eseguito ogni dieci per cento
+- **Costo.** Due ricerche invece di una; la seconda parte da al più 128
+  concetti, perché i comportamenti condivisi sono pochi. Su Letter circa 130
+  secondi contro 66 del modello a un livello. Il giudizio è la parte più costosa; ora è eseguito ogni dieci per cento
   di concetti in meno.
-- Nel percorso dell'app Titanic è più basso della libreria (74,5 contro 79,0):
-  la codifica dei valori mancanti dell'interfaccia è diversa. Va indagato.
+- Percorso dell'app su Letter (seme 42): 98,15%, come la libreria.
+
+### Sonar e Titanic su venti split
+
+Tre split da 42 righe non bastano a distinguere tre punti. Semi da 1 a 20,
+media ± errore standard:
+
+| Dataset | Grafo dei concetti | percorso dell'app | KNN 5 | Random Forest | HistGB |
+|---|---:|---:|---:|---:|---:|
+| Sonar | **85,5 ± 1,4** | 85,2 ± 1,5 | 79,1 ± 1,4 | 82,1 ± 1,4 | 84,6 ± 1,5 |
+| Titanic | 78,1 ± 0,6 | 76,5 ± 0,7 | 80,6 ± 0,5 | **82,5 ± 0,5** | **83,0 ± 0,5** |
+
+- **Sonar.** Il divario di tre punti letto sui tre split era rumore: su venti
+  il modello è il migliore fra quelli provati.
+- **Titanic.** Qui il divario è reale: 4–5 punti sotto i metodi ad alberi.
+  Regolarizzare i concetti verso i genitori attraverso le matrici (invece che
+  verso la radice) è stato provato e scartato dal giudizio: rende le letture
+  dei concetti piccoli troppo sicure (punteggio su righe non viste da −0,57 a
+  −1,26) e sul test scende a 75,4%.
+- **App.** L'interfaccia riempie le celle numeriche vuote con la media e le
+  segna in una colonna; il valore riempito era trattato come osservato. Ora è
+  trattato come mancante: Titanic nell'app passa da 75,0 a 76,5. Il resto del
+  divario dalla libreria (1,6 punti) è nella codifica delle categorie vuote.
 - Sono dati di sviluppo, esaminati più volte.
 
 ### Il documento «Utilità della CP quadratica al centro dell'apprendimento»
@@ -61,8 +83,8 @@ Lettura:
 |---|---|
 | La CP quadratica è aggregante e individua i concetti generali | confermata: è il criterio che sceglie il livello 1 e i successivi |
 | Da sola può fermare la generalizzazione | no: cresce con ogni suddivisione di un concetto reale e, per costruzione, premia i concetti grandi; l'arresto resta al giudizio su osservazioni non viste |
-| Letter da 66 s a 4,5 s | non riprodotta: con i livelli il tempo cresce a 164–169 s |
-| Sonar a 86,5–87,1% | non riprodotta: 83,3% |
+| Letter da 66 s a 4,5 s | non riprodotta: circa 130 s |
+| Sonar a 86,5–87,1% | 85,5 ± 1,4 su venti split, senza le modifiche proposte |
 | Ottimizzare $-CP^\circ$ chiude il divario del linguaggio (3,01 → 2,76) | non verificabile senza addestramento; a pesi invariati i livelli non migliorano la lettura (sotto) |
 
 ## Linguaggio

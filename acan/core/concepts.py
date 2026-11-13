@@ -79,7 +79,8 @@ class ConceptModel:
 
     def __init__(self, max_concepts=1024, rows_per_concept=4, kappa=1., seed=0,
                  judged_rows=2000, merge_fraction=.05, em_steps=3, restarts=5, restart_rows=5000,
-                 covariance=True, covariance_attributes=128):
+                 covariance=True, covariance_attributes=128, shared_start=128):
+        self.shared_start = shared_start
         self.covariance, self.covariance_attributes = covariance, covariance_attributes
         self.cross, self.cov = None, np.zeros(0, int)            # cross products of the working level, if adopted
         self.max_concepts, self.rows_per_concept = max_concepts, rows_per_concept
@@ -390,10 +391,10 @@ class ConceptModel:
         return scores
 
     # ---- training --------------------------------------------------------------
-    def _path(self, data, weights, judged, rng, progress=None, restarts=None):
+    def _path(self, data, weights, judged, rng, progress=None, restarts=None, start=None):
         """From specific concepts to one concept; every step is judged and measured against the level above."""
         n = len(data[0])
-        k = int(min(self.max_concepts, max(n//self.rows_per_concept, 1)))
+        k = int(min(start or self.max_concepts, max(n//self.rows_per_concept, 1)))
         path = []
         # Generalization is a greedy search: repeat it from other specific concepts.
         for restart in range(restarts or (self.restarts if n <= self.restart_rows else 1)):
@@ -491,7 +492,8 @@ class ConceptModel:
             # What is distinct only inside a general concept becomes visible, and what is the same
             # in several general concepts becomes one concept.
             local = self._context(first['statistics'], root, self._weights(0.))
-            particular = self._path(local, weights, judged, rng, restarts=1)
+            # Behaviours shared by several general concepts are few by nature: the search starts from few.
+            particular = self._path(local, weights, judged, rng, restarts=1, start=self.shared_start)
         # Working level: the most general step that reads unseen rows as well as the best one.
         every = general+particular
         best = max(every, key=lambda step: step['score'])

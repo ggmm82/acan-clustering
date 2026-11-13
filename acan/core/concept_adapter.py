@@ -21,9 +21,15 @@ class MatrixEncoder:
         self.numeric = [columns[i] for i in self.numeric_index]
         self.categorical = list(blocks)
         self.blocks = {name: list(indices) for name, indices in blocks.items()}
-        values = matrix[:, self.numeric_index]
-        self.mean = values.mean(0) if len(values) else np.zeros(len(self.numeric_index))
-        std = values.std(0) if len(values) else np.ones(len(self.numeric_index))
+        # The interface fills an empty numeric cell with the mean and marks it in a column
+        # ``<name>_NaN``. The mark stays an attribute; the filled value is not an observation.
+        place = {str(name): index for index, name in enumerate(self.columns)}
+        self.marks = [place.get(str(name)+'_NaN', -1) for name in self.numeric]
+        observed = self._observed(matrix)
+        count = np.maximum(observed.sum(0), 1)
+        values = matrix[:, self.numeric_index]*observed
+        self.mean = values.sum(0)/count
+        std = np.sqrt(np.maximum((values*values).sum(0)/count-self.mean**2, 0))
         self.constant = std <= 1e-12
         self.std = np.where(self.constant, 1., std)
         self.offsets, start = {}, 0
@@ -35,13 +41,22 @@ class MatrixEncoder:
     def block(self, name):
         return slice(self.offsets[name], self.offsets[name]+len(self.blocks[name]))
 
+    def _observed(self, matrix):
+        matrix = np.asarray(matrix, float)
+        observed = np.ones((len(matrix), len(self.numeric_index)))
+        for j, mark in enumerate(self.marks):
+            if mark >= 0:
+                observed[:, j] = matrix[:, mark] <= .5
+        return observed
+
     def transform(self, matrix):
         matrix = np.asarray(matrix, float)
-        x = (matrix[:, self.numeric_index]-self.mean)/self.std
+        observed = self._observed(matrix)
+        x = (matrix[:, self.numeric_index]-self.mean)/self.std*observed
         onehot = (np.concatenate([matrix[:, self.blocks[name]] for name in self.categorical], axis=1)
                   if self.categorical else np.zeros((len(matrix), 0)))
         # An encoded row may carry no level of a block (unseen category): it is unobserved.
-        return x, np.ones_like(x), (onehot > .5).astype(float)
+        return x, observed, (onehot > .5).astype(float)
 
 
 def attribute_blocks(learner):
@@ -138,6 +153,7 @@ def _recognition(model, encoder, s, feature_numeric, feature_blocks):
         correlated=block,
         log_prior=np.log(s['C']/s['C'].sum()).tolist(),
         numeric=[dict(column=encoder.numeric_index[j], mean=float(encoder.mean[j]), std=float(encoder.std[j]),
+                      mark=int(encoder.marks[j]),
                       centre=g[:, j].tolist(), variance=v[:, j].tolist(), shift=shift[:, j].tolist()) for j in feature_numeric],
         blocks=[dict(name=name, columns=encoder.blocks[name], log_probability=log_p[:, encoder.block(name)].tolist())
                 for name in feature_blocks])
@@ -180,7 +196,11 @@ def _posterior(state, rows, position, shift=None):
         if shift is not None:
             z = z-shift[attribute['column']]
         centre, variance = np.asarray(attribute['centre']), np.asarray(attribute['variance'])
-        logits = logits-.5*((z[:, None]-centre)**2/variance+np.log(variance)+LOG_2PI)
+        term = -.5*((z[:, None]-centre)**2/variance+np.log(variance)+LOG_2PI)
+        mark = attribute.get('mark', -1)
+        if mark in position:                                     # a filled cell is not an observation
+            term = term*(rows[:, position[mark]] <= .5)[:, None]
+        logits = logits+term
     block = state.get('correlated')
     if block:                                                    # the observed part of the features read together
         seen = [place for place, column in enumerate(block['columns']) if column in position]
