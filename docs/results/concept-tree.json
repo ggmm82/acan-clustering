@@ -1,0 +1,82 @@
+{
+ "model": "HuggingFaceTB/SmolLM2-135M",
+ "length": 1024,
+ "segments": 3,
+ "recent": 64,
+ "budget": 64,
+ "metric": "sum of output error norms over sum of dense output norms, over heads and queries",
+ "error": {
+  "3": {
+   "recent": 2.636073414355532,
+   "first+recent": 1.4786704694063157,
+   "first+recent x2": 1.0697888976037884,
+   "recent x2": 1.5335115517364042,
+   "recent+flat": 0.7812411025918042,
+   "recent+adaptive": 0.213667560013284,
+   "recent+flat shared": 0.5472992554731031,
+   "recent+adaptive shared": 0.18735692682439092
+  },
+  "9": {
+   "recent": 1.652911161115731,
+   "first+recent": 1.1859027368720132,
+   "first+recent x2": 0.9235042723421444,
+   "recent x2": 1.0906664088370324,
+   "recent+flat": 0.6216417670374742,
+   "recent+adaptive": 0.20081712391707746,
+   "recent+flat shared": 0.6115860674139587,
+   "recent+adaptive shared": 0.20991906619486198
+  },
+  "15": {
+   "recent": 1.1130092048247417,
+   "first+recent": 0.5092532710962663,
+   "first+recent x2": 0.2483347109062537,
+   "recent x2": 0.7636003631388414,
+   "recent+flat": 0.30983598021004183,
+   "recent+adaptive": 0.20598811954532464,
+   "recent+flat shared": 0.3392766401418603,
+   "recent+adaptive shared": 0.2287183236312585
+  },
+  "21": {
+   "recent": 1.1573900024318644,
+   "first+recent": 0.44461767893719323,
+   "first+recent x2": 0.24212041362321474,
+   "recent x2": 0.8147361406739279,
+   "recent+flat": 0.22771392098944035,
+   "recent+adaptive": 0.13849734430647648,
+   "recent+flat shared": 0.24464944170450045,
+   "recent+adaptive shared": 0.15523649883506144
+  },
+  "27": {
+   "recent": 1.0464616353510738,
+   "first+recent": 0.16536005807836526,
+   "first+recent x2": 0.0795055903463656,
+   "recent x2": 0.9012982671362239,
+   "recent+flat": 0.13960301714280643,
+   "recent+adaptive": 0.1032670748497572,
+   "recent+flat shared": 0.1393685209222276,
+   "recent+adaptive shared": 0.10349637350543553
+  }
+ },
+ "explained_key_variance": {
+  "3": {
+   "own": 0.48995991964030416,
+   "shared": 0.48586566795953584
+  },
+  "9": {
+   "own": 0.5134469007601428,
+   "shared": 0.5310718961770974
+  },
+  "15": {
+   "own": 0.5673468009242637,
+   "shared": 0.4699658563671303
+  },
+  "21": {
+   "own": 0.58566200437211,
+   "shared": 0.49331606685818535
+  },
+  "27": {
+   "own": 0.5317624158027109,
+   "shared": 0.44279806342115685
+  }
+ }
+}

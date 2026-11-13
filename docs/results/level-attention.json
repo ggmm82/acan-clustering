@@ -1,0 +1,42 @@
+{
+  "model": "HuggingFaceTB/SmolLM2-135M",
+  "length": 768,
+  "recent": 64,
+  "first": 4,
+  "layers": [
+    3,
+    9,
+    15,
+    21,
+    27
+  ],
+  "segments": 3,
+  "heads_measured": 45,
+  "note": "relative squared error of the attention output against dense attention; lower is better",
+  "budgets": {
+    "16": {
+      "window": 1.143272842081696,
+      "flat": 0.4729841778742683,
+      "levels": 0.6629124661896459,
+      "flat_pairs": 0.260248080982467,
+      "levels_better_than_flat": 0.4666666666666667,
+      "pairs_in_use": 0.815625
+    },
+    "32": {
+      "window": 1.143272842081696,
+      "flat": 0.2874270829405464,
+      "levels": 0.39044513973850514,
+      "flat_pairs": 0.11421140568172836,
+      "levels_better_than_flat": 0.35555555555555557,
+      "pairs_in_use": 0.5702256944444445
+    },
+    "64": {
+      "window": 1.143272842081696,
+      "flat": 0.25014332843043324,
+      "levels": 0.4785720063999545,
+      "flat_pairs": 6.633848239632633e-13,
+      "levels_better_than_flat": 0.35555555555555557,
+      "pairs_in_use": 0.28446180555555556
+    }
+  }
+}

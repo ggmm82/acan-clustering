@@ -194,6 +194,50 @@ def main():
     assert bound_holds
     assert np.mean(errors['gaussian']) < np.mean(errors['log_mass']) < .5*np.mean(errors['no_mass'])
 
+    # 10. Pair form of the concept criterion. With s_tu = 1 - mean_j d_tuj^2/(2*var_j) (unbiased
+    #     variances) the criterion is the mean over ordered pairs of [same concept]*s_tu. It equals
+    #     the form computed from the additive statistics, it is zero for one concept and for
+    #     singletons, and along average linkage it rises while the merged concepts are more similar
+    #     than the average pair, then falls: one interior maximum, no threshold.
+    from scipy.cluster.hierarchy import fcluster, linkage
+    n, m = 90, 3
+    x = np.repeat(rng.normal(0, 1, (5, m)), n//5, 0)+rng.normal(0, .25, (n, m))
+    y = x/np.sqrt(2*m*x.var(0, ddof=1))
+    distance = ((y[:, None]-y[None])**2).sum(-1)
+    similarity = 1-distance
+    np.fill_diagonal(similarity, 0)
+    assert abs(similarity.sum()) < 1e-8                      # no structure assumed: similarities are centred
+    steps = linkage(y, 'average', metric='sqeuclidean')
+    heights = steps[:, 2]
+    assert (np.diff(heights) > -1e-12).all()                 # merges come in order of decreasing similarity
+
+    def pair_criterion(labels):
+        same = labels[:, None] == labels[None]
+        return (same*similarity).sum()/(n*(n-1))
+
+    def statistics_criterion(labels):
+        value = 0.
+        for label in np.unique(labels):
+            members = x[labels == label]
+            c = len(members)
+            if c > 1:
+                value += c*(c-1)*(1-(members.var(0, ddof=1)/x.var(0, ddof=1)).mean())
+        return value/(n*(n-1))
+
+    curve = []
+    for k in range(1, n+1):
+        labels = fcluster(steps, k, 'maxclust')
+        curve.append(pair_criterion(labels))
+        assert abs(curve[-1]-statistics_criterion(labels)) < 1e-10
+    assert abs(curve[0]) < 1e-10 and abs(curve[-1]) < 1e-10
+    best = int(np.argmax(curve))+1
+    rising = np.diff(curve[best-1:])                         # more concepts than the optimum
+    falling = np.diff(curve[:best])
+    assert (rising < 1e-12).all() and (falling > -1e-12).all()
+    # Resolution: two tight groups closer than the average pair are merged at one level.
+    report['pair_criterion'] = dict(concepts_at_maximum=best, maximum=float(max(curve)), true_groups=5,
+                                    merges_above_average=int((heights < 1).sum()))
+
     print(json.dumps(report, indent=1))
 
 

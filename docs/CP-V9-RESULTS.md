@@ -1,5 +1,7 @@
 # Nucleo `cp-v9`: che cosa è stato misurato
 
+> **Documento storico.** Il modello attuale è uno solo ed è descritto in [MODEL.md](MODEL.md), con le misure in [MODEL-RESULTS.md](MODEL-RESULTS.md). Dove questa pagina differisce, vale MODEL.md: in particolare la covarianza nel concetto, i livelli automatici e la fusione per lunghezza di descrizione sono stati tolti.
+
 Fondazione: [MATHEMATICAL-FOUNDATION.md](MATHEMATICAL-FOUNDATION.md).
 Piano e criteri: [REVISION-PLAN.md](REVISION-PLAN.md).
 Codice: [`acan/core/concepts.py`](../acan/core/concepts.py),

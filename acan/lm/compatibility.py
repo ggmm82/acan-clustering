@@ -15,13 +15,19 @@ PRE_JOINT_INFERENCE = 'cbbb435f05f9f757587b483918039b802dc79ddd4c26d7d4095ec6d9b
 # every earlier profile keep their trainer and inference equations unchanged.
 PRE_V9_TRAINING = '0516a223d3601f35e8cae79453948217937366a241bd2c1858c6272bd17e5c66'
 PRE_V9_INFERENCE = 'fdd4c2cbc515abf90feeb2a7a96f99f9f413ce8561c00344c2f03c920fe4215f'
+# Sources of release 8.4.0, before the concept-graph-v1 attention profile. Earlier
+# profiles, cp-v9 included, keep their equations.
+PRE_GRAPH_TRAINING = 'b13cca138f95c2e8e97511f6a3c948ae037899b7d7ebce229bcb8302dc4631a2'
+PRE_GRAPH_INFERENCE = 'b852b117e99c71a1fe0e15dff94e509f8804995e6bbfcfd4cb5443bebcbad1cc'
 
 
 def training_identity(values, config, checkpoint_root, selected, current):
     from pathlib import Path
     from . import checkpoints
     candidates = [current]
-    if config.get('routing_profile') != 'cp-v9':
+    if config.get('routing_profile') != 'concept-graph-v1':
+        candidates.append(PRE_GRAPH_TRAINING)
+    if config.get('routing_profile') not in ('cp-v9', 'concept-graph-v1'):
         candidates.append(PRE_V9_TRAINING)
     if 'cp_weight' not in config and config.get('routing_profile') in ('shared-algebra-v1','legacy-causal-v1','cp-routing-v1'):
         candidates.append(PRE_JOINT_TRAINING)
