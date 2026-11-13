@@ -3,6 +3,16 @@
 Fondamento: [CONCEPT-GRAPH.md](CONCEPT-GRAPH.md). Stato di partenza:
 [CP-V9-RESULTS.md](CP-V9-RESULTS.md).
 
+## Stato
+
+| Passo | Esito |
+|---|---|
+| 1. Operatori e struttura del grafo | fatto |
+| 2. Tabulare a livelli | fatto; livelli costruiti dall'alto con accettazione su righe fresche. Da soli sono neutri su Letter (criterio non rispettato). Punteggi normali disponibili ma non predefiniti |
+| 3. Covarianza nel concetto | fatto; Letter oltre il 97% |
+| 4. Linguaggio | fatto in forma diversa: fusione guidata dal lettore per testa (`cp-graph-v1`). Non realizzati il grafo unico per tutti i layer e la lettura adattiva per query |
+| 5. Misure e documentazione | [CP-GRAPH-RESULTS.md](CP-GRAPH-RESULTS.md) |
+
 ## Obiettivo
 
 Un solo oggetto, il grafo dei concetti a livelli, usato dal modello tabulare e

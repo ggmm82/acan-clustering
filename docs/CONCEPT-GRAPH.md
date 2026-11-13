@@ -296,7 +296,35 @@ query di attenzione e si aprono dove l'errore stimato è maggiore.
 - **[C]** L'effetto dell'addestramento. Nulla qui è addestrato.
 - La Proposizione U6 resta: a stato fisso la perdita non si annulla.
 
-## 4. Sintesi
+## 4. Che cosa ha mostrato la realizzazione
+
+Misure in [CP-GRAPH-RESULTS.md](CP-GRAPH-RESULTS.md). Quattro punti correggono
+o precisano le sezioni precedenti.
+
+1. **Il prior di livello si realizza dall'alto, non dal basso.** Costruire i
+   livelli su un solo adattamento eredita il prior di radice: un concetto di
+   poche righe ha varianza vicina a quella della tabella e i gruppi fini si
+   fondono. I livelli vengono quindi costruiti riesaminando ogni concetto sulle
+   proprie righe e sulla propria scala; così G7 vale per costruzione.
+2. **Accettare un livello richiede righe fresche.** Scegliere il miglior taglio
+   fra molti e giudicarlo sulle stesse righe lo fa sembrare utile anche quando
+   non lo è. Il figlio sceglie con metà delle righe e viene giudicato
+   sull'altra metà, contro un solo concetto e contro il genitore.
+3. **La covarianza è una statistica additiva come le altre.** La somma dei
+   prodotti incrociati rende il concetto un'ellisse orientata; togliere un
+   membro è una modifica di rango uno e il giudizio resta in forma chiusa.
+   È ciò che porta Letter oltre il 95,78% storico.
+4. **Nell'attenzione il costo di una fusione è la perdita del lettore.** La
+   quantità che limita l'errore (U4), attenzione ricevuta × dispersione, usata
+   come costo di fusione dà il risultato migliore a stato limitato, e conserva
+   da sola i primi token. È l'operatore 2 con la perdita di chi legge al posto
+   della lunghezza di descrizione; la lettura adattiva del §3.2 ne è il limite
+   a memoria illimitata.
+
+Non realizzati: il grafo unico condiviso da tutti i layer (§3.1) e la lettura
+adattiva per query nello strato (§3.2). Restano misure fuori dallo strato.
+
+## 5. Sintesi
 
 | Domanda | Risposta |
 |---|---|
