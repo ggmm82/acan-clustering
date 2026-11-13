@@ -161,6 +161,66 @@
    ],
    "seconds": 169.907401467,
    "state_vectors_per_key_head": 128
+  },
+  "primi 4 + finestra 64": {
+   "nll": 3.3872647285461426,
+   "standard_error": 0.03633465617895126,
+   "per_segment": [
+    3.279046058654785,
+    3.1965675354003906,
+    3.5062930583953857,
+    3.567152738571167
+   ],
+   "seconds": 829.9079191980004,
+   "state_vectors_per_key_head": 64
+  },
+  "primi 4 + finestra 124": {
+   "nll": 3.229275941848755,
+   "standard_error": 0.03560224920511246,
+   "per_segment": [
+    3.107302188873291,
+    3.065004825592041,
+    3.3235890865325928,
+    3.421207904815674
+   ],
+   "seconds": 44.89570561399978,
+   "state_vectors_per_key_head": 124
+  },
+  "primi 4 + finestra 60 + 64 concetti su chiavi non ruotate": {
+   "nll": 3.1414756774902344,
+   "standard_error": 0.03496396169066429,
+   "per_segment": [
+    3.0300848484039307,
+    2.916260242462158,
+    3.196549654006958,
+    3.4230079650878906
+   ],
+   "seconds": 166.9757398380002,
+   "state_vectors_per_key_head": 124
+  },
+  "finestra 64 + 64 concetti su chiavi non ruotate, fusione per il lettore": {
+   "nll": 3.0048604011535645,
+   "standard_error": 0.03419788181781769,
+   "per_segment": [
+    2.895845413208008,
+    2.8514187335968018,
+    3.1065561771392822,
+    3.165620803833008
+   ],
+   "seconds": 130.40234276699994,
+   "state_vectors_per_key_head": 128
+  },
+  "primi 4 + finestra 60 + 64 concetti, fusione per il lettore": {
+   "nll": 3.0056490898132324,
+   "standard_error": 0.03418087214231491,
+   "per_segment": [
+    2.9023120403289795,
+    2.8502960205078125,
+    3.105480194091797,
+    3.1645092964172363
+   ],
+   "seconds": 130.2052375080002,
+   "state_vectors_per_key_head": 124
   }
  }
 }

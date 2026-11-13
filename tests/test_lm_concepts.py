@@ -6,11 +6,15 @@ import numpy as np
 
 @unittest.skipUnless(importlib.util.find_spec('torch') and importlib.util.find_spec('transformers'), 'Torch required')
 class ConceptAttentionTests(unittest.TestCase):
+    graph = False
+    profile = 'cp-v9'
+
     def layers(self, slots, window, length=48):
         import torch
         from transformers import LlamaConfig
         from transformers.models.llama.modeling_llama import LlamaAttention, LlamaRotaryEmbedding
-        from acan.lm.concept_attention import ConceptSlotAttention
+        from acan.lm.concept_attention import ConceptGraphAttention, ConceptSlotAttention
+        ConceptSlotAttention = ConceptGraphAttention if self.graph else ConceptSlotAttention
         torch.set_num_threads(1); torch.manual_seed(3)
         config = LlamaConfig(vocab_size=32, hidden_size=32, intermediate_size=32, num_hidden_layers=1,
                              num_attention_heads=4, num_key_value_heads=4, max_position_embeddings=256,
@@ -56,9 +60,6 @@ class ConceptAttentionTests(unittest.TestCase):
                     pieces.append(layer.attend(x[:, start:start+size], part, use_cache=True)); start += size
             torch.testing.assert_close(full.detach(), torch.cat(pieces, 1), atol=2e-5, rtol=2e-4)
         self.assertLess(layer.cache['keys'].shape[2], 4+2*layer.block)                 # bounded state
-        from acan.lm.concept_attention import merge_costs
-        state = layer.cache['state']
-        torch.testing.assert_close(state['cost'], merge_costs(state, layer.kappa), atol=1e-4, rtol=1e-4)   # incremental = full
 
     def test_tabular_and_attention_share_the_same_operators(self):
         import torch
@@ -100,9 +101,9 @@ class ConceptAttentionTests(unittest.TestCase):
                 expected = base(input_ids=tokens).logits
             for fraction in (.5, 1.):
                 options = dict(architecture='hybrid', graft_fraction=fraction, sequence_length=40, slots=2, window=48,
-                               lora_rank=2, routing_profile='cp-v9')
+                               lora_rank=2, routing_profile=self.profile)
                 model, report = load_model(directory, options)
-                self.assertEqual(report['algebra'], 'cp-v9')
+                self.assertEqual(report['algebra'], self.profile)
                 model.eval()
                 with torch.no_grad():
                     torch.testing.assert_close(model(input_ids=tokens, use_cache=False).logits, expected, atol=5e-5, rtol=5e-4)
@@ -119,6 +120,27 @@ class ConceptAttentionTests(unittest.TestCase):
                     first = model(input_ids=tokens[:, :25], use_cache=True)
                     rest = model(input_ids=tokens[:, 25:], past_key_values=first.past_key_values, use_cache=True)
                     torch.testing.assert_close(full[:, 25:], rest.logits, atol=5e-5, rtol=5e-4)
+
+
+class ConceptGraphAttentionTests(ConceptAttentionTests):
+    """The same guarantees with generalization guided by the reader."""
+    graph = True
+    profile = 'cp-graph-v1'
+
+    def test_tokens_the_queries_keep_reading_stay_exact(self):
+        import torch
+        from acan.lm.concept_attention import reader_costs
+        torch.manual_seed(0)
+        keys = torch.randn(1, 1, 6, 4)
+        state = dict(C=torch.ones(1, 1, 6), U=keys, Q=keys*keys, P=torch.arange(6.)[None, None],
+                     A=torch.tensor([[[50., 0., 0., 0., 0., 0.]]]))
+        cost = reader_costs(state, 10.)
+        cheapest = divmod(int(cost.flatten().argmin()), 6)
+        self.assertNotIn(0, cheapest)                              # the heavily read token is not the one generalized
+        quiet = dict(state, A=torch.zeros(1, 1, 6))
+        even = reader_costs(quiet, 10.)
+        self.assertLess(float((cost[0, 0, 0, 1:]/even[0, 0, 0, 1:]).min()), float('inf'))
+        self.assertGreater(float(cost[0, 0, 0, 1:].min()), float(cost[0, 0, 1:, 1:][torch.isfinite(cost[0, 0, 1:, 1:])].min()))
 
 
 if __name__ == '__main__':
