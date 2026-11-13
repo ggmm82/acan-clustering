@@ -25,6 +25,16 @@ Three operators define the model. Table rows and attention keys use the same one
    statistics are additive, so a row is subtracted before it is predicted, and
    a causal prefix never contains the token it predicts.
 
+Levels. Concepts form nested levels: the statistics of a concept are the sum of
+those of its children, and each level is the prior of the next
+(``centre_variance`` with the parent's variance as ``root``). At one level the
+pair criterion
+
+    mean over ordered pairs (t,u) of [same concept] * s_tu,   sum of all s_tu = 0,
+
+equals sum_i pair_mass(C_i) * relevance_i / (n(n-1)) with relevance measured
+against the level above. It is zero for one concept and for singletons.
+
 ``xp`` is ``numpy`` or ``torch``.
 """
 import math
@@ -58,3 +68,43 @@ def dot_similarity(q, g, scale, xp, variance=None):
     if variance is not None:
         value = value+.5*scale*scale*(q*q*variance).sum(-1)
     return value
+
+
+def pair_mass(c, xp):
+    """Number of ordered pairs of distinct members: a single member supports nothing."""
+    return c*xp.clip(c-1, 0, None)
+
+
+def unbiased(variance, c, xp):
+    """Variance estimated from pairs of distinct members (population variance times c/(c-1))."""
+    return variance*c/xp.clip(c-1, 1e-12, None)
+
+
+def cross_similarity(ga, va, gb, vb, scale, xp):
+    """Mean similarity between members of two concepts, centred on the average pair of the reference.
+
+    1 - mean_j [(ga-gb)^2 + va + vb] / (2*scale_j), with population variances va, vb and
+    ``scale`` the pair variance of the reference level. Positive: the two concepts are
+    closer than an average pair, and adding them together raises the pair criterion.
+    """
+    return 1-(((ga-gb)**2+va+vb)/(2*scale)).mean(-1)
+
+
+def reader_radius(recognition, xp):
+    """Radius of a concept for whoever reads it.
+
+    ``recognition`` is the mean squared distance of the members from the centre in the
+    part that is matched (attributes of a row, key of a token), on the scale of the root.
+    It is the quantity that bounds the error of reading the concept instead of its members.
+    """
+    return xp.sqrt(recognition)
+
+
+def reader_cost(reads_first, radius_first, reads_second, radius_second, radius_together):
+    """Loss of the reader when two concepts are added together: reads received times radius.
+
+    The error of reading a concept instead of its members is bounded by the reads it
+    receives times the distance of its members from the centre. The cost is never
+    negative and is zero only for two copies of one concept.
+    """
+    return (reads_first+reads_second)*radius_together-reads_first*radius_first-reads_second*radius_second

@@ -51,11 +51,12 @@ def inference_contract():
 
 def check_inference_contract(options,state):
     recorded=state.get('model_contract')
-    from .compatibility import LEGACY_INFERENCE, PRE_JOINT_INFERENCE, PRE_V9_INFERENCE
+    from .compatibility import LEGACY_INFERENCE, PRE_JOINT_INFERENCE, PRE_V9_INFERENCE, PRE_GRAPH_INFERENCE
     legacy = ('routing_profile' not in options and recorded == LEGACY_INFERENCE) or (options.get('routing_profile') in ('shared-algebra-v1','legacy-causal-v1') and recorded == 'c823eeaae94de3b650709710cc2f245328a9a693d7b640af3096d6c8ddf6ba8b')
     legacy = legacy or (options.get('routing_profile') in ('shared-algebra-v1','legacy-causal-v1','cp-routing-v1') and recorded == PRE_JOINT_INFERENCE)
     # Earlier profiles are numerically unchanged by the addition of cp-v9.
-    legacy = legacy or (options.get('routing_profile')!='cp-v9' and recorded == PRE_V9_INFERENCE)
+    legacy = legacy or (options.get('routing_profile') not in ('cp-v9','concept-graph-v1') and recorded == PRE_V9_INFERENCE)
+    legacy = legacy or (options.get('routing_profile')!='concept-graph-v1' and recorded == PRE_GRAPH_INFERENCE)
     if recorded is not None and recorded!=inference_contract() and not legacy:
         raise ValueError('Modello di un’altra versione: usare l’immagine worker che lo ha creato.')
     if options.get('graft_fraction',.5)==1. and recorded is None:
@@ -63,11 +64,11 @@ def check_inference_contract(options,state):
 
 
 def shared_adapter(model,report,options):
-    if options.get('routing_profile') in ('shared-algebra-v1','cp-routing-v1','cp-joint-v1','cp-v9'):
+    if options.get('routing_profile') in ('shared-algebra-v1','cp-routing-v1','cp-joint-v1','cp-v9','concept-graph-v1'):
         from .shared_attention import SharedAlgebraAttention
-        if options.get("routing_profile") == "cp-v9":
-            from .concept_attention import ConceptSlotAttention
-            SharedAlgebraAttention = ConceptSlotAttention
+        if options.get("routing_profile") in ("cp-v9", "concept-graph-v1"):
+            from .concept_attention import ConceptGraphAttention, ConceptSlotAttention
+            SharedAlgebraAttention = ConceptGraphAttention if options["routing_profile"] == "concept-graph-v1" else ConceptSlotAttention
         elif options.get("routing_profile") == "cp-routing-v1":
             from .cp_attention import CPUnifiedAttention
             SharedAlgebraAttention = CPUnifiedAttention
@@ -85,7 +86,7 @@ def shared_adapter(model,report,options):
                 module.__class__=SharedAlgebraAttention
             if options.get('routing_profile')=='cp-joint-v1' and isinstance(module,ACANConceptAttentionLayer):
                 module.initialize_concepts()
-        if options['routing_profile']=='cp-v9':
+        if options['routing_profile'] in ('cp-v9','concept-graph-v1'):
             # Concepts are statistics of the prefix: the layer has no prototype parameters to learn.
             core=model.get_base_model() if hasattr(model,'get_base_model') else model
             frequency=core.model.rotary_emb.inv_freq.detach().clone()
@@ -94,7 +95,7 @@ def shared_adapter(model,report,options):
                     module.rope_frequency=frequency
                     module.G.requires_grad_(False);module.omega.requires_grad_(False)
         report=dict(report,algebra=options['routing_profile'])
-        if options['routing_profile']=='cp-v9':
+        if options['routing_profile'] in ('cp-v9','concept-graph-v1'):
             report['cp_definition']='explained-variance-v1'
         if options['routing_profile']=='cp-joint-v1':
             report['cp_definition']='pair-supported-cp-v1'

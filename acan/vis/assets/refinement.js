@@ -14,7 +14,9 @@
       const columns=cy.width()<600?2:3;
       cy.batch(()=>{
         cy.nodes('.local-root').position({x:(columns-1)*87.5,y:20});
-        cy.nodes('.local-group').forEach((node,index)=>node.position({x:(index%columns)*175,y:140+Math.floor(index/columns)*115}));
+        /* Levels of the concept graph are drawn as rows between the root and the groups. */
+        const levels=new Set(cy.nodes('.level-concept').map(node=>node.data('level'))).size;
+        cy.nodes('.local-group').forEach((node,index)=>node.position({x:(index%columns)*175,y:140+110*levels+Math.floor(index/columns)*115}));
       });
     }
     cy.fit(cy.elements(), 35);

@@ -29,11 +29,23 @@ class Slots:
         self.C = self.U = self.Q = self.V = None
         self.root = None                                        # count, sum, square sum of all absorbed keys
 
-    def absorb(self, keys, values, positions=None):
+    def absorb(self, keys, values, positions=None, received=None, now=0):
+        self.now = now
+        received = keys.new_zeros(len(keys)) if received is None else received.to(keys.dtype)
+        self.A = received if self.C is None else torch.cat((self.A, received))   # attention received so far: additive
+        old = 0 if self.C is None else len(self.C)             # edges: concepts read together by the same query
+        edges = keys.new_zeros(old+len(keys), old+len(keys))
+        if old:
+            edges[:old, :old] = self.E
+        self.E = edges
         ones = keys.new_ones(len(keys))
         parts = (ones, keys, keys*keys, values)
         positions = ones*0 if positions is None else positions.to(keys.dtype)
         self.P = positions if self.C is None else torch.cat((self.P, positions))
+        self.P2 = positions*positions if self.C is None else torch.cat((self.P2, positions*positions))
+        square = (values*values).sum(-1)                         # read part: its spread needs one more sum
+        self.W = square if self.C is None else torch.cat((self.W, square))
+        self.value_root = ((values*values).sum()+(0 if self.C is None else self.value_root[0]), values.sum(0)+(0 if self.C is None else self.value_root[1]), len(values)+(0 if self.C is None else self.value_root[2]))
         if self.C is None:
             self.C, self.U, self.Q, self.V = parts
             self.root = [float(len(keys)), keys.sum(0), (keys*keys).sum(0)]
@@ -42,15 +54,21 @@ class Slots:
             self.root = [self.root[0]+len(keys), self.root[1]+keys.sum(0), self.root[2]+(keys*keys).sum(0)]
         while len(self.C) > self.budget:
             excess = len(self.C)-self.budget
-            pairs = self._adjacent(excess) if self.policy == 'chunk' else self._cheapest(max(min(excess, len(self.C)//8), 1))
+            count = max(min(excess, len(self.C)//8), 1)
+            pairs = (self._adjacent(excess) if self.policy == 'chunk' else
+                     self._reader(count) if self.policy.startswith('reader') else self._cheapest(count))
             keep = torch.ones(len(self.C), dtype=torch.bool)
             left = torch.tensor([i for i, _ in pairs])
             right = torch.tensor([j for _, j in pairs])
-            for name in ('C', 'U', 'Q', 'V', 'P'):
+            for name in ('C', 'U', 'Q', 'V', 'P', 'A', 'P2', 'W'):
                 value = getattr(self, name)
                 value[left] = value[left]+value[right]
             keep[right] = False
-            self.C, self.U, self.Q, self.V, self.P = (getattr(self, name)[keep] for name in ('C', 'U', 'Q', 'V', 'P'))
+            self.E[left] = self.E[left]+self.E[right]
+            self.E[:, left] = self.E[:, left]+self.E[:, right]
+            self.E = self.E[keep][:, keep]
+            for name in ('C', 'U', 'Q', 'V', 'P', 'A', 'P2', 'W'):
+                setattr(self, name, getattr(self, name)[keep])
 
     def _variance(self, c, u, q):
         mean = self.root[1]/self.root[0]
@@ -76,6 +94,43 @@ class Slots:
                     break
         return pairs
 
+    def _disjoint(self, cost, count):
+        n = len(self.C)
+        upper = torch.triu_indices(n, n, 1)
+        order = cost[upper[0], upper[1]].argsort()
+        used, pairs = set(), []
+        for position in order.tolist():
+            i, j = int(upper[0][position]), int(upper[1][position])
+            if i not in used and j not in used:
+                used.update((i, j))
+                pairs.append((i, j))
+                if len(pairs) == count:
+                    break
+        return pairs
+
+    def _reader(self, count):
+        """Generalize where the reader loses least: attention received x spread (the error bound)."""
+        spread = lambda c, u, q: (q/c-((u/c[..., None])**2).sum(-1)).clamp_min(0)
+        if self.policy == 'reader-both':                        # recognition (key) and read (value) parts count equally
+            key_root = (self.root[2].sum()/self.root[0]-((self.root[1]/self.root[0])**2).sum()).clamp_min(1e-8)
+            total, vsum, count = self.value_root
+            value_root = (total/count-((vsum/count)**2).sum()).clamp_min(1e-8)
+            radius = lambda c, u, q, v, w: (spread(c, u, q.sum(-1))/key_root+spread(c, v, w)/value_root).sqrt()
+        else:
+            radius = lambda c, u, q, v, w: spread(c, u, q.sum(-1)).sqrt()
+        rate = self.A/(self.now-self.P/self.C+1)                # attention per query since the members were written
+        rate = rate+rate.mean()*1e-3+1e-12
+        own = rate*radius(self.C, self.U, self.Q, self.V, self.W)
+        together = (rate[:, None]+rate[None])*radius(self.C[:, None]+self.C[None], self.U[:, None]+self.U[None],
+                                                     self.Q[:, None]+self.Q[None], self.V[:, None]+self.V[None],
+                                                     self.W[:, None]+self.W[None])
+        cost = together-own[:, None]-own[None]
+        if self.policy == 'reader-edges':                       # only concepts that some query read together
+            linked = (self.E+self.E.T) > 0
+            if int(torch.triu(linked, 1).sum()) >= count:
+                cost = cost.masked_fill(~linked, float('inf'))
+        return self._disjoint(cost, count)
+
     def _adjacent(self, count):
         """Control: pool neighbours in time, ignoring content (smallest combined count first)."""
         combined = self.C[:-1]+self.C[1:]
@@ -88,20 +143,27 @@ class Slots:
                     break
         return pairs
 
-    def read(self, queries, scale, mass, gaussian, rotate=None):
+    def read(self, queries, scale, mass, gaussian, rotate=None, damping=None):
         mean = self.U/self.C[:, None]
+        variance = (self.Q/self.C[:, None]-mean*mean).clamp_min(0)
         if rotate is not None:                                  # unrotated keys: place the centroid at the mean position
             mean = rotate(mean, self.P/self.C)
+            if damping is not None:                             # positions of the members are spread: fast phases average out
+                spread = (self.P2/self.C-(self.P/self.C)**2).clamp_min(0)
+                factor = torch.exp(-.5*spread[:, None]*damping[None]**2)
+                mean = mean*torch.cat((factor, factor), -1)
+            half = variance.shape[-1]//2                        # a rotation mixes each pair of dimensions
+            pair = (variance[:, :half]+variance[:, half:])/2
+            variance = torch.cat((pair, pair), -1)
         logits = queries@mean.T*scale
         if mass:
             logits = logits+self.C.log()
         if gaussian:
-            variance = (self.Q/self.C[:, None]-mean*mean).clamp_min(0)
             logits = logits+.5*(queries*queries)@variance.T*scale*scale
         return logits, self.V/self.C[:, None]
 
 
-def attend(q, k, v, scale, cfg, raw=None, rotate=None):
+def attend(q, k, v, scale, cfg, raw=None, rotate=None, frequency=None):
     """q: heads x L x d; k, v: key heads x L x d. Causal; exact keys in [block_start-window, t].
 
     With ``raw`` (keys before the positional rotation) the concepts summarize
@@ -112,7 +174,9 @@ def attend(q, k, v, scale, cfg, raw=None, rotate=None):
     repeat = heads//groups
     out = torch.empty_like(q)
     slots = [Slots(cfg['slots'], cfg['policy']) for _ in range(groups)] if cfg['slots'] else None
-    absorbed, block = 0, cfg['block']
+    first = cfg.get('first', 0)                                 # tokens at the start of the context kept exact
+    received = torch.zeros(groups, length)
+    absorbed, block = first, cfg['block']
     window = length if cfg['dense'] else cfg['window']
     for start in range(0, length, block):
         end = min(start+block, length)
@@ -120,20 +184,32 @@ def attend(q, k, v, scale, cfg, raw=None, rotate=None):
         if slots and low > absorbed:
             for g in range(groups):
                 slots[g].absorb((k if raw is None else raw)[g, absorbed:low].clone(), v[g, absorbed:low].clone(),
-                                torch.arange(absorbed, low))
+                                torch.arange(absorbed, low), received[g, absorbed:low], start)
             absorbed = low
-        mask = torch.arange(low, end)[None] > torch.arange(start, end)[:, None]
+        exact = torch.cat((torch.arange(0, min(first, low)), torch.arange(low, end)))
+        mask = exact[None] > torch.arange(start, end)[:, None]
         for g in range(groups):
             queries = q[g*repeat:(g+1)*repeat, start:end]
-            logits = (queries@k[g, low:end].T*scale).masked_fill(mask, -torch.inf)
-            values = v[g, low:end]
-            if slots and absorbed:
+            logits = (queries@k[g, exact].T*scale).masked_fill(mask, -torch.inf)
+            values = v[g, exact]
+            if slots and absorbed > first:
                 flat = queries.reshape(-1, queries.shape[-1])
                 slot_logits, slot_values = slots[g].read(flat, scale, cfg['mass'], cfg['gaussian'],
-                                                         rotate if raw is not None else None)
+                                                         rotate if raw is not None else None,
+                                                         frequency if cfg.get('damping') else None)
                 logits = torch.cat((logits, slot_logits.view(repeat, end-start, -1)), -1)
                 values = torch.cat((values, slot_values))
-            out[g*repeat:(g+1)*repeat, start:end] = logits.softmax(-1)@values
+            weights = logits.softmax(-1)
+            out[g*repeat:(g+1)*repeat, start:end] = weights@values
+            mass = weights.sum((0, 1))
+            received[g, exact] += mass[:len(exact)]
+            if slots and absorbed > first and slots[g].C is not None:
+                slots[g].A = slots[g].A+mass[len(exact):]
+                read = weights[..., len(exact):].reshape(-1, weights.shape[-1]-len(exact))
+                if read.shape[1] > 1:
+                    top = read.topk(2, dim=1)
+                    i, j = top.indices.min(1).values, top.indices.max(1).values
+                    slots[g].E.index_put_((i, j), top.values[:, 0]*top.values[:, 1], accumulate=True)
     return out
 
 
@@ -155,7 +231,7 @@ def install(model, cfg):
             turned = torch.cat((-keys[:, half:], keys[:, :half]), -1)
             return keys*angles.cos()+turned*angles.sin()
 
-        out = attend(q[0], k[0], v[0], self.scaling, cfg, raw, rotate)
+        out = attend(q[0], k[0], v[0], self.scaling, cfg, raw, rotate, inverse_frequency)
         return self.o_proj(out.transpose(0, 1).reshape(1, hidden_states.shape[1], -1)), None
 
     inverse_frequency = model.model.rotary_emb.inv_freq.detach()
@@ -173,8 +249,19 @@ CONFIGS = {
     'finestra 64 + 64 concetti, senza log C': dict(window=64, slots=64, mass=False),
     'finestra 64 + 64 concetti, correzione gaussiana': dict(window=64, slots=64, gaussian=True),
     'finestra 64 + 16 concetti': dict(window=64, slots=16),
+    'primi 4 + finestra 64': dict(window=64, slots=0, first=4),
+    'primi 4 + finestra 124': dict(window=124, slots=0, first=4),
+    'primi 4 + finestra 60 + 64 concetti su chiavi non ruotate': dict(window=60, slots=64, unrotated=True, first=4),
+    'finestra 64 + 64 concetti su chiavi non ruotate, fusione per il lettore': dict(window=64, slots=64, unrotated=True, policy='reader'),
+    'lettore, solo coppie collegate': dict(window=64, slots=64, unrotated=True, policy='reader-edges'),
+    'lettore, chiave e valore alla pari': dict(window=64, slots=64, unrotated=True, policy='reader-both'),
+    'lettore + smorzamento di fase': dict(window=64, slots=64, unrotated=True, policy='reader', damping=True),
+    'lettore + smorzamento di fase + correzione gaussiana': dict(window=64, slots=64, unrotated=True, policy='reader', damping=True, gaussian=True),
+    'lettore + correzione gaussiana': dict(window=64, slots=64, unrotated=True, policy='reader', gaussian=True),
+    'primi 4 + finestra 60 + 64 concetti, fusione per il lettore': dict(window=60, slots=64, unrotated=True, policy='reader', first=4),
     'finestra 64 + 64 concetti su chiavi non ruotate': dict(window=64, slots=64, unrotated=True),
     'finestra 64 + 64 concetti su chiavi non ruotate, senza log C': dict(window=64, slots=64, unrotated=True, mass=False),
+    'finestra 64 + 64 concetti su chiavi non ruotate, correzione gaussiana': dict(window=64, slots=64, unrotated=True, gaussian=True),
     'finestra 64 + 64 blocchi temporali su chiavi non ruotate': dict(window=64, slots=64, unrotated=True, policy='chunk'),
     'finestra 64 + 64 blocchi temporali su chiavi non ruotate, senza log C': dict(window=64, slots=64, unrotated=True, policy='chunk', mass=False),
     'finestra 64 + 256 concetti': dict(window=64, slots=256),

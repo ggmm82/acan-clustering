@@ -71,13 +71,13 @@ class AlgebraicClusterLearner:
         random_state=42,
         routing_profile="legacy-v8",
     ):
-        if routing_profile not in ('legacy-v8','paper-routing-v1','cp-routing-v1','cp-joint-v1','cp-v9'):
+        if routing_profile not in ('legacy-v8','paper-routing-v1','cp-routing-v1','cp-joint-v1','cp-v9','concept-graph-v1'):
             raise ValueError('Profilo matematico non riconosciuto.')
         self.routing_profile = routing_profile
         self.full_dataset = ds.copy()
         self.total_n = len(self.full_dataset)
         actual_batch_size = min(batch_size, self.total_n)
-        if routing_profile in ("cp-routing-v1", "cp-joint-v1", "cp-v9"):
+        if routing_profile in ("cp-routing-v1", "cp-joint-v1", "cp-v9", "concept-graph-v1"):
             actual_batch_size = min(actual_batch_size, 300)
         self.batch_size = actual_batch_size
         self.random_state = random_state
@@ -101,13 +101,13 @@ class AlgebraicClusterLearner:
 
         label_mask = self._create_label_mask(labels)
         self.k = min(max_k, self.n) if max_k is not None else self.n
-        if routing_profile in ('cp-routing-v1','cp-joint-v1','cp-v9'):
+        if routing_profile in ('cp-routing-v1','cp-joint-v1','cp-v9','concept-graph-v1'):
             from .supervised import target_groups
             self._supervised_groups = target_groups(self)
             self._regression_indices=[self.cols.index(label) for label in self.labels if label in self.cols]
-            if routing_profile in ('cp-joint-v1','cp-v9') and self.labels and not (self._supervised_groups or self._regression_indices):
+            if routing_profile in ('cp-joint-v1','cp-v9','concept-graph-v1') and self.labels and not (self._supervised_groups or self._regression_indices):
                 raise ValueError('Target assente dalla codifica dei dati.')
-            self.k = min(self.k, 256 if routing_profile in ('cp-joint-v1','cp-v9') else 32)
+            self.k = min(self.k, 256 if routing_profile in ('cp-joint-v1','cp-v9','concept-graph-v1') else 32)
             device = "numpy"
 
         numpy_class, torch_class = _AnalyticalClusterNet, ModularClusterNet
@@ -199,7 +199,7 @@ class AlgebraicClusterLearner:
         Differentiable training loop optimizing Cluster Probability (cp) via Adam
         with automatic early stopping.
         """
-        if self.routing_profile == "cp-v9":
+        if self.routing_profile in ("cp-v9", "concept-graph-v1"):
             from .concept_adapter import train
             return train(self, max_epochs)
         if self.routing_profile == "cp-joint-v1":
@@ -281,7 +281,7 @@ class AlgebraicClusterLearner:
             pd.DataFrame(self.NormDataset, columns=self.cols)
         )
         transformation_row_mask = self.Transformation_hard.sum(axis=1) > 0
-        if self.routing_profile in ("cp-routing-v1", "cp-joint-v1", "cp-v9"):
+        if self.routing_profile in ("cp-routing-v1", "cp-joint-v1", "cp-v9", "concept-graph-v1"):
             transformation_row_mask[:] = True
         if not np.any(transformation_row_mask):
             transformation_row_mask[0] = True
@@ -294,14 +294,14 @@ class AlgebraicClusterLearner:
         self.model.Counts = self.Counts[transformation_row_mask]
         self.model.cp = self.cp
         self.model.routing_profile = self.routing_profile
-        if self.routing_profile in ('cp-joint-v1', 'cp-v9'):
+        if self.routing_profile in ('cp-joint-v1', 'cp-v9','concept-graph-v1'):
             self.model.Root = self.Root.copy()
             self.model.RootMin, self.model.RootMax = self.RootMin.copy(), self.RootMax.copy()
             self.model.RootError = self.full_dataset.to_numpy(dtype=float).std(axis=0,keepdims=True)
         if self.routing_profile == 'paper-routing-v1':
             self.model.routing_parameters = dict(alpha=self.model_net.relevance_alpha,
                 beta=self.model_net.beta, gamma=self.model_net.mass_gamma)
-        if self.routing_profile in ("cp-routing-v1", "cp-joint-v1", "cp-v9"):
+        if self.routing_profile in ("cp-routing-v1", "cp-joint-v1", "cp-v9", "concept-graph-v1"):
             self.model.routing_parameters = self.variational_state
         self.model.Freqs = self.Freqs.T[transformation_row_mask]
         self.model.n = int(max(self.model.Counts.sum(), len(self.NormDataset)))
@@ -336,7 +336,7 @@ class AlgebraicClusterLearner:
         }
 
     def get_current_model(self):
-        if self.routing_profile in ("cp-routing-v1", "cp-joint-v1", "cp-v9") and hasattr(self,"model"):
+        if self.routing_profile in ("cp-routing-v1", "cp-joint-v1", "cp-v9", "concept-graph-v1") and hasattr(self,"model"):
             return self.model
         self.forward_pass()
         return self.setModel()
@@ -373,7 +373,7 @@ class AlgebraicClusterLearner:
             gcm.clusterData[node.id] = dataset
 
         # cp-v9 chooses its own level of generalization: a child is learned only on request.
-        if routing_profile != 'cp-v9' and current_depth + 1 < max_depth and node.k() > 1 and len(dataset) >= min_samples_split:
+        if routing_profile not in ('cp-v9','concept-graph-v1') and current_depth + 1 < max_depth and node.k() > 1 and len(dataset) >= min_samples_split:
             splits = node.splitDataset(dataset)
             full_lbls = node.fullLabels(labels)
             for k_idx, (sub_df, _) in splits.items():
