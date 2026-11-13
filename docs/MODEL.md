@@ -220,7 +220,7 @@ problema, non dal modello.
 | letture ricevute $a_i$ | la massa $C_i$ | attenzione ricevuta dalle query passate | in una tabella ogni riga legge i concetti a cui appartiene |
 | quanti concetti | scelti dal giudizio, con la regola dell'errore standard | fissati dalla memoria disponibile | nel linguaggio la memoria è la risorsa da limitare |
 | riassegnazione dei membri | sì | no | il passato di una sequenza non si rilegge |
-| livelli | scelti dal criterio a coppie | due: i concetti del prefisso e, sotto, la finestra esatta in cui ogni token è un concetto | i livelli intermedi nell'attenzione non sono stati realizzati |
+| livelli | scelti dal criterio a coppie | due: i concetti del prefisso e, sotto, la finestra esatta in cui ogni token è un concetto | a pesi invariati, due livelli di concetti con comportamenti condivisi leggono peggio di uno solo ([misura](MODEL-RESULTS.md)) |
 | varianza nel riconoscere | predittiva (M1) | ordine zero | i membri di un concetto di attenzione sono dati memorizzati, non un campione |
 
 Nell'attenzione i concetti riassumono le chiavi prima della rotazione di
@@ -250,6 +250,7 @@ un'approssimazione, non coperta da M3.
 - I livelli sono scelti, non garantiti: con poche osservazioni il loro numero
   cambia con il seme.
 - Nell'attenzione i concetti sono per testa e a un solo livello sopra la
-  finestra esatta: livelli intermedi e archi fra teste e layer non sono
-  realizzati.
+  finestra esatta. Due livelli con comportamenti condivisi, misurati sulle
+  chiavi di un modello preaddestrato, leggono peggio: M9 richiede una struttura
+  che quelle chiavi non hanno. Archi fra teste e layer non sono realizzati.
 - Con compressione, e senza addestramento, non eguaglia l'attenzione densa.

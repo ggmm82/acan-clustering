@@ -141,12 +141,43 @@ $$
 
 Un attributo irrilevante ha rilevanza vicina a zero. La CP sta fra zero e uno
 ed è **riportata, non ottimizzata**: crescerebbe sempre aumentando i concetti.
-Per livello viene riportata anche la CP a coppie, cioè quanto due osservazioni
-dello stesso concetto si somigliano più della coppia media.
+
+**Livelli.** I concetti non stanno tutti sullo stesso piano. Sotto la radice,
+che è la tabella intera, il livello 1 contiene i concetti generali; i livelli
+successivi contengono i comportamenti particolari, cioè ciò che si distingue
+solo dopo aver tolto quello che il livello sopra già spiega. La radice
+standardizza la tabella con media e deviazione; ogni livello fa lo stesso per
+il livello sotto, con il centro e la dispersione del concetto di ogni
+osservazione:
+
+$$
+z'_t=z_t-\sum_pT_{pt}\,g_p,\qquad \sigma'^2_{tj}=\sum_pT_{pt}\,s^2_{pj}.
+$$
+
+Quanto un livello aggiunge a quello sopra lo misura la **CP a coppie**: la
+media, su tutte le coppie di osservazioni, di «stesso concetto» per quanto le
+due si somigliano più della coppia media del livello sopra:
+
+$$
+CP^\circ=\frac1{n(n-1)}\sum_iC_i(C_i-1)\Bigl(1-\frac1m\sum_j\frac{\hat s^2_{ij}}{\bar\sigma'^2_{ij}}\Bigr).
+$$
+
+Vale zero per un solo concetto, per concetti di una sola osservazione e per un
+livello misurato contro sé stesso; cresce solo con concetti insieme grandi e
+distinti. Il livello 1 è il taglio che la rende massima sulla scala della
+radice; ogni livello successivo è il massimo contro il livello sopra.
+
+Due livelli consecutivi sono uniti da una **matrice densa**
+$P_{pi}=\Pr(\text{concetto }p\text{ sopra}\mid\text{concetto }i)$: un concetto
+può discendere da più concetti del livello sopra. Se lo stesso comportamento
+compare dentro due concetti generali diversi, visto attraverso di essi è un
+solo comportamento e diventa **un solo nodo con due genitori**, non due
+frammenti come in un albero. Nel grafo dell'app i livelli sono le righe sopra
+i gruppi e le frecce fra le righe sono le celle della matrice.
 
 ### 5. Giudicare: decide chi non ha visto
 
-Ogni livello dell'albero viene giudicato. Per ciascuna osservazione si sottrae
+Ogni passo della generalizzazione viene giudicato. Per ciascuna osservazione si sottrae
 il suo contributo dalle somme e si chiede ai concetti così ottenuti di leggerla:
 
 $$
@@ -158,12 +189,17 @@ J=\frac1n\sum_t\log p^{(-t)}(y_t\mid z_t).
 $$
 
 Un concetto fatto di una sola osservazione non può sostenere sé stesso: è il
-principio del sostegno da osservazioni diverse. Si conserva **il livello più
-generale** il cui punteggio è entro un errore standard dal migliore:
+principio del sostegno da osservazioni diverse. Il **livello di lavoro**, quello
+che fa le previsioni, è il più generale fra quelli il cui punteggio è entro un
+errore standard dal migliore:
 
 $$
 K^*=\min\{K:\;J_K\ge\max_{K'}J_{K'}-\mathrm{se}\}.
 $$
+
+La CP a coppie non sa fermarsi da sola, quindi anche i livelli intermedi
+passano dal giudizio: un livello resta solo se, come descrizione della tabella,
+legge le osservazioni non viste meglio del livello sopra.
 
 Nel linguaggio la stessa regola è la causalità: un token è letto solo da somme
 che non lo contengono. Lì il numero di concetti non è scelto dal giudizio ma
@@ -207,34 +243,40 @@ sole che il modello generalizzi.
 
 Misure su split 80/20 ripetuti tre volte, senza impostazioni per dataset:
 
-| Dataset | Accuratezza | Concetti | Archi | Tempo |
-|---|---:|---:|---:|---:|
-| Gioco | 100% | 4 | 2 | < 1 s |
-| Adult minimale | 76,3% | 5 | 4–5 | 1 s |
-| Sonar | 83,3% | 17–26 | 24–46 | 2 s |
-| Titanic | 79,0% | 31–37 | 55–65 | 2 s |
-| Letter | 93,6% | 541–600 | 1.075–1.183 | 66 s |
+| Dataset | Accuratezza | Concetti per livello (un seme) | Tempo |
+|---|---:|---|---:|
+| Gioco | 100% | 4 | < 1 s |
+| Adult minimale | 75,3% | 3 → 5 | 1 s |
+| Sonar | 83,3% | 3 → 7 → 26 | 4 s |
+| Titanic | 79,0% | 3 → 9 → 32 | 3 s |
+| Letter | 93,6% | 3 → 12 → 37 → 91 → 614 | circa 3 minuti |
 
-Gioco **senza target** dà 4 concetti in dieci prove su dieci.
+Gioco **senza target** dà un solo livello di 4 concetti in otto tabelle su
+otto. Due famiglie lontane con gli stessi tre gruppi interni danno 2 concetti
+generali e 3 comportamenti, ciascuno con due genitori: un albero ne darebbe 6.
 
 Limiti misurati:
 
 - **Letter.** Descrivere insieme gli attributi che variano insieme porterebbe
   al 97,8% e oltre il **95,78%** storico, ma il costo cresce con il cubo del
-  numero di attributi: è stato escluso dal modello. Ogni attributo è descritto
-  separatamente, e le relazioni fra attributi costano concetti in più.
-- **Sonar** è tre punti sotto la versione precedente; su 42 righe di prova la
-  differenza è dentro il rumore, ma non è un miglioramento.
-- Senza target, se gli attributi irrilevanti non somigliano a una campana, il
-  modello può aggiungere concetti oltre quelli attesi.
-- A un solo livello gruppi molto vicini rispetto alla scala della tabella
-  restano fusi; si possono approfondire a mano con il doppio clic.
+  numero di attributi: è stato escluso dal modello. I livelli organizzano i
+  concetti, non sostituiscono quella informazione: l'accuratezza resta 93,6%.
+- **Sonar** resta tre punti sotto la versione precedente; su 42 righe di prova
+  la differenza è dentro il rumore, ma non è un miglioramento.
+- La CP a coppie preferisce concetti grandi: gruppi adiacenti lungo una
+  direzione compaiono prima uniti e si separano al livello successivo.
+- Con poche osservazioni il numero di livelli cambia da una prova all'altra.
+- L'addestramento fa due ricerche invece di una: su Letter quasi tre minuti
+  contro uno.
 - **Linguaggio.** Sostituendo l'attenzione di un modello preaddestrato in tutti
   i livelli, senza addestrare nulla, l'errore di previsione è 2,76 con
   l'attenzione completa, 3,23 tenendo esatti i primi token e gli ultimi 124, e
   3,01 con 64 token esatti più 64 concetti. I concetti recuperano parte del
   divario, non lo chiudono, e lo strato è ancora più lento dell'attenzione
-  completa.
+  completa. Leggere il contesto attraverso due livelli con comportamenti
+  condivisi, a parità di memoria, è risultato **peggiore** dei concetti su un
+  solo livello: nel linguaggio il modello usa i concetti del prefisso e, sotto,
+  la finestra esatta.
 
 Le formule spiegano il comportamento e i suoi limiti; i risultati sui dati
 stabiliscono quanto quel comportamento sia utile nel problema concreto.

@@ -13,6 +13,13 @@ generalizzare unisce i due concetti la cui unione costa meno a chi legge;
 giudicare usa solo osservazioni che il concetto non contiene. Il costo è
 lineare nel numero di attributi.
 
+I concetti sono disposti in **livelli**: sotto la radice i concetti generali,
+poi i comportamenti particolari. Ogni livello toglie alle osservazioni il
+centro del proprio concetto e dà loro la sua scala, come la radice fa con media
+e deviazione della tabella; due livelli consecutivi sono uniti da una matrice
+densa, quindi un comportamento che compare in più concetti generali è un solo
+nodo con più genitori, non un frammento per ramo.
+
 - Riferimento unico, con proposizioni e limiti: [docs/MODEL.md](docs/MODEL.md)
 - Misure, compresi gli esiti negativi: [docs/MODEL-RESULTS.md](docs/MODEL-RESULTS.md)
 - Affermazioni dei paper da non citare: [docs/ERRATA.md](docs/ERRATA.md)
@@ -21,7 +28,8 @@ Gli altri documenti in `docs/` sono la storia di come ci si è arrivati. I
 profili precedenti (`cp-v9`, `cp-joint-v1` e più vecchi) restano caricabili.
 Limiti aperti: senza relazioni fra attributi Letter resta al 93,6%; nel
 linguaggio lo strato compresso non eguaglia l'attenzione densa senza
-addestramento ed è più lento.
+addestramento ed è più lento, e i livelli con comportamenti condivisi, misurati
+sulle chiavi di un modello preaddestrato, non migliorano la lettura.
 
 ## Development setup
 
