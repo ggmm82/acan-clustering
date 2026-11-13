@@ -4,25 +4,24 @@ ACAN (Algebraic Concept Attention Network) provides concept discovery and
 tabular autocompletion with a NumPy backend and an optional PyTorch backend.
 Requires Python 3.9 or newer.
 
-## Stato della revisione
+## Il modello
 
-I nuovi modelli tabulari usano il nucleo **`cp-v9`**: concetti come statistiche
-additive, generalizzati per fusione e scelti dalla capacità di prevedere
-osservazioni non viste. Non richiede numero di concetti, soglie o epoche.
+Tabella e linguaggio usano **un solo modello**, il grafo dei concetti (profilo
+`concept-graph-v1`): un concetto è un nodo che riassume con somme le
+osservazioni che gli appartengono; riconoscere è massa per somiglianza attesa;
+generalizzare unisce i due concetti la cui unione costa meno a chi legge;
+giudicare usa solo osservazioni che il concetto non contiene. Il costo è
+lineare nel numero di attributi.
 
-- Fondazione matematica e validazione del criterio precedente: [docs/MATHEMATICAL-FOUNDATION.md](docs/MATHEMATICAL-FOUNDATION.md)
-- Misure, compresi i risultati negativi: [docs/CP-V9-RESULTS.md](docs/CP-V9-RESULTS.md)
-- Piano e stato delle fasi: [docs/REVISION-PLAN.md](docs/REVISION-PLAN.md)
+- Riferimento unico, con proposizioni e limiti: [docs/MODEL.md](docs/MODEL.md)
+- Misure, compresi gli esiti negativi: [docs/MODEL-RESULTS.md](docs/MODEL-RESULTS.md)
 - Affermazioni dei paper da non citare: [docs/ERRATA.md](docs/ERRATA.md)
 
-Tabella e attenzione sono lo stesso modello: `acan/concept_algebra.py` definisce
-appartenenza, generalizzazione e giudizio, usati sia dal nucleo tabulare sia
-dallo strato di attenzione del laboratorio generativo. Senza compressione lo
-strato coincide con l'attenzione densa e l'innesto conserva il modello di
-partenza. Con compressione e senza addestramento la qualità è ancora lontana
-dal denso e lo strato non è più veloce: sono i due limiti aperti. Le sezioni
-seguenti che citano `cp-joint-v1` descrivono il profilo precedente, ancora
-caricabile.
+Gli altri documenti in `docs/` sono la storia di come ci si è arrivati. I
+profili precedenti (`cp-v9`, `cp-joint-v1` e più vecchi) restano caricabili.
+Limiti aperti: senza relazioni fra attributi Letter resta al 93,6%; nel
+linguaggio lo strato compresso non eguaglia l'attenzione densa senza
+addestramento ed è più lento.
 
 ## Development setup
 

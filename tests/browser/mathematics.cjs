@@ -11,6 +11,7 @@ const assert=require('node:assert/strict');
       await page.getByText('Matematica',{exact:true}).click();
       await page.getByRole('heading',{name:'7. Cosa dimostrano le verifiche'}).waitFor();
       await page.waitForFunction(()=>document.querySelectorAll('#page-mathematics mjx-container').length>=15);
+      assert(!(await page.locator('#page-mathematics').innerText()).includes('cp-v9'));
       assert.equal(await page.locator('#page-mathematics [data-mjx-error]').count(),0);
       assert.equal(await page.locator('#page-mathematics h3').count(),7);
       const text=await page.locator('#page-mathematics').innerText();

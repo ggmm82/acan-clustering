@@ -1,25 +1,24 @@
-"""Concept mixture with one predictive criterion (research profile ``cp-v9``).
+"""The concept graph on tables (profile ``concept-graph-v1``).
 
-See docs/MATHEMATICAL-FOUNDATION.md, part B. A concept is a product density over
-attributes, stored as additive sufficient statistics. Three operations exist:
+One model, defined in acan/concept_algebra.py and docs/MODEL.md, shared with the
+attention layer (acan/lm/concept_attention.py):
 
-* routing      posterior of the concepts given the observed attributes;
-* generalizing summing the statistics of two concepts (the thesis operator);
-* scoring      log-probability of what must be predicted (the target when
-               there is one, every attribute otherwise), computed for each
-               row by concepts from which that row has been subtracted.
+* a concept is a node holding additive statistics of its members;
+* membership is mass times expected similarity, on the observed attributes only;
+* generalization adds together the pair whose merge costs the reader least:
+  reads received times the radius of the merged concept;
+* two concepts are connected by an edge when some observation hesitates between
+  them: the edges are the inspectable structure of what was learned;
+* a level is judged by observations subtracted from the concepts that read them,
+  and the most general level within one standard error of the best is kept.
 
-Training starts from many specific concepts and generalizes bottom-up, always
-merging the pair whose merge costs least description length. The retained
-level is the most general one whose score is within one standard
-error of the best. No concept count, purity or similarity threshold is given.
+Every step is linear in the number of attributes. No concept count, purity,
+similarity, depth or covariance is involved.
 """
 import numpy as np
 import pandas as pd
 
-from acan.concept_algebra import centre_variance, description_length
-
-LOG_2PI = float(np.log(2*np.pi))
+from acan.concept_algebra import LOG_2PI, centre_variance, reader_cost, reader_radius
 
 
 class Encoder:
@@ -68,22 +67,21 @@ def _softmax(logits):
     return e/total, (top+np.log(total))[:, 0]
 
 
-class ConceptMixture:
+class ConceptModel:
     def __init__(self, max_concepts=1024, rows_per_concept=4, kappa=1., seed=0,
-                 judged_rows=2000, merge_fraction=.05, em_steps=3,
-                 restarts=5, restart_rows=5000):
+                 judged_rows=2000, merge_fraction=.05, em_steps=3, restarts=5, restart_rows=5000):
         self.max_concepts, self.rows_per_concept = max_concepts, rows_per_concept
         self.kappa, self.seed, self.judged_rows = kappa, seed, judged_rows
         self.merge_fraction, self.em_steps = merge_fraction, em_steps
         self.restarts, self.restart_rows = restarts, restart_rows
 
-    # ---- sufficient statistics -------------------------------------------------
+    # ---- nodes: additive statistics --------------------------------------------
     def _statistics(self, t, data):
         x, mask, onehot = data
         return dict(C=t.sum(0), Cm=t.T@mask, U=t.T@x, Q=t.T@(x*x), N=t.T@onehot)
 
     def _parameters(self, s):
-        """Posterior means; variances and frequencies shrink to the root by kappa."""
+        """Centres; variances and frequencies shrink to the root by kappa pseudo-members."""
         g, v = centre_variance(s['Cm'], s['U'], s['Q'], 1., self.kappa, np)   # root variance is one
         ca = np.zeros_like(s['N'])
         for c in self.encoder.categorical:
@@ -92,6 +90,7 @@ class ConceptMixture:
         log_p = np.log((s['N']+self.kappa*self.root_p)/(ca+self.kappa))
         return g, v, log_p
 
+    # ---- membership ------------------------------------------------------------
     def _log_density(self, s, data, weights):
         x, mask, onehot = data
         wn, wc = weights
@@ -104,50 +103,78 @@ class ConceptMixture:
         prior = np.log(np.maximum(s['C'], 1e-300)/s['C'].sum())
         return _softmax(self._log_density(s, data, weights)+prior)
 
-    # ---- generalization --------------------------------------------------------
-    def _merge_costs(self, s, weights):
-        """Increase of description length when two concepts are summed (k x k)."""
-        wn, wc = weights
-        g, v, log_p = self._parameters(s)
+    # ---- edges: who hesitates between whom -------------------------------------
+    def _edges(self, t):
+        """Connect the two concepts each observation belongs to most, by the product of its memberships."""
+        k = t.shape[1]
+        if k < 2:
+            return np.zeros(0, int), np.zeros(0, int), np.zeros(0)
+        top = np.argpartition(-t, 1, axis=1)[:, :2]
+        rows = np.arange(len(t))
+        weight = t[rows, top[:, 0]]*t[rows, top[:, 1]]
+        low, high = top.min(1), top.max(1)
+        total = np.zeros(k*k)
+        np.add.at(total, low*k+high, weight)
+        index = np.flatnonzero(total > 0)
+        return index//k, index % k, total[index]
+
+    # ---- generalization: where the reader loses least --------------------------
+    def _radius(self, cm, u, q, counts):
+        """Spread of a concept around its centre in the part that is recognized (root scale one).
+
+        With a target the recognized part is the features; without one it is every attribute.
+        """
+        variance = np.maximum(q/np.maximum(cm, 1e-12)-(u/np.maximum(cm, 1e-12))**2, 0)
+        parts = [variance[..., j] for j, name in enumerate(self.encoder.numeric) if name not in self.labels]
+        for name in self.encoder.categorical:
+            if name in self.labels:
+                continue
+            block = self.encoder.block(name)
+            size = np.maximum(counts[..., block].sum(-1, keepdims=True), 1e-12)
+            root = 1-(self.root_p[block]**2).sum()
+            gini = 1-((counts[..., block]/size)**2).sum(-1)
+            parts.append(gini/root if root > 1e-12 else gini*0)
+        return reader_radius(np.mean(parts, axis=0), np)
+
+    def _pair_costs(self, s, first, second):
+        """Reader's loss for each listed pair. A row reads the concepts it belongs to: reads received = mass."""
+        own = self._radius(s['Cm'], s['U'], s['Q'], s['N'])
+        merged = {key: s[key][first]+s[key][second] for key in ('Cm', 'U', 'Q', 'N')}
+        together = self._radius(merged['Cm'], merged['U'], merged['Q'], merged['N'])
+        return reader_cost(s['C'][first], own[first], s['C'][second], own[second], together)
+
+    def _merge_costs(self, s, weights=None, rows=None):
+        """All pairs for the given concepts (rows x k); used to read the levels of a fitted graph."""
         k = len(s['C'])
-        own = description_length(s['Cm'], v, s['C'], np, wn)-(s['N']*log_p*wc).sum(1)
-        cost = np.empty((k, k))
-        for start in range(0, k, 64):
-            rows = slice(start, start+64)
-            merged = {key: s[key][rows, None]+s[key][None] for key in ('Cm', 'U', 'Q', 'N')}
-            cm = merged['Cm']
-            _, vm = centre_variance(cm, merged['U'], merged['Q'], 1., self.kappa, np)
-            ca = np.zeros_like(merged['N'])
-            for c in self.encoder.categorical:
-                block = self.encoder.block(c)
-                ca[..., block] = merged['N'][..., block].sum(-1, keepdims=True)
-            lp = np.log((merged['N']+self.kappa*self.root_p)/(ca+self.kappa))
-            c = s['C'][rows, None]+s['C'][None]
-            together = description_length(cm, vm, c, np, wn)-(merged['N']*lp*wc).sum(-1)
-            cost[rows] = together-own[rows, None]-own[None]
-        cost[np.arange(k), np.arange(k)] = np.inf
+        index = np.arange(k) if rows is None else np.asarray(rows)
+        cost = np.empty((len(index), k))
+        everyone = np.arange(k)
+        for place, concept in enumerate(index):
+            cost[place] = self._pair_costs(s, np.full(k, concept), everyone)
+        cost[np.arange(len(index)), index] = np.inf
         return cost
 
-    def _generalize(self, s, weights, count):
-        cost = self._merge_costs(s, weights)
-        k = len(cost)
-        upper = np.triu_indices(k, 1)
-        order = np.argsort(cost[upper])
+    def _generalize(self, s, data, weights, count):
+        """Add together the disjoint pairs that cost the reader least. Every pair is a candidate."""
+        k = len(s['C'])
+        first, second = np.triu_indices(k, 1)
+        cost = np.concatenate([self._pair_costs(s, first[start:start+100000], second[start:start+100000])
+                               for start in range(0, len(first), 100000)])
         used, pairs = np.zeros(k, bool), []
-        for position in order:
-            i, j = upper[0][position], upper[1][position]
+        for place in np.argsort(cost):
+            i, j = first[place], second[place]
             if not used[i] and not used[j]:
                 used[i] = used[j] = True
-                pairs.append((i, j, cost[i, j]))
+                pairs.append((i, j))
                 if len(pairs) == count:
                     break
         keep = np.ones(k, bool)
         merged = {key: value.copy() for key, value in s.items()}
-        for i, j, _ in pairs:
+        for i, j in pairs:
             for key in merged:
                 merged[key][i] += merged[key][j]
             keep[j] = False
-        return {key: value[keep] for key, value in merged.items()}, [float(c) for _, _, c in pairs]
+        return {key: value[keep] for key, value in merged.items()}
 
     def _em(self, s, data, weights, steps):
         for _ in range(steps):
@@ -243,15 +270,18 @@ class ConceptMixture:
                 if len(s['C']) == 1:
                     break
                 count = max(int(len(s['C'])*self.merge_fraction), 1)
-                s, _ = self._generalize(s, weights, count)
+                s = self._generalize(s, data, weights, count)
                 s = self._em(s, data, weights, self.em_steps)
         best = max(path, key=lambda step: step['score'])
-        chosen = min((step for step in path if step['score'] >= best['score']-best['error']),
+        # Ties are ties: rounding must not make a finer level look better than a general one.
+        chosen = min((step for step in path if step['score'] >= best['score']-best['error']-1e-9),
                      key=lambda step: (step['k'], -step['score']))
         self.path = [dict(k=step['k'], score=step['score'], restart=step['restart']) for step in path]
         self.selection = dict(best_k=best['k'], best_score=best['score'], standard_error=best['error'],
                               chosen_k=chosen['k'], chosen_score=chosen['score'])
         self.statistics = self._em(chosen['statistics'], data, weights, 20)
+        first, second, weight = self._edges(self._route(self.statistics, data, weights)[0])
+        self.edges = [(int(i), int(j), float(w/n)) for i, j, w in zip(first, second, weight)]
         self.final_score = float(self._score(self.statistics, data, weights, judged).mean())
         self.train_weights = weights
         return self
@@ -301,3 +331,6 @@ class ConceptMixture:
             result[c] = float((weight[:, None]*(p-root)**2).sum()/impurity) if impurity > 1e-12 else 0.
         result['CP'] = float(np.sqrt(np.mean([result[c] for c in self.encoder.numeric+self.encoder.categorical])))
         return result
+
+
+ConceptMixture = ConceptModel                                   # earlier name

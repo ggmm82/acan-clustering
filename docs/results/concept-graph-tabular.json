@@ -1,0 +1,155 @@
+{
+ "protocol": "application split 80/20 stratified, application target and filters, defaults; profile concept-graph-v1 (library path)",
+ "runs": [
+  {
+   "dataset": "GiocoSet.xlsx",
+   "seed": 42,
+   "accuracy": 1.0,
+   "concepts": 4,
+   "edges": 2,
+   "seconds": 0.12528905699946336,
+   "train_rows": 80,
+   "test_rows": 20
+  },
+  {
+   "dataset": "GiocoSet.xlsx",
+   "seed": 7,
+   "accuracy": 1.0,
+   "concepts": 4,
+   "edges": 2,
+   "seconds": 0.08714804200099024,
+   "train_rows": 80,
+   "test_rows": 20
+  },
+  {
+   "dataset": "GiocoSet.xlsx",
+   "seed": 21,
+   "accuracy": 1.0,
+   "concepts": 4,
+   "edges": 2,
+   "seconds": 0.08363143800124817,
+   "train_rows": 80,
+   "test_rows": 20
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "seed": 42,
+   "accuracy": 0.81,
+   "concepts": 5,
+   "edges": 4,
+   "seconds": 0.7596607699997548,
+   "train_rows": 399,
+   "test_rows": 100
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "seed": 7,
+   "accuracy": 0.76,
+   "concepts": 5,
+   "edges": 5,
+   "seconds": 0.688028533000761,
+   "train_rows": 399,
+   "test_rows": 100
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "seed": 21,
+   "accuracy": 0.72,
+   "concepts": 5,
+   "edges": 5,
+   "seconds": 0.7041912149998097,
+   "train_rows": 399,
+   "test_rows": 100
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "seed": 42,
+   "accuracy": 0.8809523809523809,
+   "concepts": 26,
+   "edges": 38,
+   "seconds": 2.185507863001476,
+   "train_rows": 166,
+   "test_rows": 42
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "seed": 7,
+   "accuracy": 0.7857142857142857,
+   "concepts": 17,
+   "edges": 24,
+   "seconds": 2.150451092998992,
+   "train_rows": 166,
+   "test_rows": 42
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "seed": 21,
+   "accuracy": 0.8333333333333334,
+   "concepts": 26,
+   "edges": 46,
+   "seconds": 2.181442553999659,
+   "train_rows": 166,
+   "test_rows": 42
+  },
+  {
+   "dataset": "titanic.csv",
+   "seed": 42,
+   "accuracy": 0.770949720670391,
+   "concepts": 32,
+   "edges": 55,
+   "seconds": 1.6732372030000988,
+   "train_rows": 712,
+   "test_rows": 179
+  },
+  {
+   "dataset": "titanic.csv",
+   "seed": 7,
+   "accuracy": 0.7932960893854749,
+   "concepts": 37,
+   "edges": 65,
+   "seconds": 2.0187024000006204,
+   "train_rows": 712,
+   "test_rows": 179
+  },
+  {
+   "dataset": "titanic.csv",
+   "seed": 21,
+   "accuracy": 0.8044692737430168,
+   "concepts": 31,
+   "edges": 61,
+   "seconds": 1.896253874998365,
+   "train_rows": 712,
+   "test_rows": 179
+  },
+  {
+   "dataset": "letter.arff",
+   "seed": 42,
+   "accuracy": 0.93625,
+   "concepts": 600,
+   "edges": 1183,
+   "seconds": 68.83254233600019,
+   "train_rows": 16000,
+   "test_rows": 4000
+  },
+  {
+   "dataset": "letter.arff",
+   "seed": 7,
+   "accuracy": 0.9345,
+   "concepts": 541,
+   "edges": 1075,
+   "seconds": 65.05187746799857,
+   "train_rows": 16000,
+   "test_rows": 4000
+  },
+  {
+   "dataset": "letter.arff",
+   "seed": 21,
+   "accuracy": 0.936,
+   "concepts": 562,
+   "edges": 1112,
+   "seconds": 63.7608612669992,
+   "train_rows": 16000,
+   "test_rows": 4000
+  }
+ ]
+}

@@ -1,4 +1,4 @@
-"""Tabular adapter of the cp-v9 concept mixture (acan/core/concepts.py).
+"""Tabular adapter of the concept graph (acan/core/concepts.py).
 
 The interactive graph keeps its encoded, min-max normalized matrix. Numeric
 columns are Gaussian attributes; each one-hot block is one categorical
@@ -6,9 +6,9 @@ attribute. Targets are read from the concepts and never used for routing.
 """
 import numpy as np
 
-from .concepts import LOG_2PI, ConceptMixture, _softmax
+from .concepts import LOG_2PI, ConceptModel, _softmax
 
-PROFILE = 'cp-v9'
+PROFILE = 'concept-graph-v1'
 
 
 class MatrixEncoder:
@@ -59,6 +59,8 @@ def attribute_blocks(learner):
 
 
 def train(learner, epochs):
+    """Fit the concept graph on the encoded table and fill one node of the application's graph."""
+    from .graph import ConceptGraph
     x = learner.full_dataset.to_numpy(dtype=np.float64)
     blocks = attribute_blocks(learner)
     encoder = MatrixEncoder(learner.cols, blocks, x)
@@ -72,7 +74,7 @@ def train(learner, epochs):
             k_active=step['k']))
         return not learner._should_stop
 
-    model = ConceptMixture(seed=learner.random_state).fit(x, labels, encoder=encoder, progress=progress)
+    model = ConceptModel(seed=learner.random_state).fit(x, labels, encoder=encoder, progress=progress)
     s = model.statistics
     g, v, log_p = model._parameters(s)
     k, m = len(s['C']), len(learner.cols)
@@ -90,6 +92,7 @@ def train(learner, epochs):
     full_t = model._route(s, data, model.train_weights)[0]
     view_t = model._route(s, encoder.transform(learner.NormDataset), model.train_weights)[0].T
     explained = model.explained_variance(x)
+    graph = ConceptGraph(model, s, model.train_weights) if k > 1 else None
     learner.k = k
     learner.Groups, learner.Relevance = groups, relevance
     learner.Transformation = view_t
@@ -105,11 +108,15 @@ def train(learner, epochs):
     feature_numeric = [j for j, name in enumerate(encoder.numeric) if name not in labels]
     feature_blocks = [name for name in encoder.categorical if name not in labels]
     learner.variational_state = dict(
-        objective='predictive-concepts-v1', cp_definition='explained-variance-v1',
+        objective='predictive-concepts-v1', cp_definition='explained-variance-v1', generalization='reader-loss-v1',
         hierarchy_readout='conditional-mixture-v1', selection=model.selection,
         training_rows=len(x), training_score=model.final_score,
         numeric_targets=[learner.cols.index(label) for label in learner.labels if label in learner.cols],
         numeric_readout='weighted-training-mean',
+        edges=[dict(first=i, second=j, weight=w) for i, j, w in model.edges],
+        pair_levels=[dict(depth=level['depth'], concepts=level['concepts'], pair_criterion=level['pair_criterion'],
+                          members=[list(map(int, graph.members(node))) for node in level['nodes']])
+                     for level in graph.levels()] if graph else [],
         explained={name: value for name, value in explained.items() if name != 'CP'},
         log_prior=np.log(s['C']/s['C'].sum()).tolist(),
         numeric=[dict(column=encoder.numeric_index[j], mean=float(encoder.mean[j]), std=float(encoder.std[j]),

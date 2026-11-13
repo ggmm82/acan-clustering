@@ -1,170 +1,177 @@
-"""A self-contained explanation of the cp-v9 concept model."""
+"""A self-contained explanation of the concept graph, the one model of the app."""
 from dash import dcc, html
 
 TEXT = r"""
-## Come il modello cerca concetti nei dati
+## Il grafo dei concetti
 
 Un concetto è una descrizione riutilizzabile di più osservazioni: per esempio
-«piove e il luogo è un palazzetto». Il principio è uno solo:
+«piove e il luogo è un palazzetto». Il modello è **uno solo**, per le tabelle e
+per il linguaggio. Ha un solo tipo di oggetto, il concetto, e tre operazioni:
+riconoscere, generalizzare, giudicare.
 
-> un insieme di concetti è buono quanto **riduce l'incertezza su ciò che va
-> previsto**, in osservazioni che i concetti non hanno visto.
+> Un insieme di concetti è buono quanto permette di **leggere ciò che serve**
+> da osservazioni che i concetti non hanno visto.
 
-Che cosa va previsto dipende dal compito. Senza target sono tutti gli attributi:
-è clustering non supervisionato. Con una classe o una quantità è quel target:
-è un modello supervisionato basato su concetti. Nel linguaggio è il token
-successivo. Le operazioni sono le stesse nei tre casi; cambia soltanto che
-cosa viene giudicato. Questa pagina descrive il nucleo **cp-v9**, usato dai
-nuovi modelli. I modelli salvati in precedenza continuano a usare le loro formule.
+Che cosa si legge dipende dal compito. Senza target si legge ogni attributo:
+è clustering non supervisionato. Con una classe o una quantità si legge quel
+target. Nel linguaggio un token legge i valori dei token che lo precedono.
+Le formule sono le stesse nei tre casi.
 
-### 1. Un concetto è un riassunto che si può sommare
+### 1. Nodi: un concetto è un riassunto che si può sommare
 
-Ogni riga è un vettore $x$ di attributi. Quelli numerici sono riportati a media
-zero e deviazione uno con le statistiche del solo training; una categoria resta
-un attributo unico con i suoi valori, senza ordinamenti arbitrari.
+Ogni osservazione ha una parte con cui la si **riconosce**, $z$, e una parte che
+si **legge**, $y$. In una tabella $z$ sono gli attributi noti e $y$ il target (o
+gli attributi mancanti); in uno strato di attenzione $z$ è la chiave di un token
+e $y$ il suo valore.
 
-Ogni concetto $i$ conserva soltanto conteggi e somme pesati dalle appartenenze
-$T_{it}$ (definite nella sezione 2):
-
-$$
-C_i=\sum_tT_{it},\qquad U_i=\sum_tT_{it}x_t,\qquad Q_i=\sum_tT_{it}x_t^2,\qquad
-N_{iv}=\sum_tT_{it}\,[x_t=v].
-$$
-
-Da questi numeri si ricavano il centro e la dispersione del concetto su ogni
-attributo numerico, e la frequenza di ogni valore categorico:
+Un concetto $i$ conserva soltanto somme sulle osservazioni che gli appartengono,
+pesate dalle appartenenze $T_{it}$:
 
 $$
-g_{ij}=\frac{U_{ij}}{C_i},\qquad s_{ij}^2=\frac{Q_{ij}}{C_i}-g_{ij}^2 .
+C_i=\sum_tT_{it},\qquad U_i=\sum_tT_{it}z_t,\qquad Q_i=\sum_tT_{it}z_t^2,\qquad
+Y_i=\sum_tT_{it}y_t,\qquad A_i=\text{letture ricevute}.
 $$
 
-Le terne si **sommano**: aggiungere una riga, togliere una riga o unire due
-concetti è la stessa operazione. Tutto ciò che segue usa solo questa proprietà.
-
-Un cluster non è una classe. Due concetti possono prevedere la stessa classe:
-nel gioco, quattro combinazioni di tempo e luogo conducono a due esiti.
-
-### 2. Appartenenza: quale concetto spiega meglio la riga
-
-Un concetto con poche righe non ha evidenza per essere molto preciso. La sua
-dispersione viene quindi avvicinata a quella generale, che dopo la
-normalizzazione vale uno, con un peso $\kappa=1$ pari a una riga:
+Da queste somme si ricavano il centro, la dispersione e la lettura del concetto:
 
 $$
-v_{ij}=\frac{C_i\,s_{ij}^2+\kappa}{C_i+\kappa},\qquad
-p_{iv}=\frac{N_{iv}+\kappa\,p_v}{C_i+\kappa}.
+g_i=\frac{U_i}{C_i},\qquad s_i^2=\frac{Q_i}{C_i}-g_i^2,\qquad \bar y_i=\frac{Y_i}{C_i}.
 $$
 
-Con una sola riga $v=1/2$: il concetto resta largo. Con molte righe la
-correzione scompare. L'appartenenza è la probabilità a posteriori del concetto,
-calcolata sui soli attributi osservati $O$:
+Per un attributo categorico le somme sono i conteggi dei valori. Tutte le somme
+crescono in proporzione al numero di attributi: il modello non conserva
+relazioni fra coppie di attributi, quindi il suo costo non cresce più che
+linearmente con le colonne. Aggiungere un'osservazione, toglierla o unire due
+concetti è sempre una somma.
+
+Un cluster non è una classe: due concetti possono prevedere la stessa classe.
+
+### 2. Riconoscere: massa per somiglianza attesa
+
+Il peso di un concetto per un'osservazione $o$ è la sua massa per la
+somiglianza attesa fra $o$ e i suoi membri:
 
 $$
-T_{it}=\frac{F_i\,p_i(x_{t,O})}{\sum_lF_l\,p_l(x_{t,O})},\qquad F_i=\frac{C_i}{\sum_lC_l},
+T_i(o)=\frac{C_i\;\mathbb E_{z\sim i}[\kappa(o,z)]}{\sum_lC_l\;\mathbb E_{z\sim l}[\kappa(o,z)]},\qquad
+\hat y(o)=\sum_iT_i(o)\,\bar y_i .
 $$
 
-$$
-\log p_i(x_O)=-\frac12\sum_{j\in O}\left[\frac{(x_j-g_{ij})^2}{v_{ij}}+\log v_{ij}\right]
-+\sum_{j\in O}\log p_{i,x_j}+\text{cost.}
-$$
-
-Il primo addendo riguarda gli attributi numerici, il secondo quelli categorici.
-Gli attributi su cui il concetto è compatto pesano di più; il termine
-$\log v_{ij}$ fa pagare a un concetto la propria larghezza. Un attributo
-mancante viene semplicemente omesso dalla somma: non serve inventare un valore.
-Per questo un solo modello può completare qualunque sottoinsieme di attributi:
+In una tabella la riga è osservata esattamente e la formula diventa
 
 $$
-p(x_U\mid x_S)=\sum_iT_i(x_S)\,p_i(x_U).
+\log\big(C_i\,\mathbb E[\kappa]\big)=\log C_i-\frac12\sum_{j\in O}\left[\frac{(o_j-g_{ij})^2}{v_{ij}}+\log v_{ij}\right]
++\sum_{j\in O}\log p_{i,o_j},
 $$
 
-Il valore da prevedere non entra mai in $O$. T è una probabilità secondo il
-modello, non una garanzia calibrata che la risposta sia corretta.
-
-### 3. Generalizzare: unire i due concetti che costa meno unire
-
-L'apprendimento parte da molti concetti specifici, circa uno ogni quattro
-righe, e procede dal basso verso l'alto. Unire due concetti significa sommare
-le loro terne. Il costo dell'unione è l'aumento della lunghezza della
-descrizione dei dati:
+dove $O$ sono gli attributi osservati: uno mancante viene semplicemente omesso,
+e lo stesso modello completa qualunque sottoinsieme di attributi. Il target non
+entra mai in $O$. Un concetto con poche osservazioni non può essere molto
+preciso: la sua dispersione è avvicinata a quella generale, che vale uno, con
+il peso di un'osservazione,
 
 $$
-\ell(i)=\frac12\sum_j\omega_jC_i\log v_{ij}-\sum_{j,v}\omega_jN_{ijv}\log p_{ijv}-C_i\log C_i,
+v_{ij}=\frac{C_i\,s_{ij}^2+1}{C_i+1}.
 $$
 
-$$
-\Delta_{il}=\ell(i\cup l)-\ell(i)-\ell(l).
-$$
-
-A ogni passo si uniscono le coppie con $\Delta$ minimo e si aggiornano le
-appartenenze. Due copie dello stesso concetto hanno sempre $\Delta<0$: unirle
-conviene. La tendenza ad aggregare non è un termine aggiunto, è una conseguenza.
-Il peso $\omega_j$ vale uno per gli attributi; per un target vale il numero
-degli attributi, così che il target conti quanto tutti gli altri insieme.
-
-La sequenza delle unioni è un albero di generalizzazione: in basso i casi
-particolari, in alto un solo concetto che descrive tutto.
-
-### 4. Rilevanza: quanta variabilità di un attributo spiegano i concetti
-
-Per ogni attributo la variabilità totale si divide esattamente in una parte
-interna ai concetti e una parte fra i concetti:
+In uno strato di attenzione la somiglianza fra una query $q$ e una chiave $k$ è
+$e^{q^\top k}$ e la stessa formula dà
 
 $$
-\sigma_j^2=\sum_iF_i\,s_{ij}^2+\sum_iF_i\,(g_{ij}-\mu_j)^2 .
+\mathrm{out}(q)=\frac{\sum_{\tau\in W}e^{q^\top k_\tau}v_\tau+\sum_iC_i\,e^{q^\top g_i}\,\bar v_i}
+{\sum_{\tau\in W}e^{q^\top k_\tau}+\sum_iC_i\,e^{q^\top g_i}} ,
 $$
 
-La **rilevanza** di un concetto su un attributo è la frazione di variabilità
-che il concetto elimina; la rilevanza dell'attributo è la sua media:
+dove i token recenti $W$ sono concetti di un solo membro. Con un concetto per
+token questa **è** l'attenzione ordinaria.
+
+### 3. Generalizzare: unire dove chi legge perde meno
+
+Leggere un concetto al posto dei suoi membri introduce un errore limitato da
+due quantità: quante letture il concetto riceve e quanto i suoi membri distano
+dal centro. Il raggio di un concetto è la sua dispersione nella parte
+riconosciuta, sulla scala generale:
+
+$$
+\rho_i=\sqrt{\frac1m\sum_j\frac{s_{ij}^2}{\sigma_j^2}} .
+$$
+
+Unire due concetti significa sommarne le somme. Il costo dell'unione è la
+perdita di chi legge:
+
+$$
+\Delta_{il}=(a_i+a_l)\,\rho_{i\cup l}-a_i\,\rho_i-a_l\,\rho_l .
+$$
+
+In una tabella ogni riga legge i concetti a cui appartiene, quindi le letture
+ricevute sono la massa: $a_i=C_i$. Nell'attenzione $a_i$ è l'attenzione che il
+concetto ha ricevuto dalle query precedenti. Il costo non è mai negativo e vale
+zero solo fra due copie dello stesso concetto: unire copie è sempre gratuito.
+
+Si parte da molti concetti specifici e si unisce ogni volta la coppia con
+$\Delta$ minimo. La sequenza delle unioni è un albero di generalizzazione: in
+basso i casi particolari, in alto un solo concetto. Nel linguaggio i token che
+le query continuano a leggere, come i primi del contesto, hanno un costo alto
+e restano esatti da soli.
+
+### 4. Archi e rilevanza: la struttura che si può ispezionare
+
+**Archi.** Due concetti sono collegati quando qualche osservazione esita fra
+loro. Il peso dell'arco somma, sulle osservazioni, il prodotto delle due
+appartenenze maggiori:
+
+$$
+E_{il}=\frac1n\sum_tT_{it}\,T_{lt}\quad\text{per i due concetti a cui }t\text{ appartiene di più.}
+$$
+
+Gli archi mostrano quali concetti sono vicini e dove passano i confini incerti.
+Nel grafo dell'app sono le linee tratteggiate fra i gruppi.
+
+**Rilevanza:** quanta variabilità di un attributo i concetti spiegano. Per ogni
+attributo la variabilità totale si divide esattamente in una parte interna ai
+concetti e una parte fra i concetti:
+
+$$
+\sigma_j^2=\sum_iF_i\,s_{ij}^2+\sum_iF_i\,(g_{ij}-\mu_j)^2,\qquad F_i=\frac{C_i}{n}.
+$$
 
 $$
 r_{ij}=1-\frac{s_{ij}^2}{\sigma_j^2},\qquad
-\eta_j^2=\sum_iF_i\,r_{ij}=\frac{\sum_iF_i\,(g_{ij}-\mu_j)^2}{\sigma_j^2}.
+\eta_j^2=\sum_iF_i\,r_{ij},\qquad CP=\sqrt{\frac1m\sum_j\eta_j^2}.
 $$
 
-Essere distinti dalla media e essere compatti sono quindi la stessa misura.
-Un attributo irrilevante ha rilevanza vicina a zero, perché dentro ogni
-concetto varia quanto varia in generale. Per un attributo categorico la stessa
-formula usa le frequenze dei valori e coincide con la Category Utility del
-clustering concettuale. La CP mostrata nell'app è:
+Un attributo irrilevante ha rilevanza vicina a zero. La CP sta fra zero e uno
+ed è **riportata, non ottimizzata**: crescerebbe sempre aumentando i concetti.
+Per livello viene riportata anche la CP a coppie, cioè quanto due osservazioni
+dello stesso concetto si somigliano più della coppia media.
+
+### 5. Giudicare: decide chi non ha visto
+
+Ogni livello dell'albero viene giudicato. Per ciascuna osservazione si sottrae
+il suo contributo dalle somme e si chiede ai concetti così ottenuti di leggerla:
 
 $$
-CP=\sqrt{\frac1m\sum_j\eta_j^2}.
-$$
-
-Sta fra zero e uno e scende quando i gruppi si allargano. **Viene riportata,
-non ottimizzata:** da sola crescerebbe sempre aumentando il numero di concetti.
-
-### 5. Quanti concetti: giudica chi non ha visto
-
-Ogni livello dell'albero viene giudicato. Per ciascuna riga si sottrae il suo
-contributo dalle terne, e si chiede ai concetti così ottenuti di prevederla:
-
-$$
-C_i^{(-t)}=C_i-T_{it},\qquad U_i^{(-t)}=U_i-T_{it}x_t,\qquad Q_i^{(-t)}=Q_i-T_{it}x_t^2 ,
+C_i^{(-t)}=C_i-T_{it},\qquad U_i^{(-t)}=U_i-T_{it}z_t,\qquad Q_i^{(-t)}=Q_i-T_{it}z_t^2 ,
 $$
 
 $$
-J=\frac1n\sum_t\log p^{(-t)}(\text{ciò che va previsto}_t\mid\text{ciò che è osservato}_t).
+J=\frac1n\sum_t\log p^{(-t)}(y_t\mid z_t).
 $$
 
-Un concetto fatto di una sola riga non può sostenere sé stesso: tolta la riga,
-non resta nulla. È il principio del sostegno da osservazioni diverse, applicato
-esattamente. Fra tutti i livelli visitati si conserva **il più generale** il
-cui punteggio è entro un errore standard dal migliore:
+Un concetto fatto di una sola osservazione non può sostenere sé stesso: è il
+principio del sostegno da osservazioni diverse. Si conserva **il livello più
+generale** il cui punteggio è entro un errore standard dal migliore:
 
 $$
 K^*=\min\{K:\;J_K\ge\max_{K'}J_{K'}-\mathrm{se}\}.
 $$
 
-Non si indica un numero di concetti, una soglia di purezza o di similarità.
-La ricerca è però un procedimento per passi successivi: fino a 5.000 righe viene
-ripetuta cinque volte da punti di partenza diversi, e lo stesso punteggio
-sceglie fra tutto ciò che è stato visitato.
+Nel linguaggio la stessa regola è la causalità: un token è letto solo da somme
+che non lo contengono. Lì il numero di concetti non è scelto dal giudizio ma
+fissato dalla memoria che si vuole usare.
 
-### 6. Le tre modalità e il linguaggio
+### 6. Le modalità
 
-**Clustering non supervisionato.** Va previsto ogni attributo: $J$ è la
+**Clustering non supervisionato.** Si legge ogni attributo: $J$ è la
 log-probabilità dell'intera riga non vista.
 
 **Classificazione.** Ogni concetto ha una distribuzione sulle classi e la
@@ -174,85 +181,60 @@ $$
 p(y\mid x)=\sum_iT_i(x)\,p_i(y).
 $$
 
-$J$ è la log-probabilità della classe corretta di ogni riga non vista.
 Un numero può essere un nome di classe, come 0/1 oppure codici 1…26: in quel
 caso scegliere esplicitamente **Classi, anche codici numerici**.
 
 **Regressione.** Il target è un attributo numerico come gli altri, letto ma
-mai usato per l'appartenenza:
+mai usato per riconoscere:
 
 $$
 \hat y(x)=\sum_iT_i(x)\,g_{i,y}.
 $$
 
-**Linguaggio: lo stesso modello.** Tabella e attenzione sono un caso solo.
-Il peso di un concetto è la sua massa per la somiglianza attesa fra ciò che si
-osserva e i suoi membri:
-
-$$
-T_i(o)\;\propto\;C_i\;\mathbb E_{z\sim i}[\kappa(o,z)].
-$$
-
-In una tabella la riga è osservata esattamente e questa formula è
-l'appartenenza della sezione 2. In uno strato di attenzione il prefisso è una
-tabella: ogni token passato è una riga con una chiave $k$ e un valore $v$, e la
-query $q$ è una riga di cui si cerca il valore. La somiglianza è
-$\exp(q^\top k)$ e si ottiene:
-
-$$
-\mathrm{out}(q)=\frac{\sum_{\tau\in W}e^{q^\top k_\tau}v_\tau+\sum_iC_i\,e^{q^\top g_i}\,\bar v_i}
-{\sum_{\tau\in W}e^{q^\top k_\tau}+\sum_iC_i\,e^{q^\top g_i}} .
-$$
-
-I token recenti $W$ sono concetti di un solo membro; quelli più vecchi vengono
-generalizzati come le righe, unendo la coppia con $\Delta$ minimo. Con un
-concetto per token la formula **è** l'attenzione ordinaria: per questo un
-modello innestato con finestra sufficiente coincide con quello di partenza.
-In un prefisso ogni token è già «non visto» dai riassunti che lo precedono:
-la regola della sezione 5 e la causalità sono la stessa regola. L'errore
-introdotto dai concetti è limitato dalla distanza delle chiavi dal centro del
-proprio concetto, cioè da quanta variabilità delle chiavi i concetti spiegano.
-Uno stato di dimensione fissa non può conservare tutto un contesto
-arbitrariamente lungo: si può ridurre la perdita, non annullarla.
+**Linguaggio.** Il prefisso è una tabella: ogni token passato è una riga con
+una chiave e un valore, e la query è una riga di cui si cerca il valore. Le
+chiavi vengono riassunte prima della rotazione di posizione e il concetto è
+riportato alla posizione media dei suoi membri. Uno stato di dimensione fissa
+non può conservare tutto un contesto arbitrariamente lungo: si riduce la
+perdita, non la si annulla.
 
 ### 7. Cosa dimostrano le verifiche
 
-Le verifiche numeriche controllano formule, additività delle terne, esclusione
-del target, causalità e conservazione dei modelli salvati. Non dimostrano da
-sole che il modello generalizzi. Un test usato ripetutamente per scegliere
-miglioramenti diventa uno strumento di sviluppo: serve poi una verifica
-indipendente, che per questi dati non esiste ancora.
+Le verifiche numeriche controllano le formule, che tabella e attenzione usino
+lo stesso costo di unione, l'esclusione del target, la causalità e che senza
+compressione lo strato coincida con l'attenzione ordinaria. Non dimostrano da
+sole che il modello generalizzi.
 
 Misure su split 80/20 ripetuti tre volte, senza impostazioni per dataset:
 
-| Dataset | Nuovo nucleo | Concetti | Nucleo precedente | Prototipi |
+| Dataset | Accuratezza | Concetti | Archi | Tempo |
 |---|---:|---:|---:|---:|
-| Gioco | 100% | 4 | 100% | 4 |
-| Adult minimale | 75,3% | 4 | 67,7% | 66–69 |
-| Sonar | 86,5% | 13–18 | 82,5% | 31–35 |
-| Titanic | 77,7% | 32–37 | 80,5% | 137–147 |
-| Letter | 93,3% | 412–476 | 92,3% | 1.539 |
+| Gioco | 100% | 4 | 2 | < 1 s |
+| Adult minimale | 76,3% | 5 | 4–5 | 1 s |
+| Sonar | 83,3% | 17–26 | 24–46 | 2 s |
+| Titanic | 79,0% | 31–37 | 55–65 | 2 s |
+| Letter | 93,6% | 541–600 | 1.075–1.183 | 66 s |
 
-Gioco **senza target** dà 4 concetti in dieci prove su dieci, con rilevanza
-0,99 su Tempo, Luogo e Gioco e 0,02 su giorno, mese e anno.
+Gioco **senza target** dà 4 concetti in dieci prove su dieci.
 
 Limiti misurati:
 
-- Titanic è peggiore del nucleo precedente. Quando il punteggio è quasi piatto
-  la regola sceglie il livello più generale, e il numero di concetti oscilla.
-- Su Letter restano circa tre punti dai migliori metodi di confronto, e il
-  **95,78%** storico non è stato recuperato. Un concetto descrive ogni attributo
-  separatamente: le relazioni fra attributi costano concetti in più.
+- **Letter.** Descrivere insieme gli attributi che variano insieme porterebbe
+  al 97,8% e oltre il **95,78%** storico, ma il costo cresce con il cubo del
+  numero di attributi: è stato escluso dal modello. Ogni attributo è descritto
+  separatamente, e le relazioni fra attributi costano concetti in più.
+- **Sonar** è tre punti sotto la versione precedente; su 42 righe di prova la
+  differenza è dentro il rumore, ma non è un miglioramento.
 - Senza target, se gli attributi irrilevanti non somigliano a una campana, il
-  modello può aggiungere uno o due concetti oltre quelli attesi. Le
-  combinazioni vere non vengono mescolate, ma il conteggio non è garantito.
-- **Linguaggio.** Sostituendo l'attenzione di un modello preaddestrato con 64
-  token esatti e 64 concetti, senza addestrare nulla, l'errore di previsione
-  passa da 5,51 (soli token esatti) a 5,26: i concetti aiutano, e unire per
-  contenuto vale più che unire per vicinanza nel testo (5,51). L'attenzione
-  completa misura però 2,76, e raddoppiare i token esatti (4,98) rende più dei
-  concetti. Il modello è lo stesso e l'innesto conserva la funzione; che con
-  l'addestramento i concetti recuperino il divario non è ancora misurato.
+  modello può aggiungere concetti oltre quelli attesi.
+- A un solo livello gruppi molto vicini rispetto alla scala della tabella
+  restano fusi; si possono approfondire a mano con il doppio clic.
+- **Linguaggio.** Sostituendo l'attenzione di un modello preaddestrato in tutti
+  i livelli, senza addestrare nulla, l'errore di previsione è 2,76 con
+  l'attenzione completa, 3,23 tenendo esatti i primi token e gli ultimi 124, e
+  3,01 con 64 token esatti più 64 concetti. I concetti recuperano parte del
+  divario, non lo chiudono, e lo strato è ancora più lento dell'attenzione
+  completa.
 
 Le formule spiegano il comportamento e i suoi limiti; i risultati sui dati
 stabiliscono quanto quel comportamento sia utile nel problema concreto.

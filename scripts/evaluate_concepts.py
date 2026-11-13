@@ -1,4 +1,4 @@
-"""Held-out comparison of the cp-v9 concept mixture with the current model and baselines.
+"""Held-out comparison of the concept graph with the previous model and baselines.
 
 Example: python scripts/evaluate_concepts.py data/*.xlsx data/*.csv --output reports/concepts.json
 Splits, targets and column filters are the application's own. Only aggregate
@@ -18,7 +18,7 @@ from sklearn.metrics import accuracy_score, balanced_accuracy_score
 from sklearn.neighbors import KNeighborsClassifier
 from threadpoolctl import threadpool_limits
 
-from acan.core.concepts import ConceptMixture
+from acan.core.concepts import ConceptModel
 from acan.vis.datasets import clean_frame, read_arff, split_for_training, target_and_filters
 from acan.vis.evaluation import encode
 
@@ -70,13 +70,13 @@ def main():
                            target=target, train_rows=len(train), test_rows=len(test),
                            excluded_columns=info['excluded_columns'], methods={})
                 started = time.monotonic()
-                model = ConceptMixture(seed=seed).fit(train, labels)
+                model = ConceptModel(seed=seed).fit(train, labels)
                 predicted = model.predict(test, target)
-                run['methods']['cp-v9'] = dict(metrics(truth, predicted), concepts=model.concepts,
+                run['methods']['concept-graph'] = dict(metrics(truth, predicted), concepts=model.concepts, edges=len(model.edges),
                     seconds=time.monotonic()-started, selection=model.selection,
                     train_accuracy=float(accuracy_score(train[target].astype(str), model.predict(train, target))),
                     cp=model.explained_variance(train)['CP'])
-                for flag, profile in ((args.app, 'cp-v9 (app)'), (args.current, 'cp-joint-v1')):
+                for flag, profile in ((args.app, 'concept-graph-v1 (app)'), (args.current, 'cp-joint-v1')):
                     if flag:
                         started = time.monotonic()
                         predicted, prototypes, stats = app_model(train, test, labels, profile.split()[0])

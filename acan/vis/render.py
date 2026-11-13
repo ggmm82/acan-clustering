@@ -49,7 +49,7 @@ benchmark_jobs = TrainingJobs(max_running=1)
 
 @app.server.get('/healthz')
 def health():
-    return {'status':'ok','version':'8.4.0','build_revision':os.environ.get('ACAN_BUILD_REVISION','development'),'dataset_filter_control':'checkbox-v1'}
+    return {'status':'ok','version':'8.5.0','build_revision':os.environ.get('ACAN_BUILD_REVISION','development'),'dataset_filter_control':'checkbox-v1'}
 
 @app.server.before_request
 def ensure_session():
@@ -444,6 +444,7 @@ orgChartData=cyto.Cytoscape(
                 'target-arrow-shape': 'triangle'
             }
         },
+        {'selector': '.concept-edge', 'style': {'line-color': '#d97706', 'line-style': 'dashed', 'width': 'data(strength)', 'curve-style': 'unbundled-bezier', 'target-arrow-shape': 'none', 'opacity': .75}},
             {
                 'selector': '.directed',
                 'style': {
@@ -545,9 +546,9 @@ model_layout = dbc.Container([
         ]),
         html.Div([
 
-            dcc.Dropdown(id='tabular-routing-profile',value='cp-v9',options=[{'label':'Concetti predittivi (cp-v9)','value':'cp-v9'},{'label':'CP condivisa precedente','value':'cp-joint-v1'}]),
+            dcc.Dropdown(id='tabular-routing-profile',value='concept-graph-v1',options=[{'label':'Grafo dei concetti','value':'concept-graph-v1'},{'label':'CP condivisa precedente','value':'cp-joint-v1'}]),
         ],style={'display':'none'}),
-        html.P('Un solo criterio per tabulare e generativo: i concetti partono specifici e vengono generalizzati per fusione; resta il livello più generale che prevede altrettanto bene le osservazioni non viste. Il numero di concetti non è richiesto né limitato da soglie. Epoche, learning rate, livelli, purezza e campioni minimi non agiscono su questo nucleo: restano per i modelli precedenti, che rimangono caricabili. Formule, misure e limiti nella scheda Matematica.',className='small text-muted'),
+        html.P('Un solo modello per tabulare e generativo, il grafo dei concetti: ogni concetto è un nodo che riassume le osservazioni che gli appartengono; due concetti sono collegati quando qualche osservazione esita fra loro; i concetti collegati vengono uniti dove chi legge perde meno, e resta il livello più generale che prevede altrettanto bene le osservazioni non viste. Non servono numero di concetti, soglie o profondità. Epoche, learning rate, livelli, purezza e campioni minimi non agiscono su questo modello: restano per i modelli precedenti, che rimangono caricabili. Formule, misure e limiti nella scheda Matematica.',className='small text-muted'),
         dbc.Row([parameter(*args) for args in [
             ('Epoche', 'train-epochs', 100, 1, 1000, 1),
             ('Learning rate', 'input-lr', .08, .001, 1, .01),
@@ -1022,7 +1023,7 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, dep
             return dash.no_update, dash.no_update, "Training già in corso.", False, False
         train, test, dataset_info = split_for_training(data, labels or [], filters, categories, task)
         check_budget(train)
-        if routing_profile not in ('legacy-v8','paper-routing-v1','cp-routing-v1','cp-joint-v1','cp-v9'):
+        if routing_profile not in ('legacy-v8','paper-routing-v1','cp-routing-v1','cp-joint-v1','cp-v9','concept-graph-v1'):
             raise ValueError('Seleziona un profilo di routing ACAN valido.')
         options = dict(routing_profile=routing_profile,max_depth=depth, max_epochs=epochs, min_samples_split=min_samples,
                        tau=tau, alpha=alpha, similarity_threshold=purity, lr=lr,

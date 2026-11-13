@@ -39,17 +39,33 @@ class ConceptMixtureTest(unittest.TestCase):
         scrambled = test.assign(play=test.play.sample(frac=1, random_state=0).to_numpy())
         self.assertTrue((model.predict(scrambled, 'play') == model.predict(test, 'play')).all())
 
-    def test_generalization_adds_statistics_and_removes_duplicates(self):
+    def test_generalization_adds_statistics_and_copies_cost_nothing(self):
         frame = game()
         model = ConceptMixture(seed=0).fit(frame)
-        doubled = {key: np.concatenate([value/2, value/2]) for key, value in model.statistics.items()}
-        weights = model.train_weights
-        cost = model._merge_costs(doubled, weights)
         k = model.concepts
-        self.assertTrue(all(cost[i, i+k] < 0 for i in range(k)))          # merging a copy always pays
-        merged, _ = model._generalize(doubled, weights, k)
+        doubled = {key: np.concatenate([value/2, value/2]) for key, value in model.statistics.items()}
+        cost = model._merge_costs(doubled)
+        finite = cost[np.isfinite(cost)]
+        self.assertTrue((finite > -1e-9).all())                          # generalizing never helps the reader for free
+        self.assertTrue(all(abs(cost[i, i+k]) < 1e-9 for i in range(k)))    # except between two copies of one concept
+        data = model.encoder.transform(frame)
+        merged = model._generalize(doubled, data, model.train_weights, k)
         for key, value in model.statistics.items():
             self.assertTrue(np.allclose(np.sort(merged[key], axis=0), np.sort(value, axis=0)))
+
+    def test_concepts_are_connected_where_observations_hesitate(self):
+        rng = np.random.default_rng(0)
+        centre = np.repeat(np.arange(4.), 60)                            # four groups in a row: 0-1-2-3
+        frame = pd.DataFrame(dict(x=centre*2+rng.normal(0, .6, 240), noise=rng.normal(size=240)))
+        model = ConceptMixture(seed=0).fit(frame)
+        centres = model._parameters(model.statistics)[0]
+        distance = np.sqrt(((centres[:, None]-centres[None])**2).sum(-1))
+        self.assertTrue(model.edges)
+        strongest = max(model.edges, key=lambda edge: edge[2])
+        typical = np.median(distance[np.triu_indices(model.concepts, 1)])
+        self.assertLess(distance[strongest[0], strongest[1]], typical)    # neighbours, not distant groups
+        self.assertTrue(all(first < second and weight > 0 for first, second, weight in model.edges))
+        self.assertFalse(any(key not in ('C', 'Cm', 'U', 'Q', 'N') for key in model.statistics))   # linear in the attributes
 
     def test_missing_attributes_are_marginalized(self):
         train = game(seed=4)
@@ -77,7 +93,7 @@ if __name__ == '__main__':
 
 
 OPTIONS = dict(lr=.08, tau=.2, alpha=.5, device='numpy', batch_size=300, max_depth=3, max_epochs=100,
-               min_samples_split=12, similarity_threshold=.92, routing_profile='cp-v9')
+               min_samples_split=12, similarity_threshold=.92, routing_profile='concept-graph-v1')
 
 
 class ConceptApplicationTest(unittest.TestCase):
@@ -89,7 +105,9 @@ class ConceptApplicationTest(unittest.TestCase):
         graph = train_native(train, ['play'], OPTIONS)
         payload = graph.to_json()
         root = GraphClusterModel.loadModel(payload).clusterModel[graph.rootId]
-        self.assertEqual(root.routing_profile, 'cp-v9')
+        self.assertEqual(root.routing_profile, 'concept-graph-v1')
+        self.assertEqual(root.routing_parameters['generalization'], 'reader-loss-v1')
+        self.assertIn('edges', root.routing_parameters)
         self.assertEqual(root.routing_parameters['cp_definition'], 'explained-variance-v1')
         self.assertEqual(len(graph.clusterModel), 1)                     # no automatic hierarchy
         self.assertEqual(root.k(), 4)
@@ -127,4 +145,4 @@ class ConceptApplicationTest(unittest.TestCase):
         root = graph.clusterModel[graph.rootId]
         refined = refine(graph.to_json(), frame, f'{root.id}_G0', OPTIONS)
         child = refined.clusterModel[refined.clusterModel[refined.rootId].children[0]]
-        self.assertEqual(child.routing_profile, 'cp-v9')
+        self.assertEqual(child.routing_profile, 'concept-graph-v1')
