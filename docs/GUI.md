@@ -18,7 +18,12 @@ non chiede un altro CSV. Il modello è il grafo dei concetti
    gruppo con più frecce in entrata è un comportamento comune a più concetti
    generali. Le linee tratteggiate arancioni collegano gruppi fra cui le righe
    esitano. I livelli con più di 12 concetti sono riassunti nel testo sopra il
-   grafo. I gruppi sono mostrati 12 per pagina.
+   grafo. I gruppi sono mostrati 12 per pagina. Un clic su un concetto di
+   livello, come su un gruppo, mostra il suo prototipo: valori tipici e
+   rilevanza di ogni attributo, e da quali concetti del livello sopra discende.
+   Nel modello salvato (JSON) i livelli sono in
+   `clusterModel → <nodo> → routing_parameters → levels`, con gli stessi
+   prototipi (`groups`, `relevance`), la massa e la matrice `parents`.
 3. Un doppio clic su un gruppo lo approfondisce a mano: si addestra un nodo
    figlio sulle sole righe del gruppo, senza riaddestrare il resto (c'è anche
    un pulsante, in alternativa al doppio clic). **Valutazione** ricalcola le

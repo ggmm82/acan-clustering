@@ -124,6 +124,18 @@ class SavedGraphTest(unittest.TestCase):
         self.assertGreater(shifted, max(element['position']['y'] for element in drawn if element.get('classes') == 'level-concept'))
         self.assertIn('level-edge', classes)
         self.assertIn('livello 1', graph_view.navigation(graph)[4])
+        # Every concept of a level is inspectable like a group: typical values and relevance.
+        for level in levels:
+            self.assertEqual(np.asarray(level['groups']).shape, (level['concepts'], len(root.cols)))
+            self.assertEqual(np.asarray(level['relevance']).shape, (level['concepts'], len(root.cols)))
+        from acan.vis.render import eInfo
+        self.assertIn('L1', str(eInfo(graph.to_json(), graph.rootId, 0, depth=1)))
+        # Edge ids carry the model: another model in the same page cannot inherit a stale edge.
+        ids = {element['data']['id'] for element in drawn if element.get('classes') == 'level-edge'}
+        other = train_native(frame.sample(frac=1, random_state=3), ['kind'], options)
+        again = {element['data']['id'] for element in graph_view.elements(other) if element.get('classes') == 'level-edge'}
+        if other.clusterModel[other.rootId].routing_parameters['levels'] != levels:
+            self.assertFalse(ids & again)
         payload = graph.to_json()
         predicted = infer(payload, frame.drop(columns=['kind']).assign(kind=np.nan).iloc[::6], 'complete')['kind']
         self.assertGreater((predicted.astype(str).to_numpy() == frame.kind.iloc[::6].to_numpy()).mean(), .8)

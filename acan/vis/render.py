@@ -1209,6 +1209,10 @@ def node_info(snd, model):
         if snd != None and len(snd) > 0:
             node_id = snd[0]['id']
             # Gestisci ID nodi Group tipo "0_G3"
+            if '_L' in str(node_id):
+                # A concept of a level of the concept graph: "<node>_L<depth>_<index>"
+                node_part, depth, index = str(node_id).split('_')
+                return eInfo(model, int(node_part), int(index), depth=int(depth[1:]))
             if '_G' in str(node_id):
                 # È un nodo Group, estrai parent_id e group_idx
                 parts = str(node_id).split('_')
@@ -1358,7 +1362,7 @@ def graph_info(model, nId):
     return data_section
 
 
-def eInfo(model, source, k):
+def eInfo(model, source, k, depth=None):
     """
     Mostra informazioni dettagliate su un cluster figlio (edge).
     Visualizza: centroide del cluster, relevance degli attributi.
@@ -1369,15 +1373,26 @@ def eInfo(model, source, k):
     node = gcm.clusterModel[source]
     
     # Ottieni dati del figlio (valori normalizzati dal modello)
-    df_group_norm = pd.DataFrame(node.Groups, columns=node.cols).iloc[[k]].copy()
-    df_relevance = pd.DataFrame(node.Relevance, columns=node.cols).iloc[[k]]
+    groups, relevance = node.Groups, node.Relevance
+    title, note = f"🎯 Gruppo Figlio {k} (dal Nodo {source})", "Questo gruppo rappresenta un sotto-cluster con caratteristiche specifiche."
+    if depth is not None:
+        # A concept of a level: the same reading, from the prototypes saved with that level.
+        level = next(item for item in (node.routing_parameters or {}).get('levels') or [] if item['depth'] == depth)
+        groups, relevance = level["groups"], level["relevance"]
+        parents = level.get('parents')
+        above = ([f"L{depth-1}·{p}: {100*row[k]:.0f}%" for p, row in enumerate(parents) if row[k] > .01]
+                 if parents is not None else [])
+        title = f"🧭 Concetto L{depth}·{k} · {100*level['mass'][k]:.0f}% delle righe"
+        note = ("Concetto generale: riassume le righe di tutti i gruppi che discendono da lui." if depth == 1 else
+                "Discende da " + ", ".join(above) + ".")
+    df_group_norm = pd.DataFrame(groups, columns=node.cols).iloc[[k]].copy()
+    df_relevance = pd.DataFrame(relevance, columns=node.cols).iloc[[k]]
     
     # Card intestazione
     header_card = dbc.Card([
-        dbc.CardHeader(html.H5(f"🎯 Gruppo Figlio {k} (dal Nodo {source})", className="mb-0")),
+        dbc.CardHeader(html.H5(title, className="mb-0")),
         dbc.CardBody([
-            html.P("Questo gruppo rappresenta un sotto-cluster con caratteristiche specifiche.", 
-                   className="text-muted small")
+            html.P(note, className="text-muted small")
         ], className="p-2")
     ], className="mb-3")
     

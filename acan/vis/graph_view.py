@@ -127,6 +127,11 @@ def with_levels(result, node, focus, indices):
     if not upper:
         return result
     step, shift = 110, 110*len(upper)
+    # Cytoscape edge endpoints are immutable and the React diff keeps an element whose id is
+    # unchanged: when another model arrives in the same page, an edge with the same id would
+    # not be drawn again once its nodes are replaced. The ids carry a fingerprint of the model.
+    import json, zlib
+    stamp = format(zlib.crc32(json.dumps([level.get('parents') for level in levels]).encode()), 'x')
     for element in result:                                       # make room under the root
         if element.get('classes','').startswith('local-group'):
             element['position'] = dict(x=element['position']['x'],y=element['position']['y']+shift)
@@ -140,17 +145,17 @@ def with_levels(result, node, focus, indices):
             result.append(dict(data=dict(id=identifier(level['depth'],index),label=label,level=level['depth']),
                                classes='level-concept',position=dict(x=175+(index-(level['concepts']-1)/2)*128,y=20+step*(row+1))))
             if previous is None:
-                result.append(dict(data=dict(id=f'R{focus}_{index}',source=str(focus),target=identifier(level['depth'],index),strength=2),
+                result.append(dict(data=dict(id=f'R{focus}_{stamp}_{index}',source=str(focus),target=identifier(level['depth'],index),strength=2),
                                    classes='level-edge'))
         if previous is not None:
             result.extend(level_links(level['parents'],lambda i,d=previous['depth']: identifier(d,i),
-                                      lambda j,d=level['depth']: identifier(d,j),range(level['concepts']),f'P{focus}_{level["depth"]}'))
+                                      lambda j,d=level['depth']: identifier(d,j),range(level['concepts']),f'P{focus}_{stamp}_{level["depth"]}'))
         previous = level
     descent = np.eye(previous['concepts'])                       # from the last drawn level down to the working level
     for level in levels[len(upper):]:
         descent = descent@np.asarray(level['parents'])
     result.extend(level_links(descent,lambda i,d=previous['depth']: identifier(d,i),
-                              lambda j: f'{focus}_G{j}',indices,f'P{focus}_G'))
+                              lambda j: f'{focus}_G{j}',indices,f'P{focus}_{stamp}_G'))
     return result
 
 

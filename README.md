@@ -63,8 +63,9 @@ Aprire `http://localhost:4000`.
    scoprire gruppi senza target, e avviare la scoperta dei concetti. Il grafo
    mostra la radice, i livelli di concetti generali e i gruppi che fanno le
    previsioni; le frecce dicono da quali concetti generali discende ciascun
-   gruppo, le linee tratteggiate dove le righe esitano fra due gruppi. Un
-   doppio clic su un gruppo lo approfondisce a mano. Il modello si salva e si
+   gruppo, le linee tratteggiate dove le righe esitano fra due gruppi. Un clic
+   su un concetto o su un gruppo mostra il suo prototipo; un doppio clic su un
+   gruppo lo approfondisce a mano. Il modello si salva e si
    ricarica come JSON.
 3. **Valutazione**: misura il modello sul 20% di righe tenute da parte e, su
    richiesta, lo confronta con altri metodi (KNN, alberi, foreste, boosting)
