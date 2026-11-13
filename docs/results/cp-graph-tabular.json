@@ -1,0 +1,664 @@
+{
+ "protocol": "application split 80/20 stratified, application target and column filters, defaults; cp-graph = judged levels with judged covariance; cp-v9 = one level, independent attributes",
+ "runs": [
+  {
+   "dataset": "GiocoSet.xlsx",
+   "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+   "seed": 42,
+   "target": "Gioco",
+   "train_rows": 80,
+   "test_rows": 20,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.07009503500012215,
+     "selection": {
+      "best_k": 4,
+      "best_score": -0.09024337985713923,
+      "standard_error": 0.004019806898922015,
+      "chosen_k": 4,
+      "chosen_score": -0.09024337985713923
+     },
+     "train_accuracy": 1.0,
+     "cp": 0.7176253912783063
+    },
+    "cp-graph": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 4,
+     "seconds": 0.3965064799999709
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 4,
+     "seconds": 0.3614757999998801
+    },
+    "cp-v9 (app)": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.43872591699982877
+    }
+   }
+  },
+  {
+   "dataset": "GiocoSet.xlsx",
+   "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+   "seed": 7,
+   "target": "Gioco",
+   "train_rows": 80,
+   "test_rows": 20,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.06922505100010312,
+     "selection": {
+      "best_k": 4,
+      "best_score": -0.08914841765686439,
+      "standard_error": 0.004155240194910819,
+      "chosen_k": 4,
+      "chosen_score": -0.08914841765686439
+     },
+     "train_accuracy": 1.0,
+     "cp": 0.7149547913016943
+    },
+    "cp-graph": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 4,
+     "seconds": 0.39954989699981525
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 4,
+     "seconds": 0.32749178099993514
+    },
+    "cp-v9 (app)": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.36823582499982876
+    }
+   }
+  },
+  {
+   "dataset": "GiocoSet.xlsx",
+   "sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+   "seed": 21,
+   "target": "Gioco",
+   "train_rows": 80,
+   "test_rows": 20,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.11785233400041761,
+     "selection": {
+      "best_k": 4,
+      "best_score": -0.08717436429600775,
+      "standard_error": 0.0036687195058588648,
+      "chosen_k": 4,
+      "chosen_score": -0.08717436429600775
+     },
+     "train_accuracy": 1.0,
+     "cp": 0.7175019023119625
+    },
+    "cp-graph": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 4,
+     "seconds": 0.4645435530001123
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 4,
+     "seconds": 0.40460427900006835
+    },
+    "cp-v9 (app)": {
+     "accuracy": 1.0,
+     "balanced_accuracy": 1.0,
+     "concepts": 4,
+     "seconds": 0.4463384989999213
+    }
+   }
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+   "seed": 42,
+   "target": "income",
+   "train_rows": 399,
+   "test_rows": 100,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.78,
+     "balanced_accuracy": 0.78,
+     "concepts": 4,
+     "seconds": 0.5850230289997853,
+     "selection": {
+      "best_k": 55,
+      "best_score": -0.5105790139093853,
+      "standard_error": 0.026373294339196225,
+      "chosen_k": 4,
+      "chosen_score": -0.5334859233586166
+     },
+     "train_accuracy": 0.7694235588972431,
+     "cp": 0.7266706736378237
+    },
+    "cp-graph": {
+     "accuracy": 0.78,
+     "balanced_accuracy": 0.78,
+     "concepts": 4,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 4,
+     "seconds": 2.371620288000031
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 0.81,
+     "balanced_accuracy": 0.81,
+     "concepts": 6,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 6,
+     "seconds": 2.732957869999609
+    },
+    "cp-v9 (app)": {
+     "accuracy": 0.78,
+     "balanced_accuracy": 0.78,
+     "concepts": 4,
+     "seconds": 1.3233241149996502
+    }
+   }
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+   "seed": 7,
+   "target": "income",
+   "train_rows": 399,
+   "test_rows": 100,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.76,
+     "balanced_accuracy": 0.76,
+     "concepts": 4,
+     "seconds": 0.6257877359998929,
+     "selection": {
+      "best_k": 75,
+      "best_score": -0.4979569703938809,
+      "standard_error": 0.026114949273782575,
+      "chosen_k": 4,
+      "chosen_score": -0.5115459953122069
+     },
+     "train_accuracy": 0.7769423558897243,
+     "cp": 0.7343026185665794
+    },
+    "cp-graph": {
+     "accuracy": 0.76,
+     "balanced_accuracy": 0.76,
+     "concepts": 4,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 4,
+     "seconds": 2.1406333190002442
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 0.77,
+     "balanced_accuracy": 0.77,
+     "concepts": 4,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 4,
+     "seconds": 2.18698717999996
+    },
+    "cp-v9 (app)": {
+     "accuracy": 0.76,
+     "balanced_accuracy": 0.76,
+     "concepts": 4,
+     "seconds": 1.166090223000083
+    }
+   }
+  },
+  {
+   "dataset": "adultMinimal.xlsx",
+   "sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+   "seed": 21,
+   "target": "income",
+   "train_rows": 399,
+   "test_rows": 100,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.72,
+     "balanced_accuracy": 0.72,
+     "concepts": 4,
+     "seconds": 0.5582118689999334,
+     "selection": {
+      "best_k": 49,
+      "best_score": -0.4774159316216816,
+      "standard_error": 0.026303865199791342,
+      "chosen_k": 4,
+      "chosen_score": -0.4903912918753626
+     },
+     "train_accuracy": 0.7919799498746867,
+     "cp": 0.7292653183262902
+    },
+    "cp-graph": {
+     "accuracy": 0.72,
+     "balanced_accuracy": 0.72,
+     "concepts": 4,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 4,
+     "seconds": 2.0442758059998596
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 0.72,
+     "balanced_accuracy": 0.72,
+     "concepts": 4,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 4,
+     "seconds": 1.9742618169998423
+    },
+    "cp-v9 (app)": {
+     "accuracy": 0.72,
+     "balanced_accuracy": 0.72,
+     "concepts": 4,
+     "seconds": 1.0291294230000858
+    }
+   }
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+   "seed": 42,
+   "target": "Class",
+   "train_rows": 166,
+   "test_rows": 42,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.8571428571428571,
+     "balanced_accuracy": 0.8568181818181818,
+     "concepts": 13,
+     "seconds": 2.1374998979999873,
+     "selection": {
+      "best_k": 17,
+      "best_score": -0.2473580396688828,
+      "standard_error": 0.05096358891496215,
+      "chosen_k": 13,
+      "chosen_score": -0.2908031469312213
+     },
+     "train_accuracy": 1.0,
+     "cp": 0.7101050483316272
+    },
+    "cp-graph": {
+     "accuracy": 0.8571428571428571,
+     "balanced_accuracy": 0.8568181818181818,
+     "concepts": 13,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 13,
+     "seconds": 38.029569903000265
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 0.8809523809523809,
+     "balanced_accuracy": 0.884090909090909,
+     "concepts": 16,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 16,
+     "seconds": 39.36367246300006
+    },
+    "cp-v9 (app)": {
+     "accuracy": 0.8571428571428571,
+     "balanced_accuracy": 0.8568181818181818,
+     "concepts": 13,
+     "seconds": 38.361042632000135
+    }
+   }
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+   "seed": 7,
+   "target": "Class",
+   "train_rows": 166,
+   "test_rows": 42,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.8333333333333334,
+     "balanced_accuracy": 0.8318181818181818,
+     "concepts": 18,
+     "seconds": 1.4921240150001722,
+     "selection": {
+      "best_k": 22,
+      "best_score": -0.2548755915724984,
+      "standard_error": 0.05105441904590995,
+      "chosen_k": 18,
+      "chosen_score": -0.28273504945207395
+     },
+     "train_accuracy": 0.9819277108433735,
+     "cp": 0.7397528472406603
+    },
+    "cp-graph": {
+     "accuracy": 0.8333333333333334,
+     "balanced_accuracy": 0.8318181818181818,
+     "concepts": 18,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 18,
+     "seconds": 37.74258243599979
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 0.8333333333333334,
+     "balanced_accuracy": 0.8363636363636364,
+     "concepts": 16,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 16,
+     "seconds": 38.7382159040003
+    },
+    "cp-v9 (app)": {
+     "accuracy": 0.8333333333333334,
+     "balanced_accuracy": 0.8318181818181818,
+     "concepts": 17,
+     "seconds": 36.67735211600029
+    }
+   }
+  },
+  {
+   "dataset": "sonar.xlsx",
+   "sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+   "seed": 21,
+   "target": "Class",
+   "train_rows": 166,
+   "test_rows": 42,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.9047619047619048,
+     "balanced_accuracy": 0.9022727272727273,
+     "concepts": 13,
+     "seconds": 1.4903546700002153,
+     "selection": {
+      "best_k": 32,
+      "best_score": -0.26413031134390946,
+      "standard_error": 0.047299825072794774,
+      "chosen_k": 13,
+      "chosen_score": -0.30520596738469147
+     },
+     "train_accuracy": 0.9819277108433735,
+     "cp": 0.688618229036897
+    },
+    "cp-graph": {
+     "accuracy": 0.9047619047619048,
+     "balanced_accuracy": 0.9022727272727273,
+     "concepts": 13,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 13,
+     "seconds": 36.86761993399978
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 0.8333333333333334,
+     "balanced_accuracy": 0.8295454545454546,
+     "concepts": 18,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 18,
+     "seconds": 37.93901551700037
+    },
+    "cp-v9 (app)": {
+     "accuracy": 0.8571428571428571,
+     "balanced_accuracy": 0.8545454545454545,
+     "concepts": 20,
+     "seconds": 36.4557310969999
+    }
+   }
+  },
+  {
+   "dataset": "titanic.csv",
+   "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+   "seed": 42,
+   "target": "Survived",
+   "train_rows": 712,
+   "test_rows": 179,
+   "excluded_columns": [
+    "PassengerId",
+    "Name",
+    "Ticket",
+    "Cabin"
+   ],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.770949720670391,
+     "balanced_accuracy": 0.7353096179183136,
+     "concepts": 32,
+     "seconds": 1.3252412169999843,
+     "selection": {
+      "best_k": 78,
+      "best_score": -0.46511500409071493,
+      "standard_error": 0.033636862233092035,
+      "chosen_k": 78,
+      "chosen_score": -0.46511500409071493
+     },
+     "train_accuracy": 0.8314606741573034,
+     "cp": 0.8462992829647578
+    },
+    "cp-graph": {
+     "accuracy": 0.770949720670391,
+     "balanced_accuracy": 0.7353096179183136,
+     "concepts": 32,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 32,
+     "seconds": 4.37993252699971
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 0.776536312849162,
+     "balanced_accuracy": 0.7182476943346509,
+     "concepts": 3,
+     "levels": 2,
+     "nodes": 2,
+     "root_concepts": 2,
+     "seconds": 4.948693119999916
+    },
+    "cp-v9 (app)": {
+     "accuracy": 0.7597765363128491,
+     "balanced_accuracy": 0.7100131752305665,
+     "concepts": 2,
+     "seconds": 11.53703895999979
+    }
+   }
+  },
+  {
+   "dataset": "titanic.csv",
+   "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+   "seed": 7,
+   "target": "Survived",
+   "train_rows": 712,
+   "test_rows": 179,
+   "excluded_columns": [
+    "PassengerId",
+    "Name",
+    "Ticket",
+    "Cabin"
+   ],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.7932960893854749,
+     "balanced_accuracy": 0.7642951251646903,
+     "concepts": 37,
+     "seconds": 1.321622294000008,
+     "selection": {
+      "best_k": 71,
+      "best_score": -0.5018817650942033,
+      "standard_error": 0.03550302725086125,
+      "chosen_k": 71,
+      "chosen_score": -0.5018817650942033
+     },
+     "train_accuracy": 0.8342696629213483,
+     "cp": 0.8514282687233726
+    },
+    "cp-graph": {
+     "accuracy": 0.7932960893854749,
+     "balanced_accuracy": 0.7642951251646903,
+     "concepts": 37,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 37,
+     "seconds": 4.550685406999946
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 0.8212290502793296,
+     "balanced_accuracy": 0.787022397891963,
+     "concepts": 33,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 33,
+     "seconds": 4.631447527000091
+    },
+    "cp-v9 (app)": {
+     "accuracy": 0.7932960893854749,
+     "balanced_accuracy": 0.7696969696969697,
+     "concepts": 2,
+     "seconds": 12.068515597999976
+    }
+   }
+  },
+  {
+   "dataset": "titanic.csv",
+   "sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+   "seed": 21,
+   "target": "Survived",
+   "train_rows": 712,
+   "test_rows": 179,
+   "excluded_columns": [
+    "PassengerId",
+    "Name",
+    "Ticket",
+    "Cabin"
+   ],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.7653631284916201,
+     "balanced_accuracy": 0.7334650856389986,
+     "concepts": 35,
+     "seconds": 1.4184863580003366,
+     "selection": {
+      "best_k": 45,
+      "best_score": -0.5073295262447916,
+      "standard_error": 0.033987811801175105,
+      "chosen_k": 35,
+      "chosen_score": -0.5391936317372109
+     },
+     "train_accuracy": 0.8174157303370787,
+     "cp": 0.8360440071655614
+    },
+    "cp-graph": {
+     "accuracy": 0.7653631284916201,
+     "balanced_accuracy": 0.7334650856389986,
+     "concepts": 35,
+     "levels": 1,
+     "nodes": 1,
+     "root_concepts": 35,
+     "seconds": 4.52087279899979
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 0.7988826815642458,
+     "balanced_accuracy": 0.7877470355731224,
+     "concepts": 5,
+     "levels": 2,
+     "nodes": 2,
+     "root_concepts": 4,
+     "seconds": 4.471669264999946
+    },
+    "cp-v9 (app)": {
+     "accuracy": 0.7932960893854749,
+     "balanced_accuracy": 0.7642951251646903,
+     "concepts": 2,
+     "seconds": 11.826467425999908
+    }
+   }
+  },
+  {
+   "dataset": "letter.arff",
+   "sha256": "a31f2d9ad119a53e182e7371d48981982dbb2b0a5e9f0aa7b73f373857b64e2e",
+   "seed": 42,
+   "target": "class",
+   "train_rows": 16000,
+   "test_rows": 4000,
+   "excluded_columns": [],
+   "methods": {
+    "cp-v9": {
+     "accuracy": 0.9325,
+     "balanced_accuracy": 0.932156367355392,
+     "concepts": 476,
+     "seconds": 71.95033251400014,
+     "selection": {
+      "best_k": 554,
+      "best_score": -0.20298709295294542,
+      "standard_error": 0.015770461918480454,
+      "chosen_k": 476,
+      "chosen_score": -0.21192420678785395
+     },
+     "train_accuracy": 0.9664375,
+     "cp": 0.9350834872271215
+    },
+    "cp-graph": {
+     "accuracy": 0.97975,
+     "balanced_accuracy": 0.9795766778749931,
+     "concepts": 158,
+     "levels": 2,
+     "nodes": 4,
+     "root_concepts": 153,
+     "seconds": 848.515107811
+    },
+    "cp-graph con punteggi normali": {
+     "accuracy": 0.9795,
+     "balanced_accuracy": 0.9793471664452653,
+     "concepts": 192,
+     "levels": 2,
+     "nodes": 6,
+     "root_concepts": 165,
+     "seconds": 887.0337833839999
+    }
+   }
+  }
+ ]
+}
