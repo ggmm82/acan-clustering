@@ -21,9 +21,12 @@ def train_native(data, labels, options):
         from pandas.api.types import is_numeric_dtype, is_bool_dtype
         learner.categorical_names = [str(name) for name in data.columns if name not in labels
                                      and not is_numeric_dtype(data[name]) and not is_bool_dtype(data[name])]
+        learner.automatic_levels = True                        # judged levels below the root (cp-v9 only)
         root = learner.nLearn(max_epochs=options['max_epochs'])
         root.history = learner.history
         graph.clusterModel[root.id] = root
+        for node in getattr(learner, 'tree_nodes', []):
+            graph.clusterModel[node.id] = node
     else:
         graph, root = AlgebraicClusterLearner.gLearn(
             normalized, labels=labels, gcm=graph,
