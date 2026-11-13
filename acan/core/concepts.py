@@ -71,11 +71,12 @@ def _softmax(logits):
 class ConceptMixture:
     def __init__(self, max_concepts=1024, rows_per_concept=4, kappa=1., seed=0,
                  judged_rows=2000, merge_fraction=.05, em_steps=3,
-                 restarts=5, restart_rows=5000):
+                 restarts=5, restart_rows=5000, judged_fraction=1.):
         self.max_concepts, self.rows_per_concept = max_concepts, rows_per_concept
         self.kappa, self.seed, self.judged_rows = kappa, seed, judged_rows
         self.merge_fraction, self.em_steps = merge_fraction, em_steps
         self.restarts, self.restart_rows = restarts, restart_rows
+        self.judged_fraction = judged_fraction                  # share of the rows that choose the level
 
     # ---- sufficient statistics -------------------------------------------------
     def _statistics(self, t, data):
@@ -225,7 +226,8 @@ class ConceptMixture:
         features = len(self.encoder.numeric)+len(self.encoder.categorical)-len(self.labels)
         weights = self._weights(float(max(features, 1)))        # targets weigh as much as all features
         rng = np.random.default_rng(self.seed)
-        judged = np.sort(rng.choice(n, min(n, self.judged_rows), replace=False))
+        judged = np.sort(rng.choice(n, max(min(int(round(n*self.judged_fraction)), self.judged_rows), 1), replace=False))
+        self.judged = judged
         k = int(min(self.max_concepts, max(n//self.rows_per_concept, 1)))
         path = []
         # Generalization is a greedy search: repeat it from other specific
@@ -247,7 +249,8 @@ class ConceptMixture:
                 s, _ = self._generalize(s, weights, count)
                 s = self._em(s, data, weights, self.em_steps)
         best = max(path, key=lambda step: step['score'])
-        chosen = min((step for step in path if step['score'] >= best['score']-best['error']),
+        # Ties are ties: rounding must not make a finer level look better than a general one.
+        chosen = min((step for step in path if step['score'] >= best['score']-best['error']-1e-9),
                      key=lambda step: (step['k'], -step['score']))
         self.path = [dict(k=step['k'], score=step['score'], restart=step['restart']) for step in path]
         self.selection = dict(best_k=best['k'], best_score=best['score'], standard_error=best['error'],
@@ -302,3 +305,137 @@ class ConceptMixture:
             result[c] = float((weight[:, None]*(p-root)**2).sum()/impurity) if impurity > 1e-12 else 0.
         result['CP'] = float(np.sqrt(np.mean([result[c] for c in self.encoder.numeric+self.encoder.categorical])))
         return result
+
+
+class NormalScores:
+    """Monotone map of each numeric feature to a Gaussian scale, from training ranks only.
+
+    Optional, off by default. On this scale an attribute without structure is
+    exactly what one Gaussian concept expects, and an extreme value cannot
+    stretch the scale; but ranks also erase the gaps between well-separated
+    groups, which is what resolves fine structure (docs/CONCEPT-GRAPH.md).
+    At most ``knots`` quantiles are stored; values in between are interpolated.
+    """
+
+    def __init__(self, knots=256):
+        self.knots, self.maps = knots, {}
+
+    def fit(self, frame, skip=()):
+        from scipy.special import ndtri
+        for column in frame:
+            if column in skip or not pd.api.types.is_numeric_dtype(frame[column]):
+                continue
+            values = np.sort(frame[column].dropna().to_numpy(float))
+            if len(values) < 2 or values[0] == values[-1]:
+                continue
+            unique, first, counts = np.unique(values, return_index=True, return_counts=True)
+            score = ndtri((first+(counts-1)/2+.5)/len(values))       # mid-rank of tied values
+            if len(unique) > self.knots:
+                keep = np.unique(np.round(np.linspace(0, len(unique)-1, self.knots)).astype(int))
+                unique, score = unique[keep], score[keep]
+            self.maps[column] = (unique, score)
+        return self
+
+    def transform(self, frame):
+        frame = frame.copy()
+        for column, (values, score) in self.maps.items():
+            if column in frame:
+                x = pd.to_numeric(frame[column], errors='coerce').to_numpy(float)
+                frame[column] = np.where(np.isnan(x), np.nan, np.interp(x, values, score))
+        return frame
+
+
+class ConceptTree:
+    """Levels of concepts built top-down; each level is the prior of the next.
+
+    A concept is refined by fitting the same model on the rows routed to it, on
+    their own scale: the child's variances and frequencies shrink to the parent
+    concept instead of the root. A child chooses its level with half of its rows;
+    it is kept only if the other half, each row judged by concepts that never saw
+    it, is predicted better than by the parent by more than one standard error.
+    No purity or size threshold.
+    """
+    max_depth = 8                                               # capacity limit, not a requested depth
+
+    def __init__(self, factory, data, depth=0, budget=None):
+        self.model = factory(data, depth > 0)
+        self.children, self.depth = {}, depth
+        budget = [float('inf')] if budget is None else budget   # nodes still allowed in the whole tree
+        budget[0] -= 1
+        model = self.model
+        encoded = model.encoder.transform(data)
+        self.scores = model._score(model.statistics, encoded, model.train_weights, np.arange(len(encoded[0])))
+        # The same rows read by ONE concept at this level: what a split must improve on.
+        one = {key: value.sum(0, keepdims=True) for key, value in model.statistics.items()}
+        self.single = model._score(one, encoded, model.train_weights, np.arange(len(encoded[0])))
+        if depth+1 >= self.max_depth or model.concepts < 2:
+            return
+        routed = model.assignments(data).argmax(1)              # the branch prediction would take
+        minimum = 2*model.rows_per_concept                      # below this a child cannot hold two concepts
+        for concept in range(model.concepts):
+            rows = np.flatnonzero(routed == concept)
+            if len(rows) < minimum or budget[0] < 1:
+                continue
+            subset = data.iloc[rows].reset_index(drop=True) if hasattr(data, 'iloc') else data[rows]
+            spent = budget[0]
+            child = ConceptTree(factory, subset, depth+1, budget)
+            if child.model.concepts < 2 and not child.children:
+                budget[0] = spent
+                continue
+            gain = child.scores-self.scores[rows]
+            if not model.labels:                                # joint densities: same units and the mass of the branch
+                gain = gain+(encoded[1][rows]*np.log(model.encoder.std/child.model.encoder.std)).sum(1)
+                gain = gain+np.log(len(rows)/len(routed))
+            # The child chose its level with half of its rows; the other half decides whether it is kept.
+            fresh = np.setdiff1d(np.arange(len(rows)), child.model.judged)
+            better = lambda values: len(values) > 1 and values.mean() > values.std()/np.sqrt(len(values))+1e-9
+            # Kept only if the split itself helps (against one concept on the same scale) and the
+            # refined branch predicts better than the parent did.
+            if better((child.scores-child.single)[fresh]) and better(gain[fresh]):
+                self.children[concept] = child
+                self.rows = getattr(self, 'rows', {})
+                self.rows[concept] = rows
+                self.scores[rows] = self.scores[rows]+gain
+            else:
+                budget[0] = spent
+
+    @property
+    def concepts(self):
+        """Terminal concepts of the whole tree."""
+        return self.model.concepts-len(self.children)+sum(child.concepts for child in self.children.values())
+
+    @property
+    def levels(self):
+        return 1+max((child.levels for child in self.children.values()), default=0)
+
+    def nodes(self):
+        return 1+sum(child.nodes() for child in self.children.values())
+
+    def predict_proba(self, frame, label, classes):
+        """Mixture along the levels: a refined concept is read through its children."""
+        model = self.model
+        t = model.assignments(frame)
+        _, _, log_p = model._parameters(model.statistics)
+        local = model.encoder.categories[label]
+        leaf = np.zeros((model.concepts, len(classes)))
+        leaf[:, [classes.index(c) for c in local]] = np.exp(log_p[:, model.encoder.block(label)])
+        out = np.zeros((len(frame), len(classes)))
+        for concept in range(model.concepts):
+            child = self.children.get(concept)
+            if child is None:
+                out += t[:, concept:concept+1]*leaf[concept]
+                continue
+            active = np.flatnonzero(t[:, concept] > 1e-6)
+            if len(active):
+                rows = frame.iloc[active] if hasattr(frame, 'iloc') else frame[active]
+                out[active] += t[active, concept:concept+1]*child.predict_proba(rows, label, classes)
+        return out
+
+
+def fit_tree(frame, labels=(), seed=0, normal_scores=False, **options):
+    """Convenience for tables: the judged tree, optionally on normal scores of the features."""
+    scores = NormalScores().fit(frame, skip=labels) if normal_scores else None
+    data = scores.transform(frame) if scores else frame
+    tree = ConceptTree(lambda rows, child: ConceptMixture(seed=seed, judged_fraction=.5 if child else 1., **options).fit(rows, labels), data)
+    tree.scores_map = scores
+    return tree

@@ -93,3 +93,83 @@ class ConceptGraphTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ConceptTreeTest(unittest.TestCase):
+    def test_levels_resolve_two_scales_without_a_target(self):
+        from acan.core.concepts import fit_tree
+        for seed in range(3):
+            frame, group = nested(rows=30, seed=seed)
+            tree = fit_tree(frame, seed=0)
+            # At the scale of the whole table only the two families are distinct; inside each
+            # family, on its own scale, the three groups are. Nothing was asked for.
+            self.assertEqual((tree.model.concepts, tree.concepts, tree.levels), (2, 6, 2))
+            family = tree.model.assignments(frame).argmax(1)
+            self.assertTrue((pd.crosstab(family, group < 3) > 0).sum(axis=1).eq(1).all())
+
+    def test_normal_scores_trade_noise_shape_for_gaps(self):
+        import sys
+        sys.path.insert(0, 'tests')
+        from test_concepts import game
+        from acan.core.concepts import fit_tree
+        self.assertEqual(fit_tree(game(seed=0), seed=0, normal_scores=True).concepts, 4)   # uniform noise no longer splits
+        frame, _ = nested(rows=30)
+        self.assertNotEqual(fit_tree(frame, seed=0, normal_scores=True).model.concepts, 2)  # but the two scales are lost
+
+    def test_scores_use_training_ranks_and_resist_one_extreme_value(self):
+        from acan.core.concepts import NormalScores
+        rng = np.random.default_rng(0)
+        frame = pd.DataFrame(dict(x=rng.random(200), label=rng.integers(0, 2, 200)))
+        scores = NormalScores().fit(frame, skip=['label'])
+        z = scores.transform(frame)
+        self.assertTrue((z.label == frame.label).all())
+        self.assertLess(abs(z.x.mean()), .05)
+        self.assertLess(abs(z.x.std()-1), .1)
+        far = scores.transform(pd.DataFrame(dict(x=[1e9], label=[0])))
+        self.assertLess(float(far.x.iloc[0]), 4.)               # an extreme value cannot stretch the scale
+        self.assertTrue(np.isnan(scores.transform(pd.DataFrame(dict(x=[np.nan], label=[0]))).x.iloc[0]))
+
+    def test_levels_resolve_what_one_level_cannot_and_stop_by_judgment(self):
+        from acan.core.concepts import fit_tree
+        frame, group = nested(rows=30)
+        frame['family'] = np.where(group < 3, 'left', 'right')
+        frame['kind'] = pd.Series(group).map(dict(enumerate('abcabc'))).to_numpy()    # depends on the fine group
+        flat = fit_tree(frame, ['kind'], seed=0)
+        self.assertGreaterEqual(flat.concepts, 6)
+        classes = sorted(frame.kind.unique())
+        test, test_group = nested(seed=9, rows=10)
+        test['family'] = np.where(test_group < 3, 'left', 'right')
+        rows = test
+        predicted = np.asarray(classes)[flat.predict_proba(rows, 'kind', classes).argmax(1)]
+        self.assertGreater((predicted == pd.Series(test_group).map(dict(enumerate('abcabc'))).to_numpy()).mean(), .95)
+        # Root concepts blur a few rows of a neighbouring group; each kept child separates them.
+        for concept, child in flat.children.items():
+            rows = frame.iloc[flat.rows[concept]].reset_index(drop=True)
+            routed = child.model.assignments(rows).argmax(1)
+            table = pd.crosstab(routed, rows.kind)
+            self.assertGreater(table.max(axis=1).sum(), rows.kind.value_counts().iloc[0])   # purer than the parent concept
+
+    def test_application_builds_judged_levels_and_predicts_through_them(self):
+        from acan import GraphClusterModel
+        from acan.vis.inference import infer
+        from acan.vis.training import graph_stats, train_native
+        options = dict(lr=.08, tau=.2, alpha=.5, device='numpy', batch_size=300, max_depth=3, max_epochs=100,
+                       min_samples_split=12, similarity_threshold=.92, routing_profile='cp-v9')
+        frame, group = nested(rows=30)
+        frame['kind'] = pd.Series(group).map(dict(enumerate('abcabc'))).to_numpy()
+        graph = train_native(frame, ['kind'], options)
+        root = graph.clusterModel[graph.rootId]
+        self.assertEqual(root.routing_parameters['level_prior'], 'parent-concept-v1')
+        self.assertTrue(root.routing_parameters['pair_levels'])
+        self.assertEqual(len(graph.clusterModel), root.routing_parameters['nodes'])
+        for node in graph.clusterModel.values():
+            for child in node.children.values():
+                self.assertIn(child, graph.clusterModel)
+        test, test_group = nested(seed=9, rows=10)
+        payload = graph.to_json()
+        predicted = infer(payload, test)['kind'].astype(str).to_numpy()
+        truth = pd.Series(test_group).map(dict(enumerate('abcabc'))).to_numpy()
+        self.assertGreater((predicted == truth).mean(), .95)
+        again = infer(GraphClusterModel.loadModel(payload).to_json(), test)['kind'].astype(str).to_numpy()
+        self.assertTrue((again == predicted).all())
+        self.assertGreaterEqual(graph_stats(graph)['groups'], 6)
