@@ -109,10 +109,10 @@ risultano migliori di quanto sono. Misurata su righe mai usate (validazione
 incrociata a cinque turni), la curva ha il massimo a 2 concetti (−0,583) e da
 3 in su è sotto la classe maggioritaria; il modello ne sceglieva 40–50.
 
-Due correzioni provate, dieci split (credit-g su cinque), disponibili come
-opzioni del nucleo e **non attive**:
+Due correzioni provate, dieci split (credit-g su cinque), poi tolte dal codice
+perché nessuna migliora credit-g senza peggiorare altri dataset:
 
-| Dataset | attuale | 20% delle righe solo per giudicare (`holdout=0.2`) | validazione incrociata (`folds=5`) |
+| Dataset | attuale | 20% delle righe solo per giudicare | validazione incrociata a cinque turni |
 |---|---:|---:|---:|
 | credit-g | 67,3 | **73,9** | 70,0 |
 | Sonar | **86,4** | 81,9 | 84,3 |
