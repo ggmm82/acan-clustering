@@ -167,3 +167,110 @@ def level_links(parents, source, target, children, prefix):
                 links.append(dict(data=dict(id=f'{prefix}_{parent}_{child}',source=source(parent),target=target(child),
                                             strength=1+3*float(row[child])),classes='level-edge'))
     return links
+
+
+# ---- the whole model, readable ---------------------------------------------------
+def _prototype(graph, node, groups, relevance, index, top=8):
+    """Typical value and relevance of the most relevant attributes of one concept, in real units."""
+    import pandas as pd
+    values = graph.denormalizeData(pd.DataFrame(np.asarray(groups)[[index]], columns=node.cols)).iloc[0]
+    weight = np.asarray(relevance)[index]
+    order = np.argsort(-weight)[:top]
+    return [dict(attribute=str(node.cols[j]), value=round(float(values.iloc[j]), 4), relevance=round(float(weight[j]), 3))
+            for j in order]
+
+
+def model_structure(graph):
+    """Everything a person needs to read the concept graph, without the internal matrices."""
+    node = graph.clusterModel[graph.rootId]
+    state = getattr(node, 'routing_parameters', None) or {}
+    counts = np.asarray(node.Counts).reshape(-1)
+    levels = state.get('levels') or []
+    out = dict(profile=getattr(node, 'routing_profile', 'legacy-v8'), target=list(graph.labels), rows=int(node.n),
+               attributes=[str(c) for c in node.cols], selection=state.get('selection'),
+               training_score=state.get('training_score'), levels=[], groups=[], edges=state.get('edges') or [])
+    for level in levels[:-1]:
+        concepts = []
+        for i in range(level['concepts']):
+            item = dict(name=f"L{level['depth']}·{i}", share=round(float(level['mass'][i]), 4),
+                        reads=level['reads'][i] if level.get('reads') else None)
+            if level.get('parents') is not None:
+                item['parents'] = {f"L{level['depth']-1}·{p}": round(float(row[i]), 3)
+                                   for p, row in enumerate(level['parents']) if row[i] > .01}
+            if level.get('groups') is not None:
+                item['prototype'] = _prototype(graph, node, level['groups'], level['relevance'], i)
+            concepts.append(item)
+        out['levels'].append(dict(depth=level['depth'], concepts=concepts, pair_criterion=level['pair_criterion']))
+    last = levels[-1] if levels else None
+    for k in range(node.k()):
+        item = dict(name=f'G{k}', rows=int(counts[k]) if k < len(counts) else 0)
+        if last is not None:
+            item['share'] = round(float(last['mass'][k]), 4)
+            if last.get('reads'):
+                item['reads'] = last['reads'][k]
+            if last.get('parents') is not None:
+                item['parents'] = {f"L{last['depth']-1}·{p}": round(float(row[k]), 3)
+                                   for p, row in enumerate(last['parents']) if row[k] > .01}
+        item['prototype'] = _prototype(graph, node, node.Groups, node.Relevance, k)
+        out['groups'].append(item)
+    return out
+
+
+def model_overview(structure):
+    """The same structure as a page: summary, levels, groups, edges."""
+    from dash import html
+    import dash_bootstrap_components as dbc
+
+    def table(rows, columns):
+        return dbc.Table([html.Thead(html.Tr([html.Th(c) for c in columns])),
+                          html.Tbody([html.Tr([html.Td(cell) for cell in row]) for row in rows])],
+                         size='sm', bordered=True, responsive=True, className='small')
+
+    def traits(item):
+        return '; '.join(f"{p['attribute']} {p['value']:g} ({100*p['relevance']:.0f}%)" for p in item.get('prototype', [])[:4])
+
+    def parents(item):
+        return ', '.join(f'{name} {100*w:.0f}%' for name, w in (item.get('parents') or {}).items())
+
+    selection = structure.get('selection') or {}
+    parts = [html.P([html.B('Profilo: '), structure['profile'], ' · ', html.B('righe: '), str(structure['rows']), ' · ',
+                     html.B('attributi: '), str(len(structure['attributes'])), ' · ', html.B('target: '),
+                     ', '.join(structure['target']) or 'nessuno (scoperta senza target)']),
+             html.P(['Numero di concetti scelto dal giudizio su righe non viste: ',
+                     html.B(str(selection.get('chosen_k', '—'))),
+                     f" (il migliore era {selection.get('best_k', '—')}; si tiene il più generale entro un errore standard)."],
+                    className='small')]
+    for level in structure['levels']:
+        parts.append(html.H6(f"Livello {level['depth']} · {len(level['concepts'])} concetti · CP a coppie {level['pair_criterion']:.3f}", className='mt-3'))
+        parts.append(table([[c['name'], f"{100*c['share']:.0f}%", c.get('reads') or '', parents(c), traits(c)] for c in level['concepts']],
+                           ['Concetto', 'Righe', 'Classe', 'Discende da', 'Attributi più rilevanti (valore, rilevanza)']))
+    parts.append(html.H6(f"Gruppi che fanno le previsioni · {len(structure['groups'])}", className='mt-3'))
+    parts.append(table([[g['name'], g['rows'], g.get('reads') or '', parents(g), traits(g)] for g in structure['groups']],
+                       ['Gruppo', 'Righe', 'Classe', 'Discende da', 'Attributi più rilevanti (valore, rilevanza)']))
+    if structure['edges']:
+        strongest = sorted(structure['edges'], key=lambda e: -e['weight'])[:15]
+        parts.append(html.H6('Confini incerti fra gruppi (i più forti)', className='mt-3'))
+        parts.append(table([[f"G{e['first']}", f"G{e['second']}", f"{100*e['weight']:.2f}%"] for e in strongest],
+                           ['Gruppo', 'Gruppo', 'Righe che esitano']))
+    return parts
+
+
+def legend():
+    """What every mark of the graph means."""
+    from dash import html
+    swatch = lambda style: html.Span(style={**dict(display='inline-block', width='26px', height='14px', marginRight='6px',
+                                                   verticalAlign='middle'), **style})
+    items = [
+        (swatch(dict(background='#ef0000', borderRadius='3px')), 'Radice: tutta la tabella.'),
+        (swatch(dict(background='#e0e7ff', border='2px solid #4338ca', borderRadius='3px')),
+         'Concetto di un livello (L1 i concetti generali, L2… i più particolari): percentuale di righe e classe prevalente. Un clic mostra il suo prototipo.'),
+        (swatch(dict(background='#f472b6', borderRadius='3px')),
+         'Gruppo che fa le previsioni (G): righe e classe prevalente; il colore segue la classe. Un clic mostra il prototipo, un doppio clic lo approfondisce a mano.'),
+        (swatch(dict(border='3px solid #2563eb', borderRadius='3px')), 'Bordo blu: il gruppo ha già un approfondimento; doppio clic per aprirlo.'),
+        (swatch(dict(borderTop='3px solid #6366f1', height='0', marginTop='6px')),
+         'Freccia blu: «discende da». Più è spessa, più righe del concetto sotto stanno nel concetto sopra. Più frecce in entrata: un comportamento comune a più concetti.'),
+        (swatch(dict(borderTop='3px dashed #d97706', height='0', marginTop='6px')),
+         'Linea tratteggiata arancione: confine incerto, righe che esitano fra due gruppi. Più è spessa, più righe.'),
+    ]
+    return html.Div([html.Div([mark, html.Span(text)], className='small mb-1') for mark, text in items],
+                    className='border rounded p-2 mt-2', id='graph-legend')

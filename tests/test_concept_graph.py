@@ -136,6 +136,17 @@ class SavedGraphTest(unittest.TestCase):
         again = {element['data']['id'] for element in graph_view.elements(other) if element.get('classes') == 'level-edge'}
         if other.clusterModel[other.rootId].routing_parameters['levels'] != levels:
             self.assertFalse(ids & again)
+        # The whole model, readable: levels with parents and prototypes, groups, edges.
+        structure = graph_view.model_structure(graph)
+        self.assertEqual([len(level['concepts']) for level in structure['levels']], [level['concepts'] for level in levels[:-1]])
+        self.assertEqual(len(structure['groups']), root.k())
+        for level in structure['levels'][1:]+[dict(concepts=structure['groups'])]:
+            for concept in level['concepts']:
+                self.assertAlmostEqual(sum(concept['parents'].values()), 1, delta=.05)
+        self.assertTrue(all(concept['prototype'] for level in structure['levels'] for concept in level['concepts']))
+        import json
+        self.assertEqual(json.loads(json.dumps(structure)), structure)
+        self.assertIn('Livello 1', str(graph_view.model_overview(structure)))
         payload = graph.to_json()
         predicted = infer(payload, frame.drop(columns=['kind']).assign(kind=np.nan).iloc[::6], 'complete')['kind']
         self.assertGreater((predicted.astype(str).to_numpy() == frame.kind.iloc[::6].to_numpy()).mean(), .8)

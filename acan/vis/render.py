@@ -523,6 +523,11 @@ def parameter(label, id, value, lo, hi, step):
                    style={'display':'none'} if id in ('train-tau','train-alpha') else {})
 
 
+def graph_legend():
+    from .graph_view import legend
+    return legend()
+
+
 model_layout = dbc.Container([
     html.H4('Scopri i concetti, poi approfondisci soltanto dove serve', className='mt-3'),
     html.P('Senza target scopri gruppi su tutte le righe; con un target apprendi a prevederne la classe su uno split 80/20. Scegli se il target è una classe (anche numerica) oppure una quantità continua. Il modello costruisce da solo i livelli: sotto la radice i concetti generali, poi i comportamenti particolari, uniti da frecce che mostrano da quali concetti generali discende ciascuno. Un doppio clic su un gruppo lo approfondisce a mano; in Valutazione confronti il risultato e rimuovi i rami che non aiutano.'),
@@ -611,8 +616,14 @@ model_layout = dbc.Container([
     ]),
     html.Div(id='graph-window-summary', className='small text-muted my-2', role='status'),
     dbc.Row([dbc.Col(orgChartData, md=8), dbc.Col([html.Div(id='node-detail'), html.Div(id='edge-detail')], md=4)]),
-    html.P('Doppio clic sui gruppi con bordo blu per aprire il concetto figlio. Sugli altri gruppi richiede un approfondimento. La panoramica mostra tutta la gerarchia.', className='small text-muted mt-2'),
+    graph_legend(),
     ], id='graph-panel'),
+    dbc.Accordion([dbc.AccordionItem([
+        html.P('Tutto ciò che il modello ha appreso, in valori reali: livelli, concetti con i loro genitori e prototipi, gruppi e confini incerti. Il file scaricabile contiene la stessa struttura in JSON leggibile; il modello completo per ricaricarlo si salva con «Salva modello».', className='small text-muted'),
+        dbc.Button('Scarica la struttura del grafo (JSON leggibile)', id='structure-download-button', outline=True, size='sm', className='mb-2'),
+        dcc.Download(id='structure-download'),
+        dcc.Loading(html.Div(id='model-inspection')),
+    ], title='Ispeziona il modello', item_id='inspect')], start_collapsed=True, className='my-3', id='inspect-accordion'),
     dbc.Accordion([dbc.AccordionItem([
         dbc.Label('Nodo concetto'), dcc.Dropdown(id='concept-node', clearable=False),
         dcc.Graph(id='concept-relevance'), html.Div(id='concept-rules'),
@@ -1699,3 +1710,24 @@ if __name__ == '__main__':
 # https://js.cytoscape.org/#style/node-body
 # https://js.cytoscape.org/#style/edge-line
 
+
+
+@app.callback(Output('model-inspection', 'children'), Input('model-store', 'data'), Input('inspect-accordion', 'active_item'))
+def inspect_model(model, active):
+    """The whole model, readable; built only when the panel is open."""
+    if not model:
+        return html.P('Carica un modello o avvia la scoperta dei concetti.', className='small text-muted')
+    if active != 'inspect':
+        return dash.no_update
+    from .graph_view import model_overview, model_structure
+    return model_overview(model_structure(GraphClusterModel.loadModel(model)))
+
+
+@app.callback(Output('structure-download', 'data'), Input('structure-download-button', 'n_clicks'),
+              State('model-store', 'data'), prevent_initial_call=True)
+def download_structure(n_clicks, model):
+    if not model:
+        return dash.no_update
+    from .graph_view import model_structure
+    return dict(content=json.dumps(model_structure(GraphClusterModel.loadModel(model)), indent=2, ensure_ascii=False),
+                filename='struttura-grafo.json')
