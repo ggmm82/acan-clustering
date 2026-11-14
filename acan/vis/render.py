@@ -1389,6 +1389,9 @@ def eInfo(model, source, k, depth=None):
     if depth is not None:
         # A concept of a level: the same reading, from the prototypes saved with that level.
         level = next(item for item in (node.routing_parameters or {}).get('levels') or [] if item['depth'] == depth)
+        if 'groups' not in level:                                # saved before levels kept their prototypes
+            return dbc.Alert(f"Concetto L{depth}·{k}: questo modello è stato salvato prima che i livelli conservassero "
+                             "i loro prototipi. Riaddestralo per ispezionarlo.", color='info')
         groups, relevance = level["groups"], level["relevance"]
         parents = level.get('parents')
         above = ([f"L{depth-1}·{p}: {100*row[k]:.0f}%" for p, row in enumerate(parents) if row[k] > .01]

@@ -130,6 +130,11 @@ class SavedGraphTest(unittest.TestCase):
             self.assertEqual(np.asarray(level['relevance']).shape, (level['concepts'], len(root.cols)))
         from acan.vis.render import eInfo
         self.assertIn('L1', str(eInfo(graph.to_json(), graph.rootId, 0, depth=1)))
+        import json
+        older = json.loads(graph.to_json())                       # a model saved before level prototypes
+        for level in older['clusterModel'][str(graph.rootId)]['routing_parameters']['levels']:
+            level.pop('groups'), level.pop('relevance')
+        self.assertIn('Riaddestralo', str(eInfo(json.dumps(older), graph.rootId, 0, depth=1)))
         # Edge ids carry the model: another model in the same page cannot inherit a stale edge.
         ids = {element['data']['id'] for element in drawn if element.get('classes') == 'level-edge'}
         other = train_native(frame.sample(frac=1, random_state=3), ['kind'], options)
