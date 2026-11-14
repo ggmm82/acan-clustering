@@ -85,23 +85,41 @@ def reader_costs(state, now):
 def generalize(state, budget, costs):
     """Add together the cheapest pair, in every batch element and head, until the budget holds.
 
-    The structure is discrete and chosen without gradient; the statistics stay differentiable.
+    The structure is discrete and chosen without gradient on a detached copy, one pair at a
+    time as before; each concept then sums its members in a single differentiable step. The
+    statistics are sums, so the result equals merging pair by pair (up to the order of the
+    additions), while autograd records one operation instead of one per merge.
     """
-    while state['C'].shape[2] > budget:
-        n = state['C'].shape[2]
-        with torch.no_grad():
-            flat = costs(state).flatten(2).argmin(-1)
-            a, c = flat//n, flat % n
+    n = state['C'].shape[2]
+    if n <= budget:
+        return state
+    with torch.no_grad():
+        work = {name: state[name].detach() for name in STATISTICS if name != 'V'}   # V does not enter the costs
+        work['root'] = state['root']
+        slot = torch.arange(n, device=state['C'].device).expand(*state['C'].shape[:2], n).clone()
+        while work['C'].shape[2] > budget:
+            current = work['C'].shape[2]
+            flat = costs(work).flatten(2).argmin(-1)
+            a, c = flat//current, flat % current
             first, second = torch.minimum(a, c), torch.maximum(a, c)
-            kept = torch.arange(n-1, device=flat.device)
+            kept = torch.arange(current-1, device=flat.device)
             kept = kept+(kept >= second[..., None])
-        for name in STATISTICS:
-            value = state[name]
-            tail = value.shape[3:]
-            index = lambda where: where.reshape(*where.shape, *([1]*len(tail))).expand(*where.shape, *tail)
-            value = value.scatter_add(2, index(first[..., None]), value.gather(2, index(second[..., None])))
-            state[name] = value.gather(2, index(kept))
-    return state
+            for name in ('C', 'U', 'Q', 'P', 'A'):
+                value = work[name]
+                tail = value.shape[3:]
+                index = lambda where: where.reshape(*where.shape, *([1]*len(tail))).expand(*where.shape, *tail)
+                value = value.scatter_add(2, index(first[..., None]), value.gather(2, index(second[..., None])))
+                work[name] = value.gather(2, index(kept))
+            # Where every original entry now lives: the second concept joins the first, later ones shift down.
+            slot = torch.where(slot == second[..., None], first[..., None], slot)
+            slot = slot-(slot > second[..., None]).long()
+    merged = dict(state)
+    for name in STATISTICS:
+        value = state[name]
+        tail = value.shape[3:]
+        index = slot.reshape(*slot.shape, *([1]*len(tail))).expand(*slot.shape, *tail)
+        merged[name] = value.new_zeros(*value.shape[:2], budget, *tail).scatter_add(2, index, value)
+    return merged
 
 
 class ConceptSlotAttention(ACANConceptAttentionLayer):
