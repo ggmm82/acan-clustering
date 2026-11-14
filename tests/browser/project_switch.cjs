@@ -14,7 +14,7 @@ const net=require('node:net');
   assert(ready,logs);
   browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{}),args:['--no-sandbox']});
   const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto(url);await page.getByText('Generative',{exact:true}).click();
+  await page.goto(url);await page.getByText('Generativo',{exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#lm-connection').innerText.includes('Worker collegato'));
   for(const n of [1,2,1,3]){
    await page.locator('#lm-job').click();

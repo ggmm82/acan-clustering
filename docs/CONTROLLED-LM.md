@@ -8,9 +8,37 @@ prima del caricamento batch maggiori di 1, blocchi oltre 128 token (64 nel
 profilo al 100% ACAN), slot/finestra oltre 16 e rank LoRA oltre 8. Questi limiti
 riducono il rischio di esaurire la RAM; non sostituiscono la verifica del VPS. Non viene acquistata o attivata alcuna GPU.
 
+Il profilo predefinito dei nuovi progetti è `concept-graph-v1`, lo stesso
+modello della scheda tabulare ([MODEL.md](MODEL.md)): nei layer innestati i
+token più vecchi del contesto sono letti attraverso concetti, mentre i primi
+token e una finestra di quelli recenti restano esatti. I profili descritti in
+fondo a questa pagina (`cp-routing-v1`, `cp-joint-v1`) sono storici e restano
+solo per riprendere i progetti già avviati.
+
+## Come sapere se funziona
+
+Tre controlli, in quest'ordine:
+
+1. **Testo generato.** Da un checkpoint in pausa, con un inizio di frase nella
+   lingua del corpus: deve restare coerente come quello del modello originale.
+2. **Controllo denso con lo stesso budget.** È il confronto che decide. Scendere
+   sotto il modello di partenza non basta, perché qualunque adattamento al
+   corpus lo fa. Se alla fine la NLL di validazione del progetto a concetti è
+   entro circa 0,15 da quella del controllo denso, i concetti non costano
+   qualità a quella scala; se il controllo è nettamente più basso, la
+   differenza è il costo della compressione. Con il campione di validazione
+   di 1.024 token, differenze minori di circa 0,15 non si distinguono dal caso.
+3. **Test separato.** **Confronta checkpoint e originale** su entrambi i
+   progetti, con gli stessi blocchi di test.
+
+Con finestra e concetti piccoli (16+16) e blocchi corti questa prova dice se
+il modello impara a leggere il contesto compresso, non se è più veloce: il
+vantaggio di costo si vede solo su contesti lunghi, che su CPU non sono
+praticabili.
+
 ## Percorso dalla GUI
 
-1. Apri **Generative**, salva la chiave di recupero e scegli un corpus pubblico.
+1. Apri **Generativo**, salva la chiave di recupero e scegli un corpus pubblico.
    **WikiText-2** offre articoli inglesi e split ufficiali train/validation/test.
    **Dante** e **Tiny Shakespeare** sono prove letterarie piccole, non materiale
    sufficiente a creare un assistente generalista. Fonte, lingua e licenza sono
@@ -199,7 +227,7 @@ complete, non etichetta automaticamente i concetti e non applica una loss CP
 aggiuntiva. Il trainer legacy resta invariato: su quei progetti è disponibile
 l'ispezione in generazione, non la cattura del prossimo passo di training.
 
-### Solver CP precedente (`cp-routing-v1`, PR8)
+### Storico: solver CP precedente (`cp-routing-v1`, PR8)
 
 Nei nuovi progetti la GUI permette `cp-routing-v1`: la stessa energia e lo stesso
 solver di `Model → Routing ACAN → CP diretta`, con backend Torch differenziabile
@@ -223,7 +251,7 @@ Il gate LM richiede almeno 40 test e controlli nominati, inclusa la ripresa CP d
 bit per bit uguali al training non interrotto sul modello locale di prova.
 
 
-### Modello congiunto (`cp-joint-v1`)
+### Storico: modello congiunto (`cp-joint-v1`)
 
 Il nuovo profilo usa `concept_step` e `concept_assignments` di `acan/algebra.py`,
 gli stessi operatori del modello tabulare supervisionato. Rilevanza root-shift

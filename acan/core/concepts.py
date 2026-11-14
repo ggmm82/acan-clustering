@@ -603,8 +603,11 @@ class ConceptModel:
                 parents = (routed[place-1].T@membership)/np.maximum(mass, 1e-12)
             criterion = self.pair_criterion(self._statistics(self._hard(membership), above))
             above = self._context(statistics, level['data'], weights, hard=True)
+            # ``table``: the same concepts summed over the rows as they are in the table, whatever
+            # level they are seen through: what a person reads when inspecting the concept.
             self.levels.append(dict(depth=place+1, concepts=int(membership.shape[1]), pair_criterion=criterion,
-                                    score=level['score'], mass=mass/n, parents=parents, statistics=statistics))
+                                    score=level['score'], mass=mass/n, parents=parents, statistics=statistics,
+                                    table=self._statistics(membership, base)))
         first_edge, second_edge, weight = self._edges(last)
         self.edges = [(int(i), int(j), float(w/n)) for i, j, w in zip(first_edge, second_edge, weight)]
         self.final_score = float(self._score(self.statistics, data, weights, judged).mean())

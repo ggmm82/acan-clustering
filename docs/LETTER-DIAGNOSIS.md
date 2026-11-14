@@ -1,5 +1,8 @@
 # Letter: diagnosi misurata nella PR8
 
+> **Documento storico.** Descrive una versione precedente del modello. Il modello attuale è in [MODEL.md](MODEL.md), con le misure in [MODEL-RESULTS.md](MODEL-RESULTS.md); dove questa pagina differisce, valgono quelle.
+
+
 **Aggiornamento:** la ricostruzione supervisionata `cp-joint-v1` sul file
 ricaricato misura 86,38% (16.000/4.000) e 87,20% (protocollo GUI 8.000/2.000).
 Queste misure e il codice riproducibile sono in [JOINT-CP.md](JOINT-CP.md).

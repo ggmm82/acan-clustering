@@ -1,5 +1,8 @@
 # Verifica dei due paper e dei dataset caricati
 
+> **Documento storico.** Descrive una versione precedente del modello. Il modello attuale è in [MODEL.md](MODEL.md), con le misure in [MODEL-RESULTS.md](MODEL-RESULTS.md); dove questa pagina differisce, valgono quelle.
+
+
 **Aggiornamento:** il nuovo nucleo `cp-joint-v1`, comune al tabulare e al
 generativo anche per rilevanza, riepiloghi e obiettivo supervisionato CP, è
 documentato in [JOINT-CP.md](JOINT-CP.md). Le sezioni seguenti descrivono
