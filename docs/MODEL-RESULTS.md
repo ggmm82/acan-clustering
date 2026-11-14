@@ -258,3 +258,14 @@ perché unisce i concetti con un ciclo sequenziale ogni 16 token: per un
 addestramento su miliardi di token va resa parallela. Il confronto fra due
 esecuzioni della memoria a 49 token (99,8% e 94,2%) dà un'idea della
 variabilità fra macchine.
+
+**Dati necessari.** Dalle curve di addestramento della stessa prova: per
+arrivare allo stesso livello sul testo (la peggiore delle due perdite finali)
+l'attenzione normale ha letto 2,73 milioni di caratteri, i concetti 2,80
+milioni (rapporto 1,03, cioè lo stesso testo entro il rumore). Nella memoria i
+concetti arrivano a risposte quasi sempre giuste (perdita 0,5) dopo 1.600
+passi, l'attenzione normale dopo 1.250 (rapporto 1,28). A questa scala lo
+strato a concetti non riduce i dati necessari: ne servono altrettanti per il
+testo e circa un quarto in più per imparare a ritrovare informazione lontana.
+È atteso: lo strato non ha pesi propri e cambia come si legge il contesto, non
+come si conserva la conoscenza, che resta nei pesi.

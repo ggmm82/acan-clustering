@@ -298,7 +298,33 @@ def run(text, budget='quick', check=lambda: None, report=lambda message: None, s
         result['text'][kind] = dict(bits_per_character=sum(losses)/len(losses)/math.log(2), seconds=time.monotonic()-started,
                                     prompt=''.join(alphabet[i] for i in prompt[0, -80:].tolist()), sample=produced,
                                     parameters=sum(item.numel() for item in model.parameters()), training_curve=curve)
+    result['efficiency'] = efficiency(result, 16*block)
     return result
+
+
+def reached(curve, target):
+    """The first step at which the training loss is at or below ``target``; None if never."""
+    return next((point['step'] for point in curve if point['loss'] <= target), None)
+
+
+def efficiency(result, characters_per_step):
+    """How much training each model needs to reach the same level: the question of the data needed.
+
+    Text: the level is the worse of the two final training losses (ordinary attention, concepts),
+    so both reach it; the measure is the characters read before reaching it. Memory: the level is
+    a loss of 0.5 nats, well below guessing (log 16 = 2.77), i.e. answers mostly right; the measure
+    is the training steps. The training loss is measured on batches not seen before, averaged over
+    a fortieth of the training, so differences under a few percent are noise.
+    """
+    text = {kind: result['text'][kind]['training_curve'] for kind in ('dense', 'concepts')}
+    level = max(curve[-1]['loss'] for curve in text.values())
+    steps = {kind: reached(curve, level) for kind, curve in text.items()}
+    out = dict(text=dict(level=level, characters={kind: None if step is None else step*characters_per_step for kind, step in steps.items()}))
+    if all(steps.values()):
+        out['text']['ratio'] = steps['concepts']/steps['dense']
+    memory = {kind: reached(result['memory'][kind]['training_curve'], .5) for kind in ('dense', 'concepts')}
+    out['memory'] = dict(level=.5, steps=memory, ratio=memory['concepts']/memory['dense'] if all(memory.values()) else None)
+    return out
 
 
 class Stopped(Exception):

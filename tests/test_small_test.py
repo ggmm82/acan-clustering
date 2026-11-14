@@ -33,6 +33,7 @@ class SmallTestTest(unittest.TestCase):
         case = far['memory_cases']['distance']
         self.assertEqual((case['nearest_answer_distance'], case['layers']), (41, 3))
         self.assertTrue(0 <= case['concepts']['accuracy'] <= 1)
+        self.assertEqual(set(result['efficiency']), {'text', 'memory'})
         rows = result['cost']['rows']                                     # concepts keep the same vectors at every length
         self.assertEqual({row['concepts']['kept_vectors'] for row in rows}, {32})
         self.assertEqual([row['dense']['kept_vectors'] for row in rows], [row['length'] for row in rows])
@@ -86,8 +87,10 @@ def finished_test(dense, window, concepts, bits=(2.40, 2.40, 2.42), far=None):
     cost = dict(rows=[dict(length=512, dense=dict(milliseconds_per_token=.1, kept_vectors=512), concepts=dict(milliseconds_per_token=.5, kept_vectors=32)),
                       dict(length=4096, dense=dict(milliseconds_per_token=.3, kept_vectors=4096), concepts=dict(milliseconds_per_token=.5, kept_vectors=32))],
                 dense_slope=5e-5, concepts_flat=.5, faster_beyond=8000.)
+    found = dict(text=dict(level=1.7, characters=dict(dense=2048000, concepts=2252800), ratio=1.1),
+                 memory=dict(level=.5, steps=dict(dense=1200, concepts=1500), ratio=1.25))
     return dict(id='f'*32, status='completed', phase='Finita', request=dict(corpus_name='wikitext-2.jsonl', budget='full'),
-                result=dict(memory_setup=dict(chance=1/16, nearest_answer_distance=49), memory_cases=cases, cost=cost,
+                result=dict(memory_setup=dict(chance=1/16, nearest_answer_distance=49), memory_cases=cases, cost=cost, efficiency=found,
                             memory={kind: dict(accuracy=value, seconds=1.) for kind, value in zip(kinds, (dense, window, concepts))},
                             text={kind: dict(bits_per_character=value, prompt='p', sample='s') for kind, value in zip(kinds, bits)}))
 
@@ -106,7 +109,9 @@ class ValidationPathTest(unittest.TestCase):
         self.assertEqual([(name, passed) for name, passed, _ in far], [('Memoria', True), ('Memoria lontana', False), ('Testo', True)])
         from acan.vis.generative import small_facts
         facts = small_facts(finished_test(1., .06, .95, far=(1., .9))['result'])
-        self.assertIn('8,000 token', facts[0])
+        self.assertIn('rapporto 1.10', facts[0])
+        self.assertIn('1,500 passi', facts[1])
+        self.assertIn('8,000 token', facts[2])
 
     def test_decision_needs_every_step(self):
         from acan.vis.generative import decision_view, validation_pair

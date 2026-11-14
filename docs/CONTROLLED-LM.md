@@ -36,6 +36,9 @@ si userebbe in un modello grande, in miniatura. Misure:
   Più coppie che concetti (16 o 32) non le impara a questa scala nemmeno
   l'attenzione normale (14-18%): la capacità non si misura qui;
 - *testo*: bit per carattere su una parte del testo scelto mai vista;
+- *dati necessari* (misura, senza soglia): dalle curve di addestramento,
+  quanto testo legge ciascun modello per arrivare allo stesso livello sul testo,
+  e quanti passi per rispondere quasi sempre giusto nella memoria;
 - *costo* (misura, senza soglia): tempo per token di un passaggio su contesti
   di 512-4.096 token e vettori tenuti per layer, con modelli non addestrati.
 

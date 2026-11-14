@@ -80,6 +80,7 @@ layout = dbc.Container([
                  html.Li("Memoria lontana (criterio, solo nella prova completa): la risposta a 177 token. Se qui i "
                          "concetti falliscono, un modello grande erediterebbe il difetto."),
                  html.Li("Testo (criterio): i concetti non devono peggiorare la previsione del testo normale."),
+                 html.Li("Dati necessari (misura): quanto testo leggono i due modelli per arrivare allo stesso livello."),
                  html.Li("Costo (misura): tempo per token e vettori tenuti a 512-4.096 token di contesto.")],
                 className='small'),
         dbc.Row([dbc.Col(dcc.Dropdown(id='lm-small-budget', value='quick', clearable=False, options=[
@@ -430,8 +431,21 @@ def small_checks(result):
 
 
 def small_facts(result):
-    """What the small test measures without a pass mark: the cost per token."""
+    """What the small test measures without a pass mark: the data needed and the cost per token."""
     facts = []
+    found = result.get('efficiency')
+    if found:
+        text, memory = found['text'], found['memory']
+        if text.get('ratio'):
+            facts.append(f"Dati necessari, testo: per arrivare allo stesso livello i concetti hanno letto "
+                         f"{text['characters']['concepts']:,} caratteri, l'attenzione normale {text['characters']['dense']:,} "
+                         f"(rapporto {text['ratio']:.2f}; sotto 1 servono meno dati ai concetti, differenze di pochi punti sono rumore).")
+        if memory.get('ratio'):
+            facts.append(f"Dati necessari, memoria: risposte quasi sempre giuste dopo {memory['steps']['concepts']:,} passi con i "
+                         f"concetti e {memory['steps']['dense']:,} con l'attenzione normale (rapporto {memory['ratio']:.2f}).")
+        elif memory['steps'].get('dense') and not memory['steps'].get('concepts'):
+            facts.append("Dati necessari, memoria: i concetti non sono arrivati a risposte quasi sempre giuste entro la prova; "
+                         f"l'attenzione normale sì, dopo {memory['steps']['dense']:,} passi.")
     cost = result.get('cost')
     if cost:
         last = cost['rows'][-1]
