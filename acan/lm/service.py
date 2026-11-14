@@ -12,6 +12,9 @@ from .store import ACTIVE, Store, owner_key
 from .trainer import BASE_MODELS, validate_options
 
 
+CONTROL_NAME = 'Controllo denso · '
+
+
 def create_app(root=None, token=None):
     app = Flask(__name__)
     app.config['MAX_CONTENT_LENGTH'] = 2*1024*1024
@@ -134,6 +137,52 @@ def create_app(root=None, token=None):
             raise ValueError('Questo corpus contiene split ufficiali: usa il protocollo controllato per tenere il test fuori dal training.')
         return jsonify(store.create_job(request.workspace, config))
 
+    @app.post('/jobs/<identifier>/rename')
+    def rename(identifier):
+        return jsonify(store.rename(identifier, request.workspace, (request.get_json() or {}).get('name')))
+
+    @app.post('/jobs/<identifier>/delete')
+    def delete(identifier):
+        store.delete(identifier, request.workspace)
+        return jsonify(deleted=identifier)
+
+    @app.get('/jobs/<identifier>/evaluations')
+    def job_evaluations(identifier):
+        return jsonify(store.evaluations(identifier, request.workspace))
+
+    @app.post('/series')
+    def create_series():
+        """Several projects on the same text, run one after the other by the worker."""
+        import uuid as _uuid
+        from .manager import series_configs
+        from .research_options import validate_options as controlled_options
+        from .resources import check_profile
+        import torch
+        body = request.get_json() or {}
+        base = body.get('base')
+        if not isinstance(base, dict) or base.get('protocol') != 'controlled-v1':
+            raise ValueError('Una serie richiede il protocollo controllato.')
+        prepared = []
+        for item, label, options in series_configs(base, body.get('variants')):
+            config = controlled_options(options)
+            check_profile(config, torch.cuda.is_available())
+            store.corpus(config['corpus_id'], request.workspace, ready=True)
+            prepared.append((item, label, config))
+        if store.busy():
+            raise ValueError('Il worker è occupato: metti in pausa il progetto attivo prima di avviare una serie.')
+        series = _uuid.uuid4().hex[:8]
+        jobs = []
+        for order, (item, label, config) in enumerate(prepared):
+            config['series'] = dict(id=series, order=order, variant=item, label=label)
+            jobs.append(store.create_job(request.workspace, config))
+        reference = next((job for job in jobs if job['config']['series']['variant'] == 'chosen'), None)
+        for job in jobs:                                      # the normal-attention run controls the chosen settings
+            if reference and job['config']['series']['variant'] == 'dense':
+                store.set_config(job['id'], dict(job['config'], control_of=reference['id'],
+                                                 name=CONTROL_NAME + reference['config']['name']))
+        launch(store, store.job(jobs[0]['id'], request.workspace))
+        return jsonify(series=series, jobs=[store.job(job['id'], request.workspace) for job in jobs])
+
     @app.post('/jobs/<identifier>/start')
     def start(identifier):
         job = store.job(identifier, request.workspace)
@@ -183,7 +232,8 @@ def create_app(root=None, token=None):
         if store.busy():
             raise ValueError('Metti in pausa il progetto attivo prima di avviare il controllo.')
         from .research_options import validate_options as controlled_options
-        config=controlled_options(dict(job['config'],architecture='dense-control',name='Controllo denso · '+job['config']['name']))
+        config=controlled_options(dict(job['config'],architecture='dense-control',name=CONTROL_NAME+job['config']['name']))
+        config['control_of']=job['id']                         # the interface draws both on one chart
         control=store.create_job(request.workspace,config)
         launch(store,control)
         return jsonify(control)

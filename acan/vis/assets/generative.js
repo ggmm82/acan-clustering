@@ -15,7 +15,7 @@
       zone.dataset.bound = 'true';
       const input = document.createElement('input'); input.type='file'; input.accept='.txt,.jsonl';
       input.setAttribute('aria-label','Corpus di training TXT o JSONL');
-      const button = document.createElement('button'); button.textContent='Carica corpus'; button.className='btn btn-outline-primary my-2';
+      const button = document.createElement('button'); button.textContent='Carica il tuo testo'; button.className='btn btn-outline-primary my-2';
       zone.append(input, button);
       button.onclick = async function () {
         const status = document.getElementById('lm-upload-status');
@@ -39,7 +39,7 @@
     const recovery = document.getElementById('lm-recovery-input');
     if (recovery && !recovery.dataset.bound) {
       recovery.dataset.bound='true';
-      const label=document.createElement('label');label.textContent='Importa chiave di recupero: ';
+      const label=document.createElement('label');label.textContent='Ritrova i progetti con una chiave di recupero: ';
       const input=document.createElement('input');input.type='file';input.accept='.json';
       input.onchange=async()=>{
         try {

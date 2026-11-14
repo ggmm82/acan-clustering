@@ -535,7 +535,7 @@ model_layout = dbc.Container([
     dbc.Row([
         dbc.Col([dbc.Label('Target (svuota per scoperta non supervisionata)'),
                  dcc.Dropdown(id='dpdnLabel', value=[], multi=True, options=[]),
-                 dbc.Button('Svuota target', id='btn-clear-label', size='sm', color='link')], md=7),
+                 dbc.Button('Svuota target', id='btn-clear-label', size='sm', color='secondary', outline=True, className='mt-1')], md=7),
         dbc.Col([dbc.Button('Scopri concetti', id='button-learn', n_clicks=0, disabled=True, className='m-1'),
                  dbc.Button('Salva modello', id='btn-download', n_clicks=0, className='m-1', outline=True),
                  dcc.Download(id='download-model')], md=5),
@@ -551,10 +551,10 @@ model_layout = dbc.Container([
     dbc.Accordion([dbc.AccordionItem([
         dbc.Row([
             dbc.Col([dbc.Label('Colonne categoriche'), dcc.Dropdown(id='dpdnCategory', value=[], multi=True),
-                     dbc.Button('Svuota', id='btn-clear-category', color='link', size='sm')], md=6),
+                     dbc.Button('Svuota', id='btn-clear-category', color='secondary', outline=True, size='sm')], md=6),
             dbc.Col([dbc.Label('Escludi colonne'), dbc.Checklist(id='dpdnFilter', value=[], options=[], style={'maxHeight':'180px', 'overflowY':'auto'}),
-                     dbc.Button('Svuota', id='btn-clear-filter', color='link', size='sm'),
-                     dbc.Button('Ripristina filtri suggeriti', id='btn-suggest-filter', color='link', size='sm')], md=6),
+                     dbc.Button('Svuota', id='btn-clear-filter', color='secondary', outline=True, size='sm'),
+                     dbc.Button('Ripristina filtri suggeriti', id='btn-suggest-filter', color='secondary', outline=True, size='sm')], md=6),
         ]),
         html.Div([
 
