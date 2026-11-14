@@ -201,7 +201,8 @@ class OtherKindsOfDataTest(unittest.TestCase):
             self.assertIn('Say the digit 3.', spoken[0][1])
             self.assertIn('audio', [kind for kind, _ in parts(spoken[0][1])])
             moving = list(data.records('moving', folder/'test-images.parquet', file('test-images.parquet')))
-            self.assertEqual(moving[0][1].count('<|frame|>'), 16)
+            self.assertEqual(moving[0][1].count('<|frame|>'), 7)                         # fits in a piece of 2,048 tokens
+            self.assertIn('<|audio4|>', spoken[0][1])
         for domain in data.DOMAINS.values():
             for name, part in domain['parts'].items():
                 for index in part['files']:

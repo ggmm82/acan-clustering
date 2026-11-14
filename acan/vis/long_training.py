@@ -233,8 +233,8 @@ layout = dbc.Card(dbc.CardBody([
              dbc.Col(dbc.InputGroup([dbc.InputGroupText('Tieni per sempre ogni'), dbc.Input(id='lm-long-milestone', type='number', value=1000, min=0, max=10000000), dbc.InputGroupText('passi')]), md=4)],
             className='mb-2'),
     dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Token letti per pezzo'), dbc.Input(id='lm-long-length', type='number', value=256, min=64, max=2048, step=64)]), md=4),
-             dbc.Col(html.Small("Per il testo bastano 256. Un'immagine è circa 1.060 token: per impararla intera servono almeno 1.088; "
-                                "un secondo di suono 8.000. Più lungo = più lento per passo, la memoria dei concetti resta fissa.",
+             dbc.Col(html.Small("Per il testo bastano 256. Un'immagine è circa 1.060 token (servono almeno 1.088); una cifra pronunciata e un "
+                                "video di cifre stanno sotto 2.048. Un secondo di un tuo WAV sono 8.000 token: non entra intero. Più lungo = più lento per passo, la memoria dei concetti resta fissa.",
                                 className='text-muted'), md=8)], className='mb-2'),
     dbc.Label('Domande di prova (una per riga, al massimo 6; vuoto = domande predefinite in italiano e inglese)'),
     dbc.Textarea(id='lm-long-questions', rows=3, placeholder='Ciao! Chi sei?\nQual è la capitale della Francia?'),
@@ -304,7 +304,7 @@ def register(app):
         hint = []
         if any(item['id'] in ('images', 'audio', 'video') for item in items):
             hint.append(html.Li("Per imparare immagini, suoni o video interi alza «Token letti per pezzo» (un'immagine circa 1.060 token, "
-                                "una cifra pronunciata circa 4.000, un video circa 4.400) e metti fra le domande di prova, per esempio, "
+                                "una cifra pronunciata e un video di cifre meno di 2.048: con «Token letti per pezzo» a 2.048 entrano interi) e metti fra le domande di prova, per esempio, "
                                 "«Disegna la cifra 7.»."))
         return html.Ul(lines + hint)
 

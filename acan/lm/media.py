@@ -43,7 +43,8 @@ FFMPEG_WHEELS = {   # imageio-ffmpeg 0.7.0 (BSD-2-Clause wrapper around a static
                         'imageio_ffmpeg-0.7.0-py3-none-manylinux2014_aarch64.whl',
                     bytes=25632882, sha256='588a23c6a1c55a7cb51febfe97d3ef8dd5e7fa0ef7e14c7da8828e2886bdd3a3'),
 }
-MARKERS = ['<|image|>', '<|/image|>', '<|row|>', '<|audio|>', '<|/audio|>', '<|video|>', '<|/video|>', '<|frame|>']
+MARKERS = ['<|image|>', '<|/image|>', '<|row|>', '<|audio|>', '<|/audio|>', '<|video|>', '<|/video|>', '<|frame|>',
+           '<|audio4|>', '<|/audio4|>']      # sound at 4 kHz: half the tokens, so a short word fits in one piece
 TOKENS = MARKERS + [f'<|p{n}|>' for n in range(256)] + [f'<|a{n}|>' for n in range(256)]
 
 
@@ -85,8 +86,8 @@ def encode_video(raw):
     return '<|video|>'+''.join(frames)+'<|/video|>'
 
 
-def encode_audio(raw):
-    """A WAV file: mono, resampled to 8 kHz, 8-bit mu-law."""
+def encode_audio(raw, target=AUDIO_RATE, trim=False):
+    """A WAV file: mono, resampled to ``target`` (8 or 4 kHz), 8-bit mu-law; ``trim`` drops the silence around it."""
     import numpy as np
     with wave.open(io.BytesIO(raw)) as stream:
         channels, width, rate = stream.getnchannels(), stream.getsampwidth(), stream.getframerate()
@@ -97,13 +98,18 @@ def encode_audio(raw):
     samples = np.frombuffer(frames, dtype=kind).astype(np.float64)
     samples = (samples-128)/128 if width == 1 else samples/float(2**(8*width-1))
     samples = samples.reshape(-1, channels).mean(1)
-    if rate != AUDIO_RATE and len(samples):
-        times = np.arange(int(len(samples)*AUDIO_RATE/rate))/AUDIO_RATE
+    if rate != target and len(samples):
+        times = np.arange(int(len(samples)*target/rate))/target
         samples = np.interp(times, np.arange(len(samples))/rate, samples)
+    if trim and len(samples):
+        loud = np.flatnonzero(np.abs(samples) > .05*np.abs(samples).max())
+        samples = samples[loud[0]:loud[-1]+1] if len(loud) else samples
+        samples = samples[:1990]                                # with the markers and the request, within 2,048 tokens
     mu = 255.
     coded = np.sign(samples)*np.log1p(mu*np.abs(np.clip(samples, -1, 1)))/np.log1p(mu)
     codes = np.clip(np.round((coded+1)/2*255), 0, 255).astype(int)
-    return '<|audio|>'+''.join(f'<|a{code}|>' for code in codes)+'<|/audio|>'
+    marker = 'audio' if target == AUDIO_RATE else 'audio4'
+    return f'<|{marker}|>'+''.join(f'<|a{code}|>' for code in codes)+f'<|/{marker}|>'
 
 
 def ffmpeg(tools):
@@ -228,7 +234,7 @@ def decode_video(body):
     return buffer.getvalue()
 
 
-def decode_audio(body):
+def decode_audio(body, rate=AUDIO_RATE):
     import numpy as np
     codes = np.array([int(code) for code in re.findall(r'<\|a(\d+)\|>', body)], dtype=np.float64)
     if not len(codes):
@@ -240,12 +246,12 @@ def decode_audio(body):
     with wave.open(buffer, 'wb') as stream:
         stream.setnchannels(1)
         stream.setsampwidth(2)
-        stream.setframerate(AUDIO_RATE)
+        stream.setframerate(rate)
         stream.writeframes((np.clip(samples, -1, 1)*32767).astype('<i2').tobytes())
     return buffer.getvalue()
 
 
-PATTERN = re.compile(r'<\|(image|audio|video)\|>(.*?)(?:<\|/\1\|>|$)', re.S)
+PATTERN = re.compile(r'<\|(image|audio4|audio|video)\|>(.*?)(?:<\|/\1\|>|$)', re.S)
 
 
 def parts(text):
@@ -255,7 +261,9 @@ def parts(text):
         if match.start() > start:
             found.append(('text', text[start:match.start()]))
         kind, body = match.group(1), match.group(2)
-        data = {'image': decode_image, 'audio': decode_audio, 'video': decode_video}[kind](body)
+        data = {'image': decode_image, 'audio': decode_audio, 'audio4': lambda part: decode_audio(part, AUDIO_RATE//2),
+                'video': decode_video}[kind](body)
+        kind = 'audio' if kind == 'audio4' else kind
         if data:
             found.append((kind, data))
         start = match.end()

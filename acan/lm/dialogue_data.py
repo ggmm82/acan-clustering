@@ -266,7 +266,8 @@ def _extra_records(source, path, test):
                         question = f'Disegna la cifra {label}.' if language == 'it' else f'Draw the digit {label}.'
                         yield language, chat([('user', question), ('assistant', encode_image(raw))]), test
                     elif source == 'spoken':
-                        yield 'en', chat([('user', f'Say the digit {label}.'), ('assistant', encode_audio(raw))]), test
+                        # 4 kHz without the silence around it, so a whole word fits in a piece of 2,048 tokens.
+                        yield 'en', chat([('user', f'Say the digit {label}.'), ('assistant', encode_audio(raw, 4000, trim=True))]), test
                     else:
                         question = f'Mostra la cifra {label} che si muove.' if language == 'it' else f'Show the digit {label} moving.'
                         yield language, chat([('user', question), ('assistant', moving_digit(raw, index))]), test
@@ -274,8 +275,11 @@ def _extra_records(source, path, test):
     return None
 
 
-def moving_digit(raw, seed, frames=16):
-    """A short video: a handwritten digit, shrunk to 8 x 8, bouncing inside a 16 x 16 frame."""
+def moving_digit(raw, seed, frames=7):
+    """A short video: a handwritten digit, shrunk to 8 x 8, bouncing inside a 16 x 16 frame.
+
+    Seven frames are about 1,900 tokens: a whole video fits in a piece of at most 2,048 tokens.
+    """
     import random
     from PIL import Image
     from .media import VIDEO_SIZE, _colour

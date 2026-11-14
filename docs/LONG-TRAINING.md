@@ -89,13 +89,16 @@ l'italiano in generale viene soprattutto da Wikipedia e FineWeb-2.
 | Comandi bash | tldr (DocPrompting), dalle pagine tldr | MIT; pagine CC BY 4.0 | conversazione: frase → comando |
 | Musica | IrishMAN, melodie in notazione ABC | MIT | testo ABC |
 | Immagini | Fashion-MNIST e MNIST | MIT | «Disegna: borsa.» / «Draw the digit 7.» → immagine 32×32 |
-| Suoni | Free Spoken Digit Dataset (WAV 8 kHz) | CC BY-SA 4.0 | «Say the digit 3.» → suono |
-| Video | cifre MNIST che si muovono, generate dal worker | MIT (da MNIST) | «Mostra la cifra 4 che si muove.» → 16 fotogrammi 16×16 |
+| Suoni | Free Spoken Digit Dataset (WAV 8 kHz) | CC BY-SA 4.0 | «Say the digit 3.» → suono a 4 kHz senza silenzi (al massimo mezzo secondo) |
+| Video | cifre MNIST che si muovono, generate dal worker | MIT (da MNIST) | «Mostra la cifra 4 che si muove.» → 7 fotogrammi 16×16 |
 
 Ogni parte ha un limite in MB, i file ufficiali di test vanno nel test, e il
 tokenizer impara da tutto insieme. Per immagini, suoni e video interi alzare i
-token letti per pezzo (un'immagine circa 1.060, una cifra pronunciata circa
-4.000, un video circa 4.400).
+token letti per pezzo: un'immagine circa 1.060; una cifra pronunciata (in media
+circa 1.340) e un video di cifre (circa 1.900) stanno sotto 2.048, il massimo di
+un pezzo. Il limite di 2.048 sta nel contratto dei checkpoint e non si alza senza
+una migrazione: un tuo WAV a 8 kHz entra intero solo fino a circa un quarto di
+secondo.
 
 **Riferimento fisso.** I file di test ufficiali delle fonti e circa l'1% + 1%
 di tutto il resto, scelti con un hash del testo, sono validazione e test: gli
