@@ -381,7 +381,7 @@ def series_table(jobs, job, tests):
                              html.Td(f"{other['progress'].get('step', 0)}/{other['config']['total_steps']}"),
                              html.Td('—' if best is None else f'{best:.3f}'), html.Td('—' if not tested else f'{tested[0]:.3f}')]))
     return html.Div([html.H6('Serie di esperimenti', className='mt-2'),
-                     dbc.Table([html.Thead(html.Tr([html.Th(name) for name in ('Variante', 'Stato', 'Passi', 'Miglior errore in addestramento ↓', 'Errore sul testo di verifica ↓')])),
+                     dbc.Table([html.Thead(html.Tr([html.Th(name) for name in ('Variante', 'Stato', 'Passi', 'Miglior errore su testo mai visto (durante l\'addestramento) ↓', 'Errore sul testo di verifica ↓')])),
                                 html.Tbody(rows)], size='sm', bordered=True, responsive=True),
                      html.P('I progetti girano uno dopo l\'altro. Per l\'ultima colonna avvia la verifica finale su ciascuno quando ha finito.',
                             className='small text-muted')])
