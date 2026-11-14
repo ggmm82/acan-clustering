@@ -200,6 +200,48 @@ def inspection_panel(report, frame=0):
     return panels
 
 
+CONTROL_PREFIX = 'Controllo denso · '
+
+
+def paired_job(jobs, job):
+    """The dense control of a concept project, or the project of a dense control.
+
+    The worker names a control after its project and gives it the same corpus, seed and budget.
+    """
+    config = job['config']
+    same = lambda other: (other['config'].get('corpus_id') == config.get('corpus_id')
+                          and other['config'].get('total_steps') == config.get('total_steps'))
+    if config.get('architecture') == 'dense-control':
+        name = config.get('name', '')[len(CONTROL_PREFIX):] if config.get('name', '').startswith(CONTROL_PREFIX) else None
+        found = [other for other in jobs if other['id'] != job['id'] and other['config'].get('architecture') != 'dense-control'
+                 and other['config'].get('name') == name and same(other)]
+    else:
+        found = [other for other in jobs if other['config'].get('architecture') == 'dense-control'
+                 and other['config'].get('name') == CONTROL_PREFIX+config.get('name', '') and same(other)]
+    return found[-1] if found else None
+
+
+def comparison_summary(concepts, dense):
+    """Best validation of the concept project against its dense control, and what it means."""
+    best = lambda job: next((item.get('validation_nll') for item in job.get('snapshots', []) if item.get('best')), None)
+    a, b = best(concepts), best(dense)
+    if a is None or b is None:
+        return None
+    finished = all(job['status'] in ('paused', 'completed') for job in (concepts, dense))
+    gap = a-b
+    if abs(gap) <= .15:
+        verdict, color = ('i concetti non costano qualità a questa scala: è il risultato a favore dell\'idea', 'success')
+    elif gap > .15:
+        verdict, color = (f'la compressione costa {gap:.2f} di errore rispetto all\'attenzione completa', 'warning')
+    else:
+        verdict, color = ('i concetti risultano migliori della densa: sorprendente, va ripetuto con un altro seme prima di crederci', 'info')
+    text = (f"Migliore conservato · concetti {a:.3f}, controllo denso {b:.3f}, differenza {gap:+.3f}: {verdict}. "
+            + ('' if finished else 'Confronto provvisorio: almeno uno dei due è ancora in corso. ')
+            + 'Con 1.024 token di validazione differenze sotto 0,15 non si distinguono dal caso; per una misura più '
+              'solida usa «Confronta checkpoint e originale» su entrambi.')
+    return text, color
+
+
 def register(app):
     @app.server.post('/generative-upload/<action>')
     def upload_proxy(action):
@@ -449,9 +491,24 @@ def register(app):
         if history_mode=='window':
             try:history=backend(workspace,f'/jobs/{selected}/history?start={max(0,int(history_start or 0))}&end={max(0,int(history_start or 0))+499}&limit=500&plot=1')['rows']
             except ValueError as exc:history=[];history_error=str(exc)
-        for key, label in [('training_nll','Training NLL'),('validation_nll','Validation NLL')]:
+        own = 'Controllo denso' if job['config'].get('architecture') == 'dense-control' else 'Concetti'
+        for key, label in [('training_nll','training'),('validation_nll','validazione')]:
             rows = [row for row in history if key in row]
-            figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows], mode='lines', name=label)
+            figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows], mode='lines', name=f'{own} · {label}')
+        # The project and its dense control on the same chart: same corpus, seed and budget.
+        partner, comparison = paired_job((state or {}).get('jobs', []), job), None
+        if partner is not None:
+            try:
+                other = backend(workspace, f"/jobs/{partner['id']}/view")
+            except ValueError:
+                other = None
+            if other is not None:
+                rows = [row for row in other.get('history', []) if 'validation_nll' in row]
+                name = 'Controllo denso' if own == 'Concetti' else 'Concetti'
+                figure.add_scatter(x=[row['step'] for row in rows], y=[row['validation_nll'] for row in rows], mode='lines',
+                                   name=f'{name} · validazione', line=dict(dash='dash', width=3))
+                pair = (job, other) if own == 'Concetti' else (other, job)
+                comparison = comparison_summary(*pair)
         figure.update_layout(title='Errore di previsione · più basso è meglio', xaxis_title='Passi', yaxis_title='NLL',uirevision=f'{selected}:{history_mode}:{history_start if history_mode=="window" else 0}',xaxis={'rangeslider':{'visible':True}})
         saved_range=(chart_view or {}).get(figure.layout.uirevision) if isinstance(chart_view,dict) else None
         if isinstance(saved_range,list) and len(saved_range)==2 and all(isinstance(v,(int,float)) and math.isfinite(v) for v in saved_range):
@@ -464,8 +521,16 @@ def register(app):
             figure.add_hline(y=baseline, line_dash='dash', line_color='green', annotation_text='Modello originale sullo stesso corpus')
         text = f"{job['status']} · passo {metrics.get('step',0)}/{job['config']['total_steps']} · token elaborati {metrics.get('tokens_trained',0):,} · ultimo checkpoint {job['checkpoint'] or 'ancora nessuno'}"
         detail = [dbc.Alert(history_error,color='warning') if history_error else None,html.P(text), html.P(job['error'], className='text-danger') if job['error'] else None]
+        if comparison is not None:
+            detail.insert(0, dbc.Alert(comparison[0], color=comparison[1]))
+        elif partner is None and job['config'].get('architecture') != 'dense-control' and job['config'].get('protocol') == 'controlled-v1':
+            detail.insert(0, html.P('Per sapere se i concetti funzionano, avvia il controllo denso (in fondo alla pagina): '
+                                    'comparirà su questo grafico, tratteggiato, con il confronto dei due risultati.', className='small text-muted'))
         for key,label in [('training_nll','NLL training'),('training_objective','Obiettivo training'),('training_cp_penalty','Penalità CP media'),('cp_weight','Peso CP'),('validation_nll','NLL validazione'),('validation_perplexity','Perplessità validazione'),
                           ('baseline_nll','NLL base prima del graft'),('tokens_per_second','Token/s misurati'),('trainable_parameters','Parametri trainabili'),('total_parameters','Parametri totali del modello innestato'),('process_peak_rss_kib','Picco RAM del processo di training (KiB)')]:
+            # The CP terms belong to earlier profiles only; the objective then equals the training NLL.
+            if key in ('training_objective','training_cp_penalty','cp_weight') and job['config'].get('routing_profile') not in ('cp-routing-v1','cp-joint-v1'):
+                continue
             if metrics.get(key) is not None:
                 detail.append(html.P(f"{label}: {metrics[key]:,.5g}"))
         validation = metrics.get('validation_nll')
@@ -496,8 +561,17 @@ def register(app):
                 detail.append(html.P('Con un campione così piccolo differenze di NLL inferiori a circa 0,15 fra progetti non sono distinguibili dal caso: '
                                      'per confrontare due modelli usare «Confronta sul test», che misura l’intero insieme di test.', className='small text-muted'))
             detail.append(html.P(f"Documenti distinti: {data['documents']}; duplicati rimossi: {data['duplicates']}; passaggi equivalenti sul training: {metrics.get('tokens_trained',0)/max(1,unique):.2f}. Il test è escluso dalla scelta dei checkpoint."))
+        concept_layer = job['config'].get('routing_profile') in ('concept-graph-v1','cp-v9')
         for key,label in [('gradient_norm','Norma gradiente'),('acan_gradient_norm','Gradiente ACAN'),('lora_gradient_norm','Gradiente LoRA'),('teacher_kl','Distanza dal teacher')]:
+            if key == 'acan_gradient_norm' and (concept_layer or job['config'].get('architecture') == 'dense-control'):
+                continue
+            if key == 'teacher_kl' and not job['config'].get('distillation_weight'):
+                continue
             if metrics.get(key) is not None:detail.append(html.P(f'{label}: {metrics[key]:.5g}'))
+        if concept_layer:
+            detail.append(html.P('Lo strato a concetti non ha parametri propri: i concetti si formano dalle chiavi del contesto. '
+                                 'Imparano i parametri LoRA del resto del modello, che si adatta a leggere attraverso i concetti.',
+                                 className='small text-muted'))
         if metrics.get('graft'):
             graft=metrics['graft'];detail.append(html.P(f"Struttura: {len(graft['replaced_layers'])}/{graft['total_layers']} livelli con attenzione ACAN; slot {graft['slots']}; finestra locale {graft['window']}."))
         last_step = max((s['step'] for s in job['snapshots']), default=0)

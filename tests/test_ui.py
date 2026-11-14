@@ -217,6 +217,37 @@ b,?,no
         self.assertIn('checkpoint passo 7', text)
         self.assertIn('token elaborati', text)
 
+    def test_project_and_dense_control_share_the_chart(self):
+        from unittest.mock import patch
+        from acan.vis.generative import comparison_summary, paired_job
+        base = dict(corpus_id='dante', total_steps=1000, protocol='controlled-v1')
+        concepts = dict(id='acan', status='paused', checkpoint='s', error=None, progress=dict(step=363, validation_nll=3.445, baseline_nll=4.537),
+                        config=dict(base, name='ACAN-LM experiment', architecture='hybrid'),
+                        history=[dict(step=300, training_nll=3.8, validation_nll=3.46)],
+                        snapshots=[dict(step=356, name='s', validation_nll=3.440, best=True)])
+        dense = dict(id='dense', status='paused', checkpoint='d', error=None, progress=dict(step=400, validation_nll=3.39),
+                     config=dict(base, name='Controllo denso · ACAN-LM experiment', architecture='dense-control'),
+                     history=[dict(step=300, validation_nll=3.41)], snapshots=[dict(step=380, name='d', validation_nll=3.380, best=True)])
+        other_corpus = dict(dense, id='elsewhere', config=dict(dense['config'], corpus_id='wiki'))
+        self.assertEqual(paired_job([concepts, other_corpus, dense], concepts)['id'], 'dense')
+        self.assertEqual(paired_job([concepts, dense], dense)['id'], 'acan')
+        self.assertIsNone(paired_job([concepts, other_corpus], concepts))
+        text, color = comparison_summary(concepts, dense)
+        self.assertIn('+0.060', text)
+        self.assertIn('non costano qualità', text)
+        self.assertEqual(color, 'success')
+        self.assertIn('costa 0.36', comparison_summary(concepts, dict(dense, snapshots=[dict(best=True, validation_nll=3.08)]))[0])
+        view = dict(dense, history_view='full_overview')
+        with patch('acan.vis.generative.backend', return_value=view) as backend:
+            result = self.invoke('..lm-progress.children', [('lm-state', 'data', {'jobs': [concepts, dense]}),
+                                 ('lm-job', 'value', 'acan'), ('lm-history-mode', 'value', 'overview'), ('lm-history-start', 'value', 0)],
+                                 [('lm-checkpoint', 'value', None), ('lm-workspace', 'data', 'a'*64), ('lm-chart-view', 'data', None)])
+            backend.assert_called_once_with('a'*64, '/jobs/dense/view')
+        names = [trace['name'] for trace in result['lm-loss']['figure']['data']]
+        self.assertIn('Controllo denso · validazione', names)
+        self.assertIn('Concetti · validazione', names)
+        self.assertIn('non costano qualità', str(result['lm-progress']['children']))
+
     def test_public_defaults_survive_worker_catalog_loading(self):
         result = self.invoke('..lm-public-dataset.options', [('lm-state', 'data', None),
                              ('lm-public-dataset', 'value', 'dante-it')])
