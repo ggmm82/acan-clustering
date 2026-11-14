@@ -71,22 +71,31 @@ layout = dbc.Container([
         html.P("Testo da usare nei passi 1 e 2: uno pubblico (si scarica una volta) oppure uno tuo, caricato negli strumenti avanzati.", className='small text-muted mb-1'),
         dcc.Dropdown(id='lm-validation-text', placeholder='Scegli il testo', clearable=False, className='mb-3'),
         html.H6('Passo 1 · Prova in piccolo, da zero (CPU, minuti)'),
-        html.P("Tre modellini identici imparano da zero, cambiando solo come leggono il testo: attenzione normale (tutto "
-               "parola per parola), solo le ultime 16 parole, e concetti (ultime 16 parole esatte più riassunti del resto). "
-               "La prova decisiva è la memoria: coppie da ricordare, testo di riempimento, poi la domanda, con la risposta "
-               "ben più lontana delle ultime 16 parole. Servono tre modelli perché la sola finestra mostra quanto vale la "
-               "memoria piccola senza riassunti: i concetti devono avvicinarsi all'attenzione normale, non alla finestra.", className='small'),
+        html.P("Domanda: un modello che legge il testo lontano attraverso i concetti ricorda ciò che serve, come uno "
+               "con l'attenzione normale, a un costo per token che non cresce con il testo? Tre modellini identici "
+               "imparano da zero, cambiando solo come leggono: attenzione normale, solo le ultime 16 parole, concetti "
+               "(ultime 16 parole esatte più 16 concetti per il resto).", className='small mb-1'),
+        html.Ul([html.Li("Memoria e memoria lontana (criteri): coppie da ricordare, testo di riempimento, poi la domanda; "
+                         "la risposta è a 49 e a 177 token, oltre le 16 parole esatte. Se qui i concetti falliscono, un "
+                         "modello grande li erediterebbe."),
+                 html.Li("Testo (criterio): i concetti non devono peggiorare la previsione del testo normale."),
+                 html.Li("Capacità (misura): 32 coppie con 16 concetti; dice quanti fatti tiene un concetto, cioè quanti "
+                         "concetti servono su testi lunghi."),
+                 html.Li("Costo (misura): tempo per token e vettori tenuti a 512-4.096 token di contesto.")],
+                className='small'),
         dbc.Row([dbc.Col(dcc.Dropdown(id='lm-small-budget', value='quick', clearable=False, options=[
-                    {'label': 'Rapida: 10-20 minuti', 'value': 'quick'}, {'label': 'Completa: 30-60 minuti', 'value': 'full'}]), md=5),
+                    {'label': 'Rapida: 20-30 minuti', 'value': 'quick'}, {'label': 'Completa: circa un\'ora e mezza', 'value': 'full'}]), md=5),
                  dbc.Col([dbc.Button('Avvia la prova in piccolo', id='lm-small-start', color='primary', className='me-2'),
                           dbc.Button('Ferma', id='lm-small-stop', outline=True, color='warning')], md=7)], className='mb-2'),
         html.Div(id='lm-small-status', role='status', className='small'), html.Div(id='lm-small-view'),
         dbc.Button('Scarica tutti i dati della prova (per il debug)', id='lm-small-download', outline=True, color='secondary', size='sm', className='mt-1'), dcc.Download(id='lm-small-file'),
         dcc.Store(id='lm-small-id'), dcc.Store(id='lm-small-result'), dcc.Interval(id='lm-small-poll', interval=5000),
         html.H6('Passo 2 · Prova su un modello vero (SmolLM2, ore sulla CPU)', className='mt-3'),
-        html.P("Lo stesso testo e gli stessi passi per due progetti, uno dopo l'altro: metà dei layer con i concetti, e "
-               "attenzione normale. Compaiono insieme nel grafico di «Segui i progetti». Quando entrambi hanno finito, "
-               "avvia la verifica finale su ciascuno (strumenti avanzati) per un confronto più solido.", className='small'),
+        html.P("Da fare solo dopo il passo 1. Domanda: innestare i concetti in un modello già addestrato ne peggiora "
+               "la qualità? Due progetti, uno dopo l'altro, con lo stesso testo e gli stessi passi: metà dei layer a "
+               "concetti, e attenzione normale. Linee quasi uguali (differenza sotto 0,15 nella verifica finale) vogliono "
+               "dire che i concetti non costano qualità; questa prova non può dire se servono, perché su pezzi di 128 "
+               "token il modello usa quasi solo le parole vicine. Quello lo dice il passo 1.", className='small'),
         dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Passi'), dbc.Input(id='lm-validation-steps', type='number', value=600, min=50, max=100000)]), md=4),
                  dbc.Col(dbc.Button('Avvia il confronto sul modello vero', id='lm-validation-start', color='primary'), md=8)]),
         html.Div(id='lm-validation-status', role='status', className='small mt-1'),
@@ -395,25 +404,52 @@ TEXT_MARGIN = .05          # and lose at most 0.05 bits per character on the tex
 REAL_MARGIN = .15          # on SmolLM2, within the noise of the measurement
 
 
-def small_checks(result):
-    """The two criteria of the small test, as (name, passed, explanation)."""
-    memory, text = result['memory'], result['text']
-    dense, window, concepts = (memory[kind]['accuracy'] for kind in ('dense', 'window', 'concepts'))
-    checks = []
+def _memory_check(name, dense, concepts, window, chance, distance):
     if dense < .5:
-        checks.append(('Memoria', None, f"La prova non è valida: anche l'attenzione normale ricorda solo il {100*dense:.0f}%. "
-                                        'Rifalla con la durata completa.'))
-    else:
-        passed = concepts >= MEMORY_SHARE*dense and concepts > window+.5*(dense-window)
-        checks.append(('Memoria', passed,
-                       f"Concetti {100*concepts:.0f}% contro {100*dense:.0f}% dell'attenzione normale e {100*window:.0f}% della sola "
-                       f"finestra (a caso: {100*result['memory_setup']['chance']:.0f}%). Serve almeno il {100*MEMORY_SHARE:.0f}% "
-                       "dell'attenzione normale."))
+        return (name, None, f"Prova non valida: anche l'attenzione normale ricorda solo il {100*dense:.0f}%. Rifalla con la durata completa.")
+    passed = concepts >= MEMORY_SHARE*dense and (window is None or concepts > window+.5*(dense-window))
+    alone = '' if window is None else f", sola finestra {100*window:.0f}%"
+    return (name, passed, f"Risposta a {distance} token di distanza: concetti {100*concepts:.0f}%, attenzione normale "
+                          f"{100*dense:.0f}%{alone} (a caso {100*chance:.0f}%). Serve almeno il {100*MEMORY_SHARE:.0f}% dell'attenzione normale.")
+
+
+def small_checks(result):
+    """The criteria of the small test, as (name, passed, explanation); passed is None when the test is not valid."""
+    memory, text = result['memory'], result['text']
+    setup = result['memory_setup']
+    checks = [_memory_check('Memoria', memory['dense']['accuracy'], memory['concepts']['accuracy'], memory['window']['accuracy'],
+                            setup['chance'], setup.get('nearest_answer_distance', '?'))]
+    far = (result.get('memory_cases') or {}).get('distance')
+    if far:
+        checks.append(_memory_check('Memoria lontana', far['dense']['accuracy'], far['concepts']['accuracy'], None,
+                                    far['chance'], far['nearest_answer_distance']))
     gap = text['concepts']['bits_per_character']-text['dense']['bits_per_character']
     checks.append(('Testo', gap <= TEXT_MARGIN,
                    f"Concetti {text['concepts']['bits_per_character']:.3f} bit per carattere, attenzione normale "
                    f"{text['dense']['bits_per_character']:.3f} (differenza {gap:+.3f}; serve al massimo {TEXT_MARGIN:+.2f})."))
     return checks
+
+
+def small_facts(result):
+    """What the small test measures without a pass mark: how many facts fit, and the cost per token."""
+    facts = []
+    many = (result.get('memory_cases') or {}).get('capacity')
+    if many:
+        facts.append(f"Capacità: {many['pairs']} coppie da ricordare con {many['slots']} concetti. Concetti "
+                     f"{100*many['concepts']['accuracy']:.0f}%, attenzione normale {100*many['dense']['accuracy']:.0f}%. "
+                     "Dice quanti fatti tiene un concetto: su GPU il numero di concetti va scelto in proporzione ai fatti "
+                     "che il testo lungo contiene, non fisso.")
+    cost = result.get('cost')
+    if cost:
+        last = cost['rows'][-1]
+        text = (f"Costo: a {last['length']:,} token di contesto l'attenzione normale tiene {last['dense']['kept_vectors']:,} "
+                f"vettori per layer e cresce con il testo; i concetti ne tengono {last['concepts']['kept_vectors']} sempre. "
+                f"Tempo per token: attenzione normale da {cost['rows'][0]['dense']['milliseconds_per_token']:.2f} a "
+                f"{last['dense']['milliseconds_per_token']:.2f} ms, concetti circa {cost['concepts_flat']:.2f} ms fissi.")
+        if cost.get('faster_beyond'):
+            text += f" Con questa implementazione i concetti diventano più veloci oltre circa {cost['faster_beyond']:,.0f} token."
+        facts.append(text)
+    return facts
 
 
 def small_test_view(test):
@@ -433,9 +469,17 @@ def small_test_view(test):
     table = dbc.Table([html.Thead(html.Tr([html.Th('Modello'), html.Th('Memoria: risposte giuste (più alto è meglio)'),
                                            html.Th('Testo: bit per carattere (più basso è meglio)')])), html.Tbody(rows)],
                       bordered=True, size='sm', className='mt-2')
+    cases = result.get('memory_cases') or {}
+    if cases:
+        names = {'distance': 'Memoria lontana', 'capacity': 'Capacità (più fatti che concetti)'}
+        table = html.Div([table, dbc.Table([html.Thead(html.Tr([html.Th('Prova difficile'), html.Th('Attenzione normale'), html.Th('Concetti')])),
+            html.Tbody([html.Tr([html.Td(f"{names[name]}: {case['pairs']} coppie, risposta a {case['nearest_answer_distance']} token"),
+                                 html.Td(f"{100*case['dense']['accuracy']:.1f}%"), html.Td(f"{100*case['concepts']['accuracy']:.1f}%")])
+                        for name, case in cases.items()])], bordered=True, size='sm')])
     checks = [html.Li([html.Strong(f"{name}: " + ('superato' if passed else 'non valido' if passed is None else 'non superato') + '. '),
                        text], className='text-success' if passed else 'text-danger' if passed is False else '')
               for name, passed, text in small_checks(result)]
+    checks += [html.Li(fact, className='text-muted') for fact in small_facts(result)]
     samples = dbc.Accordion([dbc.AccordionItem([
         html.P('Inizio dato (dal testo mai visto):', className='small mb-0'),
         html.Pre(result['text']['dense']['prompt'], className='small'),

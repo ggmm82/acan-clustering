@@ -26,7 +26,8 @@ BUDGETS = {
     'quick': dict(memory_steps=800, text_steps=500),
     'full': dict(memory_steps=2000, text_steps=1500),
 }
-SETTINGS = dict(dim=64, heads=4, layers=2, window=16, slots=16, rate=3e-3, pairs=8, filler=48, keys=16, block=128)
+SETTINGS = dict(dim=64, heads=4, layers=2, window=16, slots=16, rate=3e-3, pairs=8, filler=48, keys=16, block=128,
+                far_filler=176, many_pairs=32, cost_lengths=(512, 1024, 2048, 4096))
 
 
 class Attention(nn.Module):
@@ -171,43 +172,93 @@ def read_corpus(path, jsonl, limit=3*1024*1024):
     return '\n\n'.join(texts)
 
 
+def memory(kind, pairs, filler, values, settings, shape, seed, check):
+    """Train one model on the memory task; what it recalls and how it fails."""
+    keys, questions = max(values, 2*pairs), 4
+    length = 2*pairs+filler+questions
+    torch.manual_seed(seed)
+    generator = torch.Generator().manual_seed(seed)
+    model = TinyLM(keys+values+1+8, kind, length=length, **shape)
+    started = time.monotonic()
+    curve = train(model, lambda: recall_batch(32, pairs, keys, values, filler, questions, generator),
+                  settings['memory_steps'], settings['rate'], lambda step: check())
+    ids, targets = recall_batch(512, pairs, keys, values, filler, questions, torch.Generator().manual_seed(10_000+seed))
+    model.eval()
+    with torch.no_grad():
+        predicted = model(ids).argmax(-1)
+    asked = targets != -100
+    right = predicted[asked] == targets[asked]
+    # Debugging: a wrong answer that is another value of the same sequence means the model found
+    # the pairs but read the wrong one; any other wrong answer means it did not find them.
+    stored = ids[:, 1:2*pairs:2]
+    present = (predicted[:, :, None] == stored[:, None, :]).any(-1)[asked]
+    by_question = right.reshape(len(ids), -1).float().mean(0)
+    return dict(accuracy=float(right.float().mean()), seconds=time.monotonic()-started,
+                parameters=sum(item.numel() for item in model.parameters()),
+                wrong_but_from_the_sequence=float((~right & present).float().mean()),
+                wrong_not_in_the_sequence=float((~right & ~present).float().mean()),
+                accuracy_by_question=[float(value) for value in by_question], training_curve=curve)
+
+
+@torch.no_grad()
+def cost(shape, lengths, check):
+    """Time per token of one pass over contexts of growing length, and the vectors each layer keeps.
+
+    Ordinary attention compares every token with all the previous ones: its time per token grows
+    with the context and its memory (the cache) holds every token. Concepts keep ``window`` exact
+    tokens and ``slots`` concepts whatever the length. The models are untrained: only the cost is measured.
+    """
+    rows = []
+    for kind in ('dense', 'concepts'):
+        TinyLM(64, kind, length=64, **shape).eval()(torch.zeros(1, 64, dtype=torch.long))   # warm-up
+    for length in lengths:
+        check()
+        row = dict(length=length)
+        for kind in ('dense', 'concepts'):
+            model = TinyLM(64, kind, length=length, **shape).eval()
+            ids = torch.randint(0, 64, (1, length), generator=torch.Generator().manual_seed(0))
+            started = time.perf_counter()
+            model(ids)
+            row[kind] = dict(milliseconds_per_token=1000*(time.perf_counter()-started)/length,
+                             kept_vectors=length if kind == 'dense' else shape['window']+shape['slots'])
+        rows.append(row)
+    # Ordinary attention: time per token = a + b*length; concepts: about constant. Where they cross:
+    x = torch.tensor([row['length'] for row in rows], dtype=torch.float64)
+    y = torch.tensor([row['dense']['milliseconds_per_token'] for row in rows], dtype=torch.float64)
+    slope = float(((x-x.mean())*(y-y.mean())).sum()/((x-x.mean())**2).sum())
+    intercept = float(y.mean())-slope*float(x.mean())
+    flat = float(torch.tensor([row['concepts']['milliseconds_per_token'] for row in rows]).mean())
+    crossing = (flat-intercept)/slope if slope > 0 else None
+    return dict(rows=rows, dense_slope=slope, concepts_flat=flat,
+                faster_beyond=None if crossing is None else max(0., crossing))
+
+
 def run(text, budget='quick', check=lambda: None, report=lambda message: None, seed=0, settings=None):
     """The three models on the memory task and on ``text``; returns what they achieved."""
     settings = {**SETTINGS, **BUDGETS[budget], **(settings or {})}
     torch.set_num_threads(1)
+    if len(text) < 20*settings['block']:
+        raise ValueError('Testo troppo breve per la prova: servono almeno qualche migliaio di caratteri.')
     result = dict(budget=budget, settings=settings, memory={}, text={})
-    keys = values = settings['keys']
-    questions = 4
-    length = 2*settings['pairs']+settings['filler']+questions
+    values = settings['keys']
     result['memory_setup'] = dict(pairs=settings['pairs'], chance=1/values, nearest_answer_distance=settings['filler']+1,
                                   exact_tokens=settings['window'])
     shape = dict(d=settings['dim'], heads=settings['heads'], layers=settings['layers'], window=settings['window'], slots=settings['slots'])
     for kind in KINDS:
         report(f'Memoria · {kind}')
-        torch.manual_seed(seed)
-        generator = torch.Generator().manual_seed(seed)
-        model = TinyLM(keys+values+1+8, kind, length=length, **shape)
-        started = time.monotonic()
-        curve = train(model, lambda: recall_batch(32, settings['pairs'], keys, values, settings['filler'], questions, generator),
-                      settings['memory_steps'], settings['rate'], lambda step: check())
-        ids, targets = recall_batch(512, settings['pairs'], keys, values, settings['filler'], questions,
-                                    torch.Generator().manual_seed(10_000+seed))
-        model.eval()
-        with torch.no_grad():
-            predicted = model(ids).argmax(-1)
-        asked = targets != -100
-        right = predicted[asked] == targets[asked]
-        # Debugging: a wrong answer that is another value of the same sequence means the model found
-        # the pairs but read the wrong one; any other wrong answer means it did not find them.
-        stored = ids[:, 1:2*settings['pairs']:2]                         # the values given in each sequence
-        present = (predicted[:, :, None] == stored[:, None, :]).any(-1)[asked]
-        by_question = right.reshape(len(ids), -1).float().mean(0)
-        result['memory'][kind] = dict(accuracy=float(right.float().mean()), seconds=time.monotonic()-started,
-                                      parameters=sum(item.numel() for item in model.parameters()),
-                                      wrong_but_from_the_sequence=float((~right & present).float().mean()),
-                                      wrong_not_in_the_sequence=float((~right & ~present).float().mean()),
-                                      accuracy_by_question=[float(value) for value in by_question],
-                                      training_curve=curve)
+        result['memory'][kind] = memory(kind, settings['pairs'], settings['filler'], values, settings, shape, seed, check)
+    # Harder memory, ordinary attention against concepts (the window alone stays at chance):
+    # the answer much farther away, and more facts than concepts.
+    result['memory_cases'] = {}
+    for name, pairs, filler in (('distance', settings['pairs'], settings['far_filler']),
+                                ('capacity', settings['many_pairs'], settings['filler'])):
+        case = dict(pairs=pairs, filler=filler, chance=1/values, nearest_answer_distance=filler+1, slots=settings['slots'])
+        for kind in ('dense', 'concepts'):
+            report(f"Memoria · {'distanza' if name == 'distance' else 'capacità'} · {kind}")
+            case[kind] = memory(kind, pairs, filler, values, settings, shape, seed, check)
+        result['memory_cases'][name] = case
+    report('Costo per token')
+    result['cost'] = cost(shape, settings['cost_lengths'], check)
     common = sorted(set(text), key=lambda character: -text.count(character))[:200]   # rarer characters become one symbol
     alphabet = common+['\ufffd']
     index = {character: place for place, character in enumerate(common)}

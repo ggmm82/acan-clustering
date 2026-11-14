@@ -15,7 +15,8 @@ class SmallTestTest(unittest.TestCase):
         text = ('Nel mezzo del cammin di nostra vita mi ritrovai per una selva oscura, '
                 'ché la diritta via era smarrita. ')*80
         phases = []
-        result = run(text, 'quick', report=phases.append, settings=dict(memory_steps=3, text_steps=3, dim=16, block=32))
+        result = run(text, 'quick', report=phases.append, settings=dict(memory_steps=3, text_steps=3, dim=16, block=32,
+                                                                          cost_lengths=(64, 128)))
         self.assertEqual(set(result['memory']), set(KINDS))
         self.assertEqual(set(result['text']), set(KINDS))
         for kind in KINDS:
@@ -26,7 +27,14 @@ class SmallTestTest(unittest.TestCase):
             self.assertAlmostEqual(memory['accuracy']+memory['wrong_but_from_the_sequence']+memory['wrong_not_in_the_sequence'], 1, places=5)
             self.assertEqual(memory['training_curve'][-1]['step'], 3)
             self.assertGreater(result['text'][kind]['parameters'], 0)
-        self.assertEqual(len(phases), 6)
+        self.assertEqual(len(phases), 11)
+        for case in result['memory_cases'].values():                     # harder memory: farther, more facts
+            self.assertTrue(0 <= case['concepts']['accuracy'] <= 1)
+        self.assertGreater(result['memory_cases']['distance']['nearest_answer_distance'], result['memory_setup']['nearest_answer_distance'])
+        self.assertGreater(result['memory_cases']['capacity']['pairs'], result['settings']['slots'])
+        rows = result['cost']['rows']                                     # concepts keep the same vectors at every length
+        self.assertEqual({row['concepts']['kept_vectors'] for row in rows}, {32})
+        self.assertEqual([row['dense']['kept_vectors'] for row in rows], [row['length'] for row in rows])
         self.assertGreater(result['memory_setup']['nearest_answer_distance'], result['memory_setup']['exact_tokens'])
         json.dumps(result, allow_nan=False)
         with self.assertRaisesRegex(ValueError, 'troppo breve'):
@@ -69,10 +77,18 @@ class SmallTestServiceTest(unittest.TestCase):
             self.assertEqual(client.post('/small-tests', headers=headers, json=dict(corpus_id=created['id'], budget='forever')).status_code, 400)
 
 
-def finished_test(dense, window, concepts, bits=(2.40, 2.40, 2.42)):
+def finished_test(dense, window, concepts, bits=(2.40, 2.40, 2.42), far=None):
     kinds = ('dense', 'window', 'concepts')
+    cases = {} if far is None else dict(
+        distance=dict(pairs=8, filler=176, chance=1/16, nearest_answer_distance=177, slots=16,
+                      dense=dict(accuracy=far[0]), concepts=dict(accuracy=far[1])),
+        capacity=dict(pairs=32, filler=48, chance=1/16, nearest_answer_distance=49, slots=16,
+                      dense=dict(accuracy=1.), concepts=dict(accuracy=.4)))
+    cost = dict(rows=[dict(length=512, dense=dict(milliseconds_per_token=.1, kept_vectors=512), concepts=dict(milliseconds_per_token=.5, kept_vectors=32)),
+                      dict(length=4096, dense=dict(milliseconds_per_token=.3, kept_vectors=4096), concepts=dict(milliseconds_per_token=.5, kept_vectors=32))],
+                dense_slope=5e-5, concepts_flat=.5, faster_beyond=8000.)
     return dict(id='f'*32, status='completed', phase='Finita', request=dict(corpus_name='wikitext-2.jsonl', budget='full'),
-                result=dict(memory_setup=dict(chance=1/16),
+                result=dict(memory_setup=dict(chance=1/16, nearest_answer_distance=49), memory_cases=cases, cost=cost,
                             memory={kind: dict(accuracy=value, seconds=1.) for kind, value in zip(kinds, (dense, window, concepts))},
                             text={kind: dict(bits_per_character=value, prompt='p', sample='s') for kind, value in zip(kinds, bits)}))
 
@@ -86,6 +102,13 @@ class ValidationPathTest(unittest.TestCase):
         self.assertEqual([passed for _, passed, _ in small_checks(finished_test(1., .06, .24)['result'])], [False, True])
         self.assertIsNone(small_checks(finished_test(.3, .06, .3)['result'])[0][1])      # the test itself did not work
         self.assertFalse(small_checks(finished_test(1., .06, .95, (2.40, 2.40, 2.50))['result'])[1][1])
+        # The answer far away is a criterion of its own; capacity and cost are reported, not judged.
+        far = small_checks(finished_test(1., .06, .95, far=(1., .3))['result'])
+        self.assertEqual([(name, passed) for name, passed, _ in far], [('Memoria', True), ('Memoria lontana', False), ('Testo', True)])
+        from acan.vis.generative import small_facts
+        facts = small_facts(finished_test(1., .06, .95, far=(1., .9))['result'])
+        self.assertIn('32 coppie', facts[0])
+        self.assertIn('8,000 token', facts[1])
 
     def test_decision_needs_every_step(self):
         from acan.vis.generative import decision_view, validation_pair
@@ -102,6 +125,7 @@ class ValidationPathTest(unittest.TestCase):
         self.assertIn('Pronto per la GPU', text(decision_view(finished_test(1., .06, .95), pair, dict(a=tested(3.40), b=tested(3.35)))))
         self.assertIn('Non ancora', text(decision_view(finished_test(1., .06, .24), pair, dict(a=tested(3.40), b=tested(3.35)))))
         self.assertIn('Non ancora', text(decision_view(finished_test(1., .06, .95), pair, dict(a=tested(3.60), b=tested(3.35)))))
+        self.assertIn('Non ancora', text(decision_view(finished_test(1., .06, .95, far=(1., .2)), pair, dict(a=tested(3.40), b=tested(3.35)))))
         self.assertIn('sospesa', text(decision_view(finished_test(1., .06, .95), pair, {})))         # verification missing
         self.assertIn('sospesa', text(decision_view(None)))
         self.assertIsNone(validation_pair([job('a', 'chosen')]))

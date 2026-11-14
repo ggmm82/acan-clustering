@@ -20,27 +20,37 @@ solo per riprendere i progetti già avviati.
 In cima alla scheda **Generativo**. Tre passi, ognuno con un criterio scritto
 prima di guardare i risultati; la scheda dice da sola se è superato.
 
-**Passo 1 · Prova in piccolo (CPU, 10-60 minuti).** Tre modellini identici
+**Passo 1 · Prova in piccolo (CPU, 20-90 minuti).** Tre modellini identici
 (2 layer, 64 dimensioni) imparano da zero; cambia solo come leggono il testo:
 attenzione normale, solo gli ultimi 16 token, concetti (ultimi 16 token esatti
-più 16 concetti per il resto). Due prove:
+più 16 concetti per il resto). È la stessa classe dello strato a concetti che
+si userebbe in un modello grande, in miniatura. Misure:
 
 - *memoria*: 8 coppie chiave-valore, 48 simboli di riempimento, poi 4 chiavi
-  chieste; la risposta giusta è sempre più lontana dei 16 token esatti, quindi
-  si può dare solo leggendo i concetti. A caso si indovina 1 volta su 16;
-- *testo*: bit per carattere su una parte del testo scelto mai vista.
+  chieste; la risposta è sempre più lontana dei 16 token esatti, quindi si può
+  dare solo leggendo i concetti. A caso si indovina 1 volta su 16;
+- *memoria lontana*: lo stesso con 176 simboli di riempimento (risposta a 177
+  token);
+- *capacità* (misura, senza soglia): 32 coppie con 16 concetti;
+- *testo*: bit per carattere su una parte del testo scelto mai vista;
+- *costo* (misura, senza soglia): tempo per token di un passaggio su contesti
+  di 512-4.096 token e vettori tenuti per layer, con modelli non addestrati.
 
-Criteri: la memoria dei concetti deve essere almeno l'80% di quella
-dell'attenzione normale e più vicina a questa che alla sola finestra; il testo
-non deve costare più di 0,05 bit per carattere. Se l'attenzione normale stessa
-ricorda meno del 50%, la prova non è valida (va rifatta con la durata
-completa). La prova è un indicatore precoce, non una garanzia: a questa scala
-la memoria è l'unica misura che separa nettamente i tre modi di leggere; il
-testo a caratteri no (vedi MODEL-RESULTS).
+Criteri: in memoria e memoria lontana i concetti devono ricordare almeno l'80%
+di quello che ricorda l'attenzione normale (in memoria anche più vicini a
+questa che alla sola finestra); il testo non deve costare più di 0,05 bit per
+carattere. Se l'attenzione normale stessa ricorda meno del 50%, la prova non è
+valida. La prova è un indicatore precoce, non una garanzia: nessuna prova
+piccola garantisce il comportamento con miliardi di token. Dice però se il
+meccanismo fa ciò che deve (recuperare informazione lontana con memoria fissa);
+se fallisce qui, un modello grande erediterebbe il difetto.
 
-**Passo 2 · Modello vero.** Due progetti SmolLM2-135M sullo stesso testo, con
-gli stessi passi e lo stesso seme: metà dei layer a concetti, e attenzione
-normale. Partono uno dopo l'altro. Quando entrambi sono finiti, si avvia la
+**Passo 2 · Modello vero.** Da fare dopo il passo 1. Due progetti
+SmolLM2-135M sullo stesso testo, con gli stessi passi e lo stesso seme: metà
+dei layer a concetti, e attenzione normale. Risponde a una domanda sola: i
+concetti innestati in un modello addestrato ne peggiorano la qualità? Non può
+dire se servono: su pezzi di 128 token il modello usa quasi solo i token
+vicini, che restano esatti, quindi le curve vengono simili in ogni caso. Partono uno dopo l'altro. Quando entrambi sono finiti, si avvia la
 verifica finale su ciascuno. Criterio: sul testo di verifica la NLL dei
 concetti supera quella dell'attenzione normale di al massimo 0,15.
 
