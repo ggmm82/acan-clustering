@@ -149,3 +149,45 @@ class ConceptGraphAttentionTests(ConceptAttentionTests):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class OneStepMergeTests(unittest.TestCase):
+    def test_summing_once_equals_merging_pair_by_pair(self):
+        import torch
+        from acan.lm.concept_attention import STATISTICS, generalize, reader_costs
+
+        def pairwise(state, budget, costs):                     # the previous implementation, one merge at a time
+            while state['C'].shape[2] > budget:
+                n = state['C'].shape[2]
+                with torch.no_grad():
+                    flat = costs(state).flatten(2).argmin(-1)
+                    a, c = flat//n, flat % n
+                    first, second = torch.minimum(a, c), torch.maximum(a, c)
+                    kept = torch.arange(n-1)
+                    kept = kept+(kept >= second[..., None])
+                for name in STATISTICS:
+                    value, tail = state[name], state[name].shape[3:]
+                    index = lambda where: where.reshape(*where.shape, *([1]*len(tail))).expand(*where.shape, *tail)
+                    value = value.scatter_add(2, index(first[..., None]), value.gather(2, index(second[..., None])))
+                    state[name] = value.gather(2, index(kept))
+            return state
+
+        torch.manual_seed(0)
+        b, h, n, d = 2, 3, 40, 8
+        keys = torch.randn(b, h, n, d, requires_grad=True)
+        values, received = torch.randn(b, h, n, d), torch.rand(b, h, n)
+        build = lambda: dict(C=torch.ones(b, h, n), U=keys, Q=keys*keys, V=values, A=received,
+                             P=torch.arange(n, dtype=torch.float32).expand(b, h, n), root=torch.ones(b, h, d))
+        reference = pairwise(build(), 16, lambda state: reader_costs(state, 50.))
+        result = generalize(build(), 16, lambda state: reader_costs(state, 50.))
+        for name in STATISTICS:
+            torch.testing.assert_close(result[name], reference[name], rtol=1e-5, atol=1e-4)
+        torch.testing.assert_close(torch.autograd.grad(result['U'].sum()+result['Q'].sum(), keys)[0],
+                                   torch.autograd.grad(reference['U'].sum()+reference['Q'].sum(), keys)[0])
+
+    def test_checkpoints_of_the_previous_version_are_accepted(self):
+        from acan.lm.compatibility import PRE_ONE_STEP_INFERENCE
+        from acan.lm.research_model import check_inference_contract
+        check_inference_contract(dict(routing_profile='concept-graph-v1', graft_fraction=.5), dict(model_contract=PRE_ONE_STEP_INFERENCE))
+        with self.assertRaises(ValueError):
+            check_inference_contract(dict(routing_profile='concept-graph-v1', graft_fraction=.5), dict(model_contract='0'*64))
