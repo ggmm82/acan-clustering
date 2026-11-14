@@ -68,11 +68,11 @@ def snapshots(store, job):
 def request_generation(store, job, owner, options):
     if job['status'] in ACTIVE:
         raise ValueError('Premi Pausa e attendi il salvataggio prima di provare il checkpoint sulla stessa GPU.')
-    allowed = {'prompt','checkpoint','max_new_tokens','temperature','seed','inspect_layers'}
+    allowed = {'prompt','checkpoint','max_new_tokens','temperature','seed','inspect_layers','full_length'}
     if set(options) - allowed:
         raise ValueError('Opzioni generazione non valide.')
-    request = dict(dict(max_new_tokens=64, temperature=.7, seed=42, inspect_layers=False), **options)
-    if not isinstance(request['inspect_layers'], bool):
+    request = dict(dict(max_new_tokens=64, temperature=.7, seed=42, inspect_layers=False, full_length=False), **options)
+    if not isinstance(request['inspect_layers'], bool) or not isinstance(request['full_length'], bool):
         raise ValueError('Ispezione layer non valida.')
     if not isinstance(request.get('prompt'), str) or not 1 <= len(request['prompt']) <= 32000:
         raise ValueError('Prompt non valido.')
@@ -97,6 +97,48 @@ def request_generation(store, job, owner, options):
     return identifier
 
 
+SERIES_VARIANTS = {
+    'chosen': ('impostazioni scelte', {}),
+    'fewer_concepts': ('metà dei concetti', None),
+    'all_layers': ('tutti i layer a concetti', None),
+    'dense': ("attenzione normale", {'architecture': 'dense-control'}),
+}
+
+
+def series_configs(base, variants):
+    """The projects of a series: the same text, steps and seed, one setting changed in each."""
+    if not isinstance(variants, list) or not 2 <= len(variants) <= 4 or len(set(variants)) != len(variants) \
+            or any(item not in SERIES_VARIANTS for item in variants):
+        raise ValueError('Scegli da 2 a 4 varianti diverse.')
+    configs = []
+    for item in variants:
+        label, change = SERIES_VARIANTS[item]
+        if item == 'fewer_concepts':                           # stronger compression, possible on the CPU too
+            change = {'slots': max(int(base.get('slots', 16))//2, 2)}
+        elif item == 'all_layers':
+            change = {'graft_fraction': 1., 'sequence_length': min(int(base.get('sequence_length', 128)), 64)}
+        configs.append((item, label, dict(base, **change, name=f"{base.get('name', 'Serie')} · {label}")))
+    return configs
+
+
+def continue_series(store, identifier):
+    """When a project of a series ends on its own, the next one starts; a pause by the user stops the series."""
+    job = store.job(identifier)
+    series = job['config'].get('series')
+    if not series:
+        return None
+    ended = job['status'] == 'completed' or (job['status'] == 'paused' and job['progress'].get('early_stop_reason'))
+    if not ended:
+        return None
+    waiting = [other for other in store.jobs(job['owner']) if (other['config'].get('series') or {}).get('id') == series['id']
+               and other['status'] == 'created']
+    if not waiting:
+        return None
+    following = min(waiting, key=lambda other: other['config']['series']['order'])
+    launch(store, following)
+    return following['id']
+
+
 def request_evaluation(store,job,owner,options):
     if job['config'].get('protocol')!='controlled-v1':
         raise ValueError('Il progetto legacy non ha un test indipendente: crea un nuovo esperimento controllato.')
@@ -115,8 +157,8 @@ def request_evaluation(store,job,owner,options):
         if isinstance(value,bool) or not isinstance(value,int) or not lo<=value<=hi:
             raise ValueError('Budget non valido: '+key)
     contexts=request['context_lengths']
-    if not isinstance(contexts,list) or not 1<=len(contexts)<=4 or any(isinstance(x,bool) or not isinstance(x,int) or not 16<=x<=2048 for x in contexts):
-        raise ValueError('Scegli al massimo quattro contesti tra 16 e 2048 token.')
+    if not isinstance(contexts,list) or not 1<=len(contexts)<=4 or any(isinstance(x,bool) or not isinstance(x,int) or not 16<=x<=8192 for x in contexts):
+        raise ValueError('Scegli al massimo quattro contesti tra 16 e 8192 token.')
     identifier=uuid.uuid4().hex
     with store.db() as db:db.execute('INSERT INTO evaluations(id,job,owner,status,request) VALUES(?,?,?,?,?)',
         (identifier,job['id'],owner,'running',json.dumps(request)))

@@ -33,8 +33,49 @@ Tre controlli, in quest'ordine:
 
 Con finestra e concetti piccoli (16+16) e blocchi corti questa prova dice se
 il modello impara a leggere il contesto compresso, non se è più veloce: il
-vantaggio di costo si vede solo su contesti lunghi, che su CPU non sono
-praticabili.
+vantaggio di costo si vede solo su contesti lunghi.
+
+**Il confronto sullo stesso grafico.** Il controllo con l'attenzione normale
+(sezione 5 della scheda) compare tratteggiato sul grafico del progetto, con il
+verdetto. Se entrambi i progetti hanno una verifica finale (sezione 6), il
+verdetto usa il testo di verifica invece del controllo breve durante
+l'addestramento. Per confronti più affidabili già durante l'addestramento,
+nelle impostazioni avanzate alza «Pezzi di testo per ogni controllo» (almeno
+32). Un controllo avviato da questa versione registra il progetto da cui è
+nato; per quelli precedenti l'abbinamento avviene solo se un solo progetto ha
+le stesse impostazioni.
+
+**Memoria su testi lunghi.** La verifica «Memoria e velocità su testi lunghi»
+misura, senza addestrare, la copia scelta e il modello originale su 512, 2.048
+e 4.096 token, e dice da quale lunghezza la copia occupa meno memoria. Sui
+testi brevi i concetti occupano più dell'attenzione normale: lo spazio dei
+concetti è fisso, quello dell'attenzione normale cresce con i token.
+
+**Esperimenti in serie.** Da 2 a 4 progetti sullo stesso testo, con gli stessi
+passi e lo stesso seme, eseguiti uno dopo l'altro: le impostazioni scelte, metà
+dei concetti, tutti i layer a concetti (su CPU con testo letto di 64 token),
+attenzione normale come riferimento. Quando un progetto finisce da solo (budget
+esaurito o pausa automatica) il worker avvia il successivo; una pausa decisa da
+te ferma la serie. La tabella della serie compare nel pannello del progetto.
+
+**Gestione.** Sotto l'elenco dei progetti si rinomina e si elimina (con
+conferma; non mentre il progetto è in corso). Un progetto nuovo con un nome già
+usato riceve data e ora nel nome; nell'elenco i progetti omonimi hanno un codice
+breve.
+
+**Scrivere fino alla lunghezza richiesta.** Un modello addestrato su documenti
+brevi (per esempio terzine di Dante) impara a chiudere presto il testo. Con la
+casella «Scrivi sempre fino alla lunghezza richiesta», attiva per default, la
+fine del testo viene ignorata fino al numero di token chiesto.
+
+**Velocità.** Lo strato a concetti sceglie le unioni senza registrarle per i
+gradienti e poi somma i token di ogni concetto in un solo passo: le unioni sono
+le stesse di prima (verificato), le somme cambiano solo per l'ordine delle
+addizioni, e i progetti salvati con la versione precedente continuano. Il
+guadagno misurato su CPU è modesto, circa l'8% per passo di addestramento: il
+costo principale resta ricalcolare i costi delle coppie a ogni token che esce
+dalla finestra. Ridurlo davvero richiede di unire più coppie per volta, cioè di
+cambiare l'algoritmo, e non è stato fatto.
 
 ## Percorso dalla GUI
 

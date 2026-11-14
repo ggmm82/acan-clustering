@@ -109,6 +109,38 @@ class Store:
                        (identifier, owner, 'created', json.dumps(config), time.time()))
         return self.job(identifier, owner)
 
+    def rename(self, identifier, owner, name):
+        job = self.job(identifier, owner)
+        name = (name or '').strip()
+        if not 1 <= len(name) <= 120:
+            raise ValueError('Il nome deve avere da 1 a 120 caratteri.')
+        config = dict(job['config'], name=name)
+        with self.db() as db:
+            db.execute('UPDATE jobs SET config=?, updated=? WHERE id=?', (json.dumps(config), time.time(), identifier))
+        return self.job(identifier, owner)
+
+    def set_config(self, identifier, config):
+        with self.db() as db:
+            db.execute('UPDATE jobs SET config=? WHERE id=?', (json.dumps(config), identifier))
+
+    def delete(self, identifier, owner):
+        """Remove a project with its checkpoints, metrics, verifications and generations."""
+        job = self.job(identifier, owner)
+        if job['status'] in ACTIVE:
+            raise ValueError('Metti in pausa il progetto prima di eliminarlo.')
+        with self.db() as db:
+            for table, column in (('metrics', 'job'), ('evaluations', 'job'), ('generations', 'job'), ('layer_inspections', 'job'), ('jobs', 'id')):
+                db.execute(f'DELETE FROM {table} WHERE {column}=?', (identifier,))
+        shutil.rmtree(self.root / 'jobs' / identifier, ignore_errors=True)
+
+    def evaluations(self, identifier, owner):
+        """Completed verifications of a project, newest last: what each measured on the test text."""
+        self.job(identifier, owner)
+        with self.db() as db:
+            rows = db.execute("SELECT id, result FROM evaluations WHERE job=? AND owner=? AND status='completed' ORDER BY rowid",
+                              (identifier, owner)).fetchall()
+        return [dict(id=row['id'], **json.loads(row['result'])) for row in rows]
+
     def update(self, identifier, **changes):
         allowed = {'status', 'progress', 'checkpoint', 'pause', 'error'}
         if not changes or not set(changes).issubset(allowed):

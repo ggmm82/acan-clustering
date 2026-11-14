@@ -268,6 +268,11 @@ class TestPublicExperiments(unittest.TestCase):
                 self.assertTrue(metadata.exists())
                 fresh = create_app(root, token).test_client()
                 self.assertEqual(len(fresh.get('/state', headers=headers).get_json()['jobs']), 2)
+                with patch('acan.lm.service.launch'):             # the control names the project it controls
+                    control = client.post('/jobs/'+job['id']+'/dense-control', headers=headers)
+                self.assertEqual(control.status_code, 200, control.get_data(as_text=True))
+                self.assertEqual(control.get_json()['config']['control_of'], job['id'])
+                self.assertEqual(control.get_json()['config']['architecture'], 'dense-control')
 
     def test_bad_hash_unknown_source_and_busy_worker_cannot_start(self):
         import fcntl
@@ -312,3 +317,99 @@ class TestPublicExperiments(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
+
+
+@unittest.skipUnless(LM and importlib.util.find_spec('flask'), 'Requires LM service dependencies')
+class TestProjectManagementAndSeries(unittest.TestCase):
+    """Rename, delete, verifications of a project, and series run one after the other."""
+
+    def setUp(self):
+        import hashlib
+        from unittest.mock import patch
+        from acan.lm import public_corpus as public
+        from acan.lm.service import create_app
+        raw = b'The river flows through the valley.\n'*100
+        spec = dict(title='Fixture', language='en', url='https://example.invalid/text', source='https://example.invalid',
+                    license='Test only', license_url='https://example.invalid/license', bytes=len(raw),
+                    sha256=hashlib.sha256(raw).hexdigest(), format='text', note='Fixture only', prompt='The river')
+        self.root = tempfile.TemporaryDirectory()
+        self.headers = {'Authorization': 'Bearer '+'x'*40, 'X-ACAN-Workspace': 'a'*64}
+        self.patches = [patch.dict(public.CATALOG, fixture=spec), patch.object(public, 'download', return_value=raw),
+                        patch.object(public, 'launch')]
+        for item in self.patches:
+            item.start()
+        self.app = create_app(self.root.name, 'x'*40)
+        self.client = self.app.test_client()
+        self.job = self.client.post('/public-experiments', headers=self.headers, json=dict(dataset='fixture', preset='check')).get_json()['job']
+
+    def tearDown(self):
+        for item in self.patches:
+            item.stop()
+        self.root.cleanup()
+
+    def test_rename_and_delete(self):
+        other = {**self.headers, 'X-ACAN-Workspace': 'b'*64}
+        renamed = self.client.post(f"/jobs/{self.job['id']}/rename", headers=self.headers, json=dict(name='Dante, prima prova'))
+        self.assertEqual(renamed.get_json()['config']['name'], 'Dante, prima prova')
+        self.assertEqual(self.client.post(f"/jobs/{self.job['id']}/rename", headers=self.headers, json=dict(name='')).status_code, 400)
+        self.assertEqual(self.client.post(f"/jobs/{self.job['id']}/delete", headers=other).status_code, 404)
+        self.app.store.update(self.job['id'], status='running')
+        self.assertEqual(self.client.post(f"/jobs/{self.job['id']}/delete", headers=self.headers).status_code, 400)   # not while running
+        self.app.store.update(self.job['id'], status='paused')
+        folder = self.app.store.directory('jobs', self.job['id'])
+        self.assertEqual(self.client.post(f"/jobs/{self.job['id']}/delete", headers=self.headers).status_code, 200)
+        self.assertFalse(folder.exists())
+        self.assertEqual(self.client.get('/state', headers=self.headers).get_json()['jobs'], [])
+
+    def test_verifications_of_a_project_are_listed(self):
+        import json
+        with self.app.store.db() as db:
+            db.execute("INSERT INTO evaluations(id,job,owner,status,request,result) VALUES('e1',?,?,'completed','{}',?)",
+                       (self.job['id'], self.job['owner'] if 'owner' in self.job else self.app.store.job(self.job['id'])['owner'],
+                        json.dumps(dict(step=20, records=dict(selected_checkpoint=dict(quality=dict(nll=3.2)))))))
+        listed = self.client.get(f"/jobs/{self.job['id']}/evaluations", headers=self.headers).get_json()
+        self.assertEqual(listed[0]['records']['selected_checkpoint']['quality']['nll'], 3.2)
+
+    def test_series_runs_one_project_after_the_other(self):
+        from unittest.mock import patch
+        from acan.lm.manager import continue_series
+        base = dict(self.job['config'])
+        with patch('acan.lm.service.launch') as launch:
+            created = self.client.post('/series', headers=self.headers, json=dict(base=base, variants=['chosen', 'fewer_concepts', 'dense']))
+        self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
+        jobs = created.get_json()['jobs']
+        self.assertEqual([job['config']['series']['order'] for job in jobs], [0, 1, 2])
+        self.assertEqual(jobs[1]['config']['slots'], base['slots']//2)
+        dense = jobs[2]['config']
+        self.assertEqual(dense['architecture'], 'dense-control')
+        self.assertEqual(dense['control_of'], jobs[0]['id'])                      # drawn with the chosen settings
+        self.assertTrue(dense['name'].startswith('Controllo denso · '))
+        launch.assert_called_once()
+        self.assertEqual(launch.call_args.args[1]['id'], jobs[0]['id'])
+        store = self.app.store
+        with patch('acan.lm.manager.launch') as following:
+            store.update(jobs[0]['id'], status='paused')                        # paused by the user: the series waits
+            self.assertIsNone(continue_series(store, jobs[0]['id']))
+            store.update(jobs[0]['id'], status='completed')
+            self.assertEqual(continue_series(store, jobs[0]['id']), jobs[1]['id'])
+            store.update(jobs[1]['id'], status='paused', progress=dict(early_stop_reason='Validazione senza miglioramenti'))
+            self.assertEqual(continue_series(store, jobs[1]['id']), jobs[2]['id'])
+        self.assertEqual(following.call_count, 2)
+        for wrong in (['chosen'], ['chosen', 'chosen'], ['chosen', 'unknown']):
+            self.assertEqual(self.client.post('/series', headers=self.headers, json=dict(base=base, variants=wrong)).status_code, 400)
+
+    def test_requests_accept_full_length_and_long_contexts(self):
+        from unittest.mock import patch
+        from acan.lm import manager
+        job = self.app.store.job(self.job['id'])
+        with patch.object(manager, 'snapshots', return_value=[dict(name='step-1')]), patch.object(manager, 'launch'):
+            manager.request_generation(self.app.store, dict(job, status='paused'), job['owner'],
+                                       dict(prompt='The river', checkpoint='step-1', full_length=True))
+            with self.assertRaises(ValueError):
+                manager.request_generation(self.app.store, dict(job, status='paused'), job['owner'],
+                                           dict(prompt='The river', checkpoint='step-1', full_length='yes'))
+            manager.request_evaluation(self.app.store, dict(job, status='paused'), job['owner'],
+                                       dict(checkpoint='step-1', max_batches=1, context_lengths=[512, 2048, 4096]))
+            with self.assertRaises(ValueError):
+                manager.request_evaluation(self.app.store, dict(job, status='paused'), job['owner'],
+                                           dict(checkpoint='step-1', context_lengths=[9000]))
