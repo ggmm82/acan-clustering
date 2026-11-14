@@ -32,6 +32,8 @@ const net=require('node:net');
   const calls=await(await fetch(url+'/fixture/calls')).json();
   assert(calls.some(p=>p==='/jobs/job-2/view'));
   assert(calls.filter(p=>p.startsWith('/state')).every(p=>p.includes('summary=1')));
+  await page.waitForFunction(()=>document.querySelector('#lm-decision')?.innerText.includes('Decisione sospesa'));
+  await page.waitForFunction(()=>document.querySelector('#lm-small-status')?.innerText.includes('Nessuna prova'));
   assert.deepEqual(errors,[]);
   console.log('Persistent projects: repeated selection, matching chart, zoom and exact history window passed.');
  }finally{if(browser)await browser.close();server.kill('SIGTERM');}

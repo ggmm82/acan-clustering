@@ -19,12 +19,17 @@ PRE_V9_INFERENCE = 'fdd4c2cbc515abf90feeb2a7a96f99f9f413ce8561c00344c2f03c920fe4
 # profiles, cp-v9 included, keep their equations.
 PRE_GRAPH_TRAINING = 'b13cca138f95c2e8e97511f6a3c948ae037899b7d7ebce229bcb8302dc4631a2'
 PRE_GRAPH_INFERENCE = 'b852b117e99c71a1fe0e15dff94e509f8804995e6bbfcfd4cb5443bebcbad1cc'
+# Sources of release 8.5.x, before concepts were summed in one step after choosing the merges.
+# The merges chosen are the same and the sums differ only in the order of the additions, so
+# projects of every profile, concept-graph-v1 included, continue unchanged.
+PRE_ONE_STEP_TRAINING = 'd2bc3973bcb12064c65a42088568c2c9758c9371e4d32cde4b2b57e3e8ff751a'
+PRE_ONE_STEP_INFERENCE = '6f7e154f97725ffa1da7f441f33f67ba849303c8e788caf846af3d033eb9b521'
 
 
 def training_identity(values, config, checkpoint_root, selected, current):
     from pathlib import Path
     from . import checkpoints
-    candidates = [current]
+    candidates = [current, PRE_ONE_STEP_TRAINING]
     if config.get('routing_profile') != 'concept-graph-v1':
         candidates.append(PRE_GRAPH_TRAINING)
     if config.get('routing_profile') not in ('cp-v9', 'concept-graph-v1'):
