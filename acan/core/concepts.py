@@ -80,7 +80,8 @@ class ConceptModel:
 
     def __init__(self, max_concepts=1024, rows_per_concept=4, kappa=1., seed=0,
                  judged_rows=2000, merge_fraction=.05, em_steps=3, restarts=5, restart_rows=5000,
-                 covariance=True, covariance_attributes=128, shared_start=128):
+                 covariance=True, covariance_attributes=128, shared_start=128, holdout=0.):
+        self.holdout, self.building = holdout, None
         self.shared_start = shared_start
         self.covariance, self.covariance_attributes = covariance, covariance_attributes
         self.cross, self.cov = None, np.zeros(0, int)            # cross products of the working level, if adopted
@@ -96,6 +97,8 @@ class ConceptModel:
     def _statistics(self, t, data):
         """Sums over the members. ``PV`` and ``PP`` add up the scale each member has in the level above."""
         x, mask, onehot = data[:3]
+        if self.building is not None and len(t) == len(self.building):
+            t = t*self.building[:, None]                         # rows kept for judging do not build concepts
         s = dict(C=t.sum(0), Cm=t.T@mask, U=t.T@x, Q=t.T@(x*x), N=t.T@onehot)
         if len(data) > 3:
             scale, frequency, impurity = data[3:]
@@ -364,6 +367,8 @@ class ConceptModel:
         x, mask, onehot = (part[rows] for part in data[:3])
         scale, frequency = (part[rows] for part in data[3:5]) if len(data) > 3 else self._root_scale(x, onehot)[:2]
         t = self._route(s, (x, mask, onehot), weights)[0]
+        if self.building is not None:
+            t = t*self.building[rows][:, None]                   # a held-out row put nothing in the sums
         k, encoder = len(s['C']), self.encoder
         above = self._prior(s)
         scores = np.empty(len(x))
@@ -415,7 +420,9 @@ class ConceptModel:
         path = []
         # Generalization is a greedy search: repeat it from other specific concepts.
         for restart in range(restarts or (self.restarts if n <= self.restart_rows else 1)):
-            seeds = rng.choice(n, k, replace=False)
+            pool = np.arange(n) if self.building is None else np.flatnonzero(self.building > 0)
+            k = min(k, len(pool))
+            seeds = rng.choice(pool, k, replace=False)
             seed_t = np.zeros((n, k))
             seed_t[seeds, np.arange(k)] = 1
             s = self._em(self._statistics(seed_t, data), data, weights, 10)
@@ -495,6 +502,13 @@ class ConceptModel:
         weights = self.train_weights = self._weights(float(max(features, 1)))   # targets weigh as much as all features
         rng = np.random.default_rng(self.seed)
         judged = np.sort(rng.choice(n, min(n, self.judged_rows), replace=False))
+        self.building = None
+        if self.holdout:
+            # Judge on rows that never shape the concepts: removing a row from the sums of the concept
+            # it helped to shape leaves the shape, and small concepts then look better than they are.
+            judged = np.sort(rng.choice(n, min(int(n*self.holdout), self.judged_rows), replace=False))
+            self.building = np.ones(n)
+            self.building[judged] = 0
         root = base
 
         # Level 1: the general concepts of the whole table, on the scale of the root.
@@ -558,6 +572,7 @@ class ConceptModel:
                 break
             levels.append(following)
             current = following
+        self.building = None                                     # chosen: every row refines the concepts
         self.statistics = self._em(working['statistics'], data, weights, 20)
         levels = [level for level in levels if level['data'] is not data or level['k'] < len(self.statistics['C'])]
         # The working level is chosen by judgment, so its size says nothing against the level above:
