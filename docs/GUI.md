@@ -30,7 +30,15 @@ non chiede un altro CSV. Il modello è il grafo dei concetti
    metriche e la differenza prima/dopo sullo stesso 20% di righe tenute da
    parte (seme 42); **Rimuovi approfondimento selezionato** elimina il ramo e i
    suoi discendenti. La radice non si può eliminare.
-4. **Confronta con gli altri modelli** explicitly starts the benchmark. It never
+4. **Ispeziona il modello** mostra tutto ciò che il modello ha appreso e offre
+   due download: la struttura leggibile (JSON) e il modello come progetto
+   Python (`modello_concetti.zip`). Il progetto contiene solo ciò che serve:
+   `requirements.txt` (numpy, pandas), README, i comandi da riga di comando e
+   la cartella `modello_concetti/` con lo stato appreso, la codifica delle
+   righe e una copia del nucleo. Dà le stesse previsioni dell'app; `update`
+   aggiunge righe nuove alle somme dei concetti, `refit` riscopre i concetti.
+   I modelli addestrati prima di questa versione vanno riaddestrati.
+5. **Confronta con gli altri modelli** explicitly starts the benchmark. It never
    starts when training finishes or a graph is clicked. It fits majority/mean,
    KNN, CART, Random Forest, Extra Trees, HistGradientBoosting, XGBoost CPU and
    CatBoost on the same training rows and evaluates the same holdout targets.
@@ -38,17 +46,17 @@ non chiede un altro CSV. Il modello è il grafo dei concetti
    at most one benchmark runs on the server, with a 15-minute limit. Sessions
    retain separate datasets/results. Stop terminates only the requesting page's
    benchmark. Model changes clear stale benchmark rankings.
-5. Classification reports accuracy, balanced accuracy, F1 macro and confusion
+6. Classification reports accuracy, balanced accuracy, F1 macro and confusion
    matrices. Regression reports MAE, RMSE, R² and actual/predicted plots per
    target in original units. Models use fixed CPU budgets, not hyperparameter
    tuning: k≤5, CART depth≤5, forests 200 trees, boosting 100 iterations; boosting
    trees have depth 6 where configured. No best-in-class claim is implied.
    Imputation, one-hot schema and scales are fitted on training rows only for
    baselines. Failed estimators are reported, never silently replaced.
-6. Without targets, Evaluation measures root-only masked completion on up to
+7. Without targets, Evaluation measures root-only masked completion on up to
    100 validation rows, seed 42, at least one known cell per row. Adding children
    cannot change root-only completion. Supervised comparisons require a target.
-7. The concept laboratory exposes relevance matrices and native `extractRules`.
+8. The concept laboratory exposes relevance matrices and native `extractRules`.
    Model, predictions, metrics, protocol/library versions and rules can be saved.
    Prediction paths use native `predictDataset`; confidence is not calibrated.
 

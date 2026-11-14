@@ -37,3 +37,4 @@ namespaces = false
 
 [tool.setuptools.package-data]
 "acan.vis" = ["assets/*.js", "assets/*.css"]
+"acan" = ["export_template/*.tmpl"]

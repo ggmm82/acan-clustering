@@ -10,6 +10,8 @@ from .concepts import LOG_2PI, ConceptModel, _softmax
 
 PROFILE = 'concept-graph-v1'
 
+from .export import core_state, encoder_state  # noqa: E402
+
 
 class MatrixEncoder:
     """Encoder interface of concepts.py over an already encoded matrix."""
@@ -122,6 +124,8 @@ def train(learner, epochs):
         numeric_readout='weighted-training-mean',
         edges=[dict(first=i, second=j, weight=w) for i, j, w in model.edges],
         levels=[_level(model, encoder, level) for level in model.levels],
+        # The complete learned model, for the downloadable Python package (inference and further training).
+        core=core_state(model), encoder_state=encoder_state(encoder),
         explained={name: value for name, value in explained.items() if name != 'CP'},
         # The level through which the concepts read a row (None when they read the table directly).
         context=None if model.above is None else _recognition(model, encoder, model.above, feature_numeric, feature_blocks),

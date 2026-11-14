@@ -66,7 +66,11 @@ Aprire `http://localhost:4000`.
    gruppo, le linee tratteggiate dove le righe esitano fra due gruppi. Un clic
    su un concetto o su un gruppo mostra il suo prototipo; un doppio clic su un
    gruppo lo approfondisce a mano. Il modello si salva e si
-   ricarica come JSON.
+   ricarica come JSON. Da «Ispeziona il modello» si scarica anche il modello
+   come progetto Python (`modello_concetti.zip`, solo numpy e pandas): si usa
+   senza installare, `python modello_concetti.zip prevedi righe.csv`, oppure da
+   Python per previsioni, completamento, aggiornamento con righe nuove e nuova
+   scoperta dei concetti.
 3. **Valutazione**: misura il modello sul 20% di righe tenute da parte e, su
    richiesta, lo confronta con altri metodi (KNN, alberi, foreste, boosting)
    sulle stesse righe. Se si scelgono i rami guardando queste righe, esse

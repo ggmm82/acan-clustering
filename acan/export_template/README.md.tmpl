@@ -1,0 +1,78 @@
+# Modello dei concetti
+
+Grafo dei concetti appreso con ACAN su {rows} righe. Target: {target}.
+Serve solo numpy e pandas.
+
+## Avvio rapido
+
+```bash
+pip install -r requirements.txt
+python modello_concetti.zip prevedi righe.csv -o previsioni.csv
+```
+
+Estratto lo zip, la cartella si apre come progetto in un editor (VS Code, PyCharm).
+
+## Senza installare niente
+
+Serve solo Python con numpy e pandas (`pip install -r requirements.txt`). Lo zip,
+o la cartella estratta, si usa così com'è:
+
+```bash
+python modello_concetti.zip prevedi righe.csv -o previsioni.csv
+python modello_concetti.zip completa righe.csv -o completate.csv
+python modello_concetti.zip gruppi righe.csv
+python modello_concetti.zip livelli
+python modello_concetti.zip aggiorna righe_con_target.csv modello_aggiornato
+python modello_concetti.zip prevedi righe.csv --da modello_aggiornato
+```
+
+Dalla cartella estratta: `python . prevedi righe.csv`.
+
+Da Python, sempre senza installare:
+
+```python
+import sys
+sys.path.insert(0, "modello_concetti.zip")
+from modello_concetti import load
+```
+
+## Uso
+
+```python
+import pandas as pd
+from modello_concetti import load
+
+modello = load()
+righe = pd.read_csv("nuove_righe.csv")      # stesse colonne della tabella originale
+
+modello.predict(righe)                       # il target di ogni riga, nelle unità originali
+modello.predict_proba(righe)                 # probabilità di ogni classe
+modello.complete(righe)                      # celle vuote riempite dai concetti
+modello.assignments(righe)                   # appartenenza di ogni riga ai gruppi
+modello.levels()                             # livelli, quote di righe, matrici dei genitori
+```
+
+## Post-training
+
+```python
+modello.update(righe_con_target)             # stessi concetti, con più evidenza
+modello.refit(tutte_le_righe)                # concetti riscoperti da capo
+modello.save("modello_aggiornato")           # scrive lo stato; poi load("modello_aggiornato")
+```
+
+- `update` aggiunge le righe nuove alle somme dei concetti: i concetti si spostano
+  quanto le righe nuove li spingono. Numero di concetti e livelli restano quelli.
+- `refit` rifà la scoperta dei concetti sulle righe date, con la stessa codifica
+  della tabella originale. Il modello non contiene le righe di addestramento:
+  per rifare la scoperta su vecchie e nuove righe insieme, passale entrambe.
+
+## Contenuto
+
+| File | A cosa serve |
+|---|---|
+| `requirements.txt` | le librerie necessarie: numpy e pandas |
+| `__main__.py` | i comandi qui sopra, senza installare |
+| `modello_concetti/state.json` | ciò che il modello ha appreso: somme dei concetti, codifica delle colonne, scale |
+| `modello_concetti/model.py` | l'interfaccia (`load`, `predict`, `complete`, `update`, `refit`, `save`) |
+| `modello_concetti/concepts.py`, `concept_algebra.py` | il nucleo matematico di ACAN, copiato al momento dell'esportazione |
+| `modello_concetti/encoding.py` | la codifica delle righe usata dall'applicazione |

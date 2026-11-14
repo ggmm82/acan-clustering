@@ -620,8 +620,14 @@ model_layout = dbc.Container([
     ], id='graph-panel'),
     dbc.Accordion([dbc.AccordionItem([
         html.P('Tutto ciò che il modello ha appreso, in valori reali: livelli, concetti con i loro genitori e prototipi, gruppi e confini incerti. Il file scaricabile contiene la stessa struttura in JSON leggibile; il modello completo per ricaricarlo si salva con «Salva modello».', className='small text-muted'),
-        dbc.Button('Scarica la struttura del grafo (JSON leggibile)', id='structure-download-button', outline=True, size='sm', className='mb-2'),
+        dbc.Button('Scarica la struttura del grafo (JSON leggibile)', id='structure-download-button', outline=True, size='sm', className='mb-2 me-2'),
         dcc.Download(id='structure-download'),
+        dbc.Button('Scarica il modello come progetto Python', id='package-download-button', outline=True, size='sm', className='mb-2'),
+        dcc.Download(id='package-download'), html.Div(id='package-status', className='small', role='status'),
+        html.P('Il progetto Python contiene il modello completo e il suo codice, con requirements.txt: serve solo numpy e '
+               'pandas. Si usa senza installare (python modello_concetti.zip prevedi righe.csv) oppure da Python, per '
+               'previsioni, completamento, aggiornamento con righe nuove (update) e nuova scoperta dei concetti (refit). '
+               'Istruzioni nel README del progetto.', className='small text-muted'),
         dcc.Loading(html.Div(id='model-inspection')),
     ], title='Ispeziona il modello', item_id='inspect')], start_collapsed=True, className='my-3', id='inspect-accordion'),
     dbc.Accordion([dbc.AccordionItem([
@@ -1734,3 +1740,17 @@ def download_structure(n_clicks, model):
     from .graph_view import model_structure
     return dict(content=json.dumps(model_structure(GraphClusterModel.loadModel(model)), indent=2, ensure_ascii=False),
                 filename='struttura-grafo.json')
+
+
+@app.callback(Output('package-download', 'data'), Output('package-status', 'children'),
+              Input('package-download-button', 'n_clicks'), State('model-store', 'data'), prevent_initial_call=True)
+def download_package(n_clicks, model):
+    """The learned model as a Python project: inference, completion and further training."""
+    if not model:
+        return dash.no_update, 'Carica un modello o avvia la scoperta dei concetti.'
+    from acan.core.export import build_package
+    try:
+        content = build_package(GraphClusterModel.loadModel(model))
+    except ValueError as error:
+        return dash.no_update, str(error)
+    return dcc.send_bytes(content, 'modello_concetti.zip'), ''
