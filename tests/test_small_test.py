@@ -27,11 +27,12 @@ class SmallTestTest(unittest.TestCase):
             self.assertAlmostEqual(memory['accuracy']+memory['wrong_but_from_the_sequence']+memory['wrong_not_in_the_sequence'], 1, places=5)
             self.assertEqual(memory['training_curve'][-1]['step'], 3)
             self.assertGreater(result['text'][kind]['parameters'], 0)
-        self.assertEqual(len(phases), 11)
-        for case in result['memory_cases'].values():                     # harder memory: farther, more facts
-            self.assertTrue(0 <= case['concepts']['accuracy'] <= 1)
-        self.assertGreater(result['memory_cases']['distance']['nearest_answer_distance'], result['memory_setup']['nearest_answer_distance'])
-        self.assertGreater(result['memory_cases']['capacity']['pairs'], result['settings']['slots'])
+        self.assertEqual(len(phases), 7)                                   # the far memory is in the full budget only
+        self.assertEqual(result['memory_cases'], {})
+        far = run(text, 'full', settings=dict(memory_steps=3, text_steps=3, dim=16, block=32, cost_lengths=(64,), far_filler=40))
+        case = far['memory_cases']['distance']
+        self.assertEqual((case['nearest_answer_distance'], case['layers']), (41, 3))
+        self.assertTrue(0 <= case['concepts']['accuracy'] <= 1)
         rows = result['cost']['rows']                                     # concepts keep the same vectors at every length
         self.assertEqual({row['concepts']['kept_vectors'] for row in rows}, {32})
         self.assertEqual([row['dense']['kept_vectors'] for row in rows], [row['length'] for row in rows])
@@ -81,9 +82,7 @@ def finished_test(dense, window, concepts, bits=(2.40, 2.40, 2.42), far=None):
     kinds = ('dense', 'window', 'concepts')
     cases = {} if far is None else dict(
         distance=dict(pairs=8, filler=176, chance=1/16, nearest_answer_distance=177, slots=16,
-                      dense=dict(accuracy=far[0]), concepts=dict(accuracy=far[1])),
-        capacity=dict(pairs=32, filler=48, chance=1/16, nearest_answer_distance=49, slots=16,
-                      dense=dict(accuracy=1.), concepts=dict(accuracy=.4)))
+                      dense=dict(accuracy=far[0]), concepts=dict(accuracy=far[1])))
     cost = dict(rows=[dict(length=512, dense=dict(milliseconds_per_token=.1, kept_vectors=512), concepts=dict(milliseconds_per_token=.5, kept_vectors=32)),
                       dict(length=4096, dense=dict(milliseconds_per_token=.3, kept_vectors=4096), concepts=dict(milliseconds_per_token=.5, kept_vectors=32))],
                 dense_slope=5e-5, concepts_flat=.5, faster_beyond=8000.)
@@ -107,8 +106,7 @@ class ValidationPathTest(unittest.TestCase):
         self.assertEqual([(name, passed) for name, passed, _ in far], [('Memoria', True), ('Memoria lontana', False), ('Testo', True)])
         from acan.vis.generative import small_facts
         facts = small_facts(finished_test(1., .06, .95, far=(1., .9))['result'])
-        self.assertIn('32 coppie', facts[0])
-        self.assertIn('8,000 token', facts[1])
+        self.assertIn('8,000 token', facts[0])
 
     def test_decision_needs_every_step(self):
         from acan.vis.generative import decision_view, validation_pair

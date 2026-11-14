@@ -75,16 +75,15 @@ layout = dbc.Container([
                "con l'attenzione normale, a un costo per token che non cresce con il testo? Tre modellini identici "
                "imparano da zero, cambiando solo come leggono: attenzione normale, solo le ultime 16 parole, concetti "
                "(ultime 16 parole esatte più 16 concetti per il resto).", className='small mb-1'),
-        html.Ul([html.Li("Memoria e memoria lontana (criteri): coppie da ricordare, testo di riempimento, poi la domanda; "
-                         "la risposta è a 49 e a 177 token, oltre le 16 parole esatte. Se qui i concetti falliscono, un "
-                         "modello grande li erediterebbe."),
+        html.Ul([html.Li("Memoria (criterio): coppie da ricordare, testo di riempimento, poi la domanda; la risposta è a "
+                         "49 token, oltre le 16 parole esatte."),
+                 html.Li("Memoria lontana (criterio, solo nella prova completa): la risposta a 177 token. Se qui i "
+                         "concetti falliscono, un modello grande erediterebbe il difetto."),
                  html.Li("Testo (criterio): i concetti non devono peggiorare la previsione del testo normale."),
-                 html.Li("Capacità (misura): 32 coppie con 16 concetti; dice quanti fatti tiene un concetto, cioè quanti "
-                         "concetti servono su testi lunghi."),
                  html.Li("Costo (misura): tempo per token e vettori tenuti a 512-4.096 token di contesto.")],
                 className='small'),
         dbc.Row([dbc.Col(dcc.Dropdown(id='lm-small-budget', value='quick', clearable=False, options=[
-                    {'label': 'Rapida: 20-30 minuti', 'value': 'quick'}, {'label': 'Completa: circa un\'ora e mezza', 'value': 'full'}]), md=5),
+                    {'label': 'Rapida, senza memoria lontana: 20 minuti', 'value': 'quick'}, {'label': 'Completa: circa un\'ora e un quarto', 'value': 'full'}]), md=5),
                  dbc.Col([dbc.Button('Avvia la prova in piccolo', id='lm-small-start', color='primary', className='me-2'),
                           dbc.Button('Ferma', id='lm-small-stop', outline=True, color='warning')], md=7)], className='mb-2'),
         html.Div(id='lm-small-status', role='status', className='small'), html.Div(id='lm-small-view'),
@@ -431,14 +430,8 @@ def small_checks(result):
 
 
 def small_facts(result):
-    """What the small test measures without a pass mark: how many facts fit, and the cost per token."""
+    """What the small test measures without a pass mark: the cost per token."""
     facts = []
-    many = (result.get('memory_cases') or {}).get('capacity')
-    if many:
-        facts.append(f"Capacità: {many['pairs']} coppie da ricordare con {many['slots']} concetti. Concetti "
-                     f"{100*many['concepts']['accuracy']:.0f}%, attenzione normale {100*many['dense']['accuracy']:.0f}%. "
-                     "Dice quanti fatti tiene un concetto: su GPU il numero di concetti va scelto in proporzione ai fatti "
-                     "che il testo lungo contiene, non fisso.")
     cost = result.get('cost')
     if cost:
         last = cost['rows'][-1]
@@ -471,7 +464,7 @@ def small_test_view(test):
                       bordered=True, size='sm', className='mt-2')
     cases = result.get('memory_cases') or {}
     if cases:
-        names = {'distance': 'Memoria lontana', 'capacity': 'Capacità (più fatti che concetti)'}
+        names = {'distance': 'Memoria lontana', 'capacity': 'Capacità'}
         table = html.Div([table, dbc.Table([html.Thead(html.Tr([html.Th('Prova difficile'), html.Th('Attenzione normale'), html.Th('Concetti')])),
             html.Tbody([html.Tr([html.Td(f"{names[name]}: {case['pairs']} coppie, risposta a {case['nearest_answer_distance']} token"),
                                  html.Td(f"{100*case['dense']['accuracy']:.1f}%"), html.Td(f"{100*case['concepts']['accuracy']:.1f}%")])

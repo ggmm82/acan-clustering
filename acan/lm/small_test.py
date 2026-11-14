@@ -23,11 +23,11 @@ from torch import nn
 
 KINDS = ('dense', 'window', 'concepts')
 BUDGETS = {
-    'quick': dict(memory_steps=800, text_steps=500),
-    'full': dict(memory_steps=2000, text_steps=1500),
+    'quick': dict(memory_steps=800, text_steps=500, far=False),
+    'full': dict(memory_steps=2000, text_steps=1500, far=True),
 }
 SETTINGS = dict(dim=64, heads=4, layers=2, window=16, slots=16, rate=3e-3, pairs=8, filler=48, keys=16, block=128,
-                far_filler=176, many_pairs=32, cost_lengths=(512, 1024, 2048, 4096))
+                far_filler=176, far_layers=3, cost_lengths=(512, 1024, 2048, 4096))
 
 
 class Attention(nn.Module):
@@ -172,16 +172,21 @@ def read_corpus(path, jsonl, limit=3*1024*1024):
     return '\n\n'.join(texts)
 
 
-def memory(kind, pairs, filler, values, settings, shape, seed, check):
-    """Train one model on the memory task; what it recalls and how it fails."""
+def memory(kind, pairs, filler, values, settings, shape, seed, check, varied=False):
+    """Train one model on the memory task; what it recalls and how it fails.
+
+    ``varied``: training batches have fillers from 0 to ``filler`` tokens; the measure is at ``filler``.
+    """
     keys, questions = max(values, 2*pairs), 4
     length = 2*pairs+filler+questions
     torch.manual_seed(seed)
     generator = torch.Generator().manual_seed(seed)
     model = TinyLM(keys+values+1+8, kind, length=length, **shape)
     started = time.monotonic()
-    curve = train(model, lambda: recall_batch(32, pairs, keys, values, filler, questions, generator),
-                  settings['memory_steps'], settings['rate'], lambda step: check())
+    def batch():
+        gap = int(torch.randint(0, filler+1, (1,), generator=generator)) if varied else filler
+        return recall_batch(32, pairs, keys, values, gap, questions, generator)
+    curve = train(model, batch, settings['memory_steps'], settings['rate'], lambda step: check())
     ids, targets = recall_batch(512, pairs, keys, values, filler, questions, torch.Generator().manual_seed(10_000+seed))
     model.eval()
     with torch.no_grad():
@@ -247,16 +252,21 @@ def run(text, budget='quick', check=lambda: None, report=lambda message: None, s
     for kind in KINDS:
         report(f'Memoria · {kind}')
         result['memory'][kind] = memory(kind, settings['pairs'], settings['filler'], values, settings, shape, seed, check)
-    # Harder memory, ordinary attention against concepts (the window alone stays at chance):
-    # the answer much farther away, and more facts than concepts.
+    # The answer much farther away (full budget only). Measured during development: with two layers
+    # and a fixed distance not even ordinary attention learns it in 2000 steps (25%, as concepts), so
+    # both models get a third layer and are trained on distances from 0 to ``far_filler``; then
+    # ordinary attention reaches 100%. More facts than concepts was not learned by ordinary attention
+    # either at this size (16 or 32 pairs: 14-18%), so it is not measured here.
     result['memory_cases'] = {}
-    for name, pairs, filler in (('distance', settings['pairs'], settings['far_filler']),
-                                ('capacity', settings['many_pairs'], settings['filler'])):
-        case = dict(pairs=pairs, filler=filler, chance=1/values, nearest_answer_distance=filler+1, slots=settings['slots'])
+    if settings['far']:
+        filler = settings['far_filler']
+        case = dict(pairs=settings['pairs'], filler=filler, chance=1/values, nearest_answer_distance=filler+1,
+                    slots=settings['slots'], layers=settings['far_layers'])
         for kind in ('dense', 'concepts'):
-            report(f"Memoria · {'distanza' if name == 'distance' else 'capacità'} · {kind}")
-            case[kind] = memory(kind, pairs, filler, values, settings, shape, seed, check)
-        result['memory_cases'][name] = case
+            report(f'Memoria lontana · {kind}')
+            case[kind] = memory(kind, settings['pairs'], filler, values, settings, dict(shape, layers=settings['far_layers']),
+                                seed, check, varied=True)
+        result['memory_cases']['distance'] = case
     report('Costo per token')
     result['cost'] = cost(shape, settings['cost_lengths'], check)
     common = sorted(set(text), key=lambda character: -text.count(character))[:200]   # rarer characters become one symbol

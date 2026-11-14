@@ -20,7 +20,7 @@ solo per riprendere i progetti già avviati.
 In cima alla scheda **Generativo**. Tre passi, ognuno con un criterio scritto
 prima di guardare i risultati; la scheda dice da sola se è superato.
 
-**Passo 1 · Prova in piccolo (CPU, 20-90 minuti).** Tre modellini identici
+**Passo 1 · Prova in piccolo (CPU, da 20 minuti a circa un'ora e un quarto).** Tre modellini identici
 (2 layer, 64 dimensioni) imparano da zero; cambia solo come leggono il testo:
 attenzione normale, solo gli ultimi 16 token, concetti (ultimi 16 token esatti
 più 16 concetti per il resto). È la stessa classe dello strato a concetti che
@@ -29,9 +29,12 @@ si userebbe in un modello grande, in miniatura. Misure:
 - *memoria*: 8 coppie chiave-valore, 48 simboli di riempimento, poi 4 chiavi
   chieste; la risposta è sempre più lontana dei 16 token esatti, quindi si può
   dare solo leggendo i concetti. A caso si indovina 1 volta su 16;
-- *memoria lontana*: lo stesso con 176 simboli di riempimento (risposta a 177
-  token);
-- *capacità* (misura, senza soglia): 32 coppie con 16 concetti;
+- *memoria lontana* (solo nella prova completa): risposta a 177 token. Con due
+  layer e distanza fissa nemmeno l'attenzione normale la impara in 2.000 passi
+  (25%, come i concetti); per questo entrambi i modelli hanno qui tre layer e
+  imparano su distanze da 0 a 176 token, e l'attenzione normale arriva al 100%.
+  Più coppie che concetti (16 o 32) non le impara a questa scala nemmeno
+  l'attenzione normale (14-18%): la capacità non si misura qui;
 - *testo*: bit per carattere su una parte del testo scelto mai vista;
 - *costo* (misura, senza soglia): tempo per token di un passaggio su contesti
   di 512-4.096 token e vettori tenuti per layer, con modelli non addestrati.

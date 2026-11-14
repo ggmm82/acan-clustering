@@ -232,3 +232,29 @@ richiede quasi solo i caratteri vicini.
 Il confronto su SmolLM2 (600 passi, WikiText-2, validazione) aveva dato 3,440
 per i concetti e 3,351 per il controllo denso, una differenza entro la soglia
 di rumore di 0,15. Il passo 2 del percorso lo ripete con più testo di verifica.
+
+Prova completa estesa (stessa macchina, seme 0, WikiText-2):
+
+| Misura | Attenzione normale | Solo 16 token | Concetti |
+|---|---:|---:|---:|
+| Memoria, risposta a 49 token | 100% | 5,5% | 94,2% |
+| Memoria lontana, risposta a 177 token (3 layer, distanze varie) | 100% | — | 93% |
+| Testo: bit per carattere | 2,458 | 2,410 | 2,469 |
+
+Costo per token di un passaggio, modelli non addestrati, un thread:
+
+| Contesto | Attenzione normale | Concetti |
+|---:|---:|---:|
+| 512 | 0,018 ms | 0,46 ms |
+| 1.024 | 0,035 ms | 0,50 ms |
+| 2.048 | 0,146 ms | 0,52 ms |
+| 4.096 | 0,427 ms | 0,53 ms |
+
+I concetti tengono 32 vettori per layer a ogni lunghezza, l'attenzione normale
+uno per token. Il tempo per token dei concetti resta fermo, quello
+dell'attenzione normale cresce: l'incrocio stimato è intorno ai 5.000 token.
+Sotto, l'implementazione attuale dei concetti è da 10 a 25 volte più lenta,
+perché unisce i concetti con un ciclo sequenziale ogni 16 token: per un
+addestramento su miliardi di token va resa parallela. Il confronto fra due
+esecuzioni della memoria a 49 token (99,8% e 94,2%) dà un'idea della
+variabilità fra macchine.
