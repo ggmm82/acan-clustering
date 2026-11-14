@@ -94,16 +94,17 @@ Guida dettagliata della scheda Modello e della valutazione: [docs/GUI.md](docs/G
 
 ## Laboratorio generativo
 
-La scheda **Generativo** innesta lo strato a concetti in SmolLM2 (135M su CPU;
-360M e 1.7B richiedono una GPU), lo adatta con LoRA su un corpus scelto, con
-pausa e ripresa da checkpoint, e genera testo dai checkpoint salvati. Per
-sapere se i concetti funzionano, il confronto valido è con il **controllo
-denso**: lo stesso addestramento con attenzione completa, avviato dalla
-sezione 5 della scheda; compare sullo stesso grafico con il verdetto.
-Scendere sotto il modello di partenza non basta, perché qualunque adattamento al
-corpus lo fa. La scheda permette anche di eseguire esperimenti in serie, di
-misurare memoria e velocità su testi lunghi, di rinominare ed eliminare i
-progetti.
+La scheda **Generativo** è organizzata attorno a una domanda: un modello che
+legge il testo lontano attraverso i concetti impara bene quanto uno con
+l'attenzione normale? Prima di un addestramento grande su GPU, il **percorso di
+validazione** in cima alla scheda dà la risposta in tre passi con criteri
+espliciti: una prova in piccolo da zero (memoria a distanza e testo, minuti
+sulla CPU), un confronto su SmolLM2 fra concetti e attenzione normale, e la
+decisione «pronto per la GPU» o «non ancora». Oggi la prova in piccolo non è
+superata: i concetti ricordano il 24% delle risposte contro il 100%
+dell'attenzione normale. Negli strumenti avanzati restano l'innesto con LoRA,
+pausa e ripresa, la generazione, le serie, le misure di memoria su testi lunghi
+e i dati per il debug.
 
 - Percorso passo per passo e cosa misurare: [docs/CONTROLLED-LM.md](docs/CONTROLLED-LM.md)
 - Funzionamento e persistenza: [docs/GENERATIVE.md](docs/GENERATIVE.md)

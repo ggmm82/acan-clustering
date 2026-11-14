@@ -15,6 +15,48 @@ token e una finestra di quelli recenti restano esatti. I profili descritti in
 fondo a questa pagina (`cp-routing-v1`, `cp-joint-v1`) sono storici e restano
 solo per riprendere i progetti già avviati.
 
+## Il percorso di validazione, prima di un addestramento su GPU
+
+In cima alla scheda **Generativo**. Tre passi, ognuno con un criterio scritto
+prima di guardare i risultati; la scheda dice da sola se è superato.
+
+**Passo 1 · Prova in piccolo (CPU, 10-60 minuti).** Tre modellini identici
+(2 layer, 64 dimensioni) imparano da zero; cambia solo come leggono il testo:
+attenzione normale, solo gli ultimi 16 token, concetti (ultimi 16 token esatti
+più 16 concetti per il resto). Due prove:
+
+- *memoria*: 8 coppie chiave-valore, 48 simboli di riempimento, poi 4 chiavi
+  chieste; la risposta giusta è sempre più lontana dei 16 token esatti, quindi
+  si può dare solo leggendo i concetti. A caso si indovina 1 volta su 16;
+- *testo*: bit per carattere su una parte del testo scelto mai vista.
+
+Criteri: la memoria dei concetti deve essere almeno l'80% di quella
+dell'attenzione normale e più vicina a questa che alla sola finestra; il testo
+non deve costare più di 0,05 bit per carattere. Se l'attenzione normale stessa
+ricorda meno del 50%, la prova non è valida (va rifatta con la durata
+completa). La prova è un indicatore precoce, non una garanzia: a questa scala
+la memoria è l'unica misura che separa nettamente i tre modi di leggere; il
+testo a caratteri no (vedi MODEL-RESULTS).
+
+**Passo 2 · Modello vero.** Due progetti SmolLM2-135M sullo stesso testo, con
+gli stessi passi e lo stesso seme: metà dei layer a concetti, e attenzione
+normale. Partono uno dopo l'altro. Quando entrambi sono finiti, si avvia la
+verifica finale su ciascuno. Criterio: sul testo di verifica la NLL dei
+concetti supera quella dell'attenzione normale di al massimo 0,15.
+
+**Passo 3 · Decisione.** «Pronto per la GPU» solo se tutti i criteri sono
+superati; «Non ancora» se uno fallisce; «sospesa» se manca un risultato.
+
+**Dati per il debug.** Il risultato della prova in piccolo si scarica in JSON:
+oltre alle misure contiene, per ogni modellino, la curva della loss e della
+norma del gradiente, il numero di parametri, l'accuratezza per domanda e il
+tipo di errore (valore di un'altra coppia della sequenza: le coppie sono state
+trovate ma lette male; valore assente: non sono state trovate). Registro,
+layer, gradienti e diagnostica dei progetti restano negli strumenti avanzati.
+
+Dalla riga di comando la stessa prova: `python scripts/probe_small_lm.py --text
+corpus.txt --budget full --output reports/small-lm.json`.
+
 ## Come sapere se funziona
 
 Tre controlli, in quest'ordine:
@@ -36,8 +78,8 @@ il modello impara a leggere il contesto compresso, non se è più veloce: il
 vantaggio di costo si vede solo su contesti lunghi.
 
 **Il confronto sullo stesso grafico.** Il controllo con l'attenzione normale
-(sezione 5 della scheda) compare tratteggiato sul grafico del progetto, con il
-verdetto. Se entrambi i progetti hanno una verifica finale (sezione 6), il
+(strumenti avanzati, «Confronti e serie a mano») compare tratteggiato sul grafico del progetto, con il
+verdetto. Se entrambi i progetti hanno una verifica finale (strumenti avanzati), il
 verdetto usa il testo di verifica invece del controllo breve durante
 l'addestramento. Per confronti più affidabili già durante l'addestramento,
 nelle impostazioni avanzate alza «Pezzi di testo per ogni controllo» (almeno

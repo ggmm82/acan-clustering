@@ -56,66 +56,46 @@ def backend(workspace, path, method='GET', data=None, raw=False, headers=None, t
 
 
 layout = dbc.Container([
-    html.H4('Laboratorio generativo: un modello linguistico che legge con i concetti', className='mt-3'),
-    html.P("Qui si addestra un piccolo modello linguistico (SmolLM2) a continuare testi come quello che scegli. In una parte dei suoi layer il testo letto da tempo non viene ricordato parola per parola ma riassunto in concetti, così la memoria non cresce con la lunghezza del testo. Se questo costi qualità lo dice il confronto con l'attenzione normale (sezione 5): non è garantito in partenza."),
+    html.H4('Laboratorio generativo', className='mt-3'),
+    html.P("Obiettivo: capire, prima di un addestramento grande su GPU, se un modello linguistico che legge il "
+           "testo lontano attraverso i concetti impara bene quanto uno con l'attenzione normale. Il percorso qui sotto "
+           "ha tre passi; ognuno dice in chiaro se il criterio è superato."),
     dcc.Store(id='lm-workspace', storage_type='local'), dcc.Store(id='lm-state'),
     dcc.Store(id='lm-chart-view',storage_type='session'),
     dcc.Store(id='lm-active-job', storage_type='session'),
     dcc.Store(id='lm-upload-state'), dcc.Store(id='lm-generation-id'), dcc.Store(id='lm-browser-ready'), dcc.Store(id='lm-evaluation-id'), dcc.Store(id='lm-evaluation-report'),
     html.Div(id='lm-connection', role='status'),
-    dbc.Button("Aggiorna l'elenco dei progetti", id='lm-refresh', outline=True, color='primary', className='my-2 me-2'),
-    dbc.Button('Salva la chiave di recupero', id='lm-export-key', outline=True, color='secondary', className='my-2'),
-    html.Div(id='lm-recovery-input'), dcc.Download(id='lm-key-download'),
-    html.P('I tuoi progetti restano legati a questo browser. Per ritrovarli da un altro browser o computer salva la chiave di recupero: chi la possiede può gestirli. Non serve un account.', className='small text-muted'),
+    dcc.Interval(id='lm-poll', interval=5000, disabled=True),
     dbc.Card(dbc.CardBody([
-        html.H5('Avvio guidato · dati pubblici'),
-        html.P("Il modo più semplice per provare: scegli un testo pubblico e quanto a lungo addestrare. L'app scarica il testo, prepara un piccolo modello linguistico (SmolLM2-135M) in cui metà dei layer leggono il contesto attraverso i concetti, e lo addestra. I progetti già esistenti non vengono toccati."),
-        dbc.Row([
-            dbc.Col([dbc.Label('Testo pubblico'), dcc.Dropdown(id='lm-public-dataset', value='dante-it', clearable=False, options=[{'label':'Divina Commedia · italiano letterario', 'value':'dante-it'}, {'label':'Tiny Shakespeare · inglese', 'value':'tiny-shakespeare'}, {'label':'WikiText-2 · inglese · split ufficiali', 'value':'wikitext-2'}])], md=6),
-            dbc.Col([dbc.Label('Quanto addestrare'), dcc.Dropdown(id='lm-public-preset', value='check', clearable=False, options=[{'label':'Prova breve · 20 passi', 'value':'check'}, {'label':'Esercizio · 200 passi', 'value':'practice'}])], md=6),
-        ]),
-        html.Div(id='lm-public-info', className='my-2'),
-        dbc.Button('Scarica e avvia la prova', id='lm-public-start', disabled=True),
-        html.Div(id='lm-public-status', role='status', className='my-2'),
-        html.P('Il primo avvio scarica anche il modello di partenza. Sulla CPU anche 20 passi richiedono alcuni minuti.', className='small text-muted'),
-        html.Ol([
-            html.Li('Aspetta che lo stato diventi «running»: il modello legge il testo e si corregge passo dopo passo.'),
-            html.Li("Guarda il grafico: la linea dell'errore su testo mai visto deve scendere. Più basso è meglio."),
-            html.Li('Premi «Pausa e salva», aspetta «paused», scegli la copia salvata migliore e fagli continuare una frase.'),
-            html.Li("Per sapere se i concetti funzionano avvia il confronto con l'attenzione normale (sezione 5): compare sullo stesso grafico."),
-        ]),
+        html.H5('Il percorso di validazione'),
+        html.P("Testo da usare nei passi 1 e 2: uno pubblico (si scarica una volta) oppure uno tuo, caricato negli strumenti avanzati.", className='small text-muted mb-1'),
+        dcc.Dropdown(id='lm-validation-text', placeholder='Scegli il testo', clearable=False, className='mb-3'),
+        html.H6('Passo 1 · Prova in piccolo, da zero (CPU, minuti)'),
+        html.P("Tre modellini identici imparano da zero, cambiando solo come leggono il testo: attenzione normale (tutto "
+               "parola per parola), solo le ultime 16 parole, e concetti (ultime 16 parole esatte più riassunti del resto). "
+               "La prova decisiva è la memoria: coppie da ricordare, testo di riempimento, poi la domanda, con la risposta "
+               "ben più lontana delle ultime 16 parole. Servono tre modelli perché la sola finestra mostra quanto vale la "
+               "memoria piccola senza riassunti: i concetti devono avvicinarsi all'attenzione normale, non alla finestra.", className='small'),
+        dbc.Row([dbc.Col(dcc.Dropdown(id='lm-small-budget', value='quick', clearable=False, options=[
+                    {'label': 'Rapida: 10-20 minuti', 'value': 'quick'}, {'label': 'Completa: 30-60 minuti', 'value': 'full'}]), md=5),
+                 dbc.Col([dbc.Button('Avvia la prova in piccolo', id='lm-small-start', color='primary', className='me-2'),
+                          dbc.Button('Ferma', id='lm-small-stop', outline=True, color='warning')], md=7)], className='mb-2'),
+        html.Div(id='lm-small-status', role='status', className='small'), html.Div(id='lm-small-view'),
+        dbc.Button('Scarica tutti i dati della prova (per il debug)', id='lm-small-download', outline=True, color='secondary', size='sm', className='mt-1'), dcc.Download(id='lm-small-file'),
+        dcc.Store(id='lm-small-id'), dcc.Store(id='lm-small-result'), dcc.Interval(id='lm-small-poll', interval=5000),
+        html.H6('Passo 2 · Prova su un modello vero (SmolLM2, ore sulla CPU)', className='mt-3'),
+        html.P("Lo stesso testo e gli stessi passi per due progetti, uno dopo l'altro: metà dei layer con i concetti, e "
+               "attenzione normale. Compaiono insieme nel grafico di «Segui i progetti». Quando entrambi hanno finito, "
+               "avvia la verifica finale su ciascuno (strumenti avanzati) per un confronto più solido.", className='small'),
+        dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Passi'), dbc.Input(id='lm-validation-steps', type='number', value=600, min=50, max=100000)]), md=4),
+                 dbc.Col(dbc.Button('Avvia il confronto sul modello vero', id='lm-validation-start', color='primary'), md=8)]),
+        html.Div(id='lm-validation-status', role='status', className='small mt-1'),
+        html.H6('Passo 3 · Decisione', className='mt-3'),
+        html.Div(id='lm-decision'),
     ]), className='my-3'),
-    dbc.Row([
-        dbc.Col([html.H5('1 · Il tuo testo (facoltativo)'), html.Div(id='lm-file-upload'),
-                 html.Div(id='lm-upload-status', role='status'), html.P('Un file di testo (.txt) con paragrafi separati da righe vuote, oppure .jsonl con un campo «text» per riga.', className='small text-muted'), dcc.Dropdown(id='lm-corpus', placeholder='Scegli un testo già caricato')], md=6),
-        dbc.Col([html.H5('2 · Modello di partenza'), dcc.Dropdown(id='lm-base', options=MODELS, value=MODELS[0], clearable=False),
-                 html.Small('Su CPU è disponibile solo il più piccolo (135M).', className='text-muted d-block mb-2'),
-                 dbc.Label('Nome del progetto'), dbc.Input(id='lm-name', value='ACAN-LM experiment'),
-                 dbc.Label('Passi di addestramento'), dbc.Input(id='lm-steps', type='number', min=1, max=10000000, value=1000)], md=6),
-    ]),
-    dbc.Accordion([dbc.AccordionItem([
-        html.P("I valori predefiniti vanno bene per una prova. Non si possono cambiare dopo l'avvio del progetto.", className='small text-muted'),
-        dbc.Row([dbc.Col([dbc.Label(label), dbc.Input(id=id, type='number', value=value, min=lo, max=hi),html.Small(TRAINING_HELP.get(id,''),className='text-muted')], md=4, className='mb-2')
-                 for label,id,value,lo,hi in [('Lunghezza del testo letto (token)','lm-length',128,16,2048),('Pezzi letti insieme','lm-batch',1,1,8),
-                     ('Pezzi per correzione','lm-accum',8,1,256),('Velocità di apprendimento','lm-lr',.0001,.0000001,.01),
-                     ('Numero di concetti','lm-slots',16,2,64),('Token recenti esatti','lm-window',16,1,128),
-                     ('Dimensione della parte addestrata (LoRA)','lm-rank',8,2,64),('Salva il modello ogni … passi','lm-save',100,1,10000),
-                     ('Pausa automatica dopo … controlli senza miglioramenti','lm-patience',3,0,20),('Miglioramento minimo','lm-min-delta',.01,0,1),
-                     ('Pezzi di testo per ogni controllo','lm-validation',8,1,64)]]),
-        html.Div(dbc.Input(id='lm-cp-weight',type='number',value=0.,min=0,max=1),style={'display':'none'}),   # earlier profiles only
-        dbc.Label('Come il modello legge il contesto'),
-        dcc.Dropdown(id='lm-routing',value='concept-graph-v1',clearable=False,options=[
-            {'label':'Grafo dei concetti: i token recenti esatti, quelli più vecchi riassunti in concetti','value':'concept-graph-v1'}]),
-        html.P('È lo stesso modello della scheda tabulare. Se i token recenti esatti sono almeno quanto la lunghezza del testo letto, non si riassume niente e il modello si comporta come quello di partenza.',className='small text-muted'),
-        dbc.Label('Quanti layer usano i concetti'),
-        dcc.Dropdown(id='lm-fraction',value=.5,clearable=False,options=[{'label':'Metà dei layer (consigliato)','value':.5},{'label':'Tutti i layer · sperimentale; su CPU testo letto al massimo di 64 token','value':1.}]),
-        dbc.Checkbox(id='lm-distill', value=False, label='Fai imitare anche il modello originale (distillazione): più memoria e tempo'),
-        html.P("Il testo viene diviso in tre parti che non si mescolano: una per addestrare, una per controllare i progressi durante l'addestramento, una per la verifica finale. Viene conservata sempre la copia migliore.", className='small text-muted'),
-        dbc.Label('Dove addestrare'), dcc.Dropdown(id='lm-device', options=[{'label':'Automatico','value':'auto'},{'label':'Scheda grafica (GPU)','value':'cuda'},{'label':'Processore (CPU)','value':'cpu'}], value='auto', clearable=False),
-        html.P("Il lavoro viene salvato ogni 5 minuti e a ogni pausa: un arresto improvviso fa perdere al massimo i passi dall'ultimo salvataggio.", className='small text-muted'),
-    ], title='Impostazioni avanzate')], start_collapsed=True, className='my-3'),
-    dbc.Button("Crea e avvia l'addestramento", id='lm-start', className='m-1'),
-    html.Hr(), html.H5('3 · I tuoi progetti'),
+    html.Hr(), html.H5('Segui i progetti'),
+    dbc.Button("Aggiorna l'elenco dei progetti", id='lm-refresh', outline=True, color='primary', className='my-2 me-2'),
+
     dcc.Dropdown(id='lm-job', placeholder='Scegli un progetto per seguirlo, metterlo in pausa o riprenderlo'),
     dbc.Button('Pausa e salva', id='lm-pause', color='warning', className='m-1'),
     dbc.Button('Riprendi', id='lm-resume', className='m-1'),
@@ -136,53 +116,121 @@ layout = dbc.Container([
     ]),
     html.P("Più in basso è la linea, meno il modello sbaglia a indovinare la parola successiva. Conta la linea su testo mai visto (validazione): se risale mentre quella di addestramento continua a scendere, il modello sta imparando a memoria.",className='small text-muted'),
     dcc.Loading(dcc.Graph(id='lm-loss'),delay_show=150),
-    dbc.Accordion([dbc.AccordionItem([html.Pre(id='lm-debug-view', style={'whiteSpace':'pre-wrap'}),
-        dbc.Button('Scarica la diagnostica', id='lm-debug-download', outline=True, color='primary'), dcc.Download(id='lm-debug-file'),
-        dcc.Store(id='lm-debug-data')], title='Per esperti · configurazione e registro del progetto')], start_collapsed=True),
-    dbc.Accordion([dbc.AccordionItem([
-        html.P('Fotografa cosa succede dentro ogni layer, senza modificare il modello: durante il prossimo passo di addestramento, oppure mentre scrive (casella nella sezione 4). I concetti sono riassunti del testo letto, non parole con un significato preciso.', className='small text-muted'),
-        dbc.Button('Fotografa il prossimo passo di addestramento', id='lm-layer-capture', outline=True, color='primary'),
-        html.Div(id='lm-layer-request-status', role='status'), html.Div(id='lm-layer-status'),
-        dcc.Store(id='lm-training-layers'), dcc.Store(id='lm-inference-layers'),
-        dcc.Dropdown(id='lm-layer-source', value='training', clearable=False, options=[{'label':"Ultima foto durante l'addestramento",'value':'training'},{'label':'Ultima foto mentre scriveva','value':'inference'}]),
-        dcc.Dropdown(id='lm-layer-frame', placeholder='Scegli quale parola scritta guardare'),
-        html.Div(id='lm-layer-view'),
-        dbc.Button('Scarica la foto dei layer', id='lm-layer-download', outline=True, color='primary', className='mt-2'), dcc.Download(id='lm-layer-file'),
-    ], title='Per esperti · dentro il modello, layer per layer')], start_collapsed=True, className='my-3'),
-    dcc.Interval(id='lm-poll', interval=5000, disabled=True),
-    html.Hr(), html.H5('4 · Fai scrivere il modello'),
-    html.P("Metti in pausa l'addestramento, scegli una copia salvata (la migliore è indicata) e scrivi l'inizio di una frase: il modello la continua. La prova non cambia il modello; dopo puoi riprendere l'addestramento."),
-    dcc.Dropdown(id='lm-checkpoint', placeholder='Copia salvata del modello: la migliore e le ultime tre'),
-    dbc.Textarea(id='lm-prompt', value='', placeholder="Scrivi l'inizio di una frase, nella lingua del testo di addestramento", rows=3),
-    dbc.Label('Quanto testo scrivere (token, circa pezzi di parola)'), dbc.Input(id='lm-new-tokens', type='number', value=64, min=1, max=256),
-    dbc.Checkbox(id='lm-full-length', value=True, label='Scrivi sempre fino alla lunghezza richiesta (senza fermarsi a fine paragrafo)'),
-    dbc.Checkbox(id='lm-inspect-generation', value=False, label='Fotografa anche i layer mentre scrive (al massimo 32 token)'),
-    dbc.Button('Continua la frase', id='lm-generate', className='my-2'),
-    html.Div(id='lm-generation-status', role='status'), html.Pre(id='lm-output', style={'whiteSpace':'pre-wrap'}),
-    html.Div(id='lm-generation-metrics'),
-    dbc.Button('Scarica questa copia del modello', id='lm-export-model', outline=True, color='primary', className='my-2'),
-    html.Small('Contiene la parte addestrata (LoRA) e la struttura dei layer a concetti, da usare con il modello di partenza.', className='text-muted d-block'),
-    html.Div(id='lm-export-status', role='status'),
-    html.Hr(),html.H5("5 · I concetti funzionano? Confronto con l'attenzione normale"),
-    html.P("Addestra lo stesso modello con l'attenzione normale (tutti i token esatti, nessun concetto), con lo stesso testo e gli stessi passi del progetto scelto. Compare sullo stesso grafico, tratteggiato, con il confronto dei risultati: se l'errore finale è simile, i concetti non costano qualità. È un altro addestramento: su CPU richiede ore."),
-    dbc.Button("Avvia il confronto con l'attenzione normale", id='lm-dense-control', color='primary'),html.Div(id='lm-control-status',role='status'),
-    html.Hr(),html.H5('Esperimenti in serie'),
-    html.P("Più progetti sullo stesso testo, con gli stessi passi, eseguiti uno dopo l'altro senza che tu debba intervenire: cambia una sola cosa per volta. Usa le impostazioni scritte sopra (testo, modello, passi). Se metti in pausa un progetto della serie, la serie si ferma lì."),
-    dbc.Checklist(id='lm-series-variants', value=['chosen','dense'], options=[
-        {'label':'Le impostazioni scelte (metà dei layer a concetti)','value':'chosen'},
-        {'label':'Metà dei concetti: compressione più forte','value':'fewer_concepts'},
-        {'label':'Tutti i layer a concetti (su CPU testo letto di 64 token)','value':'all_layers'},
-        {'label':'Attenzione normale, come riferimento','value':'dense'}]),
-    dbc.Button('Avvia la serie', id='lm-series-start', color='primary', className='mt-2'),html.Div(id='lm-series-status',role='status'),
-    html.Hr(),html.H5('6 · Verifica finale su testo mai visto'),
-    html.P("Con l'addestramento in pausa: misura la copia scelta e il modello originale sullo stesso testo di verifica, mai usato per addestrare, e confronta velocità e memoria. Su CPU la verifica è piccola."),
-    dbc.Label('Ampiezza della verifica'),
-    dcc.Dropdown(id='lm-eval-profile',value='quick',clearable=False,options=[{'label':'Rapida (CPU): 4 pezzi di testo, contesti di 32 e 128 token','value':'quick'},{'label':'Contesto lungo (CPU, lenta): 1 pezzo, contesti di 128 e 1.024 token','value':'long'},{'label':'Memoria e velocità su testi lunghi (CPU, molto lenta): 512, 2.048 e 4.096 token','value':'memory'},{'label':'Ampia: richiede una GPU','value':'wide','disabled':True}]),
-    html.Small('«Testi lunghi» mostra da quale lunghezza i concetti fanno risparmiare memoria: sui testi brevi occupano più dell\'attenzione normale. Oltre la lunghezza del testo di verifica il testo viene ripetuto, perché lì si misurano solo velocità e memoria.', className='text-muted d-block mb-2'),
-    dbc.Button('Avvia la verifica', id='lm-evaluate', className='m-1'),
-    dbc.Button('Ferma la verifica',id='lm-eval-stop',outline=True,color='warning',className='m-1'),
-    dbc.Button('Scarica i risultati della verifica', id='lm-eval-download', outline=True, color='primary', className='m-1'),dcc.Download(id='lm-eval-file'),
-    html.Div(id='lm-eval-status',role='status'),html.Div(id='lm-eval-view'),
+    html.Hr(), html.H5('Strumenti avanzati'),
+    html.P('Tutto il resto del laboratorio: non serve per il percorso di validazione, ma resta qui con i dati per il debug.', className='small text-muted'),
+    dbc.Accordion([
+    dbc.AccordionItem([
+            dbc.Card(dbc.CardBody([
+                html.H5('Avvio guidato · dati pubblici'),
+                html.P("Il modo più semplice per provare: scegli un testo pubblico e quanto a lungo addestrare. L'app scarica il testo, prepara un piccolo modello linguistico (SmolLM2-135M) in cui metà dei layer leggono il contesto attraverso i concetti, e lo addestra. I progetti già esistenti non vengono toccati."),
+                dbc.Row([
+                    dbc.Col([dbc.Label('Testo pubblico'), dcc.Dropdown(id='lm-public-dataset', value='dante-it', clearable=False, options=[{'label':'Divina Commedia · italiano letterario', 'value':'dante-it'}, {'label':'Tiny Shakespeare · inglese', 'value':'tiny-shakespeare'}, {'label':'WikiText-2 · inglese · split ufficiali', 'value':'wikitext-2'}])], md=6),
+                    dbc.Col([dbc.Label('Quanto addestrare'), dcc.Dropdown(id='lm-public-preset', value='check', clearable=False, options=[{'label':'Prova breve · 20 passi', 'value':'check'}, {'label':'Esercizio · 200 passi', 'value':'practice'}])], md=6),
+                ]),
+                html.Div(id='lm-public-info', className='my-2'),
+                dbc.Button('Scarica e avvia la prova', id='lm-public-start', disabled=True),
+                html.Div(id='lm-public-status', role='status', className='my-2'),
+                html.P('Il primo avvio scarica anche il modello di partenza. Sulla CPU anche 20 passi richiedono alcuni minuti.', className='small text-muted'),
+                html.Ol([
+                    html.Li('Aspetta che lo stato diventi «running»: il modello legge il testo e si corregge passo dopo passo.'),
+                    html.Li("Guarda il grafico: la linea dell'errore su testo mai visto deve scendere. Più basso è meglio."),
+                    html.Li('Premi «Pausa e salva», aspetta «paused», scegli la copia salvata migliore e fagli continuare una frase.'),
+                    html.Li("Per sapere se i concetti funzionano avvia il confronto con l'attenzione normale (sezione 5): compare sullo stesso grafico."),
+                ]),
+            ]), className='my-3'),
+    ], title='Avvio guidato su un testo pubblico (prova rapida di funzionamento)'),
+    dbc.AccordionItem([
+            dbc.Row([
+                dbc.Col([html.H5('1 · Il tuo testo (facoltativo)'), html.Div(id='lm-file-upload'),
+                         html.Div(id='lm-upload-status', role='status'), html.P('Un file di testo (.txt) con paragrafi separati da righe vuote, oppure .jsonl con un campo «text» per riga.', className='small text-muted'), dcc.Dropdown(id='lm-corpus', placeholder='Scegli un testo già caricato')], md=6),
+                dbc.Col([html.H5('2 · Modello di partenza'), dcc.Dropdown(id='lm-base', options=MODELS, value=MODELS[0], clearable=False),
+                         html.Small('Su CPU è disponibile solo il più piccolo (135M).', className='text-muted d-block mb-2'),
+                         dbc.Label('Nome del progetto'), dbc.Input(id='lm-name', value='ACAN-LM experiment'),
+                         dbc.Label('Passi di addestramento'), dbc.Input(id='lm-steps', type='number', min=1, max=10000000, value=1000)], md=6),
+            ]),
+            dbc.Accordion([dbc.AccordionItem([
+                html.P("I valori predefiniti vanno bene per una prova. Non si possono cambiare dopo l'avvio del progetto.", className='small text-muted'),
+                dbc.Row([dbc.Col([dbc.Label(label), dbc.Input(id=id, type='number', value=value, min=lo, max=hi),html.Small(TRAINING_HELP.get(id,''),className='text-muted')], md=4, className='mb-2')
+                         for label,id,value,lo,hi in [('Lunghezza del testo letto (token)','lm-length',128,16,2048),('Pezzi letti insieme','lm-batch',1,1,8),
+                             ('Pezzi per correzione','lm-accum',8,1,256),('Velocità di apprendimento','lm-lr',.0001,.0000001,.01),
+                             ('Numero di concetti','lm-slots',16,2,64),('Token recenti esatti','lm-window',16,1,128),
+                             ('Dimensione della parte addestrata (LoRA)','lm-rank',8,2,64),('Salva il modello ogni … passi','lm-save',100,1,10000),
+                             ('Pausa automatica dopo … controlli senza miglioramenti','lm-patience',3,0,20),('Miglioramento minimo','lm-min-delta',.01,0,1),
+                             ('Pezzi di testo per ogni controllo','lm-validation',8,1,64)]]),
+                html.Div(dbc.Input(id='lm-cp-weight',type='number',value=0.,min=0,max=1),style={'display':'none'}),   # earlier profiles only
+                dbc.Label('Come il modello legge il contesto'),
+                dcc.Dropdown(id='lm-routing',value='concept-graph-v1',clearable=False,options=[
+                    {'label':'Grafo dei concetti: i token recenti esatti, quelli più vecchi riassunti in concetti','value':'concept-graph-v1'}]),
+                html.P('È lo stesso modello della scheda tabulare. Se i token recenti esatti sono almeno quanto la lunghezza del testo letto, non si riassume niente e il modello si comporta come quello di partenza.',className='small text-muted'),
+                dbc.Label('Quanti layer usano i concetti'),
+                dcc.Dropdown(id='lm-fraction',value=.5,clearable=False,options=[{'label':'Metà dei layer (consigliato)','value':.5},{'label':'Tutti i layer · sperimentale; su CPU testo letto al massimo di 64 token','value':1.}]),
+                dbc.Checkbox(id='lm-distill', value=False, label='Fai imitare anche il modello originale (distillazione): più memoria e tempo'),
+                html.P("Il testo viene diviso in tre parti che non si mescolano: una per addestrare, una per controllare i progressi durante l'addestramento, una per la verifica finale. Viene conservata sempre la copia migliore.", className='small text-muted'),
+                dbc.Label('Dove addestrare'), dcc.Dropdown(id='lm-device', options=[{'label':'Automatico','value':'auto'},{'label':'Scheda grafica (GPU)','value':'cuda'},{'label':'Processore (CPU)','value':'cpu'}], value='auto', clearable=False),
+                html.P("Il lavoro viene salvato ogni 5 minuti e a ogni pausa: un arresto improvviso fa perdere al massimo i passi dall'ultimo salvataggio.", className='small text-muted'),
+            ], title='Impostazioni avanzate')], start_collapsed=True, className='my-3'),
+            dbc.Button("Crea e avvia l'addestramento", id='lm-start', className='m-1'),
+    ], title='Crea un progetto a mano, con tutte le impostazioni'),
+    dbc.AccordionItem([
+            html.Hr(), html.H5('4 · Fai scrivere il modello'),
+            html.P("Metti in pausa l'addestramento, scegli una copia salvata (la migliore è indicata) e scrivi l'inizio di una frase: il modello la continua. La prova non cambia il modello; dopo puoi riprendere l'addestramento."),
+            dcc.Dropdown(id='lm-checkpoint', placeholder='Copia salvata del modello: la migliore e le ultime tre'),
+            dbc.Textarea(id='lm-prompt', value='', placeholder="Scrivi l'inizio di una frase, nella lingua del testo di addestramento", rows=3),
+            dbc.Label('Quanto testo scrivere (token, circa pezzi di parola)'), dbc.Input(id='lm-new-tokens', type='number', value=64, min=1, max=256),
+            dbc.Checkbox(id='lm-full-length', value=True, label='Scrivi sempre fino alla lunghezza richiesta (senza fermarsi a fine paragrafo)'),
+            dbc.Checkbox(id='lm-inspect-generation', value=False, label='Fotografa anche i layer mentre scrive (al massimo 32 token)'),
+            dbc.Button('Continua la frase', id='lm-generate', className='my-2'),
+            html.Div(id='lm-generation-status', role='status'), html.Pre(id='lm-output', style={'whiteSpace':'pre-wrap'}),
+            html.Div(id='lm-generation-metrics'),
+            dbc.Button('Scarica questa copia del modello', id='lm-export-model', outline=True, color='primary', className='my-2'),
+            html.Small('Contiene la parte addestrata (LoRA) e la struttura dei layer a concetti, da usare con il modello di partenza.', className='text-muted d-block'),
+            html.Div(id='lm-export-status', role='status'),
+    ], title='Fai scrivere un modello addestrato'),
+    dbc.AccordionItem([
+            html.Hr(),html.H5("5 · I concetti funzionano? Confronto con l'attenzione normale"),
+            html.P("Addestra lo stesso modello con l'attenzione normale (tutti i token esatti, nessun concetto), con lo stesso testo e gli stessi passi del progetto scelto. Compare sullo stesso grafico, tratteggiato, con il confronto dei risultati: se l'errore finale è simile, i concetti non costano qualità. È un altro addestramento: su CPU richiede ore."),
+            dbc.Button("Avvia il confronto con l'attenzione normale", id='lm-dense-control', color='primary'),html.Div(id='lm-control-status',role='status'),
+            html.Hr(),html.H5('Esperimenti in serie'),
+            html.P("Più progetti sullo stesso testo, con gli stessi passi, eseguiti uno dopo l'altro senza che tu debba intervenire: cambia una sola cosa per volta. Usa le impostazioni scritte sopra (testo, modello, passi). Se metti in pausa un progetto della serie, la serie si ferma lì."),
+            dbc.Checklist(id='lm-series-variants', value=['chosen','dense'], options=[
+                {'label':'Le impostazioni scelte (metà dei layer a concetti)','value':'chosen'},
+                {'label':'Metà dei concetti: compressione più forte','value':'fewer_concepts'},
+                {'label':'Tutti i layer a concetti (su CPU testo letto di 64 token)','value':'all_layers'},
+                {'label':'Attenzione normale, come riferimento','value':'dense'}]),
+            dbc.Button('Avvia la serie', id='lm-series-start', color='primary', className='mt-2'),html.Div(id='lm-series-status',role='status'),
+    ], title='Confronti e serie a mano'),
+    dbc.AccordionItem([
+            html.Hr(),html.H5('6 · Verifica finale su testo mai visto'),
+            html.P("Con l'addestramento in pausa: misura la copia scelta e il modello originale sullo stesso testo di verifica, mai usato per addestrare, e confronta velocità e memoria. Su CPU la verifica è piccola."),
+            dbc.Label('Ampiezza della verifica'),
+            dcc.Dropdown(id='lm-eval-profile',value='quick',clearable=False,options=[{'label':'Rapida (CPU): 4 pezzi di testo, contesti di 32 e 128 token','value':'quick'},{'label':'Contesto lungo (CPU, lenta): 1 pezzo, contesti di 128 e 1.024 token','value':'long'},{'label':'Memoria e velocità su testi lunghi (CPU, molto lenta): 512, 2.048 e 4.096 token','value':'memory'},{'label':'Ampia: richiede una GPU','value':'wide','disabled':True}]),
+            html.Small('«Testi lunghi» mostra da quale lunghezza i concetti fanno risparmiare memoria: sui testi brevi occupano più dell\'attenzione normale. Oltre la lunghezza del testo di verifica il testo viene ripetuto, perché lì si misurano solo velocità e memoria.', className='text-muted d-block mb-2'),
+            dbc.Button('Avvia la verifica', id='lm-evaluate', className='m-1'),
+            dbc.Button('Ferma la verifica',id='lm-eval-stop',outline=True,color='warning',className='m-1'),
+            dbc.Button('Scarica i risultati della verifica', id='lm-eval-download', outline=True, color='primary', className='m-1'),dcc.Download(id='lm-eval-file'),
+            html.Div(id='lm-eval-status',role='status'),html.Div(id='lm-eval-view'),
+    ], title='Verifica finale e memoria su testi lunghi'),
+    dbc.AccordionItem([
+            dbc.Accordion([dbc.AccordionItem([html.Pre(id='lm-debug-view', style={'whiteSpace':'pre-wrap'}),
+                dbc.Button('Scarica la diagnostica', id='lm-debug-download', outline=True, color='primary'), dcc.Download(id='lm-debug-file'),
+                dcc.Store(id='lm-debug-data')], title='Per esperti · configurazione e registro del progetto')], start_collapsed=True),
+            dbc.Accordion([dbc.AccordionItem([
+                html.P('Fotografa cosa succede dentro ogni layer, senza modificare il modello: durante il prossimo passo di addestramento, oppure mentre scrive (casella nella sezione 4). I concetti sono riassunti del testo letto, non parole con un significato preciso.', className='small text-muted'),
+                dbc.Button('Fotografa il prossimo passo di addestramento', id='lm-layer-capture', outline=True, color='primary'),
+                html.Div(id='lm-layer-request-status', role='status'), html.Div(id='lm-layer-status'),
+                dcc.Store(id='lm-training-layers'), dcc.Store(id='lm-inference-layers'),
+                dcc.Dropdown(id='lm-layer-source', value='training', clearable=False, options=[{'label':"Ultima foto durante l'addestramento",'value':'training'},{'label':'Ultima foto mentre scriveva','value':'inference'}]),
+                dcc.Dropdown(id='lm-layer-frame', placeholder='Scegli quale parola scritta guardare'),
+                html.Div(id='lm-layer-view'),
+                dbc.Button('Scarica la foto dei layer', id='lm-layer-download', outline=True, color='primary', className='mt-2'), dcc.Download(id='lm-layer-file'),
+            ], title='Per esperti · dentro il modello, layer per layer')], start_collapsed=True, className='my-3'),
+    ], title='Per esperti: registro, layer e gradienti'),
+    dbc.AccordionItem([
+            dbc.Button('Salva la chiave di recupero', id='lm-export-key', outline=True, color='secondary', className='my-2'),
+            html.Div(id='lm-recovery-input'), dcc.Download(id='lm-key-download'),
+            html.P('I tuoi progetti restano legati a questo browser. Per ritrovarli da un altro browser o computer salva la chiave di recupero: chi la possiede può gestirli. Non serve un account.', className='small text-muted'),
+    ], title='Ritrovare i progetti da un altro browser'),
+    ], start_collapsed=True, always_open=True, className='my-3', id='lm-advanced'),
 ])
 
 
@@ -337,6 +385,133 @@ def series_table(jobs, job, tests):
                                 html.Tbody(rows)], size='sm', bordered=True, responsive=True),
                      html.P('I progetti girano uno dopo l\'altro. Per l\'ultima colonna avvia la verifica finale su ciascuno quando ha finito.',
                             className='small text-muted')])
+
+
+KIND_LABELS = {'dense': 'Attenzione normale', 'window': 'Solo le ultime 16 parole', 'concepts': 'Concetti'}
+VALIDATION_NAME = 'Validazione'
+# Thresholds of the validation path, explained in docs/CONTROLLED-LM.md.
+MEMORY_SHARE = .8          # concepts must keep at least 80% of what ordinary attention recalls
+TEXT_MARGIN = .05          # and lose at most 0.05 bits per character on the text
+REAL_MARGIN = .15          # on SmolLM2, within the noise of the measurement
+
+
+def small_checks(result):
+    """The two criteria of the small test, as (name, passed, explanation)."""
+    memory, text = result['memory'], result['text']
+    dense, window, concepts = (memory[kind]['accuracy'] for kind in ('dense', 'window', 'concepts'))
+    checks = []
+    if dense < .5:
+        checks.append(('Memoria', None, f"La prova non è valida: anche l'attenzione normale ricorda solo il {100*dense:.0f}%. "
+                                        'Rifalla con la durata completa.'))
+    else:
+        passed = concepts >= MEMORY_SHARE*dense and concepts > window+.5*(dense-window)
+        checks.append(('Memoria', passed,
+                       f"Concetti {100*concepts:.0f}% contro {100*dense:.0f}% dell'attenzione normale e {100*window:.0f}% della sola "
+                       f"finestra (a caso: {100*result['memory_setup']['chance']:.0f}%). Serve almeno il {100*MEMORY_SHARE:.0f}% "
+                       "dell'attenzione normale."))
+    gap = text['concepts']['bits_per_character']-text['dense']['bits_per_character']
+    checks.append(('Testo', gap <= TEXT_MARGIN,
+                   f"Concetti {text['concepts']['bits_per_character']:.3f} bit per carattere, attenzione normale "
+                   f"{text['dense']['bits_per_character']:.3f} (differenza {gap:+.3f}; serve al massimo {TEXT_MARGIN:+.2f})."))
+    return checks
+
+
+def small_test_view(test):
+    """Phase, then the results table and the criteria, of a small test."""
+    status = {'running': 'In corso', 'cancelling': 'Arresto in corso', 'completed': 'Finita', 'cancelled': 'Fermata',
+              'failed': 'Non riuscita'}.get(test['status'], test['status'])
+    request = test.get('request') or {}
+    phase = test.get('phase') or ''
+    line = f"{status}{' · '+phase if phase and phase not in ('Finita', 'Fermata') else ''} · testo {request.get('corpus_name', '?')} · durata {request.get('budget', '?')}"
+    if test['status'] == 'failed':
+        return line, dbc.Alert(test.get('error') or 'Errore sconosciuto', color='danger')
+    result = test.get('result')
+    if not result:
+        return line, None
+    rows = [html.Tr([html.Td(KIND_LABELS[kind]), html.Td(f"{100*result['memory'][kind]['accuracy']:.1f}%"),
+                     html.Td(f"{result['text'][kind]['bits_per_character']:.3f}")]) for kind in ('dense', 'window', 'concepts')]
+    table = dbc.Table([html.Thead(html.Tr([html.Th('Modello'), html.Th('Memoria: risposte giuste (più alto è meglio)'),
+                                           html.Th('Testo: bit per carattere (più basso è meglio)')])), html.Tbody(rows)],
+                      bordered=True, size='sm', className='mt-2')
+    checks = [html.Li([html.Strong(f"{name}: " + ('superato' if passed else 'non valido' if passed is None else 'non superato') + '. '),
+                       text], className='text-success' if passed else 'text-danger' if passed is False else '')
+              for name, passed, text in small_checks(result)]
+    samples = dbc.Accordion([dbc.AccordionItem([
+        html.P('Inizio dato (dal testo mai visto):', className='small mb-0'),
+        html.Pre(result['text']['dense']['prompt'], className='small'),
+        *[html.Div([html.Strong(KIND_LABELS[kind]), html.Pre(result['text'][kind]['sample'], className='small', style={'whiteSpace': 'pre-wrap'})])
+          for kind in ('dense', 'window', 'concepts')]], title='Cosa scrivono i tre modellini (lettere, non parole: è normale che siano strane)'),
+        dbc.AccordionItem([html.Ul([html.Li(
+            f"{KIND_LABELS[kind]}: sbagliate prendendo un altro valore della sequenza "
+            f"{100*result['memory'][kind].get('wrong_but_from_the_sequence', float('nan')):.1f}%, "
+            f"sbagliate con un valore che non c'era {100*result['memory'][kind].get('wrong_not_in_the_sequence', float('nan')):.1f}%, "
+            f"{result['memory'][kind].get('parameters', 0):,} parametri, {result['memory'][kind]['seconds']:.0f} s")
+            for kind in ('dense', 'window', 'concepts')]),
+            html.P("Il primo tipo di errore vuol dire che il modello ha trovato le coppie ma ha letto quella sbagliata; il secondo "
+                   "che non le ha trovate. Il file scaricato contiene anche le curve di addestramento di ogni modellino.", className='small')],
+            title='Per il debug')], start_collapsed=True, className='mt-2')
+    return line, html.Div([table, html.Ul(checks), samples])
+
+
+def validation_pair(jobs):
+    """The concept project and the dense one of the latest comparison started from the validation path."""
+    series = {}
+    for job in jobs:
+        item = job['config'].get('series') or {}
+        if item and job['config'].get('name', '').startswith(VALIDATION_NAME):
+            series.setdefault(item['id'], {})[item.get('variant')] = job
+    pairs = [found for found in series.values() if 'chosen' in found and 'dense' in found]
+    if not pairs:
+        return None
+    latest = max(pairs, key=lambda found: max(job.get('created', 0) or 0 for job in found.values()))
+    return latest['chosen'], latest['dense']
+
+
+def decision_view(small, pair=None, tests=None):
+    """Passo 3: every criterion, then whether a large GPU training is justified."""
+    items, ready = [], True
+    if small and small.get('result'):
+        for name, passed, text in small_checks(small['result']):
+            items.append((f'Passo 1 · {name}', passed, text))
+            ready = ready and passed is True
+    else:
+        items.append(('Passo 1', None, 'Non ancora eseguito (o non finito).'))
+        ready = False
+    if pair is None:
+        items.append(('Passo 2', None, 'Non ancora avviato.'))
+        ready = False
+    else:
+        concepts, dense = pair
+        tested = [verified((tests or {}).get(job['id'])) for job in pair]
+        finished = all(job['status'] in ('paused', 'completed') for job in pair)
+        if not finished:
+            items.append(('Passo 2', None, f"In corso: concetti {concepts['status']} al passo {concepts['progress'].get('step', 0)}, "
+                                           f"attenzione normale {dense['status']} al passo {dense['progress'].get('step', 0)}."))
+            ready = False
+        elif not all(tested):
+            items.append(('Passo 2', None, "Entrambi finiti: manca la verifica finale su testo mai visto. Selezionali in «Segui i "
+                                           "progetti» e avvia «Verifica finale» negli strumenti avanzati, uno per volta."))
+            ready = False
+        else:
+            gap = tested[0][0]-tested[1][0]
+            passed = gap <= REAL_MARGIN
+            items.append(('Passo 2', passed, f"Sul testo di verifica: concetti {tested[0][0]:.3f}, attenzione normale {tested[1][0]:.3f}, "
+                                             f"differenza {gap:+.3f} (serve al massimo {REAL_MARGIN:+.2f})."))
+            ready = ready and passed
+    marks = {True: '✔', False: '✘', None: '…'}
+    listing = html.Ul([html.Li([html.Strong(f"{marks[passed]} {name}: "), text],
+                               className='text-success' if passed else 'text-danger' if passed is False else 'text-muted')
+                       for name, passed, text in items], className='mb-2')
+    failed = any(passed is False for _, passed, _ in items)
+    if ready:
+        verdict = dbc.Alert("Pronto per la GPU: i concetti hanno superato tutti i criteri a questa scala. Il passo successivo è lo "
+                            "stesso confronto con più testo e un modello più grande; i criteri restano gli stessi.", color='success')
+    elif failed:
+        verdict = dbc.Alert("Non ancora: almeno un criterio non è superato. Un addestramento grande su GPU erediterebbe lo stesso "
+                            "limite; prima va migliorato lo strato a concetti e rifatto il passo che non passa.", color='danger')
+    else:
+        verdict = dbc.Alert('Decisione sospesa: mancano dei risultati.', color='secondary')
+    return html.Div([listing, verdict])
 
 
 def register(app):
@@ -925,6 +1100,108 @@ def register(app):
     def download_layers(clicks, source, training, inference):
         report = training if source == 'training' else inference
         return dict(content=json.dumps(report,indent=2,ensure_ascii=False), filename='acan-layer-inspection.json') if report else dash.no_update
+
+    @app.callback(Output('lm-validation-text', 'options'), Output('lm-validation-text', 'value'),
+                  Input('lm-state', 'data'), State('lm-validation-text', 'value'))
+    def validation_texts(state, current):
+        if not state:
+            return [], dash.no_update
+        own = [dict(label=f"Il tuo: {item['name']} ({item['received']/1048576:.1f} MiB)", value=item['id'])
+               for item in state.get('corpora', []) if item['status'] == 'ready']
+        public = [dict(label=f"Pubblico: {item['title']}", value='public:'+item['id'])
+                  for item in (state.get('public_catalog') or {}).get('datasets', [])]
+        options = public+own
+        values = {item['value'] for item in options}
+        chosen = current if current in values else next((item['value'] for item in public if item['value'] == 'public:wikitext-2'), None)
+        return options, chosen if chosen != current else dash.no_update
+
+    def validation_corpus(workspace, value):
+        if not value:
+            raise ValueError('Scegli prima il testo, in cima al percorso.')
+        if value.startswith('public:'):
+            return backend(workspace, f"/public-corpora/{value[7:]}/import", 'POST', {}, timeout=600)['corpus']['id']
+        return value
+
+    @app.callback(Output('lm-small-id', 'data'), Output('lm-small-status', 'children', allow_duplicate=True),
+                  Input('lm-small-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-validation-text', 'value'),
+                  State('lm-small-budget', 'value'), prevent_initial_call=True)
+    def start_small_test(clicks, workspace, text, budget):
+        try:
+            corpus = validation_corpus(workspace, text)
+            return backend(workspace, '/small-tests', 'POST', dict(corpus_id=corpus, budget=budget))['id'], 'Prova avviata.'
+        except ValueError as exc:
+            return dash.no_update, dbc.Alert(str(exc), color='warning')
+
+    @app.callback(Output('lm-small-status', 'children', allow_duplicate=True), Input('lm-small-stop', 'n_clicks'),
+                  State('lm-workspace', 'data'), State('lm-small-id', 'data'), prevent_initial_call=True)
+    def stop_small_test(clicks, workspace, identifier):
+        try:
+            if not identifier:
+                raise ValueError('Nessuna prova in corso.')
+            backend(workspace, f'/small-tests/{identifier}/cancel', 'POST', {})
+            return 'Arresto richiesto: la prova si ferma entro pochi secondi.'
+        except ValueError as exc:
+            return str(exc)
+
+    @app.callback(Output('lm-small-status', 'children'), Output('lm-small-view', 'children'), Output('lm-small-result', 'data'),
+                  Output('lm-small-id', 'data', allow_duplicate=True),
+                  Input('lm-small-poll', 'n_intervals'), Input('lm-small-id', 'data'), State('lm-workspace', 'data'),
+                  State('lm-small-result', 'data'), State('tabs', 'value'), prevent_initial_call='initial_duplicate')
+    def follow_small_test(interval, identifier, workspace, known, tab):
+        if tab != 'Generative' or not workspace:
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+        try:
+            if not identifier:                          # after a reload: the latest test of this workspace
+                tests = backend(workspace, '/small-tests')
+                if not tests:
+                    return 'Nessuna prova ancora eseguita.', None, None, dash.no_update
+                test, found = tests[0], tests[0]['id']
+            else:
+                found = dash.no_update
+                if known and known.get('id') == identifier and known.get('status') in ('completed', 'failed', 'cancelled'):
+                    return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+                test = backend(workspace, f'/small-tests/{identifier}')
+        except ValueError as exc:
+            return str(exc), dash.no_update, dash.no_update, dash.no_update
+        line, view = small_test_view(test)
+        return line, view, test, found
+
+    @app.callback(Output('lm-small-file', 'data'), Input('lm-small-download', 'n_clicks'), State('lm-small-result', 'data'),
+                  prevent_initial_call=True)
+    def download_small_test(clicks, test):
+        if not test:
+            return dash.no_update
+        return dict(content=json.dumps(test, indent=2, ensure_ascii=False), filename=f"prova-in-piccolo-{test['id'][:8]}.json")
+
+    @app.callback(Output('lm-active-job', 'data', allow_duplicate=True), Output('lm-validation-status', 'children'),
+                  Input('lm-validation-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-validation-text', 'value'),
+                  State('lm-validation-steps', 'value'), State('lm-state', 'data'), prevent_initial_call=True)
+    def start_validation(clicks, workspace, text, steps, state):
+        try:
+            corpus = validation_corpus(workspace, text)
+            config = dict(corpus_id=corpus, base_model=MODELS[0], name=unique_name(VALIDATION_NAME, (state or {}).get('jobs', [])),
+                          total_steps=int(steps or 600), sequence_length=128, batch_size=1, accumulation=8, learning_rate=1e-4,
+                          slots=16, window=16, lora_rank=8, save_steps=50, device='auto',
+                          protocol='controlled-v1', routing_profile='concept-graph-v1', distillation_weight=0., graft_fraction=.5,
+                          early_stop_patience=6, early_stop_min_delta=.005, validation_batches=32)
+            result = backend(workspace, '/series', 'POST', dict(base=config, variants=['chosen', 'dense']))
+            return result['jobs'][0]['id'], ("Confronto avviato: prima il progetto con i concetti, poi quello con l'attenzione "
+                                             "normale, in automatico. Li segui in «Segui i progetti».")
+        except ValueError as exc:
+            return dash.no_update, dbc.Alert(str(exc), color='warning')
+
+    @app.callback(Output('lm-decision', 'children'), Input('lm-small-result', 'data'), Input('lm-state', 'data'),
+                  State('lm-workspace', 'data'))
+    def decision(small, state, workspace):
+        pair = validation_pair((state or {}).get('jobs', []))
+        tests = {}
+        if pair is not None and all(job['status'] in ('paused', 'completed') for job in pair):
+            for job in pair:
+                try:
+                    tests[job['id']] = backend(workspace, f"/jobs/{job['id']}/evaluations")
+                except ValueError:
+                    tests[job['id']] = []
+        return decision_view(small, pair, tests)
 
     @app.callback(Output('lm-key-download','data'), Input('lm-export-key','n_clicks'), State('lm-workspace','data'), prevent_initial_call=True)
     def export_key(click, workspace):

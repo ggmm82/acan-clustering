@@ -7,6 +7,7 @@ import threading
 import time
 from flask import Flask, jsonify, request, send_file
 
+from acan import __version__
 from .manager import launch, request_generation, snapshots
 from .store import ACTIVE, Store, owner_key
 from .trainer import BASE_MODELS, validate_options
@@ -44,7 +45,7 @@ def create_app(root=None, token=None):
 
     @app.get('/healthz')
     def health():
-        return jsonify(status='ok',version='8.5.0',build_revision=os.environ.get('ACAN_BUILD_REVISION','development'))
+        return jsonify(status='ok',version=__version__,build_revision=os.environ.get('ACAN_BUILD_REVISION','development'))
 
     @app.get('/state')
     def state():

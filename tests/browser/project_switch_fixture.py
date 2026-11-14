@@ -18,6 +18,7 @@ def backend(workspace,path,*args,**kwargs):
     calls.append(path);url=urlparse(path);query=parse_qs(url.query)
     if url.path=='/capabilities':return dict(cuda=False)
     if url.path=='/public-corpora':return {}
+    if url.path=='/small-tests':return []
     if url.path=='/state':
         selected=query.get('selected',[''])[0];jobs=[]
         for n in range(1,4):

@@ -123,7 +123,8 @@ def train(model, batches, steps, rate, check=lambda step: None):
     optimizer = torch.optim.AdamW(model.parameters(), lr=rate, weight_decay=.01)
     schedule = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=rate, total_steps=steps, pct_start=.1)
     model.train()
-    loss = torch.zeros(())
+    curve, window = [], []
+    every = max(1, steps//40)
     for step in range(steps):
         check(step)
         ids, targets = batches()
@@ -131,10 +132,14 @@ def train(model, batches, steps, rate, check=lambda step: None):
         loss = nn.functional.cross_entropy(logits.reshape(-1, logits.shape[-1]), targets.reshape(-1), ignore_index=-100)
         optimizer.zero_grad()
         loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), 1.)
+        norm = nn.utils.clip_grad_norm_(model.parameters(), 1.)
         optimizer.step()
         schedule.step()
-    return float(loss.detach())
+        window.append(float(loss.detach()))
+        if len(window) == every or step == steps-1:
+            curve.append(dict(step=step+1, loss=sum(window)/len(window), gradient_norm=float(norm)))
+            window = []
+    return curve
 
 
 @torch.no_grad()
@@ -183,16 +188,26 @@ def run(text, budget='quick', check=lambda: None, report=lambda message: None, s
         generator = torch.Generator().manual_seed(seed)
         model = TinyLM(keys+values+1+8, kind, length=length, **shape)
         started = time.monotonic()
-        train(model, lambda: recall_batch(32, settings['pairs'], keys, values, settings['filler'], questions, generator),
-              settings['memory_steps'], settings['rate'], lambda step: check())
+        curve = train(model, lambda: recall_batch(32, settings['pairs'], keys, values, settings['filler'], questions, generator),
+                      settings['memory_steps'], settings['rate'], lambda step: check())
         ids, targets = recall_batch(512, settings['pairs'], keys, values, settings['filler'], questions,
                                     torch.Generator().manual_seed(10_000+seed))
         model.eval()
         with torch.no_grad():
             predicted = model(ids).argmax(-1)
         asked = targets != -100
-        result['memory'][kind] = dict(accuracy=float((predicted[asked] == targets[asked]).float().mean()),
-                                      seconds=time.monotonic()-started)
+        right = predicted[asked] == targets[asked]
+        # Debugging: a wrong answer that is another value of the same sequence means the model found
+        # the pairs but read the wrong one; any other wrong answer means it did not find them.
+        stored = ids[:, 1:2*settings['pairs']:2]                         # the values given in each sequence
+        present = (predicted[:, :, None] == stored[:, None, :]).any(-1)[asked]
+        by_question = right.reshape(len(ids), -1).float().mean(0)
+        result['memory'][kind] = dict(accuracy=float(right.float().mean()), seconds=time.monotonic()-started,
+                                      parameters=sum(item.numel() for item in model.parameters()),
+                                      wrong_but_from_the_sequence=float((~right & present).float().mean()),
+                                      wrong_not_in_the_sequence=float((~right & ~present).float().mean()),
+                                      accuracy_by_question=[float(value) for value in by_question],
+                                      training_curve=curve)
     common = sorted(set(text), key=lambda character: -text.count(character))[:200]   # rarer characters become one symbol
     alphabet = common+['\ufffd']
     index = {character: place for place, character in enumerate(common)}
@@ -208,7 +223,7 @@ def run(text, budget='quick', check=lambda: None, report=lambda message: None, s
         generator = torch.Generator().manual_seed(seed)
         model = TinyLM(len(alphabet), kind, length=block, **shape)
         started = time.monotonic()
-        train(model, lambda: text_batch(train_data, 16, block, generator), settings['text_steps'], settings['rate'], lambda step: check())
+        curve = train(model, lambda: text_batch(train_data, 16, block, generator), settings['text_steps'], settings['rate'], lambda step: check())
         evaluation = torch.Generator().manual_seed(20_000)
         losses = []
         model.eval()
@@ -220,7 +235,8 @@ def run(text, budget='quick', check=lambda: None, report=lambda message: None, s
         prompt = held[:block][None]
         produced = ''.join(alphabet[i] for i in sample(model, prompt, 300, torch.Generator().manual_seed(1), block).tolist())
         result['text'][kind] = dict(bits_per_character=sum(losses)/len(losses)/math.log(2), seconds=time.monotonic()-started,
-                                    prompt=''.join(alphabet[i] for i in prompt[0, -80:].tolist()), sample=produced)
+                                    prompt=''.join(alphabet[i] for i in prompt[0, -80:].tolist()), sample=produced,
+                                    parameters=sum(item.numel() for item in model.parameters()), training_curve=curve)
     return result
 
 

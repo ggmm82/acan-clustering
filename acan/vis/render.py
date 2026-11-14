@@ -3,6 +3,7 @@ import secrets
 import json
 import re
 from flask import session
+from acan import __version__
 from acan.vis.jobs import TrainingJobs
 from acan.vis import generative, mathematics
 from acan.vis.training import NativeTraining, graph_stats
@@ -49,7 +50,7 @@ benchmark_jobs = TrainingJobs(max_running=1)
 
 @app.server.get('/healthz')
 def health():
-    return {'status':'ok','version':'8.5.0','build_revision':os.environ.get('ACAN_BUILD_REVISION','development'),'dataset_filter_control':'checkbox-v1'}
+    return {'status':'ok','version':__version__,'build_revision':os.environ.get('ACAN_BUILD_REVISION','development'),'dataset_filter_control':'checkbox-v1'}
 
 @app.server.before_request
 def ensure_session():

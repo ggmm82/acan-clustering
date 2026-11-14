@@ -22,6 +22,10 @@ class SmallTestTest(unittest.TestCase):
             self.assertTrue(0 <= result['memory'][kind]['accuracy'] <= 1)
             self.assertGreater(result['text'][kind]['bits_per_character'], 0)
             self.assertEqual(len(result['text'][kind]['sample']), 300)
+            memory = result['memory'][kind]                                   # data kept for debugging
+            self.assertAlmostEqual(memory['accuracy']+memory['wrong_but_from_the_sequence']+memory['wrong_not_in_the_sequence'], 1, places=5)
+            self.assertEqual(memory['training_curve'][-1]['step'], 3)
+            self.assertGreater(result['text'][kind]['parameters'], 0)
         self.assertEqual(len(phases), 6)
         self.assertGreater(result['memory_setup']['nearest_answer_distance'], result['memory_setup']['exact_tokens'])
         json.dumps(result, allow_nan=False)
@@ -63,3 +67,48 @@ class SmallTestServiceTest(unittest.TestCase):
             self.assertEqual(client.get(f'/small-tests/{identifier}', headers=other).status_code, 404)
             self.assertEqual(client.post(f'/small-tests/{identifier}/cancel', headers=headers).get_json()['status'], 'cancelling')
             self.assertEqual(client.post('/small-tests', headers=headers, json=dict(corpus_id=created['id'], budget='forever')).status_code, 400)
+
+
+def finished_test(dense, window, concepts, bits=(2.40, 2.40, 2.42)):
+    kinds = ('dense', 'window', 'concepts')
+    return dict(id='f'*32, status='completed', phase='Finita', request=dict(corpus_name='wikitext-2.jsonl', budget='full'),
+                result=dict(memory_setup=dict(chance=1/16),
+                            memory={kind: dict(accuracy=value, seconds=1.) for kind, value in zip(kinds, (dense, window, concepts))},
+                            text={kind: dict(bits_per_character=value, prompt='p', sample='s') for kind, value in zip(kinds, bits)}))
+
+
+@unittest.skipUnless(importlib.util.find_spec('dash_bootstrap_components'), 'Requires the ui extra')
+class ValidationPathTest(unittest.TestCase):
+    def test_the_criteria_of_the_small_test(self):
+        from acan.vis.generative import small_checks
+        self.assertEqual([passed for _, passed, _ in small_checks(finished_test(1., .06, .95)['result'])], [True, True])
+        # Today's measure: concepts recall 24% against 100%: the memory criterion fails.
+        self.assertEqual([passed for _, passed, _ in small_checks(finished_test(1., .06, .24)['result'])], [False, True])
+        self.assertIsNone(small_checks(finished_test(.3, .06, .3)['result'])[0][1])      # the test itself did not work
+        self.assertFalse(small_checks(finished_test(1., .06, .95, (2.40, 2.40, 2.50))['result'])[1][1])
+
+    def test_decision_needs_every_step(self):
+        from acan.vis.generative import decision_view, validation_pair
+        def job(identifier, variant, status='completed'):
+            return dict(id=identifier, status=status, progress=dict(step=600),
+                        config=dict(name='Validazione · x', series=dict(id='s', variant=variant)))
+        def tested(nll):
+            return [dict(records=dict(selected_checkpoint=dict(quality=dict(nll=nll, tokens=9000))))]
+        pair = validation_pair([job('a', 'chosen'), job('b', 'dense'), dict(id='c', status='completed', progress={}, config=dict(name='Altro'))])
+        self.assertEqual([item['id'] for item in pair], ['a', 'b'])
+        text = lambda view: str(view)
+        self.assertIn('Pronto per la GPU', text(decision_view(finished_test(1., .06, .95), pair, dict(a=tested(3.40), b=tested(3.35)))))
+        self.assertIn('Non ancora', text(decision_view(finished_test(1., .06, .24), pair, dict(a=tested(3.40), b=tested(3.35)))))
+        self.assertIn('Non ancora', text(decision_view(finished_test(1., .06, .95), pair, dict(a=tested(3.60), b=tested(3.35)))))
+        self.assertIn('sospesa', text(decision_view(finished_test(1., .06, .95), pair, {})))         # verification missing
+        self.assertIn('sospesa', text(decision_view(None)))
+        self.assertIsNone(validation_pair([job('a', 'chosen')]))
+
+    def test_view_of_a_small_test(self):
+        from acan.vis.generative import small_test_view
+        line, view = small_test_view(finished_test(1., .06, .24))
+        self.assertIn('Finita', line)
+        self.assertIn('24.0%', str(view))
+        line, view = small_test_view(dict(id='x', status='failed', error='Testo troppo breve', request={}))
+        self.assertIn('Testo troppo breve', str(view))
+        self.assertIsNone(small_test_view(dict(id='x', status='running', phase='Memoria · dense', request={}))[1])
