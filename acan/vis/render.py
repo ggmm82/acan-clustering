@@ -5,7 +5,7 @@ import re
 from flask import session
 from acan import __version__
 from acan.vis.jobs import TrainingJobs
-from acan.vis import generative, mathematics
+from acan.vis import generative, informatics, mathematics
 from acan.vis.training import NativeTraining, graph_stats
 from acan.vis.evaluation import evaluate
 from acan.vis.benchmark_job import BenchmarkJob, signature as benchmark_signature
@@ -677,7 +677,7 @@ _page_layout = dbc.Container([
     dcc.Tabs(id='tabs', value='Data', children=[
         # Labels for the reader; values stay as they are because callbacks and saved links use them.
         dcc.Tab(label=label, value=name) for name, label in [('Data', 'Dati'), ('Model', 'Modello'), ('Evaluation', 'Valutazione'),
-                                                           ('Inference', 'Previsione'), ('Generative', 'Generativo'), ('Matematica', 'Matematica')]
+                                                           ('Inference', 'Previsione'), ('Generative', 'Generativo'), ('Matematica', 'Matematica'), ('Informatica', 'Informatica')]
     ]),
     # Keep the graph mounted when switching tabs: destroying Cytoscape while
     # asynchronous layout/resize callbacks are pending causes browser errors.
@@ -687,6 +687,7 @@ _page_layout = dbc.Container([
     html.Div(inference_layout, id='page-inference', style={'display': 'none'}),
     html.Div(generative.layout, id='page-generative', style={'display': 'none'}),
     html.Div(mathematics.layout, id='page-mathematics', style={'display':'none'}),
+    html.Div(informatics.layout, id='page-informatics', style={'display':'none'}),
 ], fluid=True)
 
 
@@ -726,11 +727,11 @@ def tab_job_key(tab_id):
 
 
 @app.callback([Output('page-data', 'style'), Output('page-model', 'style'),
-               Output('page-evaluation', 'style'), Output('page-inference', 'style'), Output('page-generative', 'style'), Output('page-mathematics','style')],
+               Output('page-evaluation', 'style'), Output('page-inference', 'style'), Output('page-generative', 'style'), Output('page-mathematics','style'), Output('page-informatics','style')],
               Input('tabs', 'value'))
 def show_page(tab):
     return [{'display': 'block' if tab == name else 'none'}
-            for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative', 'Matematica']]
+            for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative', 'Matematica', 'Informatica']]
 
 
 # Callback per pulire i dropdown

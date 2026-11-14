@@ -105,7 +105,7 @@ b,?,no
             result=self.invoke('..lm-generation-id.data',[('lm-generate','n_clicks',1)],
                 [('lm-workspace','data','a'*64),('lm-job','value','b'*32),('lm-checkpoint','value','step-1'),
                  ('lm-prompt','value','The cat'),('lm-new-tokens','value',3),('lm-inspect-generation','value',True),
-                 ('lm-full-length','value',True)])
+                 ('lm-full-length','value',True),('lm-chat','value',False)])
             self.assertEqual(result['lm-generation-id']['data'],'request')
             self.assertTrue(backend.call_args.args[3]['inspect_layers'])
             self.assertTrue(backend.call_args.args[3]['full_length'])            # writes up to the requested length
