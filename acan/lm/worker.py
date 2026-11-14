@@ -10,7 +10,7 @@ def main():
     parser.add_argument('--root', required=True)
     parser.add_argument('--job', required=True)
     parser.add_argument('--lease-fd', type=int, required=True)
-    parser.add_argument('--kind', choices=['train','generate','evaluate'], default='train')
+    parser.add_argument('--kind', choices=['train','generate','evaluate','small-test'], default='train')
     parser.add_argument('--generation')
     args = parser.parse_args()
     stop = threading.Event()
@@ -32,6 +32,14 @@ def main():
             else:
                 from .trainer import run_training
             run_training(args.root, args.job, stop)
+            os.close(args.lease_fd)                             # free the worker before the next project of a series
+            args.lease_fd = None
+            from .manager import continue_series
+            from .store import Store
+            continue_series(Store(args.root), args.job)
+        elif args.kind=='small-test':
+            from .small_test import run_in_worker
+            run_in_worker(args.root, args.generation, stop)
         elif args.kind=='evaluate':
             from .evaluation import evaluate_checkpoint
             evaluate_checkpoint(args.root,args.generation,stop)
@@ -39,7 +47,8 @@ def main():
             from .generation import generate
             generate(args.root, args.generation)
     finally:
-        os.close(args.lease_fd)
+        if args.lease_fd is not None:
+            os.close(args.lease_fd)
 
 
 if __name__ == '__main__':

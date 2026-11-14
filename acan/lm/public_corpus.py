@@ -110,12 +110,11 @@ def prepare_wikitext(spec):
     return content
 
 
-def experiment(store, owner, dataset, preset):
-    if not isinstance(dataset, str) or not isinstance(preset, str) or dataset not in CATALOG or preset not in PRESETS:
-        raise ValueError('Seleziona un corpus pubblico e un profilo disponibili.')
-    if store.busy():
-        raise ValueError('Worker occupato: metti in pausa il progetto attivo prima di avviare una prova pubblica.')
-    spec, settings = CATALOG[dataset], PRESETS[preset]
+def import_corpus(store, owner, dataset):
+    """Download, verify and store a public text once per workspace; later calls reuse it."""
+    if not isinstance(dataset, str) or dataset not in CATALOG:
+        raise ValueError('Seleziona un corpus pubblico disponibile.')
+    spec = CATALOG[dataset]
     # A double click/retry cannot create overlapping imports for this workspace.
     with (store.root / ('public-'+owner+'.lock')).open('a') as lock:
         try:
@@ -150,17 +149,27 @@ def experiment(store, owner, dataset, preset):
                               preprocessing=('wikitext-articles-official-splits-v1' if spec['format']=='wikitext' else 'utf8-newlines-v1; Gutenberg header/footer removed when present'),
                               imported_at=time.time())
             atomic_json(store.directory('corpora', corpus['id'])/'public-source.json', provenance)
-        config = validate_options(dict(corpus_id=corpus['id'], name=spec['title']+' · '+settings['title'],
-                                       base_model='HuggingFaceTB/SmolLM2-135M', batch_size=1,
-                                       **{k:v for k,v in settings.items() if k != 'title'}))
-        job = store.create_job(owner, config)
-        atomic_json(store.directory('jobs', job['id'])/'public-source.json', provenance)
-        # Another workspace may acquire the accelerator while the download runs.
-        # Keep the created project selectable and resumable rather than lose it.
-        message = 'Corpus verificato; training avviato. Puoi mettere in pausa e riprendere lo stesso progetto.'
-        try:
-            launch(store, job)
-        except ValueError as exc:
-            message = f'Corpus e progetto salvati. Training non avviato: {exc} Usa Riprendi quando il worker è libero.'
-        return dict(job=store.job(job['id'], owner), corpus=corpus, source=provenance,
-                    prompt=spec['prompt'], message=message)
+        return corpus, provenance
+
+
+def experiment(store, owner, dataset, preset):
+    if not isinstance(dataset, str) or not isinstance(preset, str) or dataset not in CATALOG or preset not in PRESETS:
+        raise ValueError('Seleziona un corpus pubblico e un profilo disponibili.')
+    if store.busy():
+        raise ValueError('Worker occupato: metti in pausa il progetto attivo prima di avviare una prova pubblica.')
+    spec, settings = CATALOG[dataset], PRESETS[preset]
+    corpus, provenance = import_corpus(store, owner, dataset)
+    config = validate_options(dict(corpus_id=corpus['id'], name=spec['title']+' · '+settings['title'],
+                                   base_model='HuggingFaceTB/SmolLM2-135M', batch_size=1,
+                                   **{k:v for k,v in settings.items() if k != 'title'}))
+    job = store.create_job(owner, config)
+    atomic_json(store.directory('jobs', job['id'])/'public-source.json', provenance)
+    # Another workspace may acquire the accelerator while the download runs.
+    # Keep the created project selectable and resumable rather than lose it.
+    message = 'Corpus verificato; training avviato. Puoi mettere in pausa e riprendere lo stesso progetto.'
+    try:
+        launch(store, job)
+    except ValueError as exc:
+        message = f'Corpus e progetto salvati. Training non avviato: {exc} Usa Riprendi quando il worker è libero.'
+    return dict(job=store.job(job['id'], owner), corpus=corpus, source=provenance,
+                prompt=spec['prompt'], message=message)

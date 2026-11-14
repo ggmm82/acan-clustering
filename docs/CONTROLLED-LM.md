@@ -15,6 +15,48 @@ token e una finestra di quelli recenti restano esatti. I profili descritti in
 fondo a questa pagina (`cp-routing-v1`, `cp-joint-v1`) sono storici e restano
 solo per riprendere i progetti già avviati.
 
+## Il percorso di validazione, prima di un addestramento su GPU
+
+In cima alla scheda **Generativo**. Tre passi, ognuno con un criterio scritto
+prima di guardare i risultati; la scheda dice da sola se è superato.
+
+**Passo 1 · Prova in piccolo (CPU, 10-60 minuti).** Tre modellini identici
+(2 layer, 64 dimensioni) imparano da zero; cambia solo come leggono il testo:
+attenzione normale, solo gli ultimi 16 token, concetti (ultimi 16 token esatti
+più 16 concetti per il resto). Due prove:
+
+- *memoria*: 8 coppie chiave-valore, 48 simboli di riempimento, poi 4 chiavi
+  chieste; la risposta giusta è sempre più lontana dei 16 token esatti, quindi
+  si può dare solo leggendo i concetti. A caso si indovina 1 volta su 16;
+- *testo*: bit per carattere su una parte del testo scelto mai vista.
+
+Criteri: la memoria dei concetti deve essere almeno l'80% di quella
+dell'attenzione normale e più vicina a questa che alla sola finestra; il testo
+non deve costare più di 0,05 bit per carattere. Se l'attenzione normale stessa
+ricorda meno del 50%, la prova non è valida (va rifatta con la durata
+completa). La prova è un indicatore precoce, non una garanzia: a questa scala
+la memoria è l'unica misura che separa nettamente i tre modi di leggere; il
+testo a caratteri no (vedi MODEL-RESULTS).
+
+**Passo 2 · Modello vero.** Due progetti SmolLM2-135M sullo stesso testo, con
+gli stessi passi e lo stesso seme: metà dei layer a concetti, e attenzione
+normale. Partono uno dopo l'altro. Quando entrambi sono finiti, si avvia la
+verifica finale su ciascuno. Criterio: sul testo di verifica la NLL dei
+concetti supera quella dell'attenzione normale di al massimo 0,15.
+
+**Passo 3 · Decisione.** «Pronto per la GPU» solo se tutti i criteri sono
+superati; «Non ancora» se uno fallisce; «sospesa» se manca un risultato.
+
+**Dati per il debug.** Il risultato della prova in piccolo si scarica in JSON:
+oltre alle misure contiene, per ogni modellino, la curva della loss e della
+norma del gradiente, il numero di parametri, l'accuratezza per domanda e il
+tipo di errore (valore di un'altra coppia della sequenza: le coppie sono state
+trovate ma lette male; valore assente: non sono state trovate). Registro,
+layer, gradienti e diagnostica dei progetti restano negli strumenti avanzati.
+
+Dalla riga di comando la stessa prova: `python scripts/probe_small_lm.py --text
+corpus.txt --budget full --output reports/small-lm.json`.
+
 ## Come sapere se funziona
 
 Tre controlli, in quest'ordine:
@@ -33,8 +75,49 @@ Tre controlli, in quest'ordine:
 
 Con finestra e concetti piccoli (16+16) e blocchi corti questa prova dice se
 il modello impara a leggere il contesto compresso, non se è più veloce: il
-vantaggio di costo si vede solo su contesti lunghi, che su CPU non sono
-praticabili.
+vantaggio di costo si vede solo su contesti lunghi.
+
+**Il confronto sullo stesso grafico.** Il controllo con l'attenzione normale
+(strumenti avanzati, «Confronti e serie a mano») compare tratteggiato sul grafico del progetto, con il
+verdetto. Se entrambi i progetti hanno una verifica finale (strumenti avanzati), il
+verdetto usa il testo di verifica invece del controllo breve durante
+l'addestramento. Per confronti più affidabili già durante l'addestramento,
+nelle impostazioni avanzate alza «Pezzi di testo per ogni controllo» (almeno
+32). Un controllo avviato da questa versione registra il progetto da cui è
+nato; per quelli precedenti l'abbinamento avviene solo se un solo progetto ha
+le stesse impostazioni.
+
+**Memoria su testi lunghi.** La verifica «Memoria e velocità su testi lunghi»
+misura, senza addestrare, la copia scelta e il modello originale su 512, 2.048
+e 4.096 token, e dice da quale lunghezza la copia occupa meno memoria. Sui
+testi brevi i concetti occupano più dell'attenzione normale: lo spazio dei
+concetti è fisso, quello dell'attenzione normale cresce con i token.
+
+**Esperimenti in serie.** Da 2 a 4 progetti sullo stesso testo, con gli stessi
+passi e lo stesso seme, eseguiti uno dopo l'altro: le impostazioni scelte, metà
+dei concetti, tutti i layer a concetti (su CPU con testo letto di 64 token),
+attenzione normale come riferimento. Quando un progetto finisce da solo (budget
+esaurito o pausa automatica) il worker avvia il successivo; una pausa decisa da
+te ferma la serie. La tabella della serie compare nel pannello del progetto.
+
+**Gestione.** Sotto l'elenco dei progetti si rinomina e si elimina (con
+conferma; non mentre il progetto è in corso). Un progetto nuovo con un nome già
+usato riceve data e ora nel nome; nell'elenco i progetti omonimi hanno un codice
+breve.
+
+**Scrivere fino alla lunghezza richiesta.** Un modello addestrato su documenti
+brevi (per esempio terzine di Dante) impara a chiudere presto il testo. Con la
+casella «Scrivi sempre fino alla lunghezza richiesta», attiva per default, la
+fine del testo viene ignorata fino al numero di token chiesto.
+
+**Velocità.** Lo strato a concetti sceglie le unioni senza registrarle per i
+gradienti e poi somma i token di ogni concetto in un solo passo: le unioni sono
+le stesse di prima (verificato), le somme cambiano solo per l'ordine delle
+addizioni, e i progetti salvati con la versione precedente continuano. Il
+guadagno misurato su CPU è modesto, circa l'8% per passo di addestramento: il
+costo principale resta ricalcolare i costi delle coppie a ogni token che esce
+dalla finestra. Ridurlo davvero richiede di unire più coppie per volta, cioè di
+cambiare l'algoritmo, e non è stato fatto.
 
 ## Percorso dalla GUI
 
