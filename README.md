@@ -95,8 +95,9 @@ Guida dettagliata della scheda Modello e della valutazione: [docs/GUI.md](docs/G
 ## Laboratorio generativo
 
 La scheda **Generativo** mette in primo piano l'**apprendimento lungo dell'LLM
-a concetti**: tutti i layer di SmolLM2 leggono il testo attraverso i concetti
-ACAN. Prepara una miscela di dati italiani e inglesi per conversare da dataset
+a concetti nativo**: un modello che nasce da zero (pesi casuali, tutti i pesi
+che imparano, tokenizer imparato dai testi) in cui ogni layer legge il testo
+attraverso i concetti ACAN. Prepara una miscela di dati italiani e inglesi per conversare da dataset
 pubblici con licenze aperte (verificati e scaricati dal worker, con pausa e
 ripresa), impara una coda di testi uno dopo l'altro (anche file propri:
 Markdown, Python, ZIP, EPUB, DOCX, PDF), salva in modo permanente, riprende da

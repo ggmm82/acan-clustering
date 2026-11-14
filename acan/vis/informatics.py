@@ -26,9 +26,10 @@ memoria fissa e costo per pezzo che non cresce con il testo.
 
 Il testo viene diviso in **token**: parole intere, pezzi di parola, segni di
 punteggiatura. Il modello lavora solo con numeri: ogni token ha un numero, e il
-modello impara a prevedere il numero del token successivo. Il tokenizer usato è
-quello di SmolLM2 (49.152 token); l'italiano usa in media più token per parola
-dell'inglese, perché il vocabolario è stato costruito soprattutto sull'inglese.
+modello impara a prevedere il numero del token successivo. Il tokenizer del modello
+nativo impara dai testi dell'addestramento quali pezzi sono frequenti (BPE sui
+byte, 32.000 token): così l'italiano non paga i token in più di un vocabolario
+costruito per l'inglese, e qualunque carattere si può scrivere.
 
 ### Come legge un layer a concetti
 
@@ -61,11 +62,13 @@ Nell'apprendimento lungo di questo laboratorio **tutti i layer** leggono così.
 - **Correzione.** A ogni passo l'errore indica come cambiare i pesi per
   sbagliare meno (discesa del gradiente, ottimizzatore AdamW). Un passo legge
   8 pezzi di testo (accumulo) prima di correggere.
-- **Che cosa si addestra.** Si parte dai pesi di SmolLM2, che sa già la lingua;
-  i layer di attenzione sono sostituiti dai layer a concetti, e si addestrano
-  piccole matrici aggiunte (**LoRA**) che adattano il modello a leggere
-  attraverso i concetti e ai nuovi testi. I concetti non hanno pesi propri: si
-  formano dalle chiavi del testo.
+- **Che cosa si addestra.** Il modello nasce da zero: tutti i pesi partono
+  casuali (dal seme del progetto) e tutti imparano, senza un modello
+  preaddestrato e senza adattatori. Anche il **tokenizer** nasce dai testi
+  dell'addestramento, italiano e inglese insieme. Dimensioni: micro (circa 12
+  milioni di parametri, 4 layer), piccolo (circa 50 milioni, 8 layer), base
+  (circa 138 milioni, 12 layer, solo con GPU). I concetti non hanno pesi
+  propri: si formano dalle chiavi del testo.
 - **Validazione.** Una parte dei testi (circa l'1%) non viene mai usata per
   imparare. A ogni salvataggio il modello viene misurato lì: se l'errore su
   quel testo smette di scendere mentre quello di addestramento scende ancora,
@@ -109,10 +112,12 @@ Nell'apprendimento lungo di questo laboratorio **tutti i layer** leggono così.
 - Lo strato a concetti unisce i concetti con un ciclo in sequenza: sui testi
   corti è da 10 a 25 volte più lento dell'attenzione normale; diventa più
   veloce intorno ai 5.000 token di contesto.
-- Sulla CPU un modello impara qualche decina di milioni di token al mese: un
-  chatbot che risponde bene richiede miliardi di token, quindi una GPU.
-- Un modello di 135 milioni di parametri resta limitato con o senza concetti:
-  scrive in modo scorrevole, sbaglia spesso i fatti.
+- Un modello che nasce da zero deve imparare tutto: la lingua, i fatti, il
+  modo di conversare. Sulla CPU il modello micro elabora qualche centinaio di
+  token al secondo (circa un miliardo in qualche mese); un chatbot che risponde
+  bene richiede miliardi di token e modelli più grandi, quindi una GPU.
+- Un modello piccolo resta limitato con o senza concetti: impara a scrivere in
+  modo scorrevole prima di sapere i fatti.
 - I concetti non riducono i dati necessari: lo strato cambia come si legge il
   contesto, non come si conserva la conoscenza, che resta nei pesi.
 """

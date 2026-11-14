@@ -8,7 +8,7 @@ import dash
 from dash import Input, Output, State, dcc, html
 import dash_bootstrap_components as dbc
 
-MODELS = ['HuggingFaceTB/SmolLM2-135M', 'HuggingFaceTB/SmolLM2-360M', 'HuggingFaceTB/SmolLM2-1.7B']
+from acan.lm.native import SIZES, parameters
 
 
 def backend(*args, **kwargs):
@@ -22,15 +22,17 @@ STATUS = {'created': 'in attesa', 'queued': 'in partenza', 'preparing': 'prepara
 QUEUE_NAME = 'LLM a concetti'
 
 
-def profile(cuda, model=MODELS[0]):
-    """The settings of a long training: every layer reads through concepts."""
-    settings = dict(protocol='controlled-v1', routing_profile='concept-graph-v1', architecture='hybrid', graft_fraction=1.,
-                    base_model=model, distillation_weight=0., early_stop_patience=0, validation_batches=16,
-                    learning_rate=1e-4, save_seconds=300, device='auto', chat_probes=True, auto_resume=True)
+def profile(cuda, size='micro'):
+    """The settings of a native concept model: random weights, every weight learns, concepts in every layer."""
+    settings = dict(protocol='controlled-v1', routing_profile='concept-graph-v1', architecture='native', native_size=size,
+                    graft_fraction=1., vocabulary=32000, distillation_weight=0., early_stop_patience=0, validation_batches=16,
+                    save_seconds=300, device='auto', chat_probes=True, auto_resume=True)
     if cuda:
-        settings.update(sequence_length=512, batch_size=8, accumulation=4, slots=64, window=64, lora_rank=64)
-    else:   # the CPU profile with every layer on concepts: blocks of 64 tokens, 16 concepts, 16 exact tokens
-        settings.update(sequence_length=64, batch_size=1, accumulation=8, slots=16, window=16, lora_rank=8)
+        settings.update(sequence_length=1024, batch_size=16, accumulation=2, slots=64, window=64,
+                        learning_rate={'micro': 1e-3, 'small': 6e-4, 'base': 4e-4}[size])
+    else:   # CPU: pieces of 256 tokens, 16 exact tokens and 16 concepts
+        settings.update(sequence_length=256, batch_size=1, accumulation=8, slots=16, window=16,
+                        learning_rate={'micro': 1e-3, 'small': 6e-4, 'base': 4e-4}[size])
     return settings
 
 
@@ -122,7 +124,9 @@ def footprint_view(item):
     rows = [
         ('Modello', [
             ('Parametri totali', f'{overall:,}' if overall else '—'),
-            ('Parametri che imparano (LoRA)', f"{trainable:,} ({100*trainable/overall:.2f}%)" if trainable and overall else '—'),
+            ('Parametri che imparano', f"{trainable:,} ({100*trainable/overall:.1f}%)" if trainable and overall else '—'),
+            ('Origine', 'nato da zero (pesi casuali)' if config.get('architecture') == 'native' else 'adattato da un modello preaddestrato'),
+            ('Vocabolario', f"{graft['vocabulary']:,} token" if graft.get('vocabulary') else '—'),
             ('Layer a concetti', f"{len(layers)} su {total_layers}" if layers and total_layers else ('tutti' if config.get('graft_fraction') == 1. else 'metà')),
             ('Memoria di lettura per layer', f"{config['window']} token esatti + {config['slots']} concetti = {kept} vettori, a qualunque lunghezza"),
             ('Testo letto per pezzo', f"{config['sequence_length']} token")]),
@@ -136,7 +140,8 @@ def footprint_view(item):
             ('Errore sul testo di addestramento', '—' if progress.get('training_nll') is None else f"{progress['training_nll']:.3f}"),
             ('Errore su testo mai visto', '—' if progress.get('validation_nll') is None else f"{progress['validation_nll']:.3f}"),
             ('Migliore finora', '—' if progress.get('best_validation_nll') is None else f"{progress['best_validation_nll']:.3f}"),
-            ('Modello di partenza sullo stesso testo', '—' if progress.get('baseline_nll') is None else f"{progress['baseline_nll']:.3f}")]),
+            ('Al passo 0 (pesi casuali)' if config.get('architecture') == 'native' else 'Modello di partenza sullo stesso testo',
+             '—' if progress.get('baseline_nll') is None else f"{progress['baseline_nll']:.3f}")]),
         ('Ottimizzazione', [
             ('Passo di apprendimento attuale', '—' if progress.get('learning_rate') is None else f"{progress['learning_rate']:.2e}"),
             ('Ampiezza della correzione (norma del gradiente)', '—' if progress.get('gradient_norm') is None else
@@ -190,11 +195,12 @@ def build_view(build):
 
 layout = dbc.Card(dbc.CardBody([
     html.H4('Apprendimento lungo · LLM a concetti'),
-    html.P("Tutti i layer del modello leggono il testo attraverso i concetti ACAN: gli ultimi 16 token esatti più 16 "
-           "concetti per tutto il resto, a qualunque lunghezza. Si parte dai pesi di SmolLM2 (che conosce già la lingua) e "
-           "si addestrano le matrici LoRA che gli insegnano a leggere così e a conversare. L'addestramento salva il "
-           "lavoro ogni 100 passi e ogni 5 minuti, riprende da solo dopo un riavvio del server, e a ogni salvataggio "
-           "risponde alle domande di prova: le vedi qui sotto mentre impara.", className='small'),
+    html.P("Un modello a concetti nativo, nato da zero: pesi casuali, tutti i pesi imparano, nessun modello preaddestrato "
+           "e nessun adattatore. Ogni layer legge il testo attraverso i concetti ACAN: gli ultimi token esatti più un numero "
+           "fisso di concetti per tutto il resto, a qualunque lunghezza. Anche il tokenizer nasce dai tuoi testi, in "
+           "italiano e inglese insieme. L'addestramento salva il lavoro ogni 100 passi e ogni 5 minuti, riprende da solo "
+           "dopo un riavvio del server, e a ogni salvataggio risponde alle domande di prova: le vedi qui sotto mentre impara.",
+           className='small'),
     html.H5('1 · I dati: italiano e inglese per conversare', className='mt-3'),
     html.P("Il worker scarica le fonti una alla volta da versioni fissate, verifica ogni file, tiene solo il testo e "
            "cancella il resto. La preparazione si mette in pausa e riprende senza perdere nulla.", className='small'),
@@ -211,8 +217,9 @@ layout = dbc.Card(dbc.CardBody([
            "coda la miscela preparata e i tuoi file (caricati negli strumenti avanzati: testo, Markdown, Python, ZIP, EPUB, "
            "DOCX, PDF), e aggiungerne altri mentre impara.", className='small'),
     dbc.Row([dbc.Col([dbc.Label('Testi da imparare, in ordine'), dcc.Dropdown(id='lm-long-corpora', multi=True, placeholder='Scegli uno o più testi')], md=6),
-             dbc.Col([dbc.Label('Modello di partenza'), dcc.Dropdown(id='lm-long-model', value=MODELS[0], clearable=False,
-                                                                       options=[dict(label=MODELS[0].split('/')[-1], value=MODELS[0])])], md=6)], className='mb-2'),
+             dbc.Col([dbc.Label('Dimensione del modello'), dcc.Dropdown(id='lm-long-model', value='micro', clearable=False,
+                                                                       options=[dict(label=item['title'], value=key) for key, item in SIZES.items()])], md=6)], className='mb-2'),
+    html.Div(id='lm-long-size-info', className='small text-muted mb-2'),
     dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Giri su ogni testo'), dbc.Input(id='lm-long-passes', type='number', value=1, min=.01, max=100, step=.01)]), md=4),
              dbc.Col(dbc.InputGroup([dbc.InputGroupText('Salva ogni'), dbc.Input(id='lm-long-save', type='number', value=100, min=10, max=10000), dbc.InputGroupText('passi')]), md=4),
              dbc.Col(dbc.InputGroup([dbc.InputGroupText('Tieni per sempre ogni'), dbc.Input(id='lm-long-milestone', type='number', value=1000, min=0, max=10000000), dbc.InputGroupText('passi')]), md=4)],
@@ -304,8 +311,8 @@ def register(app):
         corpora = [dict(label=f"{item['name']} ({item['received']/1048576:,.1f} MB)", value=item['id'])
                    for item in state.get('corpora', []) if item['status'] == 'ready']
         cuda = (state.get('capabilities') or {}).get('cuda', False)
-        models = [dict(label=name.split('/')[-1] + ('' if index == 0 or cuda else ' · richiede una GPU'), value=name, disabled=index > 0 and not cuda)
-                  for index, name in enumerate(MODELS)]
+        models = [dict(label=item['title'] + ('' if key != 'base' or cuda else ' (non disponibile senza GPU)'), value=key,
+                       disabled=key == 'base' and not cuda) for key, item in SIZES.items()]
         found = queues(state.get('jobs', []))
         options = [dict(label=f"{items[0]['config']['name'].split(' · ')[0]} · {len(items)} testi · #{key[:4]}", value=key) for key, items in found.items()]
         value = current if current in found else (options[0]['value'] if options else None)
@@ -332,7 +339,7 @@ def register(app):
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
-            base = dict(profile(cuda, model or MODELS[0]), name=QUEUE_NAME, passes=float(passes or 1), save_steps=int(save or 100),
+            base = dict(profile(cuda, model or 'micro'), name=QUEUE_NAME, passes=float(passes or 1), save_steps=int(save or 100),
                         milestone_steps=int(milestone or 0),
                         probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
@@ -368,6 +375,12 @@ def register(app):
     def chart(clicks, queue, state):
         job = current_item(queues((state or {}).get('jobs', [])).get(queue) or [])
         return job['id'] if job else dash.no_update
+
+    @app.callback(Output('lm-long-size-info', 'children'), Input('lm-long-model', 'value'))
+    def size_info(size):
+        item = SIZES.get(size or 'micro')
+        return (f"Modello scelto: {item['layers']} layer, {item['hidden']} dimensioni, {item['heads']} teste, circa "
+                f"{parameters(size or 'micro')/1e6:,.0f} milioni di parametri con un vocabolario di 32.000 token.") if item else None
 
     @app.callback(Output('lm-long-footprint', 'children'), Input('lm-state', 'data'), Input('lm-long-queue', 'value'),
                   State('lm-workspace', 'data'))

@@ -1,11 +1,32 @@
 # Apprendimento lungo dell'LLM a concetti
 
-In cima alla scheda **Generativo**. Tutti i layer del modello leggono il testo
-attraverso i concetti ACAN (frazione 1,0): gli ultimi token esatti più un numero
-fisso di concetti per il resto. Si parte dai pesi di SmolLM2 e si addestrano le
-matrici LoRA. Sulla CPU il profilo è SmolLM2-135M, pezzi di 64 token, 16 token
-esatti e 16 concetti; con una GPU 512 token, 64 + 64, LoRA di rango 64 e i
-modelli 360M e 1.7B.
+In cima alla scheda **Generativo**. Il modello è **nativo**: nasce da zero
+(`acan/lm/native.py`), con pesi casuali dal seme del progetto, tutti i pesi
+che imparano, nessun modello preaddestrato e nessun adattatore. È un decoder
+(embedding, blocchi di attenzione e feed-forward, uscita legata agli
+embedding) in cui l'attenzione di **ogni** blocco è il layer a concetti.
+
+| Dimensione | Layer | Dimensioni | Teste | Parametri (vocabolario 32.000) | Dove |
+|---|---:|---:|---:|---:|---|
+| micro | 4 | 256 | 4 | circa 12 milioni | CPU |
+| piccolo | 8 | 512 | 8 | circa 50 milioni | CPU lenta o GPU |
+| base | 12 | 768 | 12 | circa 138 milioni | GPU |
+
+Sulla CPU: pezzi di 256 token, 16 token esatti e 16 concetti, 8 pezzi per
+correzione. Con una GPU: 1.024 token, 64 + 64, 32 pezzi per correzione.
+
+**Tokenizer.** Nasce dal primo testo della coda: BPE sui byte, 32.000 token,
+con `<|endoftext|>`, `<|im_start|>` e `<|im_end|>`. I testi successivi della coda
+usano lo stesso tokenizer. Imparato su italiano e inglese insieme, non fa
+pagare all'italiano i token in più di un vocabolario inglese.
+
+**Misura.** Una prova sulla CPU del server di sviluppo: il modello micro impara
+a circa 430 token al secondo (contro circa 25 di SmolLM2 adattato con LoRA);
+l'esportazione contiene tutti i pesi e il tokenizer e si ricarica senza altri
+file. Su un testo di prova con domande del tipo «quanto fa 7 più uno?», in 600
+passi (12 minuti) il modello nato da zero ha imparato il formato della risposta
+(«Fa 6. Posso aiutarti ancora?») ma non ancora il calcolo: le risposte di prova
+mostrano esattamente questo passaggio, salvataggio dopo salvataggio.
 
 ## 1 · I dati
 
@@ -70,7 +91,9 @@ caratteri ai confini di paragrafo.
 
 ## Limiti
 
-Sulla CPU il modello elabora circa 25 token al secondo: qualche decina di
-milioni di token al mese. Le miscele più grandi sono pensate per una GPU. LoRA
-adatta una piccola parte dei pesi (circa il 2% con il profilo CPU). Un modello
-di 135 milioni di parametri resta limitato con o senza concetti.
+Un modello nato da zero deve imparare tutto. Sulla CPU il micro elabora
+qualche centinaio di token al secondo: la miscela «prova» (circa 80 milioni
+di token) richiede pochi giorni per giro, la «base» settimane. Per un chatbot
+che risponde bene servono miliardi di token e i modelli più grandi, quindi una
+GPU. I pesi di attenzione (domande, chiavi, valori) imparano insieme ai
+concetti fin dall'inizio: è il modello a concetti nativo, non un adattamento.

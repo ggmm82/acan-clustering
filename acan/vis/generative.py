@@ -1032,6 +1032,8 @@ def register(app):
             if value['status']!='completed':return 'Confronto in corso…',None
             report=value['result'];rows=[]
             for key,label in [('original','Modello originale'),('selected_checkpoint','Checkpoint selezionato')]:
+                if key not in report['records']:                     # a native model has no original to compare with
+                    continue
                 q=report['records'][key]['quality']
                 rows.append(html.Tr([html.Td(label),html.Td(f"{q['nll']:.4f}"),html.Td(f"{q['perplexity']:.2f}" if q['perplexity'] is not None else 'non finita'),
                     html.Td(f"{q['token_accuracy']:.1%}"),html.Td(q['tokens'])]))

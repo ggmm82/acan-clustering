@@ -87,7 +87,8 @@ def evaluate_checkpoint(root,identifier,stop_event=None):
         dtype=torch.bfloat16 if device=='cuda' and torch.cuda.is_bf16_supported() else torch.float32
         from transformers import AutoModelForCausalLM
         records={}
-        for arm in ('original','selected_checkpoint'):
+        native=job['config'].get('architecture')=='native'           # born from zero: there is no original model
+        for arm in (('selected_checkpoint',) if native else ('original','selected_checkpoint')):
             check()
             if arm=='original':
                 model=AutoModelForCausalLM.from_pretrained(path,local_files_only=True,trust_remote_code=False,
@@ -111,7 +112,7 @@ def evaluate_checkpoint(root,identifier,stop_event=None):
             if device=='cuda':torch.cuda.empty_cache()
         check()
         comparison=[]
-        for original,current in zip(records['original']['performance'],records['selected_checkpoint']['performance']):
+        for original,current in zip(records.get('original',{}).get('performance',[]),records['selected_checkpoint']['performance']):
             comparison.append(dict(context=current['prompt_tokens'],
                 prefill_speedup=current['prefill_tokens_per_second']/original['prefill_tokens_per_second'],
                 decode_speedup=current['decode_tokens_per_second']/original['decode_tokens_per_second'],

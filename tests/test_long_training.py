@@ -196,7 +196,7 @@ class LongTrainingPageTest(unittest.TestCase):
                     checkpoints=dict(step=dict(count=3, bytes=90*1024**2), milestone=dict(count=1, bytes=30*1024**2), best=dict(count=1, bytes=30*1024**2)),
                     token_bytes=4*1024**2, corpus_bytes=10*1024**2, disk_free=3*1024**3, disk_total=100*1024**3)
         page = str(footprint_view(item))
-        for text in ('136,957,440', '1.78%', '30 su 30', '16 token esatti + 16 concetti', '24.0 token al secondo', '3 recenti, 1 permanenti, 1 migliore',
+        for text in ('136,957,440', '1.8%', '30 su 30', '16 token esatti + 16 concetti', '24.0 token al secondo', '3 recenti, 1 permanenti, 1 migliore',
                      'Meno di 5 GB liberi', 'abbassare il passo'):
             self.assertIn(text, page)
         self.assertIn('Ancora nessuna risposta', str(answers_view([])))
@@ -206,3 +206,47 @@ class LongTrainingPageTest(unittest.TestCase):
         self.assertIn('ciao ciao ciao', page)
         self.assertIn('Come posso aiutarti?', page)
         self.assertIn('confronto con il passo 100', page)
+
+
+@unittest.skipUnless(SERVICE, 'Requires LM service dependencies')
+class NativeModelTest(unittest.TestCase):
+    """A concept model born from zero: its own tokenizer, random weights, every weight learns."""
+
+    def test_tokenizer_model_and_options(self):
+        import torch
+        from transformers import AutoTokenizer
+        from acan.lm.native import build, parameters, train_tokenizer
+        from acan.lm.research_options import validate_options
+        from acan.lm.resources import check_profile
+        with tempfile.TemporaryDirectory() as folder:
+            corpus = Path(folder)/'corpus'
+            corpus.write_text('\n'.join(json.dumps(dict(text=f'<|im_start|>user\nCiao {i}<|im_end|>\n<|im_start|>assistant\nSalve {i}! Hello.<|im_end|>'))
+                                        for i in range(300)), encoding='utf-8')
+            train_tokenizer(corpus, Path(folder)/'tokenizer', vocabulary=4000)
+            tokenizer = AutoTokenizer.from_pretrained(Path(folder)/'tokenizer')
+            ids = tokenizer('<|im_start|>assistant\nCiao è là')['input_ids']
+            self.assertEqual(tokenizer.convert_ids_to_tokens(ids)[:2], ['<|im_start|>', 'assistant'])   # turn markers stay whole
+            self.assertEqual(tokenizer.decode(ids, skip_special_tokens=True), 'assistant\nCiao è là')      # any character, byte level
+            options = validate_options(dict(corpus_id='a'*32, protocol='controlled-v1', routing_profile='concept-graph-v1',
+                                            architecture='native', native_size='micro', vocabulary=4000, graft_fraction=1.,
+                                            sequence_length=128, slots=16, window=16, device='cpu'))
+            check_profile(options, False)
+            with self.assertRaisesRegex(ValueError, 'GPU'):
+                check_profile(dict(options, native_size='base'), False)
+            with self.assertRaisesRegex(ValueError, 'grafo dei concetti'):
+                validate_options(dict(options, routing_profile='cp-v9'))
+            first, report = build(str(Path(folder)/'tokenizer'), options)
+            second, _ = build(str(Path(folder)/'tokenizer'), options)
+            trainable = {key: value for key, value in first.named_parameters() if value.requires_grad}
+            self.assertGreater(sum(value.numel() for value in trainable.values()), .99*sum(value.numel() for value in first.parameters()))
+            self.assertFalse(any('lora' in key for key in trainable))                                    # no adapters
+            for (key, a), (_, b) in zip(first.state_dict().items(), second.state_dict().items()):       # the seed fixes the model
+                self.assertTrue(torch.equal(a, b), key)
+            self.assertEqual((report['profile'], len(report['replaced_layers'])), ('acan-native-v1', 4))
+            from acan.lm.concept_attention import ConceptGraphAttention
+            self.assertEqual(sum(isinstance(module, ConceptGraphAttention) for module in first.modules()), 4)  # every layer
+            batch = torch.tensor([ids*8])
+            loss = first(batch, labels=batch).loss
+            loss.backward()
+            self.assertTrue(torch.isfinite(loss))
+            self.assertAlmostEqual(parameters('micro', report['vocabulary'])/1e6, sum(value.numel() for value in first.parameters() if value.requires_grad)/1e6, delta=.1)
