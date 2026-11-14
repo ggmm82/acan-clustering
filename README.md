@@ -100,9 +100,10 @@ l'attenzione normale? Prima di un addestramento grande su GPU, il **percorso di
 validazione** in cima alla scheda dà la risposta in tre passi con criteri
 espliciti: una prova in piccolo da zero (memoria a distanza e testo, minuti
 sulla CPU), un confronto su SmolLM2 fra concetti e attenzione normale, e la
-decisione «pronto per la GPU» o «non ancora». Oggi la prova in piccolo non è
-superata: i concetti ricordano il 24% delle risposte contro il 100%
-dell'attenzione normale. Negli strumenti avanzati restano l'innesto con LoRA,
+decisione «pronto per la GPU» o «non ancora». Con le impostazioni del
+laboratorio la prova in piccolo è superata (memoria 99,8% contro 100%); con un
+addestramento più breve e più lento i concetti si fermavano al 24%, quindi
+imparano a ricordare più lentamente dell'attenzione normale. Negli strumenti avanzati restano l'innesto con LoRA,
 pausa e ripresa, la generazione, le serie, le misure di memoria su testi lunghi
 e i dati per il debug.
 

@@ -208,19 +208,27 @@ Metriche aggregate: [`results/concept-graph-tabular.json`](results/concept-graph
 ### Prova in piccolo, da zero
 
 Tre modellini identici (2 layer, 64 dimensioni, 4 teste) addestrati da zero,
-durata completa (2.000 passi di memoria, 1.500 di testo), seme 0, testo
-WikiText-2; `scripts/probe_small_lm.py` o il passo 1 del laboratorio.
+seme 0, testo WikiText-2; `scripts/probe_small_lm.py` o il passo 1 del
+laboratorio. Due misure con impostazioni di addestramento diverse:
 
 | Prova | Attenzione normale | Solo 16 token | Concetti (16 token + 16 concetti) |
 |---|---:|---:|---:|
-| Memoria: risposte giuste (a caso 6,2%) | 100% | 6,2% | 24,2% |
-| Testo: bit per carattere | 2,462 | 2,407 | 2,474 |
+| Memoria, laboratorio (2.000 passi, passo di apprendimento 3e-3) | 100% | 5,5% | 99,8% |
+| Memoria, prima sonda (1.500 passi, 1e-3) | 100% | 6,2% | 24,2% |
+| Testo, laboratorio: bit per carattere | 2,507 | 2,477 | 2,524 |
+| Testo, prima sonda | 2,462 | 2,407 | 2,474 |
 
-La memoria separa nettamente i tre modi di leggere: la risposta è sempre oltre
-i 16 token esatti, e i concetti ne recuperano poco più di un quinto. È il
-criterio che oggi non è superato. Il testo a caratteri non separa: la sola
+A caso, la memoria vale 6,2%. La risposta è sempre oltre i 16 token esatti:
+la sola finestra non la può dare, i concetti sì. Con l'addestramento della
+prima sonda i concetti si fermavano al 24%, mentre l'attenzione normale
+arrivava al 100% già allora: la lettura attraverso i concetti si impara più
+lentamente, non è impossibile. Con il budget del laboratorio i criteri del
+passo 1 sono superati. È un solo seme, con 8 coppie e 16 concetti, cioè almeno
+tanti concetti quante sono le coppie: una prova più severa avrebbe più coppie
+che concetti. Il testo a caratteri non separa i tre modi di leggere: la sola
 finestra va meglio di tutti, perché a questa scala prevedere un carattere
-richiede quasi solo i caratteri vicini. Il confronto su SmolLM2 (600 passi,
-WikiText-2, validazione) ha dato 3,440 per i concetti e 3,351 per il controllo
-denso: differenza entro la soglia di rumore di 0,15, ma a pesi preaddestrati la
-parte lontana del contesto pesa poco e la prova non vede il difetto di memoria.
+richiede quasi solo i caratteri vicini.
+
+Il confronto su SmolLM2 (600 passi, WikiText-2, validazione) aveva dato 3,440
+per i concetti e 3,351 per il controllo denso, una differenza entro la soglia
+di rumore di 0,15. Il passo 2 del percorso lo ripete con più testo di verifica.
