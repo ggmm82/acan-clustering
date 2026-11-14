@@ -94,19 +94,20 @@ Guida dettagliata della scheda Modello e della valutazione: [docs/GUI.md](docs/G
 
 ## Laboratorio generativo
 
-La scheda **Generativo** è organizzata attorno a una domanda: un modello che
-legge il testo lontano attraverso i concetti impara bene quanto uno con
-l'attenzione normale? Prima di un addestramento grande su GPU, il **percorso di
-validazione** in cima alla scheda dà la risposta in tre passi con criteri
-espliciti: una prova in piccolo da zero (memoria a distanza e testo, minuti
-sulla CPU), un confronto su SmolLM2 fra concetti e attenzione normale, e la
-decisione «pronto per la GPU» o «non ancora». Con le impostazioni del
-laboratorio la prova in piccolo è superata (memoria 99,8% contro 100%); con un
-addestramento più breve e più lento i concetti si fermavano al 24%, quindi
-imparano a ricordare più lentamente dell'attenzione normale. Negli strumenti avanzati restano l'innesto con LoRA,
-pausa e ripresa, la generazione, le serie, le misure di memoria su testi lunghi
-e i dati per il debug.
+La scheda **Generativo** mette in primo piano l'**apprendimento lungo dell'LLM
+a concetti nativo**: un modello che nasce da zero (pesi casuali, tutti i pesi
+che imparano, tokenizer imparato dai testi) in cui ogni layer legge il testo
+attraverso i concetti ACAN. Prepara una miscela di dati italiani e inglesi per conversare da dataset
+pubblici con licenze aperte (verificati e scaricati dal worker, con pausa e
+ripresa), impara una coda di testi uno dopo l'altro (anche file propri:
+Markdown, Python, ZIP, EPUB, DOCX, PDF), salva in modo permanente, riprende da
+solo dopo un riavvio, risponde a domande di prova a ogni salvataggio e mostra le
+grandezze del modello mentre impara. Sotto c'è il **laboratorio di
+validazione**, che verifica il meccanismo in piccolo prima di un addestramento
+su GPU. La scheda **Informatica** spiega in parole semplici obiettivo,
+apprendimento e generazione dei token.
 
+- Apprendimento lungo, dati e coda: [docs/LONG-TRAINING.md](docs/LONG-TRAINING.md)
 - Percorso passo per passo e cosa misurare: [docs/CONTROLLED-LM.md](docs/CONTROLLED-LM.md)
 - Funzionamento e persistenza: [docs/GENERATIVE.md](docs/GENERATIVE.md)
 - Differenze dal paper e dal pacchetto di riferimento: [docs/LM-AUDIT.md](docs/LM-AUDIT.md)

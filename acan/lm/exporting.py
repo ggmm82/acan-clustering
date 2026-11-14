@@ -21,13 +21,19 @@ def export_bundle(store, job, name):
     from .research_model import check_inference_contract
     check_inference_contract(job['config'],state)
     base = json.loads((directory/'base.json').read_text())
-    from huggingface_hub import snapshot_download
-    base_path = Path(snapshot_download(base['repo'], revision=base['revision'],
-                                      cache_dir=str(store.root/'hub'), local_files_only=True))
-    config_path = base_path/'config.json'
-    if digest_file(config_path) != base['files_sha256']['config.json']:
-        raise ValueError('Configurazione del modello originale modificata.')
-    config = json.loads(config_path.read_text())
+    native = base.get('native', False)
+    if native:                                                  # born from zero: all its weights and its tokenizer travel together
+        from .native import SIZES
+        size = SIZES[job['config']['native_size']]
+        config = dict(hidden_size=size['hidden'], num_hidden_layers=size['layers'], vocab_size=state['graft'].get('vocabulary'))
+    else:
+        from huggingface_hub import snapshot_download
+        base_path = Path(snapshot_download(base['repo'], revision=base['revision'],
+                                          cache_dir=str(store.root/'hub'), local_files_only=True))
+        config_path = base_path/'config.json'
+        if digest_file(config_path) != base['files_sha256']['config.json']:
+            raise ValueError('Configurazione del modello originale modificata.')
+        config = json.loads(config_path.read_text())
     from safetensors import safe_open
     tensors = {}
     with safe_open(snapshot/'trainables.safetensors', framework='pt', device='cpu') as reader:
@@ -59,6 +65,13 @@ def export_bundle(store, job, name):
                        'from acan.lm.exporting import load_export\nmodel, tokenizer = load_export("cartella_estratta", device="cpu")\n'
                        'Il primo caricamento scarica i pesi originali della revisione registrata. architecture.json descrive livelli e tensori.\n').encode(),
     }
+    if native:
+        for item in sorted((directory/'tokenizer').iterdir()):
+            payloads['tokenizer-'+item.name] = item.read_bytes()
+        payloads['README.txt'] = ('Modello a concetti ACAN nativo, nato da zero: contiene TUTTI i pesi appresi e il suo tokenizer.\n'
+                                  'Non contiene corpus, chiave workspace, token del servizio, stato RNG o optimizer.\n'
+                                  'Installa questo progetto con extra [llm]. Estrai lo ZIP in una cartella e usa:\n'
+                                  'from acan.lm.exporting import load_export\nmodel, tokenizer = load_export("cartella_estratta", device="cpu")\n').encode()
     provenance = directory/'public-source.json'
     if provenance.exists():
         payloads['public-source.json'] = provenance.read_bytes()
@@ -100,12 +113,24 @@ def load_export(directory, device='cpu', cache_dir=None):
     config = json.loads((directory/'config.json').read_text())
     from .research_model import check_inference_contract
     check_inference_contract(config,manifest)
-    path = snapshot_download(base['repo'], revision=base['revision'], cache_dir=cache_dir,
+    if base.get('native'):
+        import tempfile, shutil
+        folder = Path(tempfile.mkdtemp(prefix='acan-tokenizer-'))
+        for name in manifest['files_sha256']:
+            if name.startswith('tokenizer-'):
+                shutil.copy(directory/name, folder/name[len('tokenizer-'):])
+        model, _ = load_base(str(folder), config, device)
+        tokenizer = AutoTokenizer.from_pretrained(str(folder), local_files_only=True, trust_remote_code=False)
+        path = None
+    else:
+        path = snapshot_download(base['repo'], revision=base['revision'], cache_dir=cache_dir,
                              allow_patterns=['*.json','*.safetensors','*.model','tokenizer.*','vocab.*','merges.txt'])
-    for name, expected in base['files_sha256'].items():
-        if Path(name).is_absolute() or '..' in Path(name).parts or digest_file(Path(path)/name) != expected:
-            raise ValueError('File del modello originale modificato: '+name)
-    model, _ = load_base(path, config, device)
+    if path is not None:
+        for name, expected in base['files_sha256'].items():
+            if Path(name).is_absolute() or '..' in Path(name).parts or digest_file(Path(path)/name) != expected:
+                raise ValueError('File del modello originale modificato: '+name)
+        model, _ = load_base(path, config, device)
+        tokenizer = None
     tensors = load_file(directory/'trainables.safetensors', device=device)
     parameters = {key:parameter for key,parameter in model.named_parameters() if parameter.requires_grad}
     if set(tensors) != set(parameters):
@@ -116,5 +141,6 @@ def load_export(directory, device='cpu', cache_dir=None):
                 raise ValueError('Dimensioni incompatibili: '+key)
             parameter.copy_(tensors[key])
     model.eval();reset_streams(model)
-    tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=False)
+    if tokenizer is None:
+        tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=False)
     return model, tokenizer

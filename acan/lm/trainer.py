@@ -35,6 +35,9 @@ def validate_options(options):
 
 
 def resolve_base(store, job, options):
+    if options.get('architecture') == 'native':                 # born from zero: its own tokenizer, no pretrained weights
+        from .native import resolve
+        return resolve(store, job, options)
     from huggingface_hub import HfApi, snapshot_download
     directory = store.directory('jobs', job['id'])
     recorded = directory / 'base.json'

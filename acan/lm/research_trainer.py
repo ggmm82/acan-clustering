@@ -20,6 +20,22 @@ def contract():
         ('research_trainer.py','research_data.py','distillation.py','cp_objective.py','research_options.py','research_model.py','full_attention.py','shared_attention.py','compatibility.py'))+(root.parent/'algebra.py').read_bytes()+(root/'cp_attention.py').read_bytes()+(root.parent/'core'/'variational.py').read_bytes()+(root/'concept_attention.py').read_bytes()+(root.parent/'concept_algebra.py').read_bytes()).hexdigest()
 
 
+def warm_source(store, job):
+    """The latest checkpoint of the item before this one in its queue."""
+    series = job['config'].get('series') or {}
+    before = [other for other in store.jobs(job['owner']) if (other['config'].get('series') or {}).get('id') == series.get('id')
+              and other['config']['series']['order'] < series.get('order', 0)]
+    if not before:
+        raise ValueError('Primo file della coda: non c\'è un apprendimento precedente da cui ripartire.')
+    previous = max(before, key=lambda other: other['config']['series']['order'])
+    if previous['status'] in ('queued', 'preparing', 'running', 'pausing') or not previous['checkpoint']:
+        raise ValueError('Il file precedente della coda non ha ancora un checkpoint salvato.')
+    path = store.directory('jobs', previous['id'])/'checkpoints'/previous['checkpoint']
+    if not (path/'manifest.json').exists():
+        raise ValueError('Checkpoint del file precedente non trovato: ripristina il backup.')
+    return path
+
+
 def run_training(root, identifier, stop_event=None):
     import numpy as np
     import torch
@@ -54,6 +70,11 @@ def run_training(root, identifier, stop_event=None):
         if should_pause():
             raise PreparationPaused()
         blocks = Blocks(directory, config['sequence_length'], config['seed'], config['validation_batches'])
+        if config.get('passes') and not job['checkpoint']:
+            # A file of a learning queue: as many steps as it takes to read its text ``passes`` times.
+            per_step = config['batch_size']*config['accumulation']
+            config['total_steps'] = max(1, math.ceil(blocks.train_count*config['passes']/per_step))
+            store.set_config(identifier, config)
         from .compatibility import training_identity
         identity = training_identity(dict(config=config, base=base, corpus=corpus['sha256'], tokens=tokens['sha256']),
                                      config, directory/'checkpoints', job['checkpoint'], contract())
@@ -81,6 +102,12 @@ def run_training(root, identifier, stop_event=None):
                          total_parameters=sum(p.numel() for p in model.parameters()), identity=identity,
                          model_contract=inference_contract(),dataset={key:tokens[key] for key in ('tokens','documents','duplicates','sha256')},
                          validation_blocks=blocks.evaluation_indices('validation',config['validation_batches']))
+            if not previous and config.get('warm_start'):
+                # The next file of a queue starts from what the previous one learned (weights only).
+                source = warm_source(store, job)
+                checkpoints.restore(source, model, restore_rng=False)
+                state['warm_start'] = dict(checkpoint=source.name, job=source.parent.parent.name,
+                                           step=json.loads((source/'state.json').read_text())['step'])
             if previous:
                 state = checkpoints.restore(previous, model, optimizer, identity)
                 state.pop('numpy_rng', None)
@@ -190,14 +217,18 @@ def run_training(root, identifier, stop_event=None):
                         store.update(identifier,pause=1,status='pausing')
                     previous = checkpoints.save(checkpoint_root, model, optimizer, state, identity)
                     store.update(identifier, checkpoint=previous.name)
-                    checkpoints.retain(checkpoint_root)
+                    checkpoints.retain(checkpoint_root, milestone=config.get('milestone_steps', 0))
+                    if config.get('chat_probes'):
+                        # What the model answers now, to the same questions at every save: progress made visible.
+                        from .probes import record_answers
+                        record_answers(directory, model, tokenizer, device, state, config.get('probe_prompts') or None)
                     last_save = time.monotonic()
                 store.record(identifier, state['step'], state)
             # A pause before the next step still commits the exact current state.
             if store.job(identifier)['checkpoint'] != previous.name or should_pause():
                 previous = checkpoints.save(checkpoint_root, model, optimizer, state, identity)
                 store.update(identifier, checkpoint=previous.name)
-                checkpoints.retain(checkpoint_root)
+                checkpoints.retain(checkpoint_root, milestone=config.get('milestone_steps', 0))
             store.update(identifier, status='completed' if state['step'] >= config['total_steps'] else 'paused',
                          pause=0, progress=state, error=None)
     except PreparationPaused:

@@ -4,6 +4,9 @@ from .grafting import load_base,add_lora
 
 
 def load_model(path,options,device='cpu',evaluate_base=None):
+    if options.get('architecture')=='native':
+        from .native import build
+        return build(path,options,device,evaluate_base)
     if options.get('architecture','hybrid')=='hybrid' and options.get('graft_fraction',.5)==.5:
         model,report=load_base(path,options,device,evaluate_base)
         return shared_adapter(model,report,options)

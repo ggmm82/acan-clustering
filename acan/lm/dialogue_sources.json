@@ -1,0 +1,500 @@
+{
+"synth": [
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_001.parquet",
+"path": "synth_001.parquet",
+"bytes": 471540559,
+"sha256": "5c2d9bd1607e151a0ef106399f1965451f296925713847dae97c4cdbf0a6503b"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_002.parquet",
+"path": "synth_002.parquet",
+"bytes": 473887309,
+"sha256": "c98f1e0e0d004e48063878b4f2793b1e524dd851577323b2905dd3c29b69f029"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_003.parquet",
+"path": "synth_003.parquet",
+"bytes": 473721313,
+"sha256": "7945baee3d1d31defb0a87840db7a97e0e00b68aaadb605aa31239de1826f236"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_004.parquet",
+"path": "synth_004.parquet",
+"bytes": 472529312,
+"sha256": "22871b55778503102eb0c7009187e1b3403bfd1c06a95677c25c79ef89aac003"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_005.parquet",
+"path": "synth_005.parquet",
+"bytes": 473204206,
+"sha256": "3d2127ad71af07a17e5266dccc9ff5b2bb42cefb33a674b9a031aad3fdc893cd"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_006.parquet",
+"path": "synth_006.parquet",
+"bytes": 473145042,
+"sha256": "c092d5ba9716304c7987abaf908a7819d9de92ea8bd7d3421a55d361d4f39fce"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_007.parquet",
+"path": "synth_007.parquet",
+"bytes": 473512993,
+"sha256": "5a3ddacbfe33c99145e5a33e9923c535b46bb62d21443f68173fa5f46868436e"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_008.parquet",
+"path": "synth_008.parquet",
+"bytes": 473316177,
+"sha256": "3e63a7e0f5f8e52c004dd0ffe46e1280b98b9f8d9330cbc054c2884b3f2c9557"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_009.parquet",
+"path": "synth_009.parquet",
+"bytes": 474050803,
+"sha256": "e2c45ba9cd110eb0346d4ad0fb0813dbd39cd0b3ceae6cfd64fad7e5cad21472"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_010.parquet",
+"path": "synth_010.parquet",
+"bytes": 472968117,
+"sha256": "ea52c45abfd8017de07c56b044fed643bd9ad8d533c75a0b3ceb69b04e3aef05"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_011.parquet",
+"path": "synth_011.parquet",
+"bytes": 472656419,
+"sha256": "41fb27187fdb288b9d1b5d7499eef6738e54941c0a93b0ce3e64d4ea6acaaf56"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_012.parquet",
+"path": "synth_012.parquet",
+"bytes": 472761295,
+"sha256": "a08ca56e8f66fd02ebbfb69501db44496449272a0a33af529f450477f3e02171"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_013.parquet",
+"path": "synth_013.parquet",
+"bytes": 473348172,
+"sha256": "e6721a5ed396c2fd8354404c88dd99529a6226ebb870d4ed79011943ffd3c8d6"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_014.parquet",
+"path": "synth_014.parquet",
+"bytes": 472588575,
+"sha256": "6fa25c92aa6f5bd4d26fddc3da3921a2999c33ec867d478cdd3ec189a3b2cc93"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_015.parquet",
+"path": "synth_015.parquet",
+"bytes": 473277670,
+"sha256": "e4238cdca5eeb4ee79c21f3c14cc2f01cf1db070481ff6c2a5fbbc2372f8a8fa"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_016.parquet",
+"path": "synth_016.parquet",
+"bytes": 472672659,
+"sha256": "f690aee04110e7791e034335ad5a21759b61a5af159f597ce502422e964a4381"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_017.parquet",
+"path": "synth_017.parquet",
+"bytes": 473734860,
+"sha256": "a245722607315c001111540da9fb207b1b52aa2d617b0d07c71c411e4a0880df"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_018.parquet",
+"path": "synth_018.parquet",
+"bytes": 473150139,
+"sha256": "e65b248c6dde98c25696980da6db02335da88c94ea0ae23097fa8730b736dee6"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_019.parquet",
+"path": "synth_019.parquet",
+"bytes": 473460716,
+"sha256": "2ddaff84dc344181cff7d7aa791a4edd9147cf3d883b235ef4be3c8c773d4534"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_020.parquet",
+"path": "synth_020.parquet",
+"bytes": 473915309,
+"sha256": "07a31702585ad8bde02bf6e9baf4abe5151d7981af8f42e4216dea479ab45ef4"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_021.parquet",
+"path": "synth_021.parquet",
+"bytes": 473682906,
+"sha256": "92678986d210829136ec2a8aa86e9cf290dc9b33d68240d995de085277b9bcdb"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_022.parquet",
+"path": "synth_022.parquet",
+"bytes": 472237944,
+"sha256": "f3290366f5525befced2d9ad9e8885e05b0d989787996e3dcd86e75258d942b7"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_023.parquet",
+"path": "synth_023.parquet",
+"bytes": 472978932,
+"sha256": "72b7fb75506b828e4a1c6b74e731f90afdf0b978b912a4120f86b76c4209a922"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_024.parquet",
+"path": "synth_024.parquet",
+"bytes": 472448412,
+"sha256": "1cdc20c8823b59077699d590e4dd68ff0723ac1ef2f9c5582de18ae6e58a7791"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_025.parquet",
+"path": "synth_025.parquet",
+"bytes": 472995273,
+"sha256": "b720dd6d6d86202afd7b4d0ada8dee63b8bb94c98b0135fd2baee22012f379cb"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_026.parquet",
+"path": "synth_026.parquet",
+"bytes": 472699292,
+"sha256": "c8b320de9a7853d05b071d6f803298e0a2a5e5d72d38e03306acad50d6401099"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_027.parquet",
+"path": "synth_027.parquet",
+"bytes": 473027307,
+"sha256": "0f748976f73989107f162fa00c0db77f96cd20801e59a2fd46b1e7b425bcb024"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_028.parquet",
+"path": "synth_028.parquet",
+"bytes": 474393447,
+"sha256": "f95891d337680f025e8a8d6a364cc6e013e098205fa2971a6ec8add05a5dfc5d"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_029.parquet",
+"path": "synth_029.parquet",
+"bytes": 473104845,
+"sha256": "6134df3e8e6c31929d3580eb85f239f86ff22e9b463b0099573544700a386898"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_030.parquet",
+"path": "synth_030.parquet",
+"bytes": 472093074,
+"sha256": "766587fbe6113d29943a75272911d5567a370fa50fc46f2ef2b52c2b5ca0c13c"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_031.parquet",
+"path": "synth_031.parquet",
+"bytes": 474482566,
+"sha256": "38e7646af87ce010b8d1363d9cdc16f3528aa9909a1e2e1e905db0534d1b4212"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_032.parquet",
+"path": "synth_032.parquet",
+"bytes": 473991959,
+"sha256": "a3996b08c2753ba3e032605ce98c5cd707a383fa5fd1ce1dd2c23323be9e1363"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_033.parquet",
+"path": "synth_033.parquet",
+"bytes": 473557270,
+"sha256": "0bb3b271cb6015db7f47141296e591878b98d527e7cbd06a78e9d97dbf58df8c"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_034.parquet",
+"path": "synth_034.parquet",
+"bytes": 473129848,
+"sha256": "0e01df920b5180db6ee873b866c7af22e55116baab1ef45728a3dc3195ad1896"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_035.parquet",
+"path": "synth_035.parquet",
+"bytes": 474025590,
+"sha256": "4d628116799e8953f3f83fe60ab2a8ed4fead913b4091c4b48173fed0feefc23"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_036.parquet",
+"path": "synth_036.parquet",
+"bytes": 472119462,
+"sha256": "14157848fc484b5cb6431446167e4371729262440677227fb55e241525e8206c"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_037.parquet",
+"path": "synth_037.parquet",
+"bytes": 474469261,
+"sha256": "62212d113b3ee08d412f6cb60678c742724024ff126c944f5e31be20d57203f1"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_038.parquet",
+"path": "synth_038.parquet",
+"bytes": 472245144,
+"sha256": "4fd24872c06d3a3697cdf803f187f22a4969d5c1b2bcdf5b966be804c87842c4"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_039.parquet",
+"path": "synth_039.parquet",
+"bytes": 472654623,
+"sha256": "5831d7f2898715767535155e5633288a72ba7c09f7878dfbbf7b26a09b253a6d"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_040.parquet",
+"path": "synth_040.parquet",
+"bytes": 473029490,
+"sha256": "6b4a886306ca19879b3986c9612dd1d88c567d62bf65098e11ebc832a901ab67"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_041.parquet",
+"path": "synth_041.parquet",
+"bytes": 471957643,
+"sha256": "ac1531c9e76a6ed7c350769929407d226079a866b95d84ae9ea74569b844586b"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_042.parquet",
+"path": "synth_042.parquet",
+"bytes": 472545781,
+"sha256": "fbe34e7eb36b396fab717ef5ba118af317654ae64eadee9130a78d131144dbc6"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_043.parquet",
+"path": "synth_043.parquet",
+"bytes": 472183885,
+"sha256": "0ec35724d72e5e2abb787d10d634fc230ae27aca5535d2599fc102eddde6a37e"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_044.parquet",
+"path": "synth_044.parquet",
+"bytes": 472485890,
+"sha256": "05e03f3828e869a2c3a21bc40d617ecb78c64f8a54f273e43b0c09ef9c3bbe96"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_045.parquet",
+"path": "synth_045.parquet",
+"bytes": 472990221,
+"sha256": "6a46afbc9720cf99b420743926561973fdc2d156f9bd1a427a6b7b087f11f17a"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_046.parquet",
+"path": "synth_046.parquet",
+"bytes": 473637149,
+"sha256": "905939adaf4617e6511944efb951f86900dbf9192e3cfe9e4f6ce23ee69d75a7"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_047.parquet",
+"path": "synth_047.parquet",
+"bytes": 473672860,
+"sha256": "9cb9556f25262b870934b2a85ba6069450225485cdb3d2d90ce0c98299b01f98"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_048.parquet",
+"path": "synth_048.parquet",
+"bytes": 472469561,
+"sha256": "3e1250e2ecd0ecaed0c70cd2a7168e07ba19e410dac84d79a2607a2ad9bf4a6a"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_049.parquet",
+"path": "synth_049.parquet",
+"bytes": 472676760,
+"sha256": "d82a3903c358899d225fe9f5da0c8d48066b8287773dd0a4b8a78b77dcc19d62"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_050.parquet",
+"path": "synth_050.parquet",
+"bytes": 473058195,
+"sha256": "41cf013eeebd1c8720d2f00d02ef683700a29716d66740d3302cf6a3ae5a9c03"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_051.parquet",
+"path": "synth_051.parquet",
+"bytes": 471471061,
+"sha256": "c6e0f94909dc9f5a52789b3a0ab72a50e6c2940eb995f340be80bcc8b002f180"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_052.parquet",
+"path": "synth_052.parquet",
+"bytes": 474539467,
+"sha256": "f88ecad8102c220e082a7ab3966e5ec4fc07e177e3acae5f2e05e045d75286b8"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_053.parquet",
+"path": "synth_053.parquet",
+"bytes": 474932158,
+"sha256": "8d3648b45f9ef1bfad31dc1436a0289cef40b158c5743aa867aeebcd0a3703bd"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_054.parquet",
+"path": "synth_054.parquet",
+"bytes": 474587914,
+"sha256": "04f1cdf99060a3f11768da7495778d3f066576c1fafd7a4e7d35972d556695d6"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_055.parquet",
+"path": "synth_055.parquet",
+"bytes": 474399769,
+"sha256": "43084dbd961659380dabd1845d1fccdffaf05e4b376a008421041e13aaf784c0"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_056.parquet",
+"path": "synth_056.parquet",
+"bytes": 473291856,
+"sha256": "4312d578d4e3eb1c2d86913dd15f3926909bba58efcd1fde024a0d39e0cc5e74"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_057.parquet",
+"path": "synth_057.parquet",
+"bytes": 474444078,
+"sha256": "12f3c468ffb1f1f7888e5aa09e7eec507af76ccbd3df21998f307cc77b9618b6"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_058.parquet",
+"path": "synth_058.parquet",
+"bytes": 473370800,
+"sha256": "032079b7a6c1b66b43995ca4e1009e4740c126ae345b019e1003028f161e3736"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_059.parquet",
+"path": "synth_059.parquet",
+"bytes": 472469162,
+"sha256": "3bdf04c8bef650bde37a4f4476327275e203f0ffbb41d843e5314623a25917df"
+},
+{
+"url": "https://huggingface.co/datasets/PleIAs/SYNTH/resolve/0d6813a2966662c39f22f0b9af28a0c1c9f7a437/synth_060.parquet",
+"path": "synth_060.parquet",
+"bytes": 473103352,
+"sha256": "43405f84b892eaf45cce5aa6b97114f6db496b45a21851e8b5ffea5ecdbded15"
+}
+],
+"wiki_it": [
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.it/train-00000-of-00010.parquet",
+"path": "20231101.it/train-00000-of-00010.parquet",
+"bytes": 529078601,
+"sha256": "141d43f22f8843dcdcabcd956a408a03621bcb5acae550d87e26430425f476b6"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.it/train-00001-of-00010.parquet",
+"path": "20231101.it/train-00001-of-00010.parquet",
+"bytes": 375946735,
+"sha256": "458435409dc9df8f8dd6f51502c6b6877089cf5ee78ea6987f91507612dd1f3c"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.it/train-00002-of-00010.parquet",
+"path": "20231101.it/train-00002-of-00010.parquet",
+"bytes": 339687970,
+"sha256": "4f05732b78b0dcb869687f29e561d16e0cafebbab77a48962f921c731dd40b43"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.it/train-00003-of-00010.parquet",
+"path": "20231101.it/train-00003-of-00010.parquet",
+"bytes": 286910900,
+"sha256": "c6bdf8c884cee4c8c20056aed28727cf66b125738d058b0c1d43d8412ff15d45"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.it/train-00004-of-00010.parquet",
+"path": "20231101.it/train-00004-of-00010.parquet",
+"bytes": 241436500,
+"sha256": "8964416878fb2262789e87769122ad8146d3dcbba81c40ff26dda85ace77668f"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.it/train-00005-of-00010.parquet",
+"path": "20231101.it/train-00005-of-00010.parquet",
+"bytes": 240738097,
+"sha256": "08ee23717a024510177589a2a57cb96d414d697f541d9bf95aae6301a7ab96c7"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.it/train-00006-of-00010.parquet",
+"path": "20231101.it/train-00006-of-00010.parquet",
+"bytes": 222080770,
+"sha256": "45b893cf64800d232b6472fb6085e45eb3cf61d6e2d818fc84205e196df0a679"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.it/train-00007-of-00010.parquet",
+"path": "20231101.it/train-00007-of-00010.parquet",
+"bytes": 218263485,
+"sha256": "bfbaddb27bc2cd96c793491f3537f9baabc8de7845bfb7d63e43e09632f2bdf8"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.it/train-00008-of-00010.parquet",
+"path": "20231101.it/train-00008-of-00010.parquet",
+"bytes": 219968666,
+"sha256": "06165d76ccd5749b3499cfe1c3f87c6112c6d7c8753677755e6ea9264a07d876"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.it/train-00009-of-00010.parquet",
+"path": "20231101.it/train-00009-of-00010.parquet",
+"bytes": 257153795,
+"sha256": "57d5b315a0fd44619c272e56228613307a122dac4c168dfd4566313661334d21"
+}
+],
+"wiki_en": [
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00000-of-00041.parquet",
+"path": "20231101.en/train-00000-of-00041.parquet",
+"bytes": 420296449,
+"sha256": "382e7f6f09e488b24793a7f7cfc659879d5a22da2cf2efec6491665f0c019677"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00001-of-00041.parquet",
+"path": "20231101.en/train-00001-of-00041.parquet",
+"bytes": 351448367,
+"sha256": "6cd57a5825312ca966313d4a1b614690b5c4fb53cee9b124bc0e999977eb36cf"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00002-of-00041.parquet",
+"path": "20231101.en/train-00002-of-00041.parquet",
+"bytes": 329024669,
+"sha256": "b18674f163d4f106e43396fd58412a79b80a418c72bb728c20af439e7ca4d5b7"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00003-of-00041.parquet",
+"path": "20231101.en/train-00003-of-00041.parquet",
+"bytes": 330779424,
+"sha256": "0b8a6f452f5ef59d0986a067f70110feb16d7c1d281ba2db0b3df32933618fcc"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00004-of-00041.parquet",
+"path": "20231101.en/train-00004-of-00041.parquet",
+"bytes": 306945391,
+"sha256": "1424300f113c13ee022b7929185fa4f7e20c6195ba563d728e8a3dc47c8e9aba"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00005-of-00041.parquet",
+"path": "20231101.en/train-00005-of-00041.parquet",
+"bytes": 243974056,
+"sha256": "220d31bb222ba2d449c845733622a6a2b7a89db3e28b24bfcb3a9bb3e52c6c8d"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00006-of-00041.parquet",
+"path": "20231101.en/train-00006-of-00041.parquet",
+"bytes": 266288728,
+"sha256": "b8becbe9989a2c63f129a707a4674a84fb093c163673b1f4ce97afbf5306f04c"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00007-of-00041.parquet",
+"path": "20231101.en/train-00007-of-00041.parquet",
+"bytes": 228195804,
+"sha256": "adebba8b075444923ba42ed6214fe205efc756c773f440d98cbdd88a33597c2c"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00008-of-00041.parquet",
+"path": "20231101.en/train-00008-of-00041.parquet",
+"bytes": 247687191,
+"sha256": "905f959921ab8de07e7ce238d7c9ef33bd597585a17a99c3ba00163b25002bef"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00009-of-00041.parquet",
+"path": "20231101.en/train-00009-of-00041.parquet",
+"bytes": 227378231,
+"sha256": "465bd99719b0f2d1974402b7922a7a66399675dc6218a0a40057e0512592c07b"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00010-of-00041.parquet",
+"path": "20231101.en/train-00010-of-00041.parquet",
+"bytes": 233604795,
+"sha256": "cd8b4e9ee2506ba5f47d552c56e2a7569402a6814d9fa171c0e995e56859e51b"
+},
+{
+"url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00011-of-00041.parquet",
+"path": "20231101.en/train-00011-of-00041.parquet",
+"bytes": 231748583,
+"sha256": "881e8efe6dbaddd34791fdc2158123ed344c436263b9052a0d659418fff89c3a"
+}
+]
+}
