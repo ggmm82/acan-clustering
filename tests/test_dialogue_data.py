@@ -142,6 +142,10 @@ class BuildServiceTest(unittest.TestCase):
                 identifier = answer.get_json()['id']
                 self.assertEqual(launch.call_args.args[2:], ('build', identifier))
                 self.assertEqual(client.post('/builds', headers=headers, json=dict(mixture='enorme')).status_code, 400)
+                self.assertEqual(client.post('/builds', headers=headers, json=dict(mixture='prova', extras=['pittura'])).status_code, 400)
+                ordered = client.post('/builds', headers=headers, json=dict(mixture='prova', extras=['video', 'code'])).get_json()
+                from acan.lm.store import Store as _Store
+                self.assertEqual(_Store(root).build(ordered['id'])['request']['extras'], ['code', 'video'])
                 item = client.post(f'/builds/{identifier}/pause', headers=headers).get_json()
                 self.assertEqual(item['status'], 'pausing')
                 from acan.lm.store import Store
@@ -153,3 +157,55 @@ class BuildServiceTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(ARROW and importlib.util.find_spec('PIL'), 'Requires pyarrow and Pillow')
+class OtherKindsOfDataTest(unittest.TestCase):
+    """Code, bash commands, ABC music, images, spoken digits and moving digits as training records."""
+
+    def test_every_reader_and_the_pins(self):
+        import io, wave
+        import numpy as np
+        from PIL import Image
+        from acan.lm import dialogue_data as data
+        from acan.lm.media import parts
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder/'code.json').write_text(json.dumps([dict(instruction='Sum two numbers', input='', output='def s(a, b):\n    return a + b')]))
+            (folder/'tldr-test.jsonl').write_text(json.dumps(dict(nl='list files', cmd='ls {{path}}'))+'\n')
+            (folder/'validation.json').write_text(json.dumps([{'control code': 'S:2', 'abc notation': 'X:1\nK:G\n|GABc|'}]))
+            stream = io.BytesIO()
+            Image.new('L', (28, 28), 255).save(stream, 'PNG')
+            png = stream.getvalue()
+            parquet(folder/'test-images.parquet', [dict(image=dict(bytes=png, path='x.png'), label=7)]*2)
+            sound = io.BytesIO()
+            with wave.open(sound, 'wb') as file:
+                file.setnchannels(1); file.setsampwidth(2); file.setframerate(8000)
+                file.writeframes((np.sin(np.arange(800)/3)*9000).astype('<i2').tobytes())
+            parquet(folder/'test-audio.parquet', [dict(audio=dict(bytes=sound.getvalue(), path='x.wav'), label=3)])
+            file = lambda path: dict(path='data/'+path)
+            code = list(data.records('code', folder/'code.json', file('code.json')))
+            self.assertIn('<|im_start|>assistant\ndef s(a, b):\n    return a + b<|im_end|>', code[0][1])
+            bash = list(data.records('bash', folder/'tldr-test.jsonl', file('tldr-test.jsonl')))
+            self.assertEqual((bash[0][0], bash[0][2]), ('en', True))                          # the official test file
+            self.assertTrue(bash[0][1].endswith('assistant\nls path<|im_end|>'))
+            music = list(data.records('music', folder/'validation.json', file('validation.json')))
+            self.assertEqual(music[0][:2], ('abc', 'X:1\nK:G\n|GABc|'))
+            fashion = list(data.records('fashion', folder/'test-images.parquet', file('test-images.parquet')))
+            self.assertEqual([item[0] for item in fashion], ['it', 'en'])                   # requests in both languages
+            self.assertIn('Disegna: scarpa da ginnastica.', fashion[0][1])
+            self.assertEqual([kind for kind, _ in parts(fashion[1][1])], ['text', 'image', 'text'])
+            digits = list(data.records('digits', folder/'test-images.parquet', file('test-images.parquet')))
+            self.assertIn('Disegna la cifra 7.', digits[0][1])
+            spoken = list(data.records('spoken', folder/'test-audio.parquet', file('test-audio.parquet')))
+            self.assertIn('Say the digit 3.', spoken[0][1])
+            self.assertIn('audio', [kind for kind, _ in parts(spoken[0][1])])
+            moving = list(data.records('moving', folder/'test-images.parquet', file('test-images.parquet')))
+            self.assertEqual(moving[0][1].count('<|frame|>'), 16)
+        for domain in data.DOMAINS.values():
+            for name, part in domain['parts'].items():
+                for index in part['files']:
+                    self.assertRegex(data.SOURCES[name]['files'][index]['sha256'], '^[0-9a-f]{64}$')
+        self.assertEqual([item['id'] for item in data.catalog()['domains']], ['code', 'bash', 'music', 'images', 'audio', 'video'])
+        steps = data.plan('prova', ['code', 'images'])
+        self.assertEqual([name for name, _, _ in steps][-5:], ['code', 'fashion', 'fashion', 'digits', 'digits'])

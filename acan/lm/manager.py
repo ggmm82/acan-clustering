@@ -166,9 +166,13 @@ def request_small_test(store, owner, options):
 
 def request_build(store, owner, options):
     """Prepare a mixture of Italian and English data in the worker (acan/lm/dialogue_data.py)."""
-    from .dialogue_data import MIXTURES
-    if not isinstance(options, dict) or set(options) != {'mixture'} or options['mixture'] not in MIXTURES:
+    from .dialogue_data import DOMAINS, MIXTURES
+    if not isinstance(options, dict) or set(options) - {'mixture', 'extras'} or options.get('mixture') not in MIXTURES:
         raise ValueError('Scegli una delle miscele disponibili.')
+    extras = options.get('extras', [])
+    if not isinstance(extras, list) or len(set(extras)) != len(extras) or any(item not in DOMAINS for item in extras):
+        raise ValueError('Altri dati non validi: codice, bash, musica, immagini, audio o video.')
+    options = dict(mixture=options['mixture'], extras=[item for item in DOMAINS if item in extras])   # a fixed order
     identifier = uuid.uuid4().hex
     with store.db() as db:
         db.execute('INSERT INTO builds(id,owner,status,request,phase,created) VALUES(?,?,?,?,?,?)',

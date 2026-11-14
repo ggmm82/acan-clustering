@@ -48,6 +48,24 @@ REDIX = [dict(url=f'{HF}ReDiX/everyday-conversations-ita/resolve/5e60d2c503a87dc
               sha256='6bdc3190c605828c01df0184e9a914f338e6c976f40352c4ed2f1d6c5db162b7')]
 FINEWEB2_IT = _files('HuggingFaceFW/fineweb-2', 'af9c13333eb981300149d5ca60a8e9d659b276b9', [
     ('data/ita_Latn/test/000_00000.parquet', 63821346, '2daa4433781837cb71c9d2caa23ac89c0f6c2228fe4366ad54df3002b7e40c42')])
+# Other kinds of data, chosen on top of the Italian and English text.
+CODE = _files('sahil2801/CodeAlpaca-20k', '152bb5e9a29651266b018106053980070a0521a1', [
+    ('code_alpaca_20k.json', 8057896, '58d136bb7ea8e4b7c5b6ef08831da905d0abfafeb56f8fa519083089dd6a210e')])
+BASH = _files('neulab/tldr', '62e85e84102b5ebb6a412cf0f4245227ea897a08', [
+    ('tldr-test.jsonl', 524944, 'a398a34e2728d6990ac93ef74ed4dffe22154083bc27ec64fdad32084e9de818'),
+    ('tldr-train.jsonl', 4756295, '823ffdc1e6a0f92a0cf6914b342e7f100f2f842f01978843ae0fddfe19edbe15')])
+MUSIC = _files('sander-wood/irishman', '30902e69ca45266207f8466e0d04e4bc742c5604', [
+    ('validation.json', 796938, 'a33935f9047edc976e087b146737ed3737a9315c2bf52ff02d8873b057c575ae'),
+    ('train.json', 79975421, '5706880c0f935e69108244e010784935b7aba855f37ae2ce7f4e4d170851835c')])
+FASHION = _files('zalando-datasets/fashion_mnist', '531be5e2ccc9dba0c201ad3ae567a4f3d16ecdd2', [
+    ('fashion_mnist/test-00000-of-00001.parquet', 5175617, 'fb36d8b5b74a491bce99357dcee62a32d347a356ea2a35d1c9057e7a7435ca5a'),
+    ('fashion_mnist/train-00000-of-00001.parquet', 30931277, 'a5769a70af055b15ada8bd3dad9057557554fdd30e17cba45e7ef0f8bf79c5bb')])
+MNIST = _files('ylecun/mnist', '77f3279092a1c1579b2250db8eafed0ad422088c', [
+    ('mnist/test-00000-of-00001.parquet', 2595890, 'd49fcf556ce25b002b302e318ce4a11098bbfe5d4499c3f35d7c72297c52374b'),
+    ('mnist/train-00000-of-00001.parquet', 15561616, 'f2c01285a9f89399335b00ee4e8d499dc4e46db5e39c74903ce5618d895eb3bf')])
+DIGITS_SPOKEN = _files('mteb/free-spoken-digit-dataset', 'c34455c99604d35cb8d27328c267be1478efc903', [
+    ('data/test-00000-of-00001.parquet', 1980617, 'eeef2d13b4307e65a82a43773758b6872e3ebcefb2a928ab42f1594929f1a1e6'),
+    ('data/train-00000-of-00001.parquet', 17651752, '0131a53186276d2c42f99f1d7b6f95d271928083bcf2ced690f863ab14ed941e')])
 _SOURCES_FILE = Path(__file__).with_name('dialogue_sources.json')   # long lists: SYNTH and Wikipedia shards
 _LISTS = json.loads(_SOURCES_FILE.read_text())
 SYNTH, WIKI_IT, WIKI_EN = _LISTS['synth'], _LISTS['wiki_it'], _LISTS['wiki_en']
@@ -69,7 +87,34 @@ SOURCES = {
                     page='https://huggingface.co/datasets/wikimedia/wikipedia', files=WIKI_EN),
     'fineweb2_it': dict(title='FineWeb-2 italiano · testo web filtrato (file di test ufficiale)', languages=['it'],
                         license='ODC-By 1.0', page='https://huggingface.co/datasets/HuggingFaceFW/fineweb-2', files=FINEWEB2_IT),
+    'code': dict(title='Code Alpaca · 20.000 richieste di programmazione con la soluzione (inglese)', languages=['en'],
+                 license='CC BY 4.0', page='https://huggingface.co/datasets/sahil2801/CodeAlpaca-20k', files=CODE),
+    'bash': dict(title='tldr (DocPrompting) · comandi bash spiegati in una frase, dalle pagine tldr', languages=['en'],
+                 license='MIT (pagine tldr: CC BY 4.0)', page='https://huggingface.co/datasets/neulab/tldr', files=BASH),
+    'music': dict(title='IrishMAN · melodie in notazione ABC', languages=['abc'], license='MIT',
+                  page='https://huggingface.co/datasets/sander-wood/irishman', files=MUSIC),
+    'fashion': dict(title='Fashion-MNIST · immagini di capi di abbigliamento con il loro nome', languages=['it', 'en'],
+                    license='MIT', page='https://huggingface.co/datasets/zalando-datasets/fashion_mnist', files=FASHION),
+    'digits': dict(title='MNIST · cifre scritte a mano con la cifra', languages=['it', 'en'], license='MIT',
+                   page='https://huggingface.co/datasets/ylecun/mnist', files=MNIST),
+    'spoken': dict(title='Free Spoken Digit Dataset · cifre pronunciate (WAV 8 kHz)', languages=['en'], license='CC BY-SA 4.0',
+                   page='https://huggingface.co/datasets/mteb/free-spoken-digit-dataset', files=DIGITS_SPOKEN),
+    'moving': dict(title='Cifre in movimento · brevi video 16×16 generati dalle cifre MNIST', languages=['it', 'en'],
+                   license='MIT (da MNIST)', page='https://huggingface.co/datasets/ylecun/mnist', files=MNIST),
 }
+# Other kinds of data the long training can add to the text; each part caps the megabytes it writes.
+DOMAINS = {
+    'code': dict(title='Codice (Python e altri linguaggi)', parts={'code': dict(files=[0], caps=dict(en=12))}),
+    'bash': dict(title='Comandi bash', parts={'bash': dict(files=[0, 1], caps=dict(en=8))}),
+    'music': dict(title='Musica in notazione ABC', parts={'music': dict(files=[0, 1], caps=dict(abc=60))}),
+    'images': dict(title='Immagini 32×32 con il loro nome', parts={'fashion': dict(files=[0, 1], caps=dict(it=60, en=60)),
+                                                                   'digits': dict(files=[0, 1], caps=dict(it=30, en=30))}),
+    'audio': dict(title='Suoni: cifre pronunciate', parts={'spoken': dict(files=[0, 1], caps=dict(en=120))}),
+    'video': dict(title='Video: cifre in movimento', parts={'moving': dict(files=[1], caps=dict(it=40, en=40))}),
+}
+FASHION_NAMES = [('maglietta', 't-shirt'), ('pantaloni', 'trousers'), ('maglione', 'pullover'), ('vestito', 'dress'),
+                 ('cappotto', 'coat'), ('sandalo', 'sandal'), ('camicia', 'shirt'), ('scarpa da ginnastica', 'sneaker'),
+                 ('borsa', 'bag'), ('stivaletto', 'ankle boot')]
 
 MB = 1024*1024
 # For each source: which files and, per language, the most megabytes of corpus it may write.
@@ -108,7 +153,12 @@ def catalog():
         mixtures.append(dict(id=key, title=item['title'], corpus_mb=size, download_mb=round(download/MB),
                              languages={language: sum(part['caps'].get(language, 0) for part in item['parts'].values())
                                         for language in ('it', 'en')}))
-    return dict(sources=sources, mixtures=mixtures, reference=REFERENCE_NOTE)
+    domains = []
+    for key, item in DOMAINS.items():
+        download = sum(SOURCES[name]['files'][index]['bytes'] for name, part in item['parts'].items() for index in part['files'])
+        domains.append(dict(id=key, title=item['title'], corpus_mb=sum(sum(part['caps'].values()) for part in item['parts'].values()),
+                            download_mb=round(download/MB), sources=[SOURCES[name]['title'] for name in item['parts']]))
+    return dict(sources=sources, mixtures=mixtures, domains=domains, reference=REFERENCE_NOTE)
 
 
 # ---- turning records into training text -----------------------------------------------------------------------
@@ -130,7 +180,12 @@ def split_of(text, official_test=False):
 def records(source, path, file):
     """(language, text, official_test) for every usable record of one downloaded file."""
     import pyarrow.parquet as parquet
-    test = '/test' in file['path'] or 'validation' in file['path']
+    name = file['path'].rsplit('/', 1)[-1]
+    test = '/test' in file['path'] or 'validation' in file['path'] or name.startswith(('test', 'tldr-test'))
+    extra = _extra_records(source, path, test)
+    if extra is not None:
+        yield from extra
+        return
     if source == 'redix':
         with open(path, encoding='utf-8') as stream:
             for line in stream:
@@ -165,6 +220,82 @@ def records(source, path, file):
                 language, text = 'it', row['text']
             if text and language in ('it', 'en'):
                 yield language, text, test
+
+
+def _extra_records(source, path, test):
+    """Records of the other kinds of data, or None for the text sources."""
+    import pyarrow.parquet as parquet
+    if source == 'code':
+        def code():
+            for item in json.loads(Path(path).read_text(encoding='utf-8')):
+                question = item['instruction'] + (f"\n\n{item['input']}" if item.get('input') else '')
+                text = chat([('user', question), ('assistant', item['output'])])
+                if text:
+                    yield 'en', text, test
+        return code()
+    if source == 'bash':
+        def bash():
+            with open(path, encoding='utf-8') as stream:
+                for line in stream:
+                    item = json.loads(line)
+                    command = item['cmd'].replace('{{', '').replace('}}', '')
+                    yield 'en', chat([('user', item['nl']), ('assistant', command)]), test
+        return bash()
+    if source == 'music':
+        def music():
+            for item in json.loads(Path(path).read_text(encoding='utf-8')):
+                if item.get('abc notation'):
+                    yield 'abc', item['abc notation'].strip(), test
+        return music()
+    if source in ('fashion', 'digits', 'spoken', 'moving'):
+        def media_records():
+            from .media import encode_audio, encode_image
+            column = 'audio' if source == 'spoken' else 'image'
+            rows = parquet.ParquetFile(path)
+            index = 0
+            for batch in rows.iter_batches(batch_size=256, columns=[column, 'label']):
+                for row in batch.to_pylist():
+                    label, raw = row['label'], row[column]['bytes']
+                    language = 'it' if index % 2 == 0 else 'en'          # Italian and English requests in turn
+                    index += 1
+                    if source == 'fashion':
+                        names = FASHION_NAMES[label]
+                        question = f'Disegna: {names[0]}.' if language == 'it' else f'Draw: {names[1]}.'
+                        yield language, chat([('user', question), ('assistant', encode_image(raw))]), test
+                    elif source == 'digits':
+                        question = f'Disegna la cifra {label}.' if language == 'it' else f'Draw the digit {label}.'
+                        yield language, chat([('user', question), ('assistant', encode_image(raw))]), test
+                    elif source == 'spoken':
+                        yield 'en', chat([('user', f'Say the digit {label}.'), ('assistant', encode_audio(raw))]), test
+                    else:
+                        question = f'Mostra la cifra {label} che si muove.' if language == 'it' else f'Show the digit {label} moving.'
+                        yield language, chat([('user', question), ('assistant', moving_digit(raw, index))]), test
+        return media_records()
+    return None
+
+
+def moving_digit(raw, seed, frames=16):
+    """A short video: a handwritten digit, shrunk to 8 x 8, bouncing inside a 16 x 16 frame."""
+    import random
+    from PIL import Image
+    from .media import VIDEO_SIZE, _colour
+    digit = Image.open(__import__('io').BytesIO(raw)).convert('L').resize((8, 8))
+    rng = random.Random(seed)
+    x, y = rng.randint(0, VIDEO_SIZE-8), rng.randint(0, VIDEO_SIZE-8)
+    dx, dy = rng.choice((-1, 1)), rng.choice((-1, 1))
+    parts = []
+    for _ in range(frames):
+        canvas = Image.new('L', (VIDEO_SIZE, VIDEO_SIZE))
+        canvas.paste(digit, (x, y))
+        pixels = list(canvas.getdata())
+        parts.append('<|frame|>' + ''.join(''.join(f'<|p{_colour(value, value, value)}|>' for value in pixels[row*VIDEO_SIZE:(row+1)*VIDEO_SIZE])
+                                           + '<|row|>' for row in range(VIDEO_SIZE)))
+        if not 0 <= x+dx <= VIDEO_SIZE-8:
+            dx = -dx
+        if not 0 <= y+dy <= VIDEO_SIZE-8:
+            dy = -dy
+        x, y = x+dx, y+dy
+    return '<|video|>' + ''.join(parts) + '<|/video|>'
 
 
 def _oasst(rows, test):
@@ -226,22 +357,30 @@ class Paused(Exception):
     pass
 
 
-def plan(mixture):
-    """The ordered list of (source, file index) of a mixture."""
-    return [(name, index) for name, part in MIXTURES[mixture]['parts'].items() for index in part['files']]
+def parts_of(mixture, extras=()):
+    """Every part of a mixture and of the chosen other kinds of data, as (name, part)."""
+    found = list(MIXTURES[mixture]['parts'].items())
+    for domain in extras:
+        found += list(DOMAINS[domain]['parts'].items())
+    return found
 
 
-def build(directory, mixture, check=lambda: None, report=lambda phase, state: None):
+def plan(mixture, extras=()):
+    """The ordered list of (source, file index, part) of a mixture with its extras."""
+    return [(name, index, part) for name, part in parts_of(mixture, extras) for index in part['files']]
+
+
+def build(directory, mixture, check=lambda: None, report=lambda phase, state: None, extras=()):
     """Write ``directory/corpus.jsonl``; ``state.json`` makes it resumable. Returns the final state."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     state_path, output = directory/'state.json', directory/'corpus.jsonl'
     state = json.loads(state_path.read_text()) if state_path.exists() else dict(
-        mixture=mixture, position=0, row=0, written=0, by_part={}, records={'train': 0, 'validation': 0, 'test': 0},
-        done=False)
-    if state['mixture'] != mixture:
+        mixture=mixture, extras=list(extras), position=0, row=0, written=0, by_part={},
+        records={'train': 0, 'validation': 0, 'test': 0}, done=False)
+    if state['mixture'] != mixture or state.get('extras', []) != list(extras):
         raise ValueError('La preparazione salvata è di un\'altra miscela.')
-    steps = plan(mixture)
+    steps = plan(mixture, extras)
 
     def save():
         temporary = state_path.with_suffix('.tmp')
@@ -251,8 +390,8 @@ def build(directory, mixture, check=lambda: None, report=lambda phase, state: No
         stream.truncate(state['written'])                       # drop a write interrupted after the last save
         stream.seek(state['written'])
         while state['position'] < len(steps):
-            name, index = steps[state['position']]
-            part, file = MIXTURES[mixture]['parts'][name], SOURCES[name]['files'][index]
+            name, index, part = steps[state['position']]
+            file = SOURCES[name]['files'][index]
             caps = {language: megabytes*MB for language, megabytes in part['caps'].items()}
             used = lambda language: state['by_part'].get(f'{name}:{language}', 0)
             if all(used(language) >= cap for language, cap in caps.items()):
@@ -312,13 +451,14 @@ def run_in_worker(root, identifier, stop_event=None):
         store.update_build(identifier, phase=phase, result=dict(progress=progress(state)))
     try:
         store.update_build(identifier, status='running', error=None)
-        state = build(directory, item['request']['mixture'], check, report)
-        name = f"dialogo-{item['request']['mixture']}.jsonl"
+        mixture, extras = item['request']['mixture'], item['request'].get('extras', [])
+        state = build(directory, mixture, check, report, extras)
+        name = f"dialogo-{mixture}" + ''.join(f'-{domain}' for domain in extras) + '.jsonl'
         corpus = store.adopt_corpus(item['owner'], name, directory/'corpus.jsonl')
-        provenance = dict(mixture=item['request']['mixture'], title=MIXTURES[item['request']['mixture']]['title'],
+        provenance = dict(mixture=mixture, extras=extras, title=MIXTURES[mixture]['title'],
                           sources={key: dict(title=SOURCES[key]['title'], license=SOURCES[key]['license'], page=SOURCES[key]['page'],
                                              files=[SOURCES[key]['files'][index] for index in part['files']])
-                                   for key, part in MIXTURES[item['request']['mixture']]['parts'].items()},
+                                   for key, part in parts_of(mixture, extras)},
                           records=state['records'], bytes=state['written'], reference=REFERENCE_NOTE, prepared_at=time.time())
         (store.directory('corpora', corpus['id'])/'dialogue-source.json').write_text(json.dumps(provenance, indent=1))
         store.update_build(identifier, status='completed', phase='Pronto: il testo è fra quelli da addestrare',
@@ -331,7 +471,8 @@ def run_in_worker(root, identifier, stop_event=None):
 
 
 def progress(state):
-    steps = plan(state['mixture'])
-    total = sum(sum(part['caps'].values()) for part in MIXTURES[state['mixture']]['parts'].values())*MB
+    extras = state.get('extras', [])
+    steps = plan(state['mixture'], extras)
+    total = sum(sum(part['caps'].values()) for _, part in parts_of(state['mixture'], extras))*MB
     return dict(files_done=state['position'], files=len(steps), written_mb=round(state['written']/MB, 1),
                 target_mb=round(total/MB), records=state['records'])

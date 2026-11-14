@@ -181,7 +181,9 @@ def build_view(build):
     share = 100*progress.get('written_mb', 0)/max(progress.get('target_mb', 1), 1)
     status = {'queued': 'in partenza', 'running': 'in corso', 'pausing': 'si sta fermando', 'paused': 'in pausa',
               'interrupted': 'interrotta da un riavvio (riparte da sola)', 'completed': 'pronta', 'failed': 'errore'}.get(build['status'], build['status'])
-    lines = [html.P(f"Miscela «{build['request']['mixture']}» · {status} · {build.get('phase') or ''}", className='small mb-1'),
+    extras = build['request'].get('extras') or []
+    lines = [html.P(f"Miscela «{build['request']['mixture']}»" + (f" + {', '.join(extras)}" if extras else '') + f" · {status} · {build.get('phase') or ''}",
+                    className='small mb-1'),
              dbc.Progress(value=min(share, 100), label=f"{progress.get('written_mb', 0):,.0f} di circa {progress.get('target_mb', 0):,} MB",
                           style={'height': '20px'}, className='mb-1')]
     if progress:
@@ -204,7 +206,7 @@ layout = dbc.Card(dbc.CardBody([
            "italiano e inglese insieme. L'addestramento salva il lavoro ogni 100 passi e ogni 5 minuti, riprende da solo "
            "dopo un riavvio del server, e a ogni salvataggio risponde alle domande di prova: le vedi qui sotto mentre impara.",
            className='small'),
-    html.H5('1 · I dati: italiano e inglese per conversare', className='mt-3'),
+    html.H5('1 · I dati: italiano e inglese, più codice, comandi, musica, immagini, suoni e video a scelta', className='mt-3'),
     html.P("Il worker scarica le fonti una alla volta da versioni fissate, verifica ogni file, tiene solo il testo e "
            "cancella il resto. La preparazione si mette in pausa e riprende senza perdere nulla.", className='small'),
     dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-mixture', placeholder='Scegli la quantità di dati', clearable=False), md=6),
@@ -212,6 +214,9 @@ layout = dbc.Card(dbc.CardBody([
                       dbc.Button('Pausa', id='lm-long-build-pause', outline=True, color='warning', className='me-2'),
                       dbc.Button('Riprendi', id='lm-long-build-resume', outline=True, color='primary')], md=6)], className='mb-2'),
     html.Div(id='lm-long-mixture-info', className='small text-muted'),
+    dbc.Label('Altri dati da aggiungere al testo (facoltativi)', className='mt-2 mb-0'),
+    dbc.Checklist(id='lm-long-extras', value=[], inline=True, className='small'),
+    html.Div(id='lm-long-extras-info', className='small text-muted mb-2'),
     html.Div(id='lm-long-build-status', role='status', className='small'), html.Div(id='lm-long-build-view'),
     dbc.Accordion([dbc.AccordionItem(html.Div(id='lm-long-sources'), title='Fonti, licenze e riferimento fisso')],
                   start_collapsed=True, className='my-2'),
@@ -284,6 +289,25 @@ def register(app):
                             html.P(catalog['reference'], className='small')])
         return options, current or options[0]['value'], sources
 
+    @app.callback(Output('lm-long-extras', 'options'), Input('lm-long-catalog', 'data'))
+    def extras(catalog):
+        return [dict(label=item['title'], value=item['id']) for item in (catalog or {}).get('domains', [])]
+
+    @app.callback(Output('lm-long-extras-info', 'children'), Input('lm-long-extras', 'value'), State('lm-long-catalog', 'data'))
+    def extras_info(chosen, catalog):
+        items = [item for item in (catalog or {}).get('domains', []) if item['id'] in (chosen or [])]
+        if not items:
+            return ("Il testo italiano e inglese è il punto di partenza. Si possono aggiungere codice, comandi bash, musica (ABC), "
+                    "immagini, suoni e video: il tokenizer impara da tutto insieme.")
+        lines = [html.Li(f"{item['title']}: circa {item['corpus_mb']:,} MB di dati, {item['download_mb']:,} MB da scaricare · {'; '.join(item['sources'])}")
+                 for item in items]
+        hint = []
+        if any(item['id'] in ('images', 'audio', 'video') for item in items):
+            hint.append(html.Li("Per imparare immagini, suoni o video interi alza «Token letti per pezzo» (un'immagine circa 1.060 token, "
+                                "una cifra pronunciata circa 4.000, un video circa 4.400) e metti fra le domande di prova, per esempio, "
+                                "«Disegna la cifra 7.»."))
+        return html.Ul(lines + hint)
+
     @app.callback(Output('lm-long-mixture-info', 'children'), Input('lm-long-mixture', 'value'), State('lm-long-catalog', 'data'))
     def mixture_info(mixture, catalog):
         item = next((item for item in (catalog or {}).get('mixtures', []) if item['id'] == mixture), None)
@@ -299,12 +323,13 @@ def register(app):
 
     @app.callback(Output('lm-long-build-status', 'children'),
                   Input('lm-long-build', 'n_clicks'), Input('lm-long-build-pause', 'n_clicks'), Input('lm-long-build-resume', 'n_clicks'),
-                  State('lm-workspace', 'data'), State('lm-long-mixture', 'value'), State('lm-long-builds', 'data'), prevent_initial_call=True)
-    def build_action(start, pause, resume, workspace, mixture, items):
+                  State('lm-workspace', 'data'), State('lm-long-mixture', 'value'), State('lm-long-builds', 'data'),
+                  State('lm-long-extras', 'value'), prevent_initial_call=True)
+    def build_action(start, pause, resume, workspace, mixture, items, extras=None):
         latest = (items or [None])[0]
         try:
             if dash.ctx.triggered_id == 'lm-long-build':
-                backend(workspace, '/builds', 'POST', dict(mixture=mixture))
+                backend(workspace, '/builds', 'POST', dict(mixture=mixture, extras=list(extras or [])))
                 return 'Preparazione avviata: il primo file è in download.'
             if not latest:
                 raise ValueError('Nessuna preparazione da mettere in pausa o riprendere.')

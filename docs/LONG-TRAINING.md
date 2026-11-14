@@ -81,6 +81,22 @@ di chat del tokenizer (`<|im_start|>user … <|im_end|>`). Le conversazioni in
 italiano sono la parte scarsa (circa 46, 240 e 480 MB nelle tre miscele);
 l'italiano in generale viene soprattutto da Wikipedia e FineWeb-2.
 
+**Altri dati, a scelta** (oltre al testo italiano e inglese, sempre presente):
+
+| Dati | Fonte | Licenza | Forma nel corpus |
+|---|---|---|---|
+| Codice | Code Alpaca (20.000 richieste con la soluzione) | CC BY 4.0 | conversazione: richiesta → codice |
+| Comandi bash | tldr (DocPrompting), dalle pagine tldr | MIT; pagine CC BY 4.0 | conversazione: frase → comando |
+| Musica | IrishMAN, melodie in notazione ABC | MIT | testo ABC |
+| Immagini | Fashion-MNIST e MNIST | MIT | «Disegna: borsa.» / «Draw the digit 7.» → immagine 32×32 |
+| Suoni | Free Spoken Digit Dataset (WAV 8 kHz) | CC BY-SA 4.0 | «Say the digit 3.» → suono |
+| Video | cifre MNIST che si muovono, generate dal worker | MIT (da MNIST) | «Mostra la cifra 4 che si muove.» → 16 fotogrammi 16×16 |
+
+Ogni parte ha un limite in MB, i file ufficiali di test vanno nel test, e il
+tokenizer impara da tutto insieme. Per immagini, suoni e video interi alzare i
+token letti per pezzo (un'immagine circa 1.060, una cifra pronunciata circa
+4.000, un video circa 4.400).
+
 **Riferimento fisso.** I file di test ufficiali delle fonti e circa l'1% + 1%
 di tutto il resto, scelti con un hash del testo, sono validazione e test: gli
 stessi per tutta la durata, quindi i checkpoint si confrontano su testo mai

@@ -205,7 +205,7 @@ def encode(name, raw, tools=None):
 
 def _decode_grid(body, size):
     from PIL import Image
-    image = Image.new('RGB', (size, size))
+    image = Image.new('RGB', (size, size), (128, 128, 128))      # rows not written stay grey, not black: never mistaken for content
     rows = [row for row in body.split('<|row|>')][:size]
     for y, row in enumerate(rows):
         for x, code in enumerate(re.findall(r'<\|p(\d+)\|>', row)[:size]):
