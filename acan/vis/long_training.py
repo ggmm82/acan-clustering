@@ -28,7 +28,7 @@ def profile(cuda, size='micro'):
                     graft_fraction=1., vocabulary=32000, distillation_weight=0., early_stop_patience=0, validation_batches=16,
                     save_seconds=300, device='auto', chat_probes=True, auto_resume=True)
     if cuda:
-        settings.update(sequence_length=1024, batch_size=16, accumulation=2, slots=64, window=64,
+        settings.update(sequence_length=1024, batch_size=8, accumulation=4, slots=64, window=64,
                         learning_rate={'micro': 1e-3, 'small': 6e-4, 'base': 4e-4}[size])
     else:   # CPU: pieces of 256 tokens, 16 exact tokens and 16 concepts
         settings.update(sequence_length=256, batch_size=1, accumulation=8, slots=16, window=16,
@@ -227,6 +227,10 @@ layout = dbc.Card(dbc.CardBody([
              dbc.Col(dbc.InputGroup([dbc.InputGroupText('Salva ogni'), dbc.Input(id='lm-long-save', type='number', value=100, min=10, max=10000), dbc.InputGroupText('passi')]), md=4),
              dbc.Col(dbc.InputGroup([dbc.InputGroupText('Tieni per sempre ogni'), dbc.Input(id='lm-long-milestone', type='number', value=1000, min=0, max=10000000), dbc.InputGroupText('passi')]), md=4)],
             className='mb-2'),
+    dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Token letti per pezzo'), dbc.Input(id='lm-long-length', type='number', value=256, min=64, max=2048, step=64)]), md=4),
+             dbc.Col(html.Small("Per il testo bastano 256. Un'immagine è circa 1.060 token: per impararla intera servono almeno 1.088; "
+                                "un secondo di suono 8.000. Più lungo = più lento per passo, la memoria dei concetti resta fissa.",
+                                className='text-muted'), md=8)], className='mb-2'),
     dbc.Label('Domande di prova (una per riga, al massimo 6; vuoto = domande predefinite in italiano e inglese)'),
     dbc.Textarea(id='lm-long-questions', rows=3, placeholder='Ciao! Chi sei?\nQual è la capitale della Francia?'),
     dbc.Button('Crea la coda e avvia', id='lm-long-start', color='primary', className='mt-2'),
@@ -341,14 +345,14 @@ def register(app):
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
-                  prevent_initial_call=True)
-    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state):
+                  State('lm-long-length', 'value'), prevent_initial_call=True)
+    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda, model or 'micro'), name=QUEUE_NAME, passes=float(passes or 1), save_steps=int(save or 100),
-                        milestone_steps=int(milestone or 0),
+                        milestone_steps=int(milestone or 0), sequence_length=int(length or 256),
                         probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             return result.get('message', 'Coda creata.'), result['queue']

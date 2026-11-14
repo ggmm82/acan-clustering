@@ -117,6 +117,8 @@ def series_configs(base, variants):
         label, change = SERIES_VARIANTS[item]
         if item == 'fewer_concepts':                           # stronger compression, possible on the CPU too
             change = {'slots': max(int(base.get('slots', 16))//2, 2)}
+        elif item == 'dense' and base.get('architecture') == 'native':
+            change = {'native_attention': 'dense'}              # the same native model with ordinary attention
         elif item == 'all_layers':
             change = {'graft_fraction': 1., 'sequence_length': min(int(base.get('sequence_length', 128)), 64)}
         configs.append((item, label, dict(base, **change, name=f"{base.get('name', 'Serie')} · {label}")))

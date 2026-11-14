@@ -117,13 +117,12 @@ layout = dbc.Container([
                 html.Div(id='lm-small-status', role='status', className='small'), html.Div(id='lm-small-view'),
                 dbc.Button('Scarica tutti i dati della prova (per il debug)', id='lm-small-download', outline=True, color='secondary', size='sm', className='mt-1'), dcc.Download(id='lm-small-file'),
                 dcc.Store(id='lm-small-id'), dcc.Store(id='lm-small-result'), dcc.Interval(id='lm-small-poll', interval=5000),
-                html.H6('Passo 2 · Prova su un modello vero (SmolLM2, ore sulla CPU)', className='mt-3'),
-                html.P("Da fare solo dopo il passo 1. Domanda: innestare i concetti in un modello già addestrato ne peggiora "
-                       "la qualità? Due progetti, uno dopo l'altro, con lo stesso testo e gli stessi passi: metà dei layer a "
-                       "concetti, e attenzione normale. Linee quasi uguali (differenza sotto 0,15 nella verifica finale) vogliono "
-                       "dire che i concetti non costano qualità; questa prova non può dire se servono, perché su pezzi di 128 "
-                       "token il modello usa quasi solo le parole vicine. Quello lo dice il passo 1.", className='small'),
-                dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Passi'), dbc.Input(id='lm-validation-steps', type='number', value=600, min=50, max=100000)]), md=4),
+                html.H6('Passo 2 · Prova su un modello nativo vero (micro, nato da zero)', className='mt-3'),
+                html.P("Da fare dopo il passo 1. Due modelli nativi micro nascono da zero sullo stesso testo, con lo stesso "
+               "tokenizer, gli stessi passi e lo stesso seme: uno con i concetti in ogni layer, uno con l'attenzione normale. "
+               "Partono uno dopo l'altro e compaiono sullo stesso grafico. Linee vicine (differenza sotto 0,15 nella verifica "
+               "finale) vogliono dire che i concetti non costano qualità al modello che addestrerai.", className='small'),
+        dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Passi'), dbc.Input(id='lm-validation-steps', type='number', value=600, min=50, max=100000)]), md=4),
                          dbc.Col(dbc.Button('Avvia il confronto sul modello vero', id='lm-validation-start', color='primary'), md=8)]),
                 html.Div(id='lm-validation-status', role='status', className='small mt-1'),
                 html.H6('Passo 3 · Decisione', className='mt-3'),
@@ -1067,6 +1066,12 @@ def register(app):
                 details.append(html.Li(f"Testo di {item['context']} token: lettura iniziale {item['prefill_speedup']:.2f} volte la velocità dell'originale, "
                                        f"scrittura {item['decode_speedup']:.2f} volte; memoria "
                                        + (f"{memory:.0%} in meno." if memory >= 0 else f"{-memory:.0%} in più.")))
+            if 'original' not in report['records']:              # a native model: its own numbers, nothing to compare with
+                speed=[html.Li(f"Testo di {item['prompt_tokens']} token: lettura {item['prefill_tokens_per_second']:,.0f} token al secondo, "
+                               f"scrittura {item['decode_tokens_per_second']:,.1f}; memoria di lettura {item['cache']['total']/1024:,.0f} KB")
+                         for item in report['records']['selected_checkpoint']['performance']]
+                return [table,html.P('Modello nato da zero: non c\'è un modello originale da confrontare. Il confronto giusto è con il suo '
+                                     'controllo ad attenzione normale, verificato allo stesso modo.',className='small'),html.Ul(speed)],report
             saving=[item['context'] for item in report['comparison'] if item['total_cache_reduction']>=0]
             longest=max((item['context'] for item in report['comparison']),default=0)
             verdict=(f"Da {min(saving):,} token in su la copia occupa meno memoria del modello originale." if saving else
@@ -1267,10 +1272,10 @@ def register(app):
     def start_validation(clicks, workspace, text, steps, state):
         try:
             corpus = validation_corpus(workspace, text)
-            config = dict(corpus_id=corpus, base_model=MODELS[0], name=unique_name(VALIDATION_NAME, (state or {}).get('jobs', [])),
-                          total_steps=int(steps or 600), sequence_length=128, batch_size=1, accumulation=8, learning_rate=1e-4,
-                          slots=16, window=16, lora_rank=8, save_steps=50, device='auto',
-                          protocol='controlled-v1', routing_profile='concept-graph-v1', distillation_weight=0., graft_fraction=.5,
+            from .long_training import profile
+            cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
+            config = dict(profile(cuda, 'micro'), corpus_id=corpus, name=unique_name(VALIDATION_NAME, (state or {}).get('jobs', [])),
+                          total_steps=int(steps or 600), save_steps=50, chat_probes=False, auto_resume=False,
                           early_stop_patience=6, early_stop_min_delta=.005, validation_batches=32)
             result = backend(workspace, '/series', 'POST', dict(base=config, variants=['chosen', 'dense']))
             return result['jobs'][0]['id'], ("Confronto avviato: prima il progetto con i concetti, poi quello con l'attenzione "

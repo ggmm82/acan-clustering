@@ -12,7 +12,8 @@ embedding) in cui l'attenzione di **ogni** blocco è il layer a concetti.
 | piccolo | 8 | 512 | 8 | circa 50 milioni | CPU lenta o GPU |
 | base | 12 | 768 | 12 | circa 138 milioni | GPU |
 
-Sulla CPU: pezzi di 256 token, 16 token esatti e 16 concetti, 8 pezzi per
+Sulla CPU: pezzi di 256 token (fino a 2.048, scelti nella pagina: un'immagine
+intera ne vuole almeno 1.088), 16 token esatti e 16 concetti, 8 pezzi per
 correzione. Con una GPU: 1.024 token, 64 + 64, 32 pezzi per correzione.
 
 **Tokenizer.** Nasce da una parte uguale di **tutti** i testi della coda al

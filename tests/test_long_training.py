@@ -383,3 +383,19 @@ class MediaTest(unittest.TestCase):
             ids = tokenizer(image)['input_ids']
             self.assertEqual(len(ids), 32*32+32+2)                                           # one token per pixel and marker
             self.assertEqual(readable(tokenizer, ids), image)                                # kept for display
+
+
+@unittest.skipUnless(SERVICE, 'Requires LM service dependencies')
+class NativeSeriesTest(unittest.TestCase):
+    def test_validation_series_on_native_models_and_page_profiles(self):
+        from acan.lm.manager import series_configs
+        from acan.lm.research_options import validate_options
+        from acan.lm.resources import check_profile
+        from acan.vis.long_training import profile
+        base = dict(profile(False), corpus_id='a'*32, name='Validazione')
+        (_, _, concepts), (_, _, dense) = series_configs(base, ['chosen', 'dense'])
+        self.assertEqual((concepts.get('native_attention', 'concepts'), dense['native_attention'], dense['architecture']), ('concepts', 'dense', 'native'))
+        for cuda in (False, True):                                          # both page profiles are accepted
+            config = validate_options(dict(profile(cuda, 'micro'), corpus_id='a'*32))
+            check_profile(config, cuda)
+        check_profile(validate_options(dict(profile(False), corpus_id='a'*32, sequence_length=1088)), False)   # a whole image
