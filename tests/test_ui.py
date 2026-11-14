@@ -104,9 +104,11 @@ b,?,no
         with patch('acan.vis.generative.backend',return_value={'id':'request'}) as backend:
             result=self.invoke('..lm-generation-id.data',[('lm-generate','n_clicks',1)],
                 [('lm-workspace','data','a'*64),('lm-job','value','b'*32),('lm-checkpoint','value','step-1'),
-                 ('lm-prompt','value','The cat'),('lm-new-tokens','value',3),('lm-inspect-generation','value',True)])
+                 ('lm-prompt','value','The cat'),('lm-new-tokens','value',3),('lm-inspect-generation','value',True),
+                 ('lm-full-length','value',True)])
             self.assertEqual(result['lm-generation-id']['data'],'request')
             self.assertTrue(backend.call_args.args[3]['inspect_layers'])
+            self.assertTrue(backend.call_args.args[3]['full_length'])            # writes up to the requested length
         report=dict(step=1,mode='inference',scope='scope',limits='limits',gradients={},frames=[dict(
             input_tokens=4,prefix_tokens=4,logits_finite=True,next_token_candidates=[dict(token=' cat',token_id=2,probability=.5)],
             layers=[dict(layer=0,kind='ACAN',input=dict(rms=1.,finite=True),output=dict(rms=1.,finite=True),
@@ -217,6 +219,93 @@ b,?,no
         self.assertIn('checkpoint passo 7', text)
         self.assertIn('token elaborati', text)
 
+    def test_project_and_dense_control_share_the_chart(self):
+        from unittest.mock import patch
+        from acan.vis.generative import comparison_summary, paired_job
+        base = dict(corpus_id='dante', total_steps=1000, protocol='controlled-v1')
+        concepts = dict(id='acan', status='paused', checkpoint='s', error=None, progress=dict(step=363, validation_nll=3.445, baseline_nll=4.537),
+                        config=dict(base, name='ACAN-LM experiment', architecture='hybrid'),
+                        history=[dict(step=300, training_nll=3.8, validation_nll=3.46)],
+                        snapshots=[dict(step=356, name='s', validation_nll=3.440, best=True)])
+        dense = dict(id='dense', status='paused', checkpoint='d', error=None, progress=dict(step=400, validation_nll=3.39),
+                     config=dict(base, name='Controllo denso · ACAN-LM experiment', architecture='dense-control'),
+                     history=[dict(step=300, validation_nll=3.41)], snapshots=[dict(step=380, name='d', validation_nll=3.380, best=True)])
+        other_corpus = dict(dense, id='elsewhere', config=dict(dense['config'], corpus_id='wiki'))
+        self.assertEqual(paired_job([concepts, other_corpus, dense], concepts)['id'], 'dense')
+        self.assertEqual(paired_job([concepts, dense], dense)['id'], 'acan')
+        self.assertIsNone(paired_job([concepts, other_corpus], concepts))
+        twin = dict(concepts, id='twin')                                   # same name and settings: ambiguous
+        self.assertIsNone(paired_job([concepts, twin, dense], dense))
+        linked = dict(dense, id='linked', config=dict(dense['config'], control_of='twin'))
+        self.assertEqual(paired_job([concepts, twin, linked], linked)['id'], 'twin')   # an explicit link always wins
+        self.assertEqual(paired_job([concepts, twin, linked], twin)['id'], 'linked')
+        from acan.vis.generative import project_label, unique_name
+        self.assertNotEqual(project_label(concepts, [concepts, twin]), project_label(twin, [concepts, twin]))
+        self.assertEqual(project_label(dense, [concepts, dense]), 'Controllo denso · ACAN-LM experiment · paused · passo 400')
+        self.assertTrue(unique_name('ACAN-LM experiment', [concepts]).startswith('ACAN-LM experiment · '))
+        self.assertEqual(unique_name('Nuovo', [concepts]), 'Nuovo')
+        text, color = comparison_summary(concepts, dense)
+        self.assertIn('+0.060', text)
+        self.assertIn('non costano qualità', text)
+        self.assertEqual(color, 'success')
+        self.assertIn('costa 0.36', comparison_summary(concepts, dict(dense, snapshots=[dict(best=True, validation_nll=3.08)]))[0])
+        view = dict(dense, history_view='full_overview')
+        verification = lambda nll: [dict(records=dict(selected_checkpoint=dict(quality=dict(nll=nll, tokens=4096))))]
+        answers = {'/jobs/dense/view': view, '/jobs/acan/evaluations': [], '/jobs/dense/evaluations': []}
+        with patch('acan.vis.generative.backend', side_effect=lambda workspace, path, *rest, **options: answers[path]) as backend:
+            result = self.invoke('..lm-progress.children', [('lm-state', 'data', {'jobs': [concepts, dense]}),
+                                 ('lm-job', 'value', 'acan'), ('lm-history-mode', 'value', 'overview'), ('lm-history-start', 'value', 0)],
+                                 [('lm-checkpoint', 'value', None), ('lm-workspace', 'data', 'a'*64), ('lm-chart-view', 'data', None)])
+            self.assertIn('/jobs/dense/view', [call.args[1] for call in backend.call_args_list])
+        names = [trace['name'] for trace in result['lm-loss']['figure']['data']]
+        self.assertIn('Controllo denso · validazione', names)
+        self.assertIn('Concetti · validazione', names)
+        self.assertIn('non costano qualità', str(result['lm-progress']['children']))
+        # With a verification on the test text for both, the comparison uses it instead of the validation.
+        text, color = comparison_summary(concepts, dense, verification(3.30), verification(3.00))
+        self.assertIn('testo di verifica', text)
+        self.assertIn('costa 0.30', text)
+        self.assertEqual(color, 'warning')
+
+    def test_rename_delete_and_series_from_the_page(self):
+        from unittest.mock import patch
+        from acan.vis.generative import series_table
+        with patch('acan.vis.generative.backend', return_value={'config': {'name': 'Dante, prova'}}) as backend:
+            result = self.invoke('..lm-manage-status.children', [('lm-rename', 'n_clicks', 1)],
+                                 [('lm-rename-value', 'value', 'Dante, prova'), ('lm-workspace', 'data', 'a'*64), ('lm-job', 'value', 'job'),
+                                  ('lm-refresh', 'n_clicks', 2)])
+            backend.assert_called_once_with('a'*64, '/jobs/job/rename', 'POST', {'name': 'Dante, prova'})
+        self.assertIn('Dante, prova', result['lm-manage-status']['children'])
+        self.assertEqual(result['lm-refresh']['n_clicks'], 3)                    # the list is reloaded
+        with patch('acan.vis.generative.backend', return_value={'deleted': 'job'}) as backend:
+            result = self.invoke('..lm-manage-status.children', [('lm-delete-confirm', 'submit_n_clicks', 1)],
+                                 [('lm-workspace', 'data', 'a'*64), ('lm-job', 'value', 'job'), ('lm-refresh', 'n_clicks', 0)])
+            backend.assert_called_once_with('a'*64, '/jobs/job/delete', 'POST', {})
+        self.assertIsNone(result['lm-job']['value'])
+        series = dict(id='s1', jobs=[dict(id='one'), dict(id='two')])
+        states = [('lm-workspace', 'data', 'a'*64), ('lm-series-variants', 'value', ['chosen', 'dense']), ('lm-corpus', 'value', 'dante'),
+                  ('lm-base', 'value', 'HuggingFaceTB/SmolLM2-135M'), ('lm-name', 'value', 'Dante'), ('lm-steps', 'value', 300),
+                  ('lm-length', 'value', 128), ('lm-batch', 'value', 1), ('lm-accum', 'value', 8), ('lm-lr', 'value', .0001),
+                  ('lm-slots', 'value', 16), ('lm-window', 'value', 16), ('lm-rank', 'value', 8), ('lm-save', 'value', 50),
+                  ('lm-device', 'value', 'cpu'), ('lm-patience', 'value', 3), ('lm-min-delta', 'value', .01), ('lm-validation', 'value', 32),
+                  ('lm-state', 'data', {'jobs': []})]
+        with patch('acan.vis.generative.backend', return_value=series) as backend:
+            result = self.invoke('..lm-active-job.data', [('lm-series-start', 'n_clicks', 1)], states)
+        path, method, body = backend.call_args.args[1:4]
+        self.assertEqual((path, method), ('/series', 'POST'))
+        self.assertEqual(body['variants'], ['chosen', 'dense'])
+        self.assertEqual(body['base']['validation_batches'], 32)
+        self.assertEqual(result['lm-active-job']['data'], 'one')
+        base = dict(corpus_id='dante', total_steps=300)
+        members = [dict(id=f'j{order}', status='completed' if order == 0 else 'created', progress=dict(step=300 if order == 0 else 0),
+                        config=dict(base, name=f'Dante · {label}', series=dict(id='s1', order=order, label=label)),
+                        snapshots=[dict(best=True, validation_nll=3.4)] if order == 0 else [])
+                   for order, label in enumerate(('impostazioni scelte', 'attenzione normale'))]
+        table = str(series_table(members, members[0], {'j0': [dict(records=dict(selected_checkpoint=dict(quality=dict(nll=3.21, tokens=100))))]}))
+        self.assertIn('impostazioni scelte', table)
+        self.assertIn('3.400', table)
+        self.assertIn('3.210', table)
+
     def test_public_defaults_survive_worker_catalog_loading(self):
         result = self.invoke('..lm-public-dataset.options', [('lm-state', 'data', None),
                              ('lm-public-dataset', 'value', 'dante-it')])
@@ -281,7 +370,8 @@ b,?,no
             ('lm-length','value',64),('lm-batch','value',1),('lm-accum','value',1),('lm-lr','value',.0001),
             ('lm-slots','value',16),('lm-window','value',16),('lm-rank','value',8),('lm-save','value',5),
             ('lm-device','value','cpu'),('lm-distill','value',True),('lm-fraction','value',1.),
-            ('lm-patience','value',5),('lm-min-delta','value',.001),('lm-routing','value','shared-algebra-v1'),('lm-cp-weight','value',.2)]
+            ('lm-patience','value',5),('lm-min-delta','value',.001),('lm-routing','value','shared-algebra-v1'),('lm-cp-weight','value',.2),
+            ('lm-state','data',{'jobs':[]}),('lm-validation','value',32)]
         with patch('acan.vis.generative.backend',side_effect=[{'id':'new-job'},{}]) as backend:
             result=self.invoke('..lm-active-job.data',[('lm-start','n_clicks',1),('lm-pause','n_clicks',0),('lm-resume','n_clicks',0)],states)
         options=backend.call_args_list[0].args[3]
@@ -291,7 +381,7 @@ b,?,no
         self.assertEqual(options['routing_profile'],'shared-algebra-v1')
         self.assertEqual(options['cp_weight'],0.)
         self.assertEqual(result['lm-active-job']['data'],'new-job')
-        states[-2]=('lm-routing','value','cp-joint-v1')
+        states[-4]=('lm-routing','value','cp-joint-v1')
         with patch('acan.vis.generative.backend',side_effect=[{'id':'joint-job'},{}]) as backend:
             self.invoke('..lm-active-job.data',[('lm-start','n_clicks',2),('lm-pause','n_clicks',0),('lm-resume','n_clicks',0)],states)
         self.assertEqual(backend.call_args_list[0].args[3]['cp_weight'],.2)

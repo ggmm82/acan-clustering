@@ -98,9 +98,13 @@ def evaluate_checkpoint(root,identifier,stop_event=None):
             scores=quality(model,blocks,device,options['max_batches'],check);performance=[]
             for length in options['context_lengths']:
                 check()
-                if length+options['new_tokens']>model.config.max_position_embeddings or length>len(blocks.tokens['test']):
-                    raise ValueError('Contesto oltre modello o campione di test.')
-                ids=torch.tensor(blocks.tokens['test'][:length].copy(),dtype=torch.long,device=device)[None]
+                if length+options['new_tokens']>model.config.max_position_embeddings:
+                    raise ValueError('Contesto oltre il limite del modello.')
+                tokens=blocks.tokens['test']
+                if length>len(tokens):                           # speed and memory only: the test text repeated
+                    import numpy as np
+                    tokens=np.tile(tokens,length//max(len(tokens),1)+1)
+                ids=torch.tensor(tokens[:length].copy(),dtype=torch.long,device=device)[None]
                 performance.append(throughput(model,ids,device,options['new_tokens']))
             records[arm]=dict(quality=scores,performance=performance)
             del model;gc.collect()

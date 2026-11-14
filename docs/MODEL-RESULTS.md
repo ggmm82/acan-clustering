@@ -204,3 +204,57 @@ addestrato.
 Metriche aggregate: [`results/concept-graph-tabular.json`](results/concept-graph-tabular.json),
 [`results/slot-probe.json`](results/slot-probe.json),
 [`results/level-attention.json`](results/level-attention.json).
+
+### Prova in piccolo, da zero
+
+Tre modellini identici (2 layer, 64 dimensioni, 4 teste) addestrati da zero,
+seme 0, testo WikiText-2; `scripts/probe_small_lm.py` o il passo 1 del
+laboratorio. Due misure con impostazioni di addestramento diverse:
+
+| Prova | Attenzione normale | Solo 16 token | Concetti (16 token + 16 concetti) |
+|---|---:|---:|---:|
+| Memoria, laboratorio (2.000 passi, passo di apprendimento 3e-3) | 100% | 5,5% | 99,8% |
+| Memoria, prima sonda (1.500 passi, 1e-3) | 100% | 6,2% | 24,2% |
+| Testo, laboratorio: bit per carattere | 2,507 | 2,477 | 2,524 |
+| Testo, prima sonda | 2,462 | 2,407 | 2,474 |
+
+A caso, la memoria vale 6,2%. La risposta è sempre oltre i 16 token esatti:
+la sola finestra non la può dare, i concetti sì. Con l'addestramento della
+prima sonda i concetti si fermavano al 24%, mentre l'attenzione normale
+arrivava al 100% già allora: la lettura attraverso i concetti si impara più
+lentamente, non è impossibile. Con il budget del laboratorio i criteri del
+passo 1 sono superati. È un solo seme, con 8 coppie e 16 concetti, cioè almeno
+tanti concetti quante sono le coppie: una prova più severa avrebbe più coppie
+che concetti. Il testo a caratteri non separa i tre modi di leggere: la sola
+finestra va meglio di tutti, perché a questa scala prevedere un carattere
+richiede quasi solo i caratteri vicini.
+
+Il confronto su SmolLM2 (600 passi, WikiText-2, validazione) aveva dato 3,440
+per i concetti e 3,351 per il controllo denso, una differenza entro la soglia
+di rumore di 0,15. Il passo 2 del percorso lo ripete con più testo di verifica.
+
+Prova completa estesa (stessa macchina, seme 0, WikiText-2):
+
+| Misura | Attenzione normale | Solo 16 token | Concetti |
+|---|---:|---:|---:|
+| Memoria, risposta a 49 token | 100% | 5,5% | 94,2% |
+| Memoria lontana, risposta a 177 token (3 layer, distanze varie) | 100% | — | 93% |
+| Testo: bit per carattere | 2,458 | 2,410 | 2,469 |
+
+Costo per token di un passaggio, modelli non addestrati, un thread:
+
+| Contesto | Attenzione normale | Concetti |
+|---:|---:|---:|
+| 512 | 0,018 ms | 0,46 ms |
+| 1.024 | 0,035 ms | 0,50 ms |
+| 2.048 | 0,146 ms | 0,52 ms |
+| 4.096 | 0,427 ms | 0,53 ms |
+
+I concetti tengono 32 vettori per layer a ogni lunghezza, l'attenzione normale
+uno per token. Il tempo per token dei concetti resta fermo, quello
+dell'attenzione normale cresce: l'incrocio stimato è intorno ai 5.000 token.
+Sotto, l'implementazione attuale dei concetti è da 10 a 25 volte più lenta,
+perché unisce i concetti con un ciclo sequenziale ogni 16 token: per un
+addestramento su miliardi di token va resa parallela. Il confronto fra due
+esecuzioni della memoria a 49 token (99,8% e 94,2%) dà un'idea della
+variabilità fra macchine.
