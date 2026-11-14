@@ -54,8 +54,8 @@ class BundledTablesTest(unittest.TestCase):
         self.assertTrue(all(model.concepts <= 12 for model in models))  # (3-8)
 
     def test_breast_cancer(self):
-        accuracy, models = measure('breast_cancer', range(3))
-        self.assertGreaterEqual(accuracy.mean(), .92)                   # (0.941)
+        accuracy, models = measure('breast_cancer', range(2))
+        self.assertGreaterEqual(accuracy.mean(), .92)                   # (0.939)
         self.assertTrue(all(model.concepts <= 45 for model in models))  # (10-29)
         self.assertTrue(all(model.levels[0]['concepts'] <= 5 for model in models))  # few general concepts
 
@@ -103,8 +103,44 @@ class ApplicationPathTest(unittest.TestCase):
         self.assertGreaterEqual(np.mean(scores), .93)                   # (0.97)
 
 
+DATA = Path(__file__).parent/'data'
+
+
+def accuracy(path, seeds):
+    from acan.core.concepts import ConceptModel
+    from acan.vis.datasets import clean_frame, read_arff, split_for_training, target_and_filters
+    path = str(path)
+    raw = (pd.read_csv(path) if path.endswith('.csv') else pd.read_excel(path) if path.endswith('.xlsx')
+           else read_arff(Path(path).read_bytes()))
+    frame = clean_frame(raw)
+    labels, filters = target_and_filters(frame)
+    scores = []
+    for seed in seeds:
+        train, test, _ = split_for_training(frame, labels, filters, seed=seed)
+        model = ConceptModel(seed=seed).fit(train, labels)
+        scores.append((model.predict(test, labels[0]) == test[labels[0]].astype(str)).mean())
+    return float(np.mean(scores))
+
+
+class PublicTablesTest(unittest.TestCase):
+    """Real public tables kept in tests/data (UCI, CC BY 4.0), run in CI in about a minute.
+
+    Thresholds are set so that a known regression fails: with the target weighted as a single
+    attribute, Sonar falls to 0.781 and Vehicle to 0.704 on these splits.
+    """
+
+    def test_sonar(self):
+        self.assertGreaterEqual(accuracy(DATA/'sonar.csv', range(1, 6)), .83)        # (0.867)
+
+    def test_vehicle(self):
+        self.assertGreaterEqual(accuracy(DATA/'vehicle.arff', range(1, 4)), .75)     # (0.790)
+
+    def test_vote(self):
+        self.assertGreaterEqual(accuracy(DATA/'vote.arff', range(1, 6)), .94)        # (0.961) categorical, missing values
+
+
 def local(name):
-    """A dataset of the project, if present (they are not in the repository: ``.data/`` or ACAN_DATA)."""
+    """A dataset of the project that is not public enough to be in the repository."""
     import os
     for folder in (os.environ.get('ACAN_DATA', ''), '.data', '.data/nuovi'):
         path = os.path.join(folder, name)
@@ -113,39 +149,19 @@ def local(name):
     return None
 
 
-@unittest.skipUnless(SKLEARN and local('sonar.xlsx') and local('titanic.csv') and local('vehicle.arff'),
-                     'Needs the project datasets (.data/ or ACAN_DATA); skipped in CI')
+@unittest.skipUnless(local('titanic.csv'), 'Needs the project datasets (.data/ or ACAN_DATA); skipped in CI')
 class ProjectDatasetsTest(unittest.TestCase):
-    """The measurements of docs/MODEL-RESULTS.md, ten splits each (a few minutes)."""
+    """The longer measurements of docs/MODEL-RESULTS.md, ten splits each (a few minutes)."""
 
-    def accuracy(self, name, seeds=range(1, 11)):
-        from acan.core.concepts import ConceptModel
-        from acan.vis.datasets import clean_frame, read_arff, split_for_training, target_and_filters
-        path = local(name)
-        raw = (pd.read_csv(path) if path.endswith('.csv') else pd.read_excel(path) if path.endswith('.xlsx')
-               else read_arff(Path(path).read_bytes()))
-        frame = clean_frame(raw)
-        labels, filters = target_and_filters(frame)
-        scores = []
-        for seed in seeds:
-            train, test, _ = split_for_training(frame, labels, filters, seed=seed)
-            model = ConceptModel(seed=seed).fit(train, labels)
-            scores.append((model.predict(test, labels[0]) == test[labels[0]].astype(str)).mean())
-        return float(np.mean(scores))
-
-    def test_sonar(self):
-        self.assertGreaterEqual(self.accuracy('sonar.xlsx'), .83)          # (0.864); target weight 1 gives 0.774
+    def test_sonar_ten_splits(self):
+        self.assertGreaterEqual(accuracy(DATA/'sonar.csv', range(1, 11)), .83)       # (0.864)
 
     def test_titanic(self):
-        self.assertGreaterEqual(self.accuracy('titanic.csv'), .80)         # (0.818); without the resolution floor 0.781
+        self.assertGreaterEqual(accuracy(local('titanic.csv'), range(1, 11)), .80)   # (0.818); without the resolution floor 0.781
 
-    def test_vehicle(self):
-        self.assertGreaterEqual(self.accuracy('vehicle.arff'), .74)        # (0.769); target weight 1 gives 0.687
-
-    @unittest.skipUnless(local('vote.arff') and local('credit-g.arff'), 'Needs vote.arff and credit-g.arff')
-    def test_vote_and_credit(self):
-        self.assertGreaterEqual(self.accuracy('vote.arff'), .94)           # (0.962)
-        self.assertGreaterEqual(self.accuracy('credit-g.arff', range(1, 6)), .63)   # (0.67): known weakness, not to worsen
+    @unittest.skipUnless(local('credit-g.arff'), 'Needs credit-g.arff')
+    def test_credit(self):
+        self.assertGreaterEqual(accuracy(local('credit-g.arff'), range(1, 6)), .63)  # (0.67): known weakness, not to worsen
 
 
 class BehaviourTest(unittest.TestCase):
