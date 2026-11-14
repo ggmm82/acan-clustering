@@ -30,15 +30,22 @@ uno ZIP) diventano token, un record ciascuno:
 | Media | File | Codifica | Token |
 |---|---|---|---|
 | immagine | PNG, JPEG, BMP, WebP | 32 × 32 pixel, 256 colori (3 bit rosso, 3 verde, 2 blu) | circa 1.060 |
-| suono | WAV | mono, 8 kHz, 8 bit mu-law, al massimo 10 secondi | 8.000 al secondo |
-| animazione | GIF | 16 × 16 pixel, 256 colori, 4 fotogrammi al secondo, al massimo 64 | circa 270 a fotogramma |
+| suono | WAV; MP3, OGG, FLAC, M4A, AAC, Opus | mono, 8 kHz, 8 bit mu-law, al massimo 10 secondi | 8.000 al secondo |
+| animazione, video | GIF; MP4, WebM, MOV, AVI, MKV | 16 × 16 pixel, 256 colori, 4 fotogrammi al secondo, al massimo 64 | circa 270 a fotogramma |
+
+**ffmpeg solo se serve.** WAV, GIF e immagini si leggono con le librerie del
+worker. I formati compressi (MP3, MP4 e simili) richiedono ffmpeg, che **non** è
+installato nell'immagine: al primo file di questo tipo il worker scarica una
+versione fissata (imageio-ffmpeg 0.7.0 da PyPI, ffmpeg 7.0.2), ne verifica lo
+SHA-256, estrae il programma nella cartella dei dati e lo riusa. Se nei testi
+della coda non ci sono file compressi, non viene mai scaricato.
 
 Il modello legge e scrive questi token come le parole; la pagina mostra
 immagini, suoni e animazioni generati invece dei token (fino a 4.096 token
 per generazione nei modelli nativi; per far disegnare si inizia con
 `<|image|>`). Sono codici fissi e semplici, senza una rete addestrata: bastano
 per piccole immagini, suoni semplici e brevi animazioni. Foto, voce e musica
-di qualità, e i video MP4, richiedono codificatori appresi (un tokenizer
+di qualità richiedono codificatori appresi (un tokenizer
 neurale) addestrati su GPU. Su queste sequenze lunghe i concetti sono proprio
 il vantaggio: la memoria resta fissa mentre l'immagine o il suono crescono.
 

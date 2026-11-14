@@ -325,7 +325,7 @@ class Store:
         if not corpus['name'].lower().endswith(('.txt', '.jsonl')):
             # Markdown, Python, archives, books and documents become JSONL records of plain text.
             from .documents import convert
-            convert(path, corpus['name'])
+            convert(path, corpus['name'], self.root/'tools')       # ffmpeg is fetched here only if a file needs it
             name = corpus['name']+'.jsonl'
             with self.db() as db:
                 db.execute('UPDATE corpora SET name=?, expected=?, received=? WHERE id=?',

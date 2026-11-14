@@ -19,7 +19,9 @@ import zipfile
 TEXT = ('.txt', '.md', '.markdown', '.py', '.rst', '.csv', '.json', '.html', '.htm', '.xhtml', '.tex')
 ACCEPTED = ('.txt', '.jsonl') + ('.md', '.markdown', '.py', '.zip', '.epub', '.docx', '.pdf') + \
     ('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif', '.wav')
-MEDIA = ('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif', '.wav')
+MEDIA = ('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif', '.wav',
+         '.mp3', '.ogg', '.flac', '.m4a', '.aac', '.opus', '.mp4', '.webm', '.mov', '.avi', '.mkv')
+ACCEPTED = ACCEPTED + MEDIA[7:]
 PIECE = 1_000_000
 MAX_MEMBERS = 100_000
 MAX_EXPANDED = 8*1024**3
@@ -117,12 +119,12 @@ def pieces(text):
         yield text
 
 
-def texts(name, raw, depth=0):
+def texts(name, raw, depth=0, tools=None):
     """(source, text) for every readable document inside the file ``name``."""
     suffix = PurePosixPath(name.lower()).suffix
     if suffix in MEDIA:
         from .media import encode
-        yield name, encode(name, raw)
+        yield name, encode(name, raw, tools)
     elif suffix in ('.html', '.htm', '.xhtml'):
         yield name, html_text(raw.decode('utf-8', errors='replace'))
     elif suffix in TEXT:
@@ -147,19 +149,19 @@ def texts(name, raw, depth=0):
                 if '__MACOSX' in item.filename or PurePosixPath(item.filename).name.startswith('.'):
                     continue
                 try:
-                    found = list(texts(item.filename, archive.read(item), depth+1))
+                    found = list(texts(item.filename, archive.read(item), depth+1, tools))
                 except (ValueError, OSError, KeyError, zipfile.BadZipFile):
                     continue                                # an unreadable member does not stop the others
                 yield from found
 
 
-def convert(path, name):
+def convert(path, name, tools=None):
     """Rewrite the uploaded file at ``path`` as JSONL; returns the number of records."""
     with open(path, 'rb') as stream:
         raw = stream.read()
     count = 0
     with open(path, 'w', encoding='utf-8') as output:
-        for source, text in texts(name, raw):
+        for source, text in texts(name, raw, tools=tools):
             # A picture, a sound or a video stays whole: cutting it would leave half a medium.
             for piece in ([text] if PurePosixPath(source.lower()).suffix in MEDIA else pieces(text)):
                 output.write(json.dumps(dict(text=piece, source=source), ensure_ascii=False)+'\n')

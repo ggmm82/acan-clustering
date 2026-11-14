@@ -29,7 +29,9 @@ TRAINING_HELP = {'lm-length': 'Quanto testo il modello legge in una volta (in to
  'lm-cp-weight': 'Compromesso fra previsione e organizzazione. Zero: sola NLL.'}
 
 
-MODELS = ['HuggingFaceTB/SmolLM2-135M', 'HuggingFaceTB/SmolLM2-360M', 'HuggingFaceTB/SmolLM2-1.7B']
+MODELS = ['HuggingFaceTB/SmolLM2-135M', 'HuggingFaceTB/SmolLM2-360M', 'HuggingFaceTB/SmolLM2-1.7B']   # earlier projects only
+NATIVE_SIZES = [dict(label='Micro · circa 12 milioni di parametri', value='micro'), dict(label='Piccolo · circa 50 milioni', value='small'),
+                dict(label='Base · circa 138 milioni (GPU)', value='base')]
 
 
 def backend(workspace, path, method='GET', data=None, raw=False, headers=None, timeout=30):
@@ -135,7 +137,7 @@ layout = dbc.Container([
     dbc.AccordionItem([
             dbc.Card(dbc.CardBody([
                 html.H5('Avvio guidato · dati pubblici'),
-                html.P("Il modo più semplice per provare: scegli un testo pubblico e quanto a lungo addestrare. L'app scarica il testo, prepara un piccolo modello linguistico (SmolLM2-135M) in cui metà dei layer leggono il contesto attraverso i concetti, e lo addestra. I progetti già esistenti non vengono toccati."),
+                html.P("Il modo più semplice per provare: scegli un testo pubblico e quanto a lungo addestrare. L'app scarica il testo, fa nascere da zero un modello a concetti micro (tokenizer imparato dal testo, concetti in ogni layer) e lo addestra. I progetti già esistenti non vengono toccati."),
                 dbc.Row([
                     dbc.Col([dbc.Label('Testo pubblico'), dcc.Dropdown(id='lm-public-dataset', value='dante-it', clearable=False, options=[{'label':'Divina Commedia · italiano letterario', 'value':'dante-it'}, {'label':'Tiny Shakespeare · inglese', 'value':'tiny-shakespeare'}, {'label':'WikiText-2 · inglese · split ufficiali', 'value':'wikitext-2'}])], md=6),
                     dbc.Col([dbc.Label('Quanto addestrare'), dcc.Dropdown(id='lm-public-preset', value='check', clearable=False, options=[{'label':'Prova breve · 20 passi', 'value':'check'}, {'label':'Esercizio · 200 passi', 'value':'practice'}])], md=6),
@@ -143,41 +145,39 @@ layout = dbc.Container([
                 html.Div(id='lm-public-info', className='my-2'),
                 dbc.Button('Scarica e avvia la prova', id='lm-public-start', disabled=True),
                 html.Div(id='lm-public-status', role='status', className='my-2'),
-                html.P('Il primo avvio scarica anche il modello di partenza. Sulla CPU anche 20 passi richiedono alcuni minuti.', className='small text-muted'),
+                html.P('Il primo avvio impara anche il tokenizer dal testo: qualche decina di secondi in più.', className='small text-muted'),
                 html.Ol([
                     html.Li('Aspetta che lo stato diventi «running»: il modello legge il testo e si corregge passo dopo passo.'),
                     html.Li("Guarda il grafico: la linea dell'errore su testo mai visto deve scendere. Più basso è meglio."),
                     html.Li('Premi «Pausa e salva», aspetta «paused», scegli la copia salvata migliore e fagli continuare una frase.'),
-                    html.Li("Per sapere se i concetti funzionano avvia il confronto con l'attenzione normale (sezione 5): compare sullo stesso grafico."),
+                    html.Li("Per sapere se i concetti funzionano avvia il controllo con l'attenzione normale («Confronti e serie a mano»): compare sullo stesso grafico."),
                 ]),
             ]), className='my-3'),
     ], title='Avvio guidato su un testo pubblico (prova rapida di funzionamento)'),
     dbc.AccordionItem([
             dbc.Row([
                 dbc.Col([html.H5('1 · Il tuo testo (facoltativo)'), html.Div(id='lm-file-upload'),
-                         html.Div(id='lm-upload-status', role='status'), html.P('Testo (.txt, .md, .py), .jsonl con un campo «text» per riga, documenti e archivi (.docx, .pdf, .epub, .zip), immagini (.png, .jpg, .webp, .bmp), suoni (.wav) e animazioni (.gif): tutto diventa token da solo. Le immagini diventano 32×32 a 256 colori, i suoni 8 kHz, le animazioni 16×16 a 4 fotogrammi al secondo.', className='small text-muted'), dcc.Dropdown(id='lm-corpus', placeholder='Scegli un testo già caricato')], md=6),
-                dbc.Col([html.H5('2 · Modello di partenza'), dcc.Dropdown(id='lm-base', options=MODELS, value=MODELS[0], clearable=False),
-                         html.Small('Su CPU è disponibile solo il più piccolo (135M).', className='text-muted d-block mb-2'),
+                         html.Div(id='lm-upload-status', role='status'), html.P('Testo (.txt, .md, .py), .jsonl con un campo «text» per riga, documenti e archivi (.docx, .pdf, .epub, .zip), immagini (.png, .jpg, .webp, .bmp), suoni (.wav, .mp3, .ogg, .flac, .m4a) e video (.gif, .mp4, .webm, .mov): tutto diventa token da solo; per audio e video compressi il worker scarica ffmpeg la prima volta che serve. Le immagini diventano 32×32 a 256 colori, i suoni 8 kHz, le animazioni 16×16 a 4 fotogrammi al secondo.', className='small text-muted'), dcc.Dropdown(id='lm-corpus', placeholder='Scegli un testo già caricato')], md=6),
+                dbc.Col([html.H5('2 · Dimensione del modello (nasce da zero)'), dcc.Dropdown(id='lm-base', options=NATIVE_SIZES, value='micro', clearable=False),
+                         html.Small('Pesi casuali, tutti i pesi imparano, concetti in ogni layer. «Base» richiede una GPU.', className='text-muted d-block mb-2'),
                          dbc.Label('Nome del progetto'), dbc.Input(id='lm-name', value='ACAN-LM experiment'),
                          dbc.Label('Passi di addestramento'), dbc.Input(id='lm-steps', type='number', min=1, max=10000000, value=1000)], md=6),
             ]),
             dbc.Accordion([dbc.AccordionItem([
                 html.P("I valori predefiniti vanno bene per una prova. Non si possono cambiare dopo l'avvio del progetto.", className='small text-muted'),
                 dbc.Row([dbc.Col([dbc.Label(label), dbc.Input(id=id, type='number', value=value, min=lo, max=hi),html.Small(TRAINING_HELP.get(id,''),className='text-muted')], md=4, className='mb-2')
-                         for label,id,value,lo,hi in [('Lunghezza del testo letto (token)','lm-length',128,16,2048),('Pezzi letti insieme','lm-batch',1,1,8),
-                             ('Pezzi per correzione','lm-accum',8,1,256),('Velocità di apprendimento','lm-lr',.0001,.0000001,.01),
+                         for label,id,value,lo,hi in [('Lunghezza del testo letto (token)','lm-length',256,16,2048),('Pezzi letti insieme','lm-batch',1,1,8),
+                             ('Pezzi per correzione','lm-accum',8,1,256),('Velocità di apprendimento','lm-lr',.001,.0000001,.01),
                              ('Numero di concetti','lm-slots',16,2,64),('Token recenti esatti','lm-window',16,1,128),
-                             ('Dimensione della parte addestrata (LoRA)','lm-rank',8,2,64),('Salva il modello ogni … passi','lm-save',100,1,10000),
+                             ('Salva il modello ogni … passi','lm-save',100,1,10000),
                              ('Pausa automatica dopo … controlli senza miglioramenti','lm-patience',3,0,20),('Miglioramento minimo','lm-min-delta',.01,0,1),
                              ('Pezzi di testo per ogni controllo','lm-validation',8,1,64)]]),
-                html.Div(dbc.Input(id='lm-cp-weight',type='number',value=0.,min=0,max=1),style={'display':'none'}),   # earlier profiles only
-                dbc.Label('Come il modello legge il contesto'),
-                dcc.Dropdown(id='lm-routing',value='concept-graph-v1',clearable=False,options=[
-                    {'label':'Grafo dei concetti: i token recenti esatti, quelli più vecchi riassunti in concetti','value':'concept-graph-v1'}]),
-                html.P('È lo stesso modello della scheda tabulare. Se i token recenti esatti sono almeno quanto la lunghezza del testo letto, non si riassume niente e il modello si comporta come quello di partenza.',className='small text-muted'),
-                dbc.Label('Quanti layer usano i concetti'),
-                dcc.Dropdown(id='lm-fraction',value=.5,clearable=False,options=[{'label':'Metà dei layer (consigliato)','value':.5},{'label':'Tutti i layer · sperimentale; su CPU testo letto al massimo di 64 token','value':1.}]),
-                dbc.Checkbox(id='lm-distill', value=False, label='Fai imitare anche il modello originale (distillazione): più memoria e tempo'),
+                # Kept for callbacks shared with earlier projects; the native model fixes them.
+                html.Div([dbc.Input(id='lm-cp-weight',type='number',value=0.), dbc.Input(id='lm-rank',type='number',value=8),
+                          dcc.Dropdown(id='lm-routing',value='concept-graph-v1',options=[{'label':'concept-graph-v1','value':'concept-graph-v1'}]),
+                          dcc.Dropdown(id='lm-fraction',value=1.,options=[{'label':'1','value':1.}]), dbc.Checkbox(id='lm-distill', value=False)],
+                         style={'display':'none'}),
+                html.P('Ogni layer legge il testo attraverso il grafo dei concetti, lo stesso modello della scheda tabulare: i token recenti esatti, quelli più vecchi riassunti in concetti.',className='small text-muted'),
                 html.P("Il testo viene diviso in tre parti che non si mescolano: una per addestrare, una per controllare i progressi durante l'addestramento, una per la verifica finale. Viene conservata sempre la copia migliore.", className='small text-muted'),
                 dbc.Label('Dove addestrare'), dcc.Dropdown(id='lm-device', options=[{'label':'Automatico','value':'auto'},{'label':'Scheda grafica (GPU)','value':'cuda'},{'label':'Processore (CPU)','value':'cpu'}], value='auto', clearable=False),
                 html.P("Il lavoro viene salvato ogni 5 minuti e a ogni pausa: un arresto improvviso fa perdere al massimo i passi dall'ultimo salvataggio.", className='small text-muted'),
@@ -197,7 +197,7 @@ layout = dbc.Container([
             html.Div(id='lm-generation-status', role='status'), html.Div(id='lm-output'),
             html.Div(id='lm-generation-metrics'),
             dbc.Button('Scarica questa copia del modello', id='lm-export-model', outline=True, color='primary', className='my-2'),
-            html.Small('Contiene la parte addestrata (LoRA) e la struttura dei layer a concetti, da usare con il modello di partenza.', className='text-muted d-block'),
+            html.Small('Contiene tutti i pesi e il tokenizer: si ricarica senza altri file.', className='text-muted d-block'),
             html.Div(id='lm-export-status', role='status'),
     ], title='Fai scrivere un modello addestrato'),
     dbc.AccordionItem([
@@ -207,10 +207,9 @@ layout = dbc.Container([
             html.Hr(),html.H5('Esperimenti in serie'),
             html.P("Più progetti sullo stesso testo, con gli stessi passi, eseguiti uno dopo l'altro senza che tu debba intervenire: cambia una sola cosa per volta. Usa le impostazioni scritte sopra (testo, modello, passi). Se metti in pausa un progetto della serie, la serie si ferma lì."),
             dbc.Checklist(id='lm-series-variants', value=['chosen','dense'], options=[
-                {'label':'Le impostazioni scelte (metà dei layer a concetti)','value':'chosen'},
+                {'label':'Le impostazioni scelte (concetti in ogni layer)','value':'chosen'},
                 {'label':'Metà dei concetti: compressione più forte','value':'fewer_concepts'},
-                {'label':'Tutti i layer a concetti (su CPU testo letto di 64 token)','value':'all_layers'},
-                {'label':'Attenzione normale, come riferimento','value':'dense'}]),
+                {'label':'Lo stesso modello con l\'attenzione normale, come riferimento','value':'dense'}]),
             dbc.Button('Avvia la serie', id='lm-series-start', color='primary', className='mt-2'),html.Div(id='lm-series-status',role='status'),
     ], title='Confronti e serie a mano'),
     dbc.AccordionItem([
@@ -246,6 +245,16 @@ layout = dbc.Container([
     ], title='Ritrovare i progetti da un altro browser'),
     ], start_collapsed=True, always_open=True, className='my-3', id='lm-advanced'),
 ])
+
+
+def native_config(corpus, size, name, steps, length, batch, accumulation, lr, slots, window, save_steps, device, patience,
+                  min_delta, validation):
+    """A project of the manual form: a native model born from zero, concepts in every layer."""
+    return dict(corpus_id=corpus, name=name, total_steps=steps, sequence_length=length, batch_size=batch, accumulation=accumulation,
+                learning_rate=lr, slots=slots, window=window, save_steps=save_steps, device=device, protocol='controlled-v1',
+                routing_profile='concept-graph-v1', architecture='native', native_size=size or 'micro', graft_fraction=1.,
+                distillation_weight=0., early_stop_patience=patience, early_stop_min_delta=min_delta,
+                validation_batches=int(validation or 8))
 
 
 def media_view(text, small=False):
@@ -429,7 +438,7 @@ VALIDATION_NAME = 'Validazione'
 # Thresholds of the validation path, explained in docs/CONTROLLED-LM.md.
 MEMORY_SHARE = .8          # concepts must keep at least 80% of what ordinary attention recalls
 TEXT_MARGIN = .05          # and lose at most 0.05 bits per character on the text
-REAL_MARGIN = .15          # on SmolLM2, within the noise of the measurement
+REAL_MARGIN = .15          # on the native micro model, within the noise of the measurement
 
 
 def _memory_check(name, dense, concepts, window, chance, distance):
@@ -721,10 +730,10 @@ def register(app):
                   Input('lm-state','data'),Input('lm-fraction','value'))
     def available_models(state,fraction):
         cuda=(state or {}).get('capabilities',{}).get('cuda',False)
-        return ([dict(label=name,value=name,disabled=not cuda and index>0) for index,name in enumerate(MODELS)],
+        return ([dict(item, disabled=item['value']=='base' and not cuda) for item in NATIVE_SIZES],
                 [dict(label='Rapida (CPU): 4 pezzi di testo, contesti di 32 e 128 token',value='quick'),dict(label='Contesto lungo (CPU, lenta): 1 pezzo, contesti di 128 e 1.024 token',value='long'),
                  dict(label='Memoria e velocità su testi lunghi (CPU, molto lenta): 512, 2.048 e 4.096 token',value='memory'),dict(label='Ampia: 64 pezzi, contesti fino a 2.048 token' + ('' if cuda else ' · richiede una GPU'),value='wide',disabled=not cuda)],
-                2048 if cuda else (64 if fraction==1. else 128),8 if cuda else 1,64 if cuda else 16,128 if cuda else 16,64 if cuda else 8)
+                2048,8 if cuda else 4,64 if cuda else 32,128 if cuda else 32,64)
 
     @app.callback(Output('lm-length','value'),Output('lm-slots','value'),Input('lm-routing','value'),
                   State('lm-length','value'),State('lm-slots','value'))
@@ -790,10 +799,8 @@ def register(app):
             action = dash.ctx.triggered_id
             if action == 'lm-start':
                 name = unique_name(name, (state or {}).get('jobs', []))
-                config = dict(corpus_id=corpus, base_model=base, name=name, total_steps=steps, sequence_length=length,
-                              batch_size=batch, accumulation=accumulation, learning_rate=lr, slots=slots, window=window,
-                              lora_rank=rank, save_steps=save_steps, device=device, protocol='controlled-v1', routing_profile=routing, distillation_weight=.5 if distill else 0., graft_fraction=fraction, early_stop_patience=patience, early_stop_min_delta=min_delta,
-                              cp_weight=cp_weight if routing in ('cp-routing-v1','cp-joint-v1') else 0., validation_batches=int(validation or 8))
+                config = native_config(corpus, base, name, steps, length, batch, accumulation, lr, slots, window, save_steps,
+                                       device, patience, min_delta, validation)
                 job = backend(workspace, '/jobs', 'POST', config)['id']
                 backend(workspace, f'/jobs/{job}/start', 'POST')
                 return job, f'Addestramento di «{name}» avviato; puoi chiudere la pagina.'
@@ -900,7 +907,7 @@ def register(app):
             detail.insert(0, html.P('Per sapere se i concetti funzionano, avvia il controllo denso (in fondo alla pagina): '
                                     'comparirà su questo grafico, tratteggiato, con il confronto dei due risultati.', className='small text-muted'))
         for key,label in [('training_nll','Errore sul testo di addestramento (NLL)'),('training_objective','Obiettivo di addestramento'),('training_cp_penalty','Penalità CP media'),('cp_weight','Peso CP'),('validation_nll','Errore su testo mai visto (NLL di validazione)'),('validation_perplexity','Perplessità: fra quante parole in media il modello è incerto'),
-                          ('baseline_nll',"Errore del modello originale, prima dell'innesto"),('tokens_per_second','Velocità (token al secondo)'),('trainable_parameters','Parametri addestrati (LoRA)'),('total_parameters','Parametri totali del modello'),('process_peak_rss_kib','Memoria massima usata (KiB)')]:
+                          ('baseline_nll',"Errore al passo 0 (pesi casuali per un modello nativo)"),('tokens_per_second','Velocità (token al secondo)'),('trainable_parameters','Parametri che imparano'),('total_parameters','Parametri totali del modello'),('process_peak_rss_kib','Memoria massima usata (KiB)')]:
             # The CP terms belong to earlier profiles only; the objective then equals the training NLL.
             if key in ('training_objective','training_cp_penalty','cp_weight') and job['config'].get('routing_profile') not in ('cp-routing-v1','cp-joint-v1'):
                 continue
@@ -939,7 +946,7 @@ def register(app):
                                      'per confrontare due modelli usare «Confronta sul test», che misura l’intero insieme di test.', className='small text-muted'))
             detail.append(html.P(f"Documenti distinti: {data['documents']}; duplicati rimossi: {data['duplicates']}; passaggi equivalenti sul training: {metrics.get('tokens_trained',0)/max(1,unique):.2f}. Il test è escluso dalla scelta dei checkpoint."))
         concept_layer = job['config'].get('routing_profile') in ('concept-graph-v1','cp-v9')
-        for key,label in [('gradient_norm',"Ampiezza dell'ultima correzione (norma del gradiente)"),('acan_gradient_norm','Gradiente ACAN'),('lora_gradient_norm','Correzione della parte addestrata (gradiente LoRA)'),('teacher_kl','Distanza dal modello originale (distillazione)')]:
+        for key,label in [('gradient_norm',"Ampiezza dell'ultima correzione (norma del gradiente)"),('acan_gradient_norm','Gradiente ACAN'),('lora_gradient_norm','Correzione degli adattatori (solo progetti precedenti)'),('teacher_kl','Distanza dal modello originale (distillazione)')]:
             if key == 'acan_gradient_norm' and (concept_layer or job['config'].get('architecture') == 'dense-control'):
                 continue
             if key == 'teacher_kl' and not job['config'].get('distillation_weight'):
@@ -947,7 +954,8 @@ def register(app):
             if metrics.get(key) is not None:detail.append(html.P(f'{label}: {metrics[key]:.5g}'))
         if concept_layer:
             detail.append(html.P('Lo strato a concetti non ha parametri propri: i concetti si formano dalle chiavi del contesto. '
-                                 'Imparano i parametri LoRA del resto del modello, che si adatta a leggere attraverso i concetti.',
+                                 + ('Il modello è nato da zero: imparano tutti i suoi pesi.' if job['config'].get('architecture')=='native' else
+                                    'Progetto precedente: imparano i parametri LoRA di un modello preaddestrato.'),
                                  className='small text-muted'))
         if metrics.get('graft'):
             graft=metrics['graft']
@@ -998,11 +1006,8 @@ def register(app):
                      device,patience,min_delta,validation,state):
         try:
             if not corpus:raise ValueError('Scegli prima il testo nella sezione 1 (anche uno pubblico già scaricato).')
-            config=dict(corpus_id=corpus,base_model=base,name=unique_name(name,(state or {}).get('jobs',[])),total_steps=steps,
-                        sequence_length=length,batch_size=batch,accumulation=accumulation,learning_rate=lr,slots=slots,window=window,
-                        lora_rank=rank,save_steps=save_steps,device=device,protocol='controlled-v1',routing_profile='concept-graph-v1',
-                        distillation_weight=0.,graft_fraction=.5,early_stop_patience=patience,early_stop_min_delta=min_delta,
-                        validation_batches=int(validation or 8))
+            config=native_config(corpus,base,unique_name(name,(state or {}).get('jobs',[])),steps,length,batch,accumulation,lr,
+                                 slots,window,save_steps,device,patience,min_delta,validation)
             result=backend(workspace,'/series','POST',dict(base=config,variants=list(variants or [])))
             return result['jobs'][0]['id'],f"Serie avviata: {len(result['jobs'])} progetti, uno dopo l'altro. Il primo è già partito."
         except ValueError as exc:

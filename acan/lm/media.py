@@ -13,6 +13,10 @@ written as text, so the same corpus, tokenizer and training read it:
 These are fixed, simple codes, readable back without a learned network: enough to learn and to
 look at small pictures, simple sounds and short animations. Real photographs, speech and music in
 quality need learned codecs (a neural tokenizer), trained on a GPU.
+
+WAV, GIF and pictures are read with the libraries of the worker. Compressed sound (MP3, OGG, FLAC,
+M4A, AAC, Opus) and video (MP4, WebM, MOV, AVI, MKV) need ffmpeg, which is not installed with the
+worker: the first such file downloads a pinned, checksum-verified static build and keeps it.
 """
 import io
 import re
@@ -27,6 +31,18 @@ AUDIO_SECONDS = 10
 IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.bmp', '.webp')
 AUDIO_EXTENSIONS = ('.wav',)
 VIDEO_EXTENSIONS = ('.gif',)
+# Read through ffmpeg, which is not part of the worker image: it is downloaded, verified and kept
+# the first time one of these files arrives (see ``ffmpeg``).
+FFMPEG_AUDIO = ('.mp3', '.ogg', '.flac', '.m4a', '.aac', '.opus')
+FFMPEG_VIDEO = ('.mp4', '.webm', '.mov', '.avi', '.mkv')
+FFMPEG_WHEELS = {   # imageio-ffmpeg 0.7.0 (BSD-2-Clause wrapper around a static ffmpeg 7.0.2 build), from PyPI
+    'x86_64': dict(url='https://files.pythonhosted.org/packages/04/96/15fe7ef562f7494c358cbd9b521d2da82d7a331b5513703756166478bd5f/'
+                       'imageio_ffmpeg-0.7.0-py3-none-manylinux2014_x86_64.whl',
+                   bytes=29498414, sha256='4e1f36bef7bedd4bc5dc25f60a8345d88f57133fa1e754f09b411ac61b854408'),
+    'aarch64': dict(url='https://files.pythonhosted.org/packages/9c/68/5c7eac9733c0a35b46f939df7079bbf72463dc347d4ff51fbad138d15ba9/'
+                        'imageio_ffmpeg-0.7.0-py3-none-manylinux2014_aarch64.whl',
+                    bytes=25632882, sha256='588a23c6a1c55a7cb51febfe97d3ef8dd5e7fa0ef7e14c7da8828e2886bdd3a3'),
+}
 MARKERS = ['<|image|>', '<|/image|>', '<|row|>', '<|audio|>', '<|/audio|>', '<|video|>', '<|/video|>', '<|frame|>']
 TOKENS = MARKERS + [f'<|p{n}|>' for n in range(256)] + [f'<|a{n}|>' for n in range(256)]
 
@@ -90,14 +106,98 @@ def encode_audio(raw):
     return '<|audio|>'+''.join(f'<|a{code}|>' for code in codes)+'<|/audio|>'
 
 
-def encode(name, raw):
-    suffix = name.lower().rsplit('.', 1)[-1]
-    if '.'+suffix in IMAGE_EXTENSIONS:
+def ffmpeg(tools):
+    """Path of an ffmpeg program: the system one if present, else downloaded once into ``tools`` and verified."""
+    import fcntl
+    import hashlib
+    import os
+    import platform
+    import shutil
+    import zipfile
+    from pathlib import Path
+    found = shutil.which('ffmpeg')
+    if found:
+        return found
+    if tools is None:
+        raise ValueError('Per questo formato serve ffmpeg: caricalo dal laboratorio, che lo scarica alla prima occorrenza.')
+    machine = {'amd64': 'x86_64', 'arm64': 'aarch64'}.get(platform.machine().lower(), platform.machine().lower())
+    wheel = FFMPEG_WHEELS.get(machine)
+    if wheel is None:
+        raise ValueError(f'ffmpeg non disponibile per questa macchina ({machine}): convertire in WAV o GIF.')
+    tools = Path(tools)
+    tools.mkdir(parents=True, exist_ok=True)
+    target = tools/f"ffmpeg-{wheel['sha256'][:12]}"
+    with (tools/'ffmpeg.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)                         # two uploads at once download it once
+        if target.exists():
+            return str(target)
+        from .dialogue_data import download
+        package = download(dict(url=wheel['url'], path='imageio-ffmpeg.whl', bytes=wheel['bytes'], sha256=wheel['sha256']),
+                           tools/'imageio-ffmpeg.whl')
+        with zipfile.ZipFile(package) as archive:
+            member = next(name for name in archive.namelist() if name.startswith('imageio_ffmpeg/binaries/ffmpeg-'))
+            temporary = target.with_suffix('.tmp')
+            temporary.write_bytes(archive.read(member))
+        os.chmod(temporary, 0o755)
+        os.replace(temporary, target)
+        package.unlink()
+        hashlib.sha256(target.read_bytes())                     # readable whole: the copy is complete
+    return str(target)
+
+
+def _run(tools, arguments, raw):
+    import subprocess
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix='.media') as source:
+        source.write(raw)
+        source.flush()
+        result = subprocess.run([ffmpeg(tools), '-nostdin', '-loglevel', 'error', '-i', source.name, *arguments, '-'],
+                                capture_output=True, timeout=600)
+    if result.returncode != 0:
+        raise ValueError('File multimediale illeggibile: '+result.stderr.decode(errors='replace')[-300:])
+    return result.stdout
+
+
+def encode_compressed_audio(raw, tools):
+    """MP3, OGG, FLAC, M4A, AAC, Opus through ffmpeg: mono, 8 kHz, then the same mu-law codes."""
+    import numpy as np
+    pcm = _run(tools, ['-t', str(AUDIO_SECONDS), '-ac', '1', '-ar', str(AUDIO_RATE), '-f', 's16le'], raw)
+    samples = np.frombuffer(pcm, dtype='<i2').astype(np.float64)/32768
+    mu = 255.
+    coded = np.sign(samples)*np.log1p(mu*np.abs(samples))/np.log1p(mu)
+    codes = np.clip(np.round((coded+1)/2*255), 0, 255).astype(int)
+    return '<|audio|>'+''.join(f'<|a{code}|>' for code in codes)+'<|/audio|>'
+
+
+def encode_compressed_video(raw, tools):
+    """MP4, WebM, MOV, AVI, MKV through ffmpeg: frames of 16 x 16 at the same rate as GIF animations."""
+    size = VIDEO_SIZE
+    scale = f'fps={VIDEO_FPS},scale={size}:{size}:force_original_aspect_ratio=decrease,pad={size}:{size}:(ow-iw)/2:(oh-ih)/2'
+    pixels = _run(tools, ['-vf', scale, '-frames:v', str(VIDEO_FRAMES), '-f', 'rawvideo', '-pix_fmt', 'rgb24'], raw)
+    frame = size*size*3
+    frames = []
+    for start in range(0, len(pixels)-frame+1, frame):
+        data = pixels[start:start+frame]
+        rows = [''.join(f'<|p{_colour(*data[(row*size+column)*3:(row*size+column)*3+3])}|>' for column in range(size))+'<|row|>'
+                for row in range(size)]
+        frames.append('<|frame|>'+''.join(rows))
+    if not frames:
+        raise ValueError('Video senza fotogrammi leggibili.')
+    return '<|video|>'+''.join(frames)+'<|/video|>'
+
+
+def encode(name, raw, tools=None):
+    suffix = '.'+name.lower().rsplit('.', 1)[-1]
+    if suffix in IMAGE_EXTENSIONS:
         return encode_image(raw)
-    if '.'+suffix in AUDIO_EXTENSIONS:
+    if suffix in AUDIO_EXTENSIONS:
         return encode_audio(raw)
-    if '.'+suffix in VIDEO_EXTENSIONS:
+    if suffix in VIDEO_EXTENSIONS:
         return encode_video(raw)
+    if suffix in FFMPEG_AUDIO:
+        return encode_compressed_audio(raw, tools)
+    if suffix in FFMPEG_VIDEO:
+        return encode_compressed_video(raw, tools)
     raise ValueError('Formato multimediale non supportato: '+name)
 
 

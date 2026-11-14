@@ -311,7 +311,7 @@ class NativeControlTest(unittest.TestCase):
 class MediaTest(unittest.TestCase):
     """Pictures, sounds and animations as tokens, and back."""
 
-    def picture(self, colour=(255, 0, 0), size=(64, 48), mode='PNG', **extra):
+    def picture(self=None, colour=(255, 0, 0), size=(64, 48), mode='PNG', **extra):
         from PIL import Image
         stream = io.BytesIO()
         Image.new('RGB', size, colour).save(stream, mode, **extra)
@@ -399,3 +399,33 @@ class NativeSeriesTest(unittest.TestCase):
             config = validate_options(dict(profile(cuda, 'micro'), corpus_id='a'*32))
             check_profile(config, cuda)
         check_profile(validate_options(dict(profile(False), corpus_id='a'*32, sequence_length=1088)), False)   # a whole image
+
+
+@unittest.skipUnless(importlib.util.find_spec('PIL') and importlib.util.find_spec('numpy'), 'Requires Pillow')
+class FfmpegOnDemandTest(unittest.TestCase):
+    """ffmpeg is not part of the worker: fetched, verified and kept only when a file needs it."""
+
+    def test_only_compressed_media_ask_for_it_and_it_is_kept(self):
+        import hashlib, platform
+        from acan.lm import media
+        with mock.patch.object(media, 'ffmpeg', side_effect=AssertionError('not needed')):
+            media.encode('a.png', MediaTest.picture(None))                    # pictures, WAV and GIF never ask for it
+        with tempfile.TemporaryDirectory() as folder:
+            wheel = io.BytesIO()
+            with zipfile.ZipFile(wheel, 'w') as archive:
+                archive.writestr('imageio_ffmpeg/binaries/ffmpeg-linux-test', '#!/bin/sh\necho ffmpeg')
+            raw = wheel.getvalue()
+            pinned = {platform.machine().lower(): dict(url='x', bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())}
+            def download(file, target, check=lambda: None, attempts=5):
+                Path(target).write_bytes(raw)
+                return Path(target)
+            with mock.patch('shutil.which', return_value=None), mock.patch.object(media, 'FFMPEG_WHEELS', {**pinned, 'x86_64': pinned[platform.machine().lower()],
+                                                                                                          'aarch64': pinned[platform.machine().lower()]}), \
+                    mock.patch('acan.lm.dialogue_data.download', side_effect=download) as fetched:
+                first = media.ffmpeg(Path(folder)/'tools')
+                second = media.ffmpeg(Path(folder)/'tools')
+            self.assertEqual(first, second)
+            self.assertEqual(fetched.call_count, 1)                            # downloaded once, then kept
+            self.assertTrue(Path(first).read_text().startswith('#!/bin/sh'))
+            self.assertEqual(sorted(path.name for path in (Path(folder)/'tools').iterdir() if not path.name.endswith('.lock')),
+                             [Path(first).name])                               # the package itself is removed
