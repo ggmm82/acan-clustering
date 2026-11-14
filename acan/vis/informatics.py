@@ -31,6 +31,16 @@ nativo impara dai testi dell'addestramento quali pezzi sono frequenti (BPE sui
 byte, 32.000 token): così l'italiano non paga i token in più di un vocabolario
 costruito per l'inglese, e qualunque carattere si può scrivere.
 
+### Non solo parole: codice, immagini, suoni
+
+Tutto ciò che diventa una sequenza di token si può insegnare. Il codice è
+testo: basta che il tokenizer lo veda all'inizio, così impara pezzi come
+`    return`. Un'immagine diventa 32 righe di 32 pixel, ognuno uno di 256 colori;
+un suono 8.000 numeri al secondo; un'animazione una serie di piccole immagini.
+Il modello li legge e li scrive come parole, e la pagina li mostra come
+immagini, suoni e animazioni. Sono sequenze lunghe: è qui che la memoria fissa
+dei concetti conviene di più.
+
 ### Come legge un layer a concetti
 
 Ogni token produce tre vettori: una **domanda** (che cosa cerco), una **chiave**

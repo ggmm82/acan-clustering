@@ -156,7 +156,7 @@ layout = dbc.Container([
     dbc.AccordionItem([
             dbc.Row([
                 dbc.Col([html.H5('1 · Il tuo testo (facoltativo)'), html.Div(id='lm-file-upload'),
-                         html.Div(id='lm-upload-status', role='status'), html.P('Testo (.txt, .md, .py), .jsonl con un campo «text» per riga, oppure documenti e archivi (.docx, .pdf, .epub, .zip): il testo viene estratto da solo. I PDF fatti di sole immagini non contengono testo.', className='small text-muted'), dcc.Dropdown(id='lm-corpus', placeholder='Scegli un testo già caricato')], md=6),
+                         html.Div(id='lm-upload-status', role='status'), html.P('Testo (.txt, .md, .py), .jsonl con un campo «text» per riga, documenti e archivi (.docx, .pdf, .epub, .zip), immagini (.png, .jpg, .webp, .bmp), suoni (.wav) e animazioni (.gif): tutto diventa token da solo. Le immagini diventano 32×32 a 256 colori, i suoni 8 kHz, le animazioni 16×16 a 4 fotogrammi al secondo.', className='small text-muted'), dcc.Dropdown(id='lm-corpus', placeholder='Scegli un testo già caricato')], md=6),
                 dbc.Col([html.H5('2 · Modello di partenza'), dcc.Dropdown(id='lm-base', options=MODELS, value=MODELS[0], clearable=False),
                          html.Small('Su CPU è disponibile solo il più piccolo (135M).', className='text-muted d-block mb-2'),
                          dbc.Label('Nome del progetto'), dbc.Input(id='lm-name', value='ACAN-LM experiment'),
@@ -190,12 +190,12 @@ layout = dbc.Container([
             html.P("Metti in pausa l'addestramento, scegli una copia salvata (la migliore è indicata) e scrivi l'inizio di una frase: il modello la continua. La prova non cambia il modello; dopo puoi riprendere l'addestramento."),
             dcc.Dropdown(id='lm-checkpoint', placeholder='Copia salvata del modello: la migliore e le ultime tre'),
             dbc.Textarea(id='lm-prompt', value='', placeholder="Scrivi l'inizio di una frase, nella lingua del testo di addestramento", rows=3),
-            dbc.Label('Quanto testo scrivere (token, circa pezzi di parola)'), dbc.Input(id='lm-new-tokens', type='number', value=64, min=1, max=256),
+            dbc.Label('Quanto testo scrivere (token, circa pezzi di parola; fino a 256, fino a 4.096 per i modelli nativi: un\'immagine sono circa 1.060 token, iniziando con <|image|>)'), dbc.Input(id='lm-new-tokens', type='number', value=64, min=1, max=256),
             dbc.Checkbox(id='lm-full-length', value=True, label='Scrivi sempre fino alla lunghezza richiesta (senza fermarsi a fine paragrafo)'),
             dbc.Checkbox(id='lm-chat', value=False, label='Conversazione: il testo è una domanda e il modello risponde fino a fine turno (per i modelli addestrati sui dialoghi)'),
             dbc.Checkbox(id='lm-inspect-generation', value=False, label='Fotografa anche i layer mentre scrive (al massimo 32 token)'),
             dbc.Button('Continua la frase', id='lm-generate', className='my-2'),
-            html.Div(id='lm-generation-status', role='status'), html.Pre(id='lm-output', style={'whiteSpace':'pre-wrap'}),
+            html.Div(id='lm-generation-status', role='status'), html.Div(id='lm-output'),
             html.Div(id='lm-generation-metrics'),
             dbc.Button('Scarica questa copia del modello', id='lm-export-model', outline=True, color='primary', className='my-2'),
             html.Small('Contiene la parte addestrata (LoRA) e la struttura dei layer a concetti, da usare con il modello di partenza.', className='text-muted d-block'),
@@ -247,6 +247,29 @@ layout = dbc.Container([
     ], title='Ritrovare i progetti da un altro browser'),
     ], start_collapsed=True, always_open=True, className='my-3', id='lm-advanced'),
 ])
+
+
+def media_view(text, small=False):
+    """Generated text with its images, sounds and animations shown, not as tokens."""
+    import base64
+    try:
+        from acan.lm.media import parts
+        pieces = parts(text or '')
+    except Exception:                                   # a broken medium is still shown as text
+        pieces = [('text', text or '')]
+    shown = []
+    for kind, value in pieces:
+        if kind == 'text':
+            if value.strip():
+                shown.append(html.Pre(value, className='small mb-1' if small else 'mb-1', style={'whiteSpace': 'pre-wrap'}))
+            continue
+        data = base64.b64encode(value).decode()
+        if kind == 'audio':
+            shown.append(html.Audio(src='data:audio/wav;base64,'+data, controls=True, className='d-block my-1'))
+        else:
+            shown.append(html.Img(src=('data:image/png;base64,' if kind == 'image' else 'data:image/gif;base64,')+data,
+                                  style={'imageRendering': 'pixelated', 'width': '128px' if small else '256px'}, className='d-block my-1'))
+    return html.Div(shown)
 
 
 def inspection_panel(report, frame=0):
@@ -1076,8 +1099,8 @@ def register(app):
     @app.callback(Output('lm-new-tokens','max'), Output('lm-new-tokens','value'),
                   Input('lm-inspect-generation','value'), State('lm-new-tokens','value'))
     def inspection_budget(enabled, count):
-        limit = 32 if enabled else 256
-        return limit, min(count, limit) if isinstance(count, (int,float)) else limit
+        limit = 32 if enabled else 4096                 # the worker allows more than 256 only to native models
+        return limit, min(count, limit) if isinstance(count, (int,float)) else min(64, limit)
 
     @app.callback(Output('lm-generation-id','data'), Output('lm-generation-status','children'),
                   Input('lm-generate','n_clicks'), State('lm-workspace','data'), State('lm-job','value'),
@@ -1121,7 +1144,7 @@ def register(app):
             panels = [html.P(description), html.P(memory),
                       dbc.Accordion([dbc.AccordionItem([html.P('Quali concetti e canali interni erano più attivi. Sono riassunti del testo, non parole con un significato preciso.', className='small text-muted'),
                                                         html.Pre(json.dumps(result['explanations'], indent=2))], title='Per esperti · concetti e canali più attivi')], start_collapsed=True)]
-            return result['text'], panels, result.get('layer_inspection')
+            return media_view(result['text']), panels, result.get('layer_inspection')
         except ValueError as exc:
             return str(exc), [], None
 

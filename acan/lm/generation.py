@@ -83,7 +83,8 @@ def generate(root, request_id):
         length = output.past_key_values.get_seq_length()
         element_size = next(model.parameters()).element_size()
         dense_reference = 2 * model.config.num_hidden_layers * length * model.config.num_key_value_heads * (model.config.hidden_size // model.config.num_attention_heads) * element_size
-        result = dict(text=tokenizer.decode(output.sequences[0, inputs.shape[1]:], skip_special_tokens=True),
+        from .media import readable
+        result = dict(text=readable(tokenizer, output.sequences[0, inputs.shape[1]:]),
                       checkpoint=request['checkpoint'], step=state['step'], generated_tokens=produced,
                       seconds=elapsed, tokens_per_second=produced/max(elapsed, 1e-6),
                       cache_dense_layers_bytes=dense_bytes, cache_acan_layers_bytes=slots_bytes,

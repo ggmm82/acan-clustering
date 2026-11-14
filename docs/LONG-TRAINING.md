@@ -15,10 +15,31 @@ embedding) in cui l'attenzione di **ogni** blocco è il layer a concetti.
 Sulla CPU: pezzi di 256 token, 16 token esatti e 16 concetti, 8 pezzi per
 correzione. Con una GPU: 1.024 token, 64 + 64, 32 pezzi per correzione.
 
-**Tokenizer.** Nasce dal primo testo della coda: BPE sui byte, 32.000 token,
-con `<|endoftext|>`, `<|im_start|>` e `<|im_end|>`. I testi successivi della coda
-usano lo stesso tokenizer. Imparato su italiano e inglese insieme, non fa
-pagare all'italiano i token in più di un vocabolario inglese.
+**Tokenizer.** Nasce da una parte uguale di **tutti** i testi della coda al
+momento dell'avvio: BPE sui byte, 32.000 token, con `<|endoftext|>`,
+`<|im_start|>`, `<|im_end|>` e i token dei media. I testi aggiunti dopo e il
+controllo usano lo stesso tokenizer. Con italiano, inglese e codice fra i
+testi iniziali, ognuno ha i suoi pezzi frequenti: nessuno paga i token in più
+di un vocabolario costruito per un altro. Per insegnare codice o comandi,
+mettere il codice fra i testi con cui la coda parte.
+
+**Immagini, suoni, animazioni** (`acan/lm/media.py`). Caricati (anche dentro
+uno ZIP) diventano token, un record ciascuno:
+
+| Media | File | Codifica | Token |
+|---|---|---|---|
+| immagine | PNG, JPEG, BMP, WebP | 32 × 32 pixel, 256 colori (3 bit rosso, 3 verde, 2 blu) | circa 1.060 |
+| suono | WAV | mono, 8 kHz, 8 bit mu-law, al massimo 10 secondi | 8.000 al secondo |
+| animazione | GIF | 16 × 16 pixel, 256 colori, 4 fotogrammi al secondo, al massimo 64 | circa 270 a fotogramma |
+
+Il modello legge e scrive questi token come le parole; la pagina mostra
+immagini, suoni e animazioni generati invece dei token (fino a 4.096 token
+per generazione nei modelli nativi; per far disegnare si inizia con
+`<|image|>`). Sono codici fissi e semplici, senza una rete addestrata: bastano
+per piccole immagini, suoni semplici e brevi animazioni. Foto, voce e musica
+di qualità, e i video MP4, richiedono codificatori appresi (un tokenizer
+neurale) addestrati su GPU. Su queste sequenze lunghe i concetti sono proprio
+il vantaggio: la memoria resta fissa mentre l'immagine o il suono crescono.
 
 **Misura.** Una prova sulla CPU del server di sviluppo: il modello micro impara
 a circa 430 token al secondo (contro circa 25 di SmolLM2 adattato con LoRA);

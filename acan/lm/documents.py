@@ -1,4 +1,7 @@
-"""Text out of the files a person has: Markdown, Python, ZIP, EPUB, DOCX and PDF.
+"""Text out of the files a person has: Markdown, Python, ZIP, EPUB, DOCX, PDF, and media.
+
+Images (PNG, JPEG, BMP, WebP), sounds (WAV) and animations (GIF) become runs of media tokens
+(acan/lm/media.py), one record each.
 
 Every file becomes JSONL records with a ``text`` field (and ``source``, the file it came from),
 the format the training already reads. Long texts are cut at paragraph boundaries into pieces of
@@ -14,7 +17,9 @@ import re
 import zipfile
 
 TEXT = ('.txt', '.md', '.markdown', '.py', '.rst', '.csv', '.json', '.html', '.htm', '.xhtml', '.tex')
-ACCEPTED = ('.txt', '.jsonl') + ('.md', '.markdown', '.py', '.zip', '.epub', '.docx', '.pdf')
+ACCEPTED = ('.txt', '.jsonl') + ('.md', '.markdown', '.py', '.zip', '.epub', '.docx', '.pdf') + \
+    ('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif', '.wav')
+MEDIA = ('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.gif', '.wav')
 PIECE = 1_000_000
 MAX_MEMBERS = 100_000
 MAX_EXPANDED = 8*1024**3
@@ -115,7 +120,10 @@ def pieces(text):
 def texts(name, raw, depth=0):
     """(source, text) for every readable document inside the file ``name``."""
     suffix = PurePosixPath(name.lower()).suffix
-    if suffix in ('.html', '.htm', '.xhtml'):
+    if suffix in MEDIA:
+        from .media import encode
+        yield name, encode(name, raw)
+    elif suffix in ('.html', '.htm', '.xhtml'):
         yield name, html_text(raw.decode('utf-8', errors='replace'))
     elif suffix in TEXT:
         yield name, raw.decode('utf-8', errors='replace')
@@ -138,7 +146,11 @@ def texts(name, raw, depth=0):
             for item in members:
                 if '__MACOSX' in item.filename or PurePosixPath(item.filename).name.startswith('.'):
                     continue
-                yield from texts(item.filename, archive.read(item), depth+1)
+                try:
+                    found = list(texts(item.filename, archive.read(item), depth+1))
+                except (ValueError, OSError, KeyError, zipfile.BadZipFile):
+                    continue                                # an unreadable member does not stop the others
+                yield from found
 
 
 def convert(path, name):
@@ -148,7 +160,8 @@ def convert(path, name):
     count = 0
     with open(path, 'w', encoding='utf-8') as output:
         for source, text in texts(name, raw):
-            for piece in pieces(text):
+            # A picture, a sound or a video stays whole: cutting it would leave half a medium.
+            for piece in ([text] if PurePosixPath(source.lower()).suffix in MEDIA else pieces(text)):
                 output.write(json.dumps(dict(text=piece, source=source), ensure_ascii=False)+'\n')
                 count += 1
     if not count:

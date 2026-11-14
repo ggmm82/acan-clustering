@@ -91,9 +91,10 @@ def answers_view(entries):
     rows = []
     for index, item in enumerate(last['answers']):
         before = first['answers'][index]['answer'] if len(entries) > 1 and index < len(first['answers']) else None
+        from .generative import media_view
         rows.append(html.Tr([html.Td(item['question']),
-                             html.Td(html.Pre(before or '—', className='small mb-0', style={'whiteSpace': 'pre-wrap'})),
-                             html.Td(html.Pre(item['answer'] or '(nessuna risposta)', className='small mb-0', style={'whiteSpace': 'pre-wrap'}))]))
+                             html.Td(media_view(before or '—', small=True)),
+                             html.Td(media_view(item['answer'] or '(nessuna risposta)', small=True))]))
     history = [html.Li(f"passo {entry['step']:,}" + ('' if entry.get('validation_nll') is None else f": {entry['validation_nll']:.3f}"))
                for entry in entries[-10:]]
     return html.Div([html.P(header, className='small'),

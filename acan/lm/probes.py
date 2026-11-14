@@ -41,7 +41,8 @@ def answer(model, tokenizer, device, question, new_tokens=NEW_TOKENS):
         output = model.generate(inputs, attention_mask=torch.ones_like(inputs), max_new_tokens=new_tokens, do_sample=False,
                                 num_beams=1, use_cache=True, eos_token_id=stop_tokens(tokenizer), pad_token_id=tokenizer.eos_token_id)
     reset_streams(model)
-    return tokenizer.decode(output[0, inputs.shape[1]:], skip_special_tokens=True).strip()
+    from .media import readable
+    return readable(tokenizer, output[0, inputs.shape[1]:]).strip()
 
 
 def record_answers(directory, model, tokenizer, device, state, questions=None):

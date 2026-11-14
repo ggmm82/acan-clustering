@@ -104,7 +104,7 @@ class QueueTest(unittest.TestCase):
     def test_documents_upload_becomes_jsonl(self):
         corpus = self.corpus('appunti.md', '# Appunti\n\nTesto.'.encode())
         self.assertEqual((corpus['status'], corpus['name']), ('ready', 'appunti.md.jsonl'))
-        refused = self.client.post('/corpora', headers=self.headers, json=dict(name='foto.png', size=10))
+        refused = self.client.post('/corpora', headers=self.headers, json=dict(name='programma.exe', size=10))
         self.assertEqual(refused.status_code, 400)
 
     def test_queue_runs_texts_in_order_with_warm_start(self):
@@ -305,3 +305,81 @@ class NativeControlTest(unittest.TestCase):
             from acan.lm.attention import ACANConceptAttentionLayer
             self.assertFalse(any(isinstance(module, ACANConceptAttentionLayer) for module in model.modules()))
             self.assertEqual(report['replaced_layers'], [])
+
+
+@unittest.skipUnless(importlib.util.find_spec('PIL') and importlib.util.find_spec('numpy'), 'Requires Pillow')
+class MediaTest(unittest.TestCase):
+    """Pictures, sounds and animations as tokens, and back."""
+
+    def picture(self, colour=(255, 0, 0), size=(64, 48), mode='PNG', **extra):
+        from PIL import Image
+        stream = io.BytesIO()
+        Image.new('RGB', size, colour).save(stream, mode, **extra)
+        return stream.getvalue()
+
+    def test_image_round_trip(self):
+        from PIL import Image
+        from acan.lm.media import IMAGE_SIZE, encode, parts
+        text = encode('foto.png', self.picture())
+        self.assertEqual((text.count('<|row|>'), len(text.split('<|row|>')[3].split('|><|'))), (IMAGE_SIZE, IMAGE_SIZE))
+        self.assertIn('<|p224|>', text)                                   # pure red: 3 bits red, nothing else
+        kind, data = parts('Ecco: '+text+' fine')[1]
+        self.assertEqual(kind, 'image')
+        image = Image.open(io.BytesIO(data)).convert('RGB')
+        self.assertEqual(image.getpixel((image.width//2, image.height//2)), (255, 0, 0))
+
+    def test_sound_round_trip(self):
+        import numpy as np
+        import wave
+        from acan.lm.media import AUDIO_RATE, encode, parts
+        rate = 16000
+        tone = (np.sin(2*np.pi*440*np.arange(rate//2)/rate)*20000).astype('<i2')
+        stream = io.BytesIO()
+        with wave.open(stream, 'wb') as file:
+            file.setnchannels(1); file.setsampwidth(2); file.setframerate(rate); file.writeframes(tone.tobytes())
+        text = encode('la.wav', stream.getvalue())
+        self.assertEqual(len(__import__('re').findall(r'<\|a\d+\|>', text)), AUDIO_RATE//2)   # half a second at 8 kHz
+        kind, data = parts(text)[0]
+        with wave.open(io.BytesIO(data)) as file:
+            back = np.frombuffer(file.readframes(file.getnframes()), dtype='<i2').astype(float)
+        spectrum = np.abs(np.fft.rfft(back))
+        self.assertAlmostEqual(np.argmax(spectrum)*AUDIO_RATE/len(back), 440, delta=5)   # still an A
+
+    def test_animation_and_documents(self):
+        from PIL import Image
+        from acan.lm.media import VIDEO_FPS, encode, parts
+        frames = [Image.new('RGB', (20, 20), colour) for colour in ((255, 0, 0), (0, 255, 0), (0, 0, 255))]
+        stream = io.BytesIO()
+        frames[0].save(stream, 'GIF', save_all=True, append_images=frames[1:], duration=int(1000/VIDEO_FPS), loop=0)
+        text = encode('anim.gif', stream.getvalue())
+        self.assertEqual(text.count('<|frame|>'), 3)
+        self.assertEqual(parts(text)[0][0], 'video')
+        bundle = io.BytesIO()
+        with zipfile.ZipFile(bundle, 'w') as archive:
+            archive.writestr('a.png', self.picture())
+            archive.writestr('nota.txt', 'una nota')
+        from acan.lm.documents import convert
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'corpus'
+            path.write_bytes(bundle.getvalue())
+            convert(path, 'tutto.zip')
+            records = [json.loads(line) for line in path.read_text().splitlines()]
+        self.assertTrue(records[0]['text'].startswith('<|image|>') and records[0]['text'].endswith('<|/image|>'))   # one whole record
+
+    @unittest.skipUnless(SERVICE, 'Requires LM service dependencies')
+    def test_tokenizer_reads_media_whole_and_learns_from_every_text(self):
+        from transformers import AutoTokenizer
+        from acan.lm.media import encode, readable
+        from acan.lm.native import train_tokenizer
+        with tempfile.TemporaryDirectory() as folder:
+            italian, code = Path(folder)/'it', Path(folder)/'code'
+            italian.write_text('\n'.join(json.dumps(dict(text='La casa è bella e la strada è lunga.')) for _ in range(300)))
+            code.write_text('\n'.join(json.dumps(dict(text='def somma(a, b):\n    return a + b\n')) for _ in range(300)))
+            train_tokenizer([italian, code], Path(folder)/'tok', vocabulary=2000)
+            tokenizer = AutoTokenizer.from_pretrained(Path(folder)/'tok')
+            self.assertLessEqual(len(tokenizer('    return a + b')['input_ids']), 6)          # code got its own pieces
+            self.assertLessEqual(len(tokenizer('La casa è bella')['input_ids']), 6)          # and so did Italian
+            image = encode('x.png', self.picture())
+            ids = tokenizer(image)['input_ids']
+            self.assertEqual(len(ids), 32*32+32+2)                                           # one token per pixel and marker
+            self.assertEqual(readable(tokenizer, ids), image)                                # kept for display

@@ -6,10 +6,10 @@ layer (acan/lm/concept_attention.py): the last ``window`` tokens exact, the olde
 in at most ``slots`` concepts. Every weight is initialized at random from the project seed and
 every weight learns.
 
-The tokenizer is learned too, on the first text of the training (byte-level BPE, so any character
-can be written), with the three tokens of the conversation format: ``<|endoftext|>``,
-``<|im_start|>`` and ``<|im_end|>``. It is learned on Italian and English together, so Italian
-does not pay the extra tokens of a tokenizer built for English.
+The tokenizer is learned too, on an equal share of every text of the queue (byte-level BPE, so any
+character can be written), with the tokens of the conversation format (``<|endoftext|>``,
+``<|im_start|>``, ``<|im_end|>``) and those of images, sounds and videos (acan/lm/media.py). Learned on
+Italian, English and code together, none of them pays the extra tokens of a tokenizer built for another.
 """
 import hashlib
 import json
@@ -33,7 +33,8 @@ def parameters(size, vocabulary=32000):
 
 
 def _texts(path, limit=SAMPLE_BYTES):
-    """Up to ``limit`` bytes of text of a corpus (JSONL ``text`` fields or plain text)."""
+    """Up to ``limit`` bytes of text of a corpus (JSONL ``text`` fields or plain text), media tokens left out."""
+    import re
     read = 0
     with open(path, encoding='utf-8', errors='replace') as stream:
         for line in stream:
@@ -47,22 +48,35 @@ def _texts(path, limit=SAMPLE_BYTES):
                     text = record.get('text', '') if isinstance(record, dict) else ''
                 except ValueError:
                     pass
+            text = re.sub(r'<\|[a-z/]{1,6}\d{0,3}\|>', ' ', text)      # pixels and samples are tokens of their own
             if text.strip():
                 yield text
 
 
-def train_tokenizer(corpus, directory, vocabulary=32000):
-    """Byte-level BPE learned on the corpus; saved so that ``AutoTokenizer`` loads it."""
+def train_tokenizer(corpora, directory, vocabulary=32000):
+    """Byte-level BPE learned on an equal share of every corpus; saved so that ``AutoTokenizer`` loads it.
+
+    ``corpora`` is a path or a list of paths: with Italian, English and code in the first texts of a
+    queue, each gets its own frequent pieces. The conversation markers and the media tokens
+    (acan/lm/media.py) are added whole.
+    """
     from tokenizers import Tokenizer, decoders, models, pre_tokenizers, trainers
     from transformers import PreTrainedTokenizerFast
+    from .media import TOKENS
+    paths = [corpora] if isinstance(corpora, (str, Path)) else list(corpora)
+    share = SAMPLE_BYTES//max(len(paths), 1)
+
+    def texts():
+        for path in paths:
+            yield from _texts(path, share)
     tokenizer = Tokenizer(models.BPE())
     tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
     tokenizer.decoder = decoders.ByteLevel()
-    trainer = trainers.BpeTrainer(vocab_size=vocabulary, special_tokens=SPECIAL, show_progress=False,
+    trainer = trainers.BpeTrainer(vocab_size=vocabulary, special_tokens=SPECIAL+TOKENS, show_progress=False,
                                   initial_alphabet=pre_tokenizers.ByteLevel.alphabet())
-    tokenizer.train_from_iterator(_texts(corpus), trainer=trainer)
+    tokenizer.train_from_iterator(texts(), trainer=trainer)
     wrapped = PreTrainedTokenizerFast(tokenizer_object=tokenizer, eos_token='<|endoftext|>', pad_token='<|endoftext|>',
-                                      additional_special_tokens=SPECIAL[1:])
+                                      additional_special_tokens=SPECIAL[1:]+TOKENS)
     directory = Path(directory)
     temporary = directory.with_name(directory.name+'.tmp')
     shutil.rmtree(temporary, ignore_errors=True)
@@ -110,8 +124,15 @@ def resolve(store, job, options):
             raise ValueError('Il testo precedente della coda non ha un tokenizer: ripristinare il backup.')
         shutil.copytree(source, folder, dirs_exist_ok=True)
     else:
-        corpus = store.corpus(options['corpus_id'], job['owner'], ready=True)
-        train_tokenizer(store.directory('corpora', corpus['id'])/'corpus', folder, options.get('vocabulary', 32000))
+        # Learned on every text of the queue known now, an equal share each (only its own text otherwise).
+        series = options.get('series') or {}
+        ids = [options['corpus_id']]
+        if series.get('id'):
+            members = sorted((other for other in store.jobs(job['owner']) if (other['config'].get('series') or {}).get('id') == series['id']),
+                             key=lambda other: other['config']['series']['order'])
+            ids = list(dict.fromkeys(other['config']['corpus_id'] for other in members)) or ids
+        paths = [store.directory('corpora', store.corpus(identifier, job['owner'], ready=True)['id'])/'corpus' for identifier in ids]
+        train_tokenizer(paths, folder, options.get('vocabulary', 32000))
     hashes = _hashes(folder)
     base = dict(repo='acan-native', revision='tokenizer-'+hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()[:16],
                 native=True, size=options['native_size'], files_sha256=hashes)
