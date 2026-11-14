@@ -319,6 +319,7 @@ if __name__=='__main__':
     unittest.main()
 
 
+@unittest.skipUnless(LM and importlib.util.find_spec('flask'), 'Requires LM service dependencies')
 class TestProjectManagementAndSeries(unittest.TestCase):
     """Rename, delete, verifications of a project, and series run one after the other."""
 

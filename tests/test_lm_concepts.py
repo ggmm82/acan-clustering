@@ -151,6 +151,7 @@ if __name__ == '__main__':
     unittest.main()
 
 
+@unittest.skipUnless(importlib.util.find_spec('torch') and importlib.util.find_spec('transformers'), 'Torch required')
 class OneStepMergeTests(unittest.TestCase):
     def test_summing_once_equals_merging_pair_by_pair(self):
         import torch
