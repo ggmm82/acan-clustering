@@ -52,7 +52,10 @@ def generate(root, request_id):
         if sampling['do_sample']:
             sampling['temperature'] = request['temperature']
         with torch.inference_mode(), capture if capture is not None else nullcontext():
-            output = model.generate(inputs, attention_mask=torch.ones_like(inputs), max_new_tokens=request['max_new_tokens'], **sampling, use_cache=True, num_beams=1,
+            # On request the end-of-text token is ignored until the requested length: models trained
+            # on short documents otherwise stop after a line.
+            length = dict(min_new_tokens=request['max_new_tokens']) if request.get('full_length') else {}
+            output = model.generate(inputs, attention_mask=torch.ones_like(inputs), max_new_tokens=request['max_new_tokens'], **length, **sampling, use_cache=True, num_beams=1,
                                     pad_token_id=tokenizer.eos_token_id, return_dict_in_generate=True)
         if device == 'cuda':
             torch.cuda.synchronize()
