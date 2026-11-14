@@ -346,7 +346,7 @@ def to_svg(ele):
 
 uplData=dcc.Upload(
             id="upload-data",
-            children=html.Div(["Drag and Drop or ", html.A("Select Dataset Files (Max 150MB)")]),
+            children=html.Div(["Trascina qui o ", html.A("scegli i file dei dati (massimo 150 MB)")]),
             style={
                 "lineHeight": "60px",
                 "borderWidth": "1px",
@@ -362,7 +362,7 @@ uplData=dcc.Upload(
 
 uplModel=dcc.Upload(
             id="upload-model",
-            children=html.Div(["Drag and Drop or ", html.A("Load Model JSON")]),
+            children=html.Div(["Trascina qui o ", html.A("carica un modello salvato (JSON)")]),
             style={
                 "lineHeight": "40px",
                 "borderWidth": "1px",
@@ -523,9 +523,14 @@ def parameter(label, id, value, lo, hi, step):
                    style={'display':'none'} if id in ('train-tau','train-alpha') else {})
 
 
+def graph_legend():
+    from .graph_view import legend
+    return legend()
+
+
 model_layout = dbc.Container([
     html.H4('Scopri i concetti, poi approfondisci soltanto dove serve', className='mt-3'),
-    html.P('Senza target scopri gruppi su tutte le righe; con un target apprendi a prevederne la classe su uno split 80/20. Scegli se il target è una classe (anche numerica) oppure una quantità continua. Avvia il modello iniziale. Doppio clic su un gruppo per creare un solo livello aggiuntivo sui suoi campioni. La radice rimane unica. Confronta la validazione in Evaluation e rimuovi i rami senza benefici.'),
+    html.P('Senza target scopri gruppi su tutte le righe; con un target apprendi a prevederne la classe su uno split 80/20. Scegli se il target è una classe (anche numerica) oppure una quantità continua. Il modello costruisce da solo i livelli: sotto la radice i concetti generali, poi i comportamenti particolari, uniti da frecce che mostrano da quali concetti generali discende ciascuno. Un doppio clic su un gruppo lo approfondisce a mano; in Valutazione confronti il risultato e rimuovi i rami che non aiutano.'),
     uplModel,
     dbc.Row([
         dbc.Col([dbc.Label('Target (svuota per scoperta non supervisionata)'),
@@ -553,20 +558,24 @@ model_layout = dbc.Container([
         ]),
         html.Div([
 
-            dcc.Dropdown(id='tabular-routing-profile',value='concept-graph-v1',options=[{'label':'Grafo dei concetti','value':'concept-graph-v1'},{'label':'CP condivisa precedente','value':'cp-joint-v1'}]),
+            dcc.Dropdown(id='tabular-routing-profile',value='concept-graph-v1',options=[{'label':'Grafo dei concetti','value':'concept-graph-v1'}]),
         ],style={'display':'none'}),
-        html.P('Un solo modello per tabulare e generativo, il grafo dei concetti: ogni concetto è un nodo che riassume le osservazioni che gli appartengono; due concetti sono collegati quando qualche osservazione esita fra loro; i concetti collegati vengono uniti dove chi legge perde meno, e resta il livello più generale che prevede altrettanto bene le osservazioni non viste. Non servono numero di concetti, soglie o profondità. Epoche, learning rate, livelli, purezza e campioni minimi non agiscono su questo modello: restano per i modelli precedenti, che rimangono caricabili. Formule, misure e limiti nella scheda Matematica.',className='small text-muted'),
+        html.P('Il grafo dei concetti sceglie da solo il numero di concetti e di livelli, giudicando ogni scelta su righe '
+               'che non ha usato: non ci sono epoche, learning rate o profondità da impostare. L\'unico parametro vale '
+               'per l\'approfondimento a mano con il doppio clic.', className='small text-muted'),
         dbc.Row([parameter(*args) for args in [
+            ('Campioni minimi del ramo', 'train-min-samples', 12, 2, 10000, 1),
+        ]]),
+        # Parameters of the earlier models: kept, hidden, because callbacks and saved sessions read them.
+        html.Div([dbc.Row([parameter(*args) for args in [
             ('Epoche', 'train-epochs', 100, 1, 1000, 1),
             ('Learning rate', 'input-lr', .08, .001, 1, .01),
             ('Righe per aggiornamento', 'input-max-batch', 300, 10, 300, 10),
-            ('Temperatura τ (solo versione precedente)', 'train-tau', .2, .01, 10, .01),
-            ('Miscela α (solo versione precedente)', 'train-alpha', .5, 0, 1, .05),
-            ('Campioni minimi del ramo', 'train-min-samples', 12, 2, 10000, 1),
-            ('Livelli iniziali automatici (predefinito: 1)', 'train-depth', 1, 1, 6, 1),
-            ('Soglia purezza (solo livelli automatici)', 'train-purity', .92, 0, 1, .01),
-        ]]),
-        html.P('Il batch è modificabile per il primo livello; la gerarchia usa aggiornamenti fino a 300 righe. La purezza e i campioni minimi agiscono solo con più livelli automatici. Approfondire può aumentare i prototipi: confronta il risultato nella validazione.', className='small text-muted'),
+            ('Temperatura τ', 'train-tau', .2, .01, 10, .01),
+            ('Miscela α', 'train-alpha', .5, 0, 1, .05),
+            ('Livelli iniziali automatici', 'train-depth', 1, 1, 6, 1),
+            ('Soglia purezza', 'train-purity', .92, 0, 1, .01),
+        ]])], style={'display':'none'}),
         html.Div(daq.BooleanSwitch(disabled=True,id='bsId',on=False),style={'display':'none'}),
     ], title='Impostazioni avanzate')], start_collapsed=True, className='mb-3'),
     dcc.Store(id='model-store'), dcc.Store(id='label-store'),
@@ -587,7 +596,9 @@ model_layout = dbc.Container([
         dbc.Col(dcc.RadioItems(id='graph-view', options=[{'label': ' Concetti e gruppi', 'value': 'full'},
                    {'label': ' Solo gerarchia', 'value': 'hierarchy'}], value='full', inline=True), md=7),
         dbc.Col([dbc.Label('Disposizione panoramica', html_for='graph-layout'),
-            dcc.Dropdown(id='graph-layout', options=['breadthfirst', 'cose', 'concentric'],
+            dcc.Dropdown(id='graph-layout', options=[{'label': 'Albero dall\'alto', 'value': 'breadthfirst'},
+                                                     {'label': 'Libera, per vicinanza', 'value': 'cose'},
+                                                     {'label': 'Cerchi concentrici', 'value': 'concentric'}],
                    value='cose', clearable=False)], md=5),
     ], className='mb-3'),
     dbc.Row([
@@ -605,8 +616,20 @@ model_layout = dbc.Container([
     ]),
     html.Div(id='graph-window-summary', className='small text-muted my-2', role='status'),
     dbc.Row([dbc.Col(orgChartData, md=8), dbc.Col([html.Div(id='node-detail'), html.Div(id='edge-detail')], md=4)]),
-    html.P('Doppio clic sui gruppi con bordo blu per aprire il concetto figlio. Sugli altri gruppi richiede un approfondimento. La panoramica mostra tutta la gerarchia.', className='small text-muted mt-2'),
+    graph_legend(),
     ], id='graph-panel'),
+    dbc.Accordion([dbc.AccordionItem([
+        html.P('Tutto ciò che il modello ha appreso, in valori reali: livelli, concetti con i loro genitori e prototipi, gruppi e confini incerti. Il file scaricabile contiene la stessa struttura in JSON leggibile; il modello completo per ricaricarlo si salva con «Salva modello».', className='small text-muted'),
+        dbc.Button('Scarica la struttura del grafo (JSON leggibile)', id='structure-download-button', outline=True, size='sm', className='mb-2 me-2'),
+        dcc.Download(id='structure-download'),
+        dbc.Button('Scarica il modello come progetto Python', id='package-download-button', outline=True, size='sm', className='mb-2'),
+        dcc.Download(id='package-download'), html.Div(id='package-status', className='small', role='status'),
+        html.P('Il progetto Python contiene il modello completo e il suo codice, con requirements.txt: serve solo numpy e '
+               'pandas. Si usa senza installare (python modello_concetti.zip prevedi righe.csv) oppure da Python, per '
+               'previsioni, completamento, aggiornamento con righe nuove (update) e nuova scoperta dei concetti (refit). '
+               'Istruzioni nel README del progetto.', className='small text-muted'),
+        dcc.Loading(html.Div(id='model-inspection')),
+    ], title='Ispeziona il modello', item_id='inspect')], start_collapsed=True, className='my-3', id='inspect-accordion'),
     dbc.Accordion([dbc.AccordionItem([
         dbc.Label('Nodo concetto'), dcc.Dropdown(id='concept-node', clearable=False),
         dcc.Graph(id='concept-relevance'), html.Div(id='concept-rules'),
@@ -651,7 +674,9 @@ inference_layout = dbc.Container([
 _page_layout = dbc.Container([
     html.Div([html.H1('ACAN · Concept Explorer'), html.P('Dati → concetti → gerarchia → predizione e completamento', className='text-muted')], className='p-4 mb-3 bg-light border rounded'),
     dcc.Tabs(id='tabs', value='Data', children=[
-        dcc.Tab(label=name, value=name) for name in ['Data', 'Model', 'Evaluation', 'Inference', 'Generative', 'Matematica']
+        # Labels for the reader; values stay as they are because callbacks and saved links use them.
+        dcc.Tab(label=label, value=name) for name, label in [('Data', 'Dati'), ('Model', 'Modello'), ('Evaluation', 'Valutazione'),
+                                                           ('Inference', 'Previsione'), ('Generative', 'Generativo'), ('Matematica', 'Matematica')]
     ]),
     # Keep the graph mounted when switching tabs: destroying Cytoscape while
     # asynchronous layout/resize callbacks are pending causes browser errors.
@@ -788,8 +813,8 @@ def training_action_label(labels,task):
 
 @app.callback(Output('input-max-batch','disabled'),Output('train-min-samples','disabled'),Output('train-purity','disabled'),Input('train-depth','value'),Input('dpdnLabel','value'))
 def active_training_parameters(depth,labels):
-    hierarchical=int(depth or 1)>1
-    return hierarchical,not hierarchical,not hierarchical or not labels
+    # The concept graph needs only the minimum rows of a manually deepened branch.
+    return True,False,True
 
 
 @app.callback(Output('train-tau','disabled'),Output('train-alpha','disabled'),Input('tabular-routing-profile','value'))
@@ -1118,7 +1143,7 @@ def load_model_json(contents, filename, tab_id):
         if model.rootId not in model.clusterModel:
             raise ValueError('Il modello non contiene un nodo radice valido.')
         options = [{'label': label, 'value': label} for label in model.labels]
-        return model_json, options, model.labels, '✅ Modello caricato: pronto per Inference.'
+        return model_json, options, model.labels, '✅ Modello caricato: pronto per Previsione.'
     except Exception as exc:
         return dash.no_update, dash.no_update, dash.no_update, f'❌ Modello non valido: {exc}'
 
@@ -1149,7 +1174,7 @@ def run_inference(n_clicks, model_json, csv_text, mode):
         return None, [], 'Pronto: premere Esegui inferenza.', True
     try:
         if not csv_text:
-            raise ValueError('Caricare prima un CSV nella scheda Inference.')
+            raise ValueError('Caricare prima un CSV nella scheda Previsione.')
         result = infer(model_json, pd.read_csv(io.StringIO(csv_text)), mode)
         table = dbc.Table.from_dataframe(result.head(100).fillna(''), striped=True, bordered=True)
         return (result.to_csv(index=False), table,
@@ -1201,6 +1226,10 @@ def node_info(snd, model):
         if snd != None and len(snd) > 0:
             node_id = snd[0]['id']
             # Gestisci ID nodi Group tipo "0_G3"
+            if '_L' in str(node_id):
+                # A concept of a level of the concept graph: "<node>_L<depth>_<index>"
+                node_part, depth, index = str(node_id).split('_')
+                return eInfo(model, int(node_part), int(index), depth=int(depth[1:]))
             if '_G' in str(node_id):
                 # È un nodo Group, estrai parent_id e group_idx
                 parts = str(node_id).split('_')
@@ -1350,7 +1379,7 @@ def graph_info(model, nId):
     return data_section
 
 
-def eInfo(model, source, k):
+def eInfo(model, source, k, depth=None):
     """
     Mostra informazioni dettagliate su un cluster figlio (edge).
     Visualizza: centroide del cluster, relevance degli attributi.
@@ -1361,15 +1390,29 @@ def eInfo(model, source, k):
     node = gcm.clusterModel[source]
     
     # Ottieni dati del figlio (valori normalizzati dal modello)
-    df_group_norm = pd.DataFrame(node.Groups, columns=node.cols).iloc[[k]].copy()
-    df_relevance = pd.DataFrame(node.Relevance, columns=node.cols).iloc[[k]]
+    groups, relevance = node.Groups, node.Relevance
+    title, note = f"🎯 Gruppo Figlio {k} (dal Nodo {source})", "Questo gruppo rappresenta un sotto-cluster con caratteristiche specifiche."
+    if depth is not None:
+        # A concept of a level: the same reading, from the prototypes saved with that level.
+        level = next(item for item in (node.routing_parameters or {}).get('levels') or [] if item['depth'] == depth)
+        if 'groups' not in level:                                # saved before levels kept their prototypes
+            return dbc.Alert(f"Concetto L{depth}·{k}: questo modello è stato salvato prima che i livelli conservassero "
+                             "i loro prototipi. Riaddestralo per ispezionarlo.", color='info')
+        groups, relevance = level["groups"], level["relevance"]
+        parents = level.get('parents')
+        above = ([f"L{depth-1}·{p}: {100*row[k]:.0f}%" for p, row in enumerate(parents) if row[k] > .01]
+                 if parents is not None else [])
+        title = f"🧭 Concetto L{depth}·{k} · {100*level['mass'][k]:.0f}% delle righe"
+        note = ("Concetto generale: riassume le righe di tutti i gruppi che discendono da lui." if depth == 1 else
+                "Discende da " + ", ".join(above) + ".")
+    df_group_norm = pd.DataFrame(groups, columns=node.cols).iloc[[k]].copy()
+    df_relevance = pd.DataFrame(relevance, columns=node.cols).iloc[[k]]
     
     # Card intestazione
     header_card = dbc.Card([
-        dbc.CardHeader(html.H5(f"🎯 Gruppo Figlio {k} (dal Nodo {source})", className="mb-0")),
+        dbc.CardHeader(html.H5(title, className="mb-0")),
         dbc.CardBody([
-            html.P("Questo gruppo rappresenta un sotto-cluster con caratteristiche specifiche.", 
-                   className="text-muted small")
+            html.P(note, className="text-muted small")
         ], className="p-2")
     ], className="mb-3")
     
@@ -1575,7 +1618,7 @@ def edit_hierarchy(request, refine_clicks, remove_clicks, selected, model_json, 
             if context:
                 context.base_model = model_json
                 context.graph = graph
-            return graph.to_json(), 'Ramo rimosso. Evaluation confronta ora prima e dopo la rimozione.', True, True
+            return graph.to_json(), 'Ramo rimosso. Valutazione confronta ora prima e dopo la rimozione.', True, True
         if context is None:
             raise ValueError('Per approfondire servono i dati di training di questa pagina. Un JSON caricato da solo non li contiene: addestra il modello sul tuo CSV.')
         from acan.vis.refinement import parse_group
@@ -1676,3 +1719,38 @@ if __name__ == '__main__':
 # https://js.cytoscape.org/#style/node-body
 # https://js.cytoscape.org/#style/edge-line
 
+
+
+@app.callback(Output('model-inspection', 'children'), Input('model-store', 'data'), Input('inspect-accordion', 'active_item'))
+def inspect_model(model, active):
+    """The whole model, readable; built only when the panel is open."""
+    if not model:
+        return html.P('Carica un modello o avvia la scoperta dei concetti.', className='small text-muted')
+    if active != 'inspect':
+        return dash.no_update
+    from .graph_view import model_overview, model_structure
+    return model_overview(model_structure(GraphClusterModel.loadModel(model)))
+
+
+@app.callback(Output('structure-download', 'data'), Input('structure-download-button', 'n_clicks'),
+              State('model-store', 'data'), prevent_initial_call=True)
+def download_structure(n_clicks, model):
+    if not model:
+        return dash.no_update
+    from .graph_view import model_structure
+    return dict(content=json.dumps(model_structure(GraphClusterModel.loadModel(model)), indent=2, ensure_ascii=False),
+                filename='struttura-grafo.json')
+
+
+@app.callback(Output('package-download', 'data'), Output('package-status', 'children'),
+              Input('package-download-button', 'n_clicks'), State('model-store', 'data'), prevent_initial_call=True)
+def download_package(n_clicks, model):
+    """The learned model as a Python project: inference, completion and further training."""
+    if not model:
+        return dash.no_update, 'Carica un modello o avvia la scoperta dei concetti.'
+    from acan.core.export import build_package
+    try:
+        content = build_package(GraphClusterModel.loadModel(model))
+    except ValueError as error:
+        return dash.no_update, str(error)
+    return dcc.send_bytes(content, 'modello_concetti.zip'), ''

@@ -1,0 +1,65 @@
+"""Use the model without installing anything (needs numpy and pandas):
+
+    python modello_concetti.zip prevedi righe.csv [-o previsioni.csv]
+    python modello_concetti.zip completa righe.csv [-o completate.csv]
+    python modello_concetti.zip gruppi righe.csv [-o appartenenze.csv]
+    python modello_concetti.zip livelli
+    python modello_concetti.zip aggiorna righe_con_target.csv cartella
+    python modello_concetti.zip riscopri righe_con_target.csv cartella
+
+``aggiorna`` and ``riscopri`` write the new state into ``cartella``; the other commands read
+it from there with ``--da cartella``.
+"""
+import argparse
+import json
+import sys
+
+import pandas as pd
+
+from modello_concetti import Model
+
+
+def read(path):
+    if path.endswith(('.xlsx', '.xls')):
+        return pd.read_excel(path)
+    return pd.read_csv(path, sep=None, engine='python')
+
+
+def write(frame, path):
+    if path:
+        frame.to_csv(path, index=False)
+    else:
+        frame.to_csv(sys.stdout, index=False)
+
+
+def main():
+    parser = argparse.ArgumentParser(prog='python modello_concetti.zip', description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('comando', choices=['prevedi', 'completa', 'gruppi', 'livelli', 'aggiorna', 'riscopri'])
+    parser.add_argument('righe', nargs='?')
+    parser.add_argument('cartella', nargs='?', help='dove scrivere il modello aggiornato')
+    parser.add_argument('-o', '--output', help='file CSV di uscita (altrimenti a schermo)')
+    parser.add_argument('--da', help='cartella di un modello salvato con aggiorna o riscopri')
+    args = parser.parse_args()
+    model = Model.load(args.da)
+    if args.comando == 'livelli':
+        print(json.dumps(model.levels(), indent=2))
+        return
+    if not args.righe:
+        parser.error('serve il file delle righe')
+    rows = read(args.righe)
+    if args.comando == 'prevedi':
+        write(pd.concat([rows, model.predict(rows).add_prefix('previsto_')], axis=1), args.output)
+    elif args.comando == 'completa':
+        write(model.complete(rows), args.output)
+    elif args.comando == 'gruppi':
+        write(model.assignments(rows).round(4), args.output)
+    else:
+        if not args.cartella:
+            parser.error('serve la cartella in cui scrivere il modello')
+        (model.update(rows) if args.comando == 'aggiorna' else model.refit(rows)).save(args.cartella)
+        print(f'Modello scritto in {args.cartella}: usalo con --da {args.cartella}')
+
+
+if __name__ == '__main__':
+    main()
