@@ -842,7 +842,7 @@ def register(app):
             detail.append(dbc.Alert('; '.join(parts)+'. ' + (
                 'Questo è il controllo denso: è il riferimento con cui confrontare i progetti ACAN dello stesso budget.' if control else
                 'Il modello di partenza non ha visto questo corpus, quindi scendere sotto la sua linea non dimostra che i concetti servano: '
-                ('il confronto valido è con il progetto ad attenzione normale con lo stesso budget, che compare tratteggiato sul grafico.' if partner is not None else
+                + ('il confronto valido è con il progetto ad attenzione normale con lo stesso budget, che compare tratteggiato sul grafico.' if partner is not None else
                  'il confronto valido è con il controllo denso addestrato con lo stesso budget (strumenti avanzati, «Confronti e serie a mano»).')),
                 color='info'))
             if best is not None and validation > best + .05:
