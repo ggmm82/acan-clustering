@@ -94,7 +94,9 @@ class ValidationPathTest(unittest.TestCase):
                         config=dict(name='Validazione · x', series=dict(id='s', variant=variant)))
         def tested(nll):
             return [dict(records=dict(selected_checkpoint=dict(quality=dict(nll=nll, tokens=9000))))]
-        pair = validation_pair([job('a', 'chosen'), job('b', 'dense'), dict(id='c', status='completed', progress={}, config=dict(name='Altro'))])
+        dense = job('b', 'dense')
+        dense['config']['name'] = 'Controllo denso · Validazione · x'          # as the worker renames it
+        pair = validation_pair([job('a', 'chosen'), dense, dict(id='c', status='completed', progress={}, config=dict(name='Altro'))])
         self.assertEqual([item['id'] for item in pair], ['a', 'b'])
         text = lambda view: str(view)
         self.assertIn('Pronto per la GPU', text(decision_view(finished_test(1., .06, .95), pair, dict(a=tested(3.40), b=tested(3.35)))))

@@ -458,9 +458,11 @@ def validation_pair(jobs):
     series = {}
     for job in jobs:
         item = job['config'].get('series') or {}
-        if item and job['config'].get('name', '').startswith(VALIDATION_NAME):
+        if item:
             series.setdefault(item['id'], {})[item.get('variant')] = job
-    pairs = [found for found in series.values() if 'chosen' in found and 'dense' in found]
+    # The worker renames the dense member after the concept one, so the name is read on the latter.
+    pairs = [found for found in series.values() if 'chosen' in found and 'dense' in found
+             and found['chosen']['config'].get('name', '').startswith(VALIDATION_NAME)]
     if not pairs:
         return None
     latest = max(pairs, key=lambda found: max(job.get('created', 0) or 0 for job in found.values()))
@@ -840,7 +842,8 @@ def register(app):
             detail.append(dbc.Alert('; '.join(parts)+'. ' + (
                 'Questo è il controllo denso: è il riferimento con cui confrontare i progetti ACAN dello stesso budget.' if control else
                 'Il modello di partenza non ha visto questo corpus, quindi scendere sotto la sua linea non dimostra che i concetti servano: '
-                'il confronto valido è con il controllo denso addestrato con lo stesso budget (pulsante più sotto) e con le generazioni su testi nuovi.'),
+                ('il confronto valido è con il progetto ad attenzione normale con lo stesso budget, che compare tratteggiato sul grafico.' if partner is not None else
+                 'il confronto valido è con il controllo denso addestrato con lo stesso budget (strumenti avanzati, «Confronti e serie a mano»).')),
                 color='info'))
             if best is not None and validation > best + .05:
                 detail.append(dbc.Alert(f'La validazione è risalita di {validation-best:.3f} rispetto al migliore mentre il training continua a scendere: '
