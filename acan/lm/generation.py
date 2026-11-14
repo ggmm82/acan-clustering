@@ -36,7 +36,9 @@ def generate(root, request_id):
         model, graft = load_base(path, options, device)
         checkpoints.restore(directory, model, expected=manifest['identity'], restore_rng=False)
         model.eval(); reset_streams(model)
-        inputs = tokenizer(request['prompt'], return_tensors='pt')['input_ids'].to(device)
+        from .probes import chat_prompt, stop_tokens
+        chat = request.get('chat', False)                     # a question to answer, as in the conversation data
+        inputs = tokenizer(chat_prompt(request['prompt']) if chat else request['prompt'], return_tensors='pt')['input_ids'].to(device)
         if inputs.shape[1] < 1 or inputs.shape[1] + request['max_new_tokens'] > min(model.config.max_position_embeddings, 4096):
             raise ValueError('Prompt vuoto o contesto oltre il limite supportato.')
         from .inspection import Capture
@@ -54,7 +56,9 @@ def generate(root, request_id):
         with torch.inference_mode(), capture if capture is not None else nullcontext():
             # On request the end-of-text token is ignored until the requested length: models trained
             # on short documents otherwise stop after a line.
-            length = dict(min_new_tokens=request['max_new_tokens']) if request.get('full_length') else {}
+            length = dict(min_new_tokens=request['max_new_tokens']) if request.get('full_length') and not chat else {}
+            if chat:
+                length['eos_token_id'] = stop_tokens(tokenizer)
             output = model.generate(inputs, attention_mask=torch.ones_like(inputs), max_new_tokens=request['max_new_tokens'], **length, **sampling, use_cache=True, num_beams=1,
                                     pad_token_id=tokenizer.eos_token_id, return_dict_in_generate=True)
         if device == 'cuda':
