@@ -22,7 +22,7 @@ const path = require('node:path');
       await page.goto(process.env.ACAN_TEST_URL || 'http://127.0.0.1:4000', {waitUntil: 'domcontentloaded'});
       await page.locator('#upload-data input[type=file]').setInputFiles(csv);
       await page.locator('#uplColId').filter({hasText: 'Target suggerito'}).waitFor();
-      await page.getByText('Model', {exact:true}).click();
+      await page.getByText('Modello', {exact:true}).click();
 
       async function learn() {
         const sent = page.waitForRequest(request => request.method() === 'POST' &&

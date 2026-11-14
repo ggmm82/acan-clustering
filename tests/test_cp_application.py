@@ -28,6 +28,7 @@ class CPApplicationTests(unittest.TestCase):
         from acan.vis.render import app, show_page
         layout=app.server.test_client().get('/_dash-layout')
         self.assertEqual(layout.status_code,200)
-        self.assertIn(b'cp-joint-v1',layout.data)
+        self.assertIn(b'concept-graph-v1',layout.data)
+        self.assertNotIn(b'"value":"cp-joint-v1"',layout.data.replace(b' ',b''))   # not offered for new models
         self.assertIn(b'page-mathematics',layout.data)
         self.assertEqual(show_page('Matematica')[-1],{'display':'block'})

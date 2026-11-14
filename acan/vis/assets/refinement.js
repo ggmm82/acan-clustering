@@ -28,6 +28,7 @@
       bound.add(cy);
       cy.on('dbltap', 'node', function (event) {
         const node = event.target;
+        if (node.hasClass('level-concept')) return;   /* a concept of a level: inspected with one click */
         const child = node.data('child_id');
         if (child !== undefined || !node.id().includes('_G')) {
           window.dash_clientside.set_props('graph-focus', {value:child !== undefined ? child : Number(node.id())});

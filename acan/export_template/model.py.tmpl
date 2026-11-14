@@ -1,0 +1,250 @@
+"""The learned concept graph, ready to use: inference, completion and further training.
+
+Only numpy and pandas are needed. The mathematics is in ``concepts.py`` (a copy of the
+library's core at the time of export); ``state.json`` holds everything the model learned.
+"""
+import json
+import pkgutil
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from .concepts import ConceptModel
+from .encoding import MatrixEncoder, transform_features
+
+def _arrays(value):
+    if isinstance(value, dict):
+        return {key: _arrays(item) for key, item in value.items()}
+    if isinstance(value, list) and value and isinstance(value[0], (list, int, float)):
+        return np.asarray(value, dtype=float)
+    return value
+
+
+def _lists(value):
+    if isinstance(value, dict):
+        return {key: _lists(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_lists(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+class Model:
+    """A concept graph learned by ACAN.
+
+    >>> model = Model.load()
+    >>> model.predict(rows)            # the target of each row
+    >>> model.complete(rows)           # empty cells filled
+    >>> model.update(new_rows)         # the same concepts, with more evidence
+    >>> model.refit(rows)              # concepts discovered again on these rows
+    """
+
+    def __init__(self, state):
+        self.state = state
+        self.labels = list(state['labels'])
+        self.columns = list(state['columns'])
+        self.min_max = {name: tuple(value) for name, value in state['min_max'].items()}
+        self.preprocessing = state.get('preprocessing')
+        self.encoder = self._encoder(state['encoder'])
+        self.core = self._core(state['core'])
+
+    # ---- loading and saving -----------------------------------------------------
+    @classmethod
+    def load(cls, folder=None):
+        """The model of this package, or one written by ``save`` into ``folder``."""
+        if folder:
+            return cls(json.loads((Path(folder)/'state.json').read_text(encoding='utf-8')))
+        # Read through the import system: works unzipped, installed, or straight from the zip file.
+        return cls(json.loads(pkgutil.get_data(__package__, 'state.json').decode('utf-8')))
+
+    def save(self, folder):
+        """Write the current state (after update or refit) next to a copy of this package."""
+        folder = Path(folder)
+        folder.mkdir(parents=True, exist_ok=True)
+        state = dict(self.state, core=self._dump_core(), encoder=self._dump_encoder())
+        (folder/'state.json').write_text(json.dumps(_lists(state)), encoding='utf-8')
+        return folder
+
+    def _encoder(self, saved):
+        encoder = MatrixEncoder.__new__(MatrixEncoder)
+        for key, value in saved.items():
+            setattr(encoder, key, np.asarray(value) if key in ('mean', 'std', 'constant') else value)
+        encoder.constant = encoder.constant.astype(bool)
+        encoder.blocks = {name: list(indices) for name, indices in encoder.blocks.items()}
+        return encoder
+
+    def _dump_encoder(self):
+        return {key: getattr(self.encoder, key) for key in self.state['encoder']}
+
+    def _core(self, saved):
+        core = ConceptModel(**saved['options'])
+        core.encoder = self.encoder
+        core.labels = list(saved['labels'])
+        for key in ('root_p', 'root_g', 'resolution'):
+            setattr(core, key, np.asarray(saved[key], dtype=float))
+        core.train_weights = tuple(np.asarray(part, dtype=float) for part in saved['train_weights'])
+        core.statistics = _arrays(saved['statistics'])
+        core.cross = None if saved['cross'] is None else np.asarray(saved['cross'], dtype=float)
+        core.cov = np.asarray(saved['cov'], dtype=int)
+        core.above = None if saved['above'] is None else _arrays(saved['above'])
+        core.levels = []
+        for level in saved['levels']:
+            level = dict(level)
+            for key in ('mass', 'parents'):
+                level[key] = None if level.get(key) is None else np.asarray(level[key], dtype=float)
+            core.levels.append(level)
+        return core
+
+    def _dump_core(self):
+        core = self.core
+        saved = dict(self.state['core'])
+        saved.update(statistics=core.statistics, cross=core.cross, cov=core.cov, above=core.above,
+                     root_p=core.root_p, root_g=core.root_g, resolution=core.resolution,
+                     train_weights=list(core.train_weights), labels=core.labels,
+                     levels=[{key: level.get(key) for key in ('depth', 'concepts', 'mass', 'parents')}
+                             for level in core.levels])
+        return saved
+
+    # ---- encoding: the same steps as the application ----------------------------
+    def encode(self, rows):
+        """Rows of the original table -> the model's matrix (targets may be absent)."""
+        rows = pd.DataFrame(rows).copy()
+        features = rows.drop(columns=[label for label in self.labels if label in rows])
+        if self.preprocessing:
+            encoded = transform_features(features, self.preprocessing)
+        else:
+            encoded = pd.get_dummies(features, dtype=float)
+        matrix = pd.DataFrame(np.nan, index=rows.index, columns=self.columns)
+        for column in encoded:
+            if column in matrix:
+                matrix[column] = encoded[column].to_numpy(dtype=float)
+        for label in self.labels:
+            if label not in rows:
+                continue
+            if label in self.columns:                                # a quantity
+                matrix[label] = pd.to_numeric(rows[label], errors='coerce').to_numpy(dtype=float)
+            else:                                                    # a class: one column per value
+                own = [column for column in self.columns if column.startswith(f'{label}_')]
+                known = rows[label].notna().to_numpy()
+                for column in own:
+                    value = (rows[label].astype(str) == column[len(label)+1:]).to_numpy(dtype=float)
+                    matrix[column] = np.where(known, value, np.nan)
+        for column in self.columns:                                  # absent one-hot levels are zeros
+            if column not in self.labels and not any(column.startswith(f'{label}_') for label in self.labels):
+                matrix[column] = matrix[column].fillna(0.)
+        for column, (low, high) in self.min_max.items():
+            if column in matrix:
+                matrix[column] = 0. if high == low else (matrix[column]-low)/(high-low)
+        return matrix.to_numpy(dtype=float)
+
+    def _data(self, rows):
+        matrix = self.encode(rows)
+        missing = np.isnan(matrix)
+        x, mask, onehot = self.encoder.transform(np.nan_to_num(matrix))
+        numeric = np.asarray(self.encoder.numeric_index, dtype=int)
+        mask = mask*(~missing[:, numeric])                          # an empty quantity is not observed
+        x = np.where(mask > 0, x, 0.)
+        return x, mask, onehot
+
+    # ---- inference --------------------------------------------------------------
+    def assignments(self, rows):
+        """Membership of every row in the concepts that make predictions (rows x concepts)."""
+        rows = pd.DataFrame(rows)
+        data = self.core._seen(self._data(rows.drop(columns=[l for l in self.labels if l in rows])))[0]
+        t = self.core._route(self.core.statistics, data, self.core._weights(0.))[0]
+        return pd.DataFrame(t, index=rows.index, columns=[f'G{k}' for k in range(t.shape[1])])
+
+    def predict_proba(self, rows, label=None):
+        label = label or self.labels[0]
+        t = self.assignments(rows).to_numpy()
+        block = self.encoder.block(label)
+        _, _, log_p = self.core._parameters(self.core.statistics)
+        names = [self.columns[index][len(label)+1:] for index in self.encoder.blocks[label]]
+        return pd.DataFrame(t@np.exp(log_p[:, block]), index=pd.DataFrame(rows).index, columns=names)
+
+    def predict(self, rows):
+        """The targets of each row, in the units of the original table."""
+        rows = pd.DataFrame(rows)
+        out = pd.DataFrame(index=rows.index)
+        for label in self.labels:
+            if label in self.encoder.numeric:
+                features = rows.drop(columns=[l for l in self.labels if l in rows])
+                data, centre = self.core._seen(self._data(features))
+                t = self.core._route(self.core.statistics, data, self.core._weights(0.))[0]
+                j = self.encoder.numeric.index(label)
+                g, _, _ = self.core._parameters(self.core.statistics)
+                value = (centre[:, j]+t@g[:, j])*self.encoder.std[j]+self.encoder.mean[j]
+                low, high = self.min_max[label]
+                out[label] = value*(high-low)+low
+            else:
+                probability = self.predict_proba(rows, label)
+                out[label] = probability.columns.to_numpy()[probability.to_numpy().argmax(1)]
+        return out
+
+    def complete(self, rows):
+        """Fill the empty cells of the original columns from the concepts of each row."""
+        rows = pd.DataFrame(rows).copy()
+        data = self._data(rows)
+        seen, centre = self.core._seen(data)
+        t = self.core._route(self.core.statistics, seen, self.core._weights(0.))[0]
+        g, _, log_p = self.core._parameters(self.core.statistics)
+        for column in rows.columns[rows.isna().any()]:
+            empty = rows[column].isna().to_numpy()
+            if column in self.encoder.numeric:
+                j = self.encoder.numeric.index(column)
+                value = (centre[:, j]+t@g[:, j])*self.encoder.std[j]+self.encoder.mean[j]
+                low, high = self.min_max[column]
+                rows.loc[empty, column] = (value*(high-low)+low)[empty]
+            elif column in self.encoder.blocks:
+                names = [self.columns[index][len(column)+1:] for index in self.encoder.blocks[column]]
+                best = (t@np.exp(log_p[:, self.encoder.block(column)])).argmax(1)
+                rows.loc[empty, column] = np.asarray(names, dtype=object)[best][empty]
+        return rows
+
+    def levels(self):
+        """The levels of the graph: concepts, their share of rows and P(parent | concept)."""
+        return [dict(depth=level['depth'], concepts=level['concepts'], share=np.round(level['mass'], 4).tolist(),
+                     parents=None if level['parents'] is None else np.round(level['parents'], 4).tolist())
+                for level in self.core.levels]
+
+    # ---- further training -------------------------------------------------------
+    def update(self, rows, steps=10):
+        """Add rows (with their targets) to the concepts already learned.
+
+        The statistics of a concept are sums over its members, so new rows are added to the
+        sums: the concepts move only as far as the new evidence pulls them. The number of
+        concepts and the levels above stay as they are; use ``refit`` to discover them again.
+        """
+        core = self.core
+        data = core._seen(self._data(rows))[0]
+        before = {key: value.copy() for key, value in core.statistics.items()}
+        cross = None if core.cross is None else core.cross.copy()
+        for _ in range(steps):
+            t = core._route(core.statistics, data, core.train_weights)[0]
+            new = core._statistics(t, data)
+            core.statistics = {key: before[key]+new[key] for key in before}
+            if cross is not None:
+                core.cross = cross+core._cross(t, data)
+        core.levels[-1]['mass'] = core.statistics['C']/core.statistics['C'].sum()
+        return self
+
+    def refit(self, rows, seed=0):
+        """Discover the concepts again on these rows (for example the old rows plus new ones).
+
+        The encoding of the original table (columns, categories, scales) is kept, so the new
+        model reads the same rows as the old one.
+        """
+        matrix = np.nan_to_num(self.encode(rows))
+        encoder = MatrixEncoder(self.columns, self.encoder.blocks, matrix)
+        options = dict(self.state['core']['options'], seed=seed)
+        self.core = ConceptModel(**options).fit(matrix, self.labels, encoder=encoder)
+        self.encoder = encoder
+        return self
+
+
+def load(folder=None):
+    return Model.load(folder)
