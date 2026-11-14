@@ -24,6 +24,7 @@ TRAINING_HELP = {'lm-length': 'Quanto testo il modello legge in una volta (in to
  'lm-save': 'Ogni quanti passi salvare una copia del modello da cui provare a generare.',
  'lm-patience': 'Dopo quanti controlli senza miglioramenti mettersi in pausa da solo. 0 = mai.',
  'lm-min-delta': "Di quanto deve scendere l'errore per contare come miglioramento.",
+ 'lm-validation': "Su quanti pezzi di testo mai visto si controllano i progressi. Più pezzi = confronti più affidabili, controlli più lenti. Per confrontare due progetti usa almeno 32.",
  'lm-cp-weight': 'Compromesso fra previsione e organizzazione. Zero: sola NLL.'}
 
 
@@ -34,7 +35,7 @@ def backend(workspace, path, method='GET', data=None, raw=False, headers=None, t
     endpoint = os.environ.get('ACAN_LM_URL', '').rstrip('/')
     token = os.environ.get('ACAN_LM_SERVICE_TOKEN', '')
     if not endpoint or not token:
-        raise ValueError('Worker generativo non configurato. Avvia il servizio dedicato e imposta ACAN_LM_URL e ACAN_LM_SERVICE_TOKEN sul frontend.')
+        raise ValueError('Il servizio che addestra i modelli linguistici non è collegato a questa installazione: questa scheda non può avviare né mostrare progetti. Per chi gestisce il server: avviare il servizio dedicato e impostare ACAN_LM_URL e ACAN_LM_SERVICE_TOKEN.')
     if not isinstance(workspace, str) or not re.fullmatch('[0-9a-f]{64}', workspace):
         raise ValueError('Workspace non ancora pronto: attendi il caricamento della pagina.')
     body = data if raw else json.dumps(data).encode() if data is not None else None
@@ -99,7 +100,8 @@ layout = dbc.Container([
                      ('Pezzi per correzione','lm-accum',8,1,256),('Velocità di apprendimento','lm-lr',.0001,.0000001,.01),
                      ('Numero di concetti','lm-slots',16,2,64),('Token recenti esatti','lm-window',16,1,128),
                      ('Dimensione della parte addestrata (LoRA)','lm-rank',8,2,64),('Salva il modello ogni … passi','lm-save',100,1,10000),
-                     ('Pausa automatica dopo … controlli senza miglioramenti','lm-patience',3,0,20),('Miglioramento minimo','lm-min-delta',.01,0,1)]]),
+                     ('Pausa automatica dopo … controlli senza miglioramenti','lm-patience',3,0,20),('Miglioramento minimo','lm-min-delta',.01,0,1),
+                     ('Pezzi di testo per ogni controllo','lm-validation',8,1,64)]]),
         html.Div(dbc.Input(id='lm-cp-weight',type='number',value=0.,min=0,max=1),style={'display':'none'}),   # earlier profiles only
         dbc.Label('Come il modello legge il contesto'),
         dcc.Dropdown(id='lm-routing',value='concept-graph-v1',clearable=False,options=[
@@ -117,6 +119,13 @@ layout = dbc.Container([
     dcc.Dropdown(id='lm-job', placeholder='Scegli un progetto per seguirlo, metterlo in pausa o riprenderlo'),
     dbc.Button('Pausa e salva', id='lm-pause', color='warning', className='m-1'),
     dbc.Button('Riprendi', id='lm-resume', className='m-1'),
+    dbc.Row([
+        dbc.Col(dbc.Input(id='lm-rename-value', placeholder='Nuovo nome del progetto scelto'), md=5, className='mt-1'),
+        dbc.Col([dbc.Button('Rinomina', id='lm-rename', outline=True, color='primary', className='me-2 mt-1'),
+                 dbc.Button('Elimina il progetto', id='lm-delete', outline=True, color='danger', className='mt-1')], md=7),
+    ], className='my-1'),
+    dcc.ConfirmDialog(id='lm-delete-confirm', message='Eliminare il progetto scelto con tutte le sue copie salvate? Non si può annullare.'),
+    html.Div(id='lm-manage-status', role='status', className='small'),
     html.Div(id='lm-action-status', role='status'), html.Div(id='lm-progress'),
     dbc.Row([
         dbc.Col([dbc.Label('Grafico'),dcc.Dropdown(id='lm-history-mode',value='overview',clearable=False,
@@ -146,6 +155,7 @@ layout = dbc.Container([
     dcc.Dropdown(id='lm-checkpoint', placeholder='Copia salvata del modello: la migliore e le ultime tre'),
     dbc.Textarea(id='lm-prompt', value='', placeholder="Scrivi l'inizio di una frase, nella lingua del testo di addestramento", rows=3),
     dbc.Label('Quanto testo scrivere (token, circa pezzi di parola)'), dbc.Input(id='lm-new-tokens', type='number', value=64, min=1, max=256),
+    dbc.Checkbox(id='lm-full-length', value=True, label='Scrivi sempre fino alla lunghezza richiesta (senza fermarsi a fine paragrafo)'),
     dbc.Checkbox(id='lm-inspect-generation', value=False, label='Fotografa anche i layer mentre scrive (al massimo 32 token)'),
     dbc.Button('Continua la frase', id='lm-generate', className='my-2'),
     html.Div(id='lm-generation-status', role='status'), html.Pre(id='lm-output', style={'whiteSpace':'pre-wrap'}),
@@ -156,10 +166,19 @@ layout = dbc.Container([
     html.Hr(),html.H5("5 · I concetti funzionano? Confronto con l'attenzione normale"),
     html.P("Addestra lo stesso modello con l'attenzione normale (tutti i token esatti, nessun concetto), con lo stesso testo e gli stessi passi del progetto scelto. Compare sullo stesso grafico, tratteggiato, con il confronto dei risultati: se l'errore finale è simile, i concetti non costano qualità. È un altro addestramento: su CPU richiede ore."),
     dbc.Button("Avvia il confronto con l'attenzione normale", id='lm-dense-control', color='primary'),html.Div(id='lm-control-status',role='status'),
+    html.Hr(),html.H5('Esperimenti in serie'),
+    html.P("Più progetti sullo stesso testo, con gli stessi passi, eseguiti uno dopo l'altro senza che tu debba intervenire: cambia una sola cosa per volta. Usa le impostazioni scritte sopra (testo, modello, passi). Se metti in pausa un progetto della serie, la serie si ferma lì."),
+    dbc.Checklist(id='lm-series-variants', value=['chosen','dense'], options=[
+        {'label':'Le impostazioni scelte (metà dei layer a concetti)','value':'chosen'},
+        {'label':'Metà dei concetti: compressione più forte','value':'fewer_concepts'},
+        {'label':'Tutti i layer a concetti (su CPU testo letto di 64 token)','value':'all_layers'},
+        {'label':'Attenzione normale, come riferimento','value':'dense'}]),
+    dbc.Button('Avvia la serie', id='lm-series-start', color='primary', className='mt-2'),html.Div(id='lm-series-status',role='status'),
     html.Hr(),html.H5('6 · Verifica finale su testo mai visto'),
     html.P("Con l'addestramento in pausa: misura la copia scelta e il modello originale sullo stesso testo di verifica, mai usato per addestrare, e confronta velocità e memoria. Su CPU la verifica è piccola."),
     dbc.Label('Ampiezza della verifica'),
-    dcc.Dropdown(id='lm-eval-profile',value='quick',clearable=False,options=[{'label':'Rapida (CPU): 4 pezzi di testo, contesti di 32 e 128 token','value':'quick'},{'label':'Contesto lungo (CPU, lenta): 1 pezzo, contesti di 128 e 1.024 token','value':'long'},{'label':'Ampia: richiede una GPU','value':'wide','disabled':True}]),
+    dcc.Dropdown(id='lm-eval-profile',value='quick',clearable=False,options=[{'label':'Rapida (CPU): 4 pezzi di testo, contesti di 32 e 128 token','value':'quick'},{'label':'Contesto lungo (CPU, lenta): 1 pezzo, contesti di 128 e 1.024 token','value':'long'},{'label':'Memoria e velocità su testi lunghi (CPU, molto lenta): 512, 2.048 e 4.096 token','value':'memory'},{'label':'Ampia: richiede una GPU','value':'wide','disabled':True}]),
+    html.Small('«Testi lunghi» mostra da quale lunghezza i concetti fanno risparmiare memoria: sui testi brevi occupano più dell\'attenzione normale. Oltre la lunghezza del testo di verifica il testo viene ripetuto, perché lì si misurano solo velocità e memoria.', className='text-muted d-block mb-2'),
     dbc.Button('Avvia la verifica', id='lm-evaluate', className='m-1'),
     dbc.Button('Ferma la verifica',id='lm-eval-stop',outline=True,color='warning',className='m-1'),
     dbc.Button('Scarica i risultati della verifica', id='lm-eval-download', outline=True, color='primary', className='m-1'),dcc.Download(id='lm-eval-file'),
@@ -253,25 +272,71 @@ def project_label(job, jobs):
     return label
 
 
-def comparison_summary(concepts, dense):
-    """Best validation of the concept project against its dense control, and what it means."""
+def verified(evaluations):
+    """Error on the test text of the latest verification, if any."""
+    for item in reversed(evaluations or []):
+        quality = ((item.get('records') or {}).get('selected_checkpoint') or {}).get('quality') or {}
+        if quality.get('nll') is not None:
+            return quality['nll'], quality.get('tokens')
+    return None
+
+
+def comparison_summary(concepts, dense, concept_tests=None, dense_tests=None):
+    """Best result of the concept project against its dense control, and what it means.
+
+    The verification on the test text is used when both have one: it reads more text than the
+    validation during training.
+    """
+    tested = verified(concept_tests), verified(dense_tests)
+    if all(tested):
+        (a, tokens), (b, _) = tested
+        gap = a-b
+        finished = all(job['status'] in ('paused', 'completed') for job in (concepts, dense))
+        verdict, color = _verdict(gap)
+        return (f"Sul testo di verifica ({tokens:,} token) · concetti {a:.3f}, attenzione normale {b:.3f}, differenza {gap:+.3f}: {verdict}. "
+                + ('' if finished else 'Almeno uno dei due è ancora in corso: rifai la verifica alla fine. ')), color
     best = lambda job: next((item.get('validation_nll') for item in job.get('snapshots', []) if item.get('best')), None)
     a, b = best(concepts), best(dense)
     if a is None or b is None:
         return None
     finished = all(job['status'] in ('paused', 'completed') for job in (concepts, dense))
     gap = a-b
-    if abs(gap) <= .15:
-        verdict, color = ('i concetti non costano qualità a questa scala: è il risultato a favore dell\'idea', 'success')
-    elif gap > .15:
-        verdict, color = (f'la compressione costa {gap:.2f} di errore rispetto all\'attenzione completa', 'warning')
-    else:
-        verdict, color = ('i concetti risultano migliori della densa: sorprendente, va ripetuto con un altro seme prima di crederci', 'info')
-    text = (f"Migliore conservato · concetti {a:.3f}, controllo denso {b:.3f}, differenza {gap:+.3f}: {verdict}. "
+    verdict, color = _verdict(gap)
+    text = (f"Migliore conservato · concetti {a:.3f}, attenzione normale {b:.3f}, differenza {gap:+.3f}: {verdict}. "
             + ('' if finished else 'Confronto provvisorio: almeno uno dei due è ancora in corso. ')
-            + 'Con 1.024 token di validazione differenze sotto 0,15 non si distinguono dal caso; per una misura più '
-              'solida usa «Confronta checkpoint e originale» su entrambi.')
+            + 'Il controllo durante l\'addestramento legge poco testo: differenze sotto 0,15 non si distinguono dal caso. '
+              'Per una misura più solida avvia la verifica finale (sezione 6) su entrambi i progetti: il confronto la userà da solo.')
     return text, color
+
+
+def _verdict(gap):
+    if abs(gap) <= .15:
+        return 'i concetti non costano qualità a questa scala: è il risultato a favore dell\'idea', 'success'
+    if gap > .15:
+        return f'la compressione costa {gap:.2f} di errore rispetto all\'attenzione normale', 'warning'
+    return 'i concetti risultano migliori dell\'attenzione normale: sorprendente, va ripetuto con un altro seme prima di crederci', 'info'
+
+
+def series_table(jobs, job, tests):
+    """All the projects of a series side by side: what changed, how far they got, their best results."""
+    series = (job['config'].get('series') or {}).get('id')
+    members = sorted((other for other in jobs if (other['config'].get('series') or {}).get('id') == series),
+                     key=lambda other: other['config']['series']['order'])
+    if not series or len(members) < 2:
+        return None
+    rows = []
+    for other in members:
+        best = next((item.get('validation_nll') for item in other.get('snapshots', []) if item.get('best')), None)
+        best = best if best is not None else other['progress'].get('best_validation_nll')
+        tested = verified(tests.get(other['id']))
+        rows.append(html.Tr([html.Td(other['config']['series']['label']), html.Td(other['status']),
+                             html.Td(f"{other['progress'].get('step', 0)}/{other['config']['total_steps']}"),
+                             html.Td('—' if best is None else f'{best:.3f}'), html.Td('—' if not tested else f'{tested[0]:.3f}')]))
+    return html.Div([html.H6('Serie di esperimenti', className='mt-2'),
+                     dbc.Table([html.Thead(html.Tr([html.Th(name) for name in ('Variante', 'Stato', 'Passi', 'Miglior errore in addestramento ↓', 'Errore sul testo di verifica ↓')])),
+                                html.Tbody(rows)], size='sm', bordered=True, responsive=True),
+                     html.P('I progetti girano uno dopo l\'altro. Per l\'ultima colonna avvia la verifica finale su ciascuno quando ha finito.',
+                            className='small text-muted')])
 
 
 def register(app):
@@ -400,7 +465,8 @@ def register(app):
     def available_models(state,fraction):
         cuda=(state or {}).get('capabilities',{}).get('cuda',False)
         return ([dict(label=name,value=name,disabled=not cuda and index>0) for index,name in enumerate(MODELS)],
-                [dict(label='Rapida (CPU): 4 pezzi di testo, contesti di 32 e 128 token',value='quick'),dict(label='Contesto lungo (CPU, lenta): 1 pezzo, contesti di 128 e 1.024 token',value='long'),dict(label='Ampia: 64 pezzi, contesti fino a 2.048 token' + ('' if cuda else ' · richiede una GPU'),value='wide',disabled=not cuda)],
+                [dict(label='Rapida (CPU): 4 pezzi di testo, contesti di 32 e 128 token',value='quick'),dict(label='Contesto lungo (CPU, lenta): 1 pezzo, contesti di 128 e 1.024 token',value='long'),
+                 dict(label='Memoria e velocità su testi lunghi (CPU, molto lenta): 512, 2.048 e 4.096 token',value='memory'),dict(label='Ampia: 64 pezzi, contesti fino a 2.048 token' + ('' if cuda else ' · richiede una GPU'),value='wide',disabled=not cuda)],
                 2048 if cuda else (64 if fraction==1. else 128),8 if cuda else 1,64 if cuda else 16,128 if cuda else 16,64 if cuda else 8)
 
     @app.callback(Output('lm-length','value'),Output('lm-slots','value'),Input('lm-routing','value'),
@@ -461,8 +527,8 @@ def register(app):
                   State('lm-base','value'), State('lm-name','value'), State('lm-steps','value'),
                   State('lm-length','value'), State('lm-batch','value'), State('lm-accum','value'),
                   State('lm-lr','value'), State('lm-slots','value'), State('lm-window','value'),
-                  State('lm-rank','value'), State('lm-save','value'), State('lm-device','value'), State('lm-distill','value'), State('lm-fraction','value'), State('lm-patience','value'), State('lm-min-delta','value'), State('lm-routing','value'), State('lm-cp-weight','value'), State('lm-state','data'), prevent_initial_call=True)
-    def control(start, pause, resume, workspace, job, corpus, base, name, steps, length, batch, accumulation, lr, slots, window, rank, save_steps, device, distill, fraction, patience, min_delta, routing, cp_weight, state=None):
+                  State('lm-rank','value'), State('lm-save','value'), State('lm-device','value'), State('lm-distill','value'), State('lm-fraction','value'), State('lm-patience','value'), State('lm-min-delta','value'), State('lm-routing','value'), State('lm-cp-weight','value'), State('lm-state','data'), State('lm-validation','value'), prevent_initial_call=True)
+    def control(start, pause, resume, workspace, job, corpus, base, name, steps, length, batch, accumulation, lr, slots, window, rank, save_steps, device, distill, fraction, patience, min_delta, routing, cp_weight, state=None, validation=8):
         try:
             action = dash.ctx.triggered_id
             if action == 'lm-start':
@@ -470,7 +536,7 @@ def register(app):
                 config = dict(corpus_id=corpus, base_model=base, name=name, total_steps=steps, sequence_length=length,
                               batch_size=batch, accumulation=accumulation, learning_rate=lr, slots=slots, window=window,
                               lora_rank=rank, save_steps=save_steps, device=device, protocol='controlled-v1', routing_profile=routing, distillation_weight=.5 if distill else 0., graft_fraction=fraction, early_stop_patience=patience, early_stop_min_delta=min_delta,
-                              cp_weight=cp_weight if routing in ('cp-routing-v1','cp-joint-v1') else 0.)
+                              cp_weight=cp_weight if routing in ('cp-routing-v1','cp-joint-v1') else 0., validation_batches=int(validation or 8))
                 job = backend(workspace, '/jobs', 'POST', config)['id']
                 backend(workspace, f'/jobs/{job}/start', 'POST')
                 return job, f'Addestramento di «{name}» avviato; puoi chiudere la pagina.'
@@ -540,7 +606,13 @@ def register(app):
                 name = 'Controllo denso' if own == 'Concetti' else 'Concetti'
                 figure.add_scatter(x=[row['step'] for row in rows], y=[row['validation_nll'] for row in rows], mode='lines',
                                    name=f'{name} · validazione', line=dict(dash='dash', width=3))
-                pair = (job, other) if own == 'Concetti' else (other, job)
+                def tests(identifier):
+                    try:
+                        return backend(workspace, f'/jobs/{identifier}/evaluations')
+                    except ValueError:
+                        return []
+                mine, theirs = tests(job['id']), tests(other['id'])
+                pair = (job, other, mine, theirs) if own == 'Concetti' else (other, job, theirs, mine)
                 comparison = comparison_summary(*pair)
         figure.update_layout(title='Errore di previsione · più basso è meglio', xaxis_title='Passi', yaxis_title='NLL',uirevision=f'{selected}:{history_mode}:{history_start if history_mode=="window" else 0}',xaxis={'rangeslider':{'visible':True}})
         saved_range=(chart_view or {}).get(figure.layout.uirevision) if isinstance(chart_view,dict) else None
@@ -556,6 +628,17 @@ def register(app):
         detail = [dbc.Alert(history_error,color='warning') if history_error else None,html.P(text), html.P(job['error'], className='text-danger') if job['error'] else None]
         if comparison is not None:
             detail.insert(0, dbc.Alert(comparison[0], color=comparison[1]))
+        if job['config'].get('series'):
+            members = [other for other in (state or {}).get('jobs', []) if (other['config'].get('series') or {}).get('id') == job['config']['series']['id']]
+            results = {}
+            for other in members:
+                try:
+                    results[other['id']] = backend(workspace, f"/jobs/{other['id']}/evaluations")
+                except ValueError:
+                    results[other['id']] = []
+            table = series_table(members, job, results)
+            if table is not None:
+                detail.insert(0, table)
         elif partner is None and job['config'].get('architecture') != 'dense-control' and job['config'].get('protocol') == 'controlled-v1':
             detail.insert(0, html.P('Per sapere se i concetti funzionano, avvia il controllo denso (in fondo alla pagina): '
                                     'comparirà su questo grafico, tratteggiato, con il confronto dei due risultati.', className='small text-muted'))
@@ -619,6 +702,54 @@ def register(app):
         selected_snapshot = checkpoint if checkpoint in {s['value'] for s in available} else available[0]['value'] if available else None
         return detail, figure, available, selected_snapshot
 
+    @app.callback(Output('lm-manage-status','children'),Output('lm-refresh','n_clicks',allow_duplicate=True),
+                  Input('lm-rename','n_clicks'),State('lm-rename-value','value'),State('lm-workspace','data'),State('lm-job','value'),
+                  State('lm-refresh','n_clicks'),prevent_initial_call=True)
+    def rename_project(clicks,name,workspace,job,refresh):
+        try:
+            if not job:raise ValueError('Scegli prima un progetto.')
+            renamed=backend(workspace,f'/jobs/{job}/rename','POST',dict(name=name or ''))
+            return f"Progetto rinominato in «{renamed['config']['name']}».",(refresh or 0)+1
+        except ValueError as exc:
+            return str(exc),dash.no_update
+
+    @app.callback(Output('lm-delete-confirm','displayed'),Input('lm-delete','n_clicks'),State('lm-job','value'),prevent_initial_call=True)
+    def ask_delete(clicks,job):
+        return bool(job)
+
+    @app.callback(Output('lm-manage-status','children',allow_duplicate=True),Output('lm-refresh','n_clicks',allow_duplicate=True),
+                  Output('lm-job','value',allow_duplicate=True),
+                  Input('lm-delete-confirm','submit_n_clicks'),State('lm-workspace','data'),State('lm-job','value'),
+                  State('lm-refresh','n_clicks'),prevent_initial_call=True)
+    def delete_project(confirmed,workspace,job,refresh):
+        try:
+            if not job:raise ValueError('Scegli prima un progetto.')
+            backend(workspace,f'/jobs/{job}/delete','POST',{})
+            return 'Progetto eliminato.',(refresh or 0)+1,None
+        except ValueError as exc:
+            return str(exc),dash.no_update,dash.no_update
+
+    @app.callback(Output('lm-active-job','data',allow_duplicate=True),Output('lm-series-status','children'),
+                  Input('lm-series-start','n_clicks'),State('lm-workspace','data'),State('lm-series-variants','value'),
+                  State('lm-corpus','value'),State('lm-base','value'),State('lm-name','value'),State('lm-steps','value'),
+                  State('lm-length','value'),State('lm-batch','value'),State('lm-accum','value'),State('lm-lr','value'),
+                  State('lm-slots','value'),State('lm-window','value'),State('lm-rank','value'),State('lm-save','value'),
+                  State('lm-device','value'),State('lm-patience','value'),State('lm-min-delta','value'),State('lm-validation','value'),
+                  State('lm-state','data'),prevent_initial_call=True)
+    def start_series(clicks,workspace,variants,corpus,base,name,steps,length,batch,accumulation,lr,slots,window,rank,save_steps,
+                     device,patience,min_delta,validation,state):
+        try:
+            if not corpus:raise ValueError('Scegli prima il testo nella sezione 1 (anche uno pubblico già scaricato).')
+            config=dict(corpus_id=corpus,base_model=base,name=unique_name(name,(state or {}).get('jobs',[])),total_steps=steps,
+                        sequence_length=length,batch_size=batch,accumulation=accumulation,learning_rate=lr,slots=slots,window=window,
+                        lora_rank=rank,save_steps=save_steps,device=device,protocol='controlled-v1',routing_profile='concept-graph-v1',
+                        distillation_weight=0.,graft_fraction=.5,early_stop_patience=patience,early_stop_min_delta=min_delta,
+                        validation_batches=int(validation or 8))
+            result=backend(workspace,'/series','POST',dict(base=config,variants=list(variants or [])))
+            return result['jobs'][0]['id'],f"Serie avviata: {len(result['jobs'])} progetti, uno dopo l'altro. Il primo è già partito."
+        except ValueError as exc:
+            return dash.no_update,str(exc)
+
     @app.callback(Output('lm-active-job','data',allow_duplicate=True),Output('lm-control-status','children'),
                   Input('lm-dense-control','n_clicks'),State('lm-workspace','data'),State('lm-job','value'),prevent_initial_call=True)
     def dense_control(clicks,workspace,job):
@@ -635,7 +766,8 @@ def register(app):
     def start_evaluation(clicks,workspace,job,checkpoint,profile):
         try:
             if not job or not checkpoint:raise ValueError('Seleziona progetto e checkpoint.')
-            budgets={'quick':dict(max_batches=4,context_lengths=[32,128],new_tokens=8),'long':dict(max_batches=1,context_lengths=[128,1024],new_tokens=4),'wide':dict(max_batches=64,context_lengths=[128,512,2048],new_tokens=16)}
+            budgets={'quick':dict(max_batches=4,context_lengths=[32,128],new_tokens=8),'long':dict(max_batches=1,context_lengths=[128,1024],new_tokens=4),
+                     'memory':dict(max_batches=1,context_lengths=[512,2048,4096],new_tokens=8),'wide':dict(max_batches=64,context_lengths=[128,512,2048],new_tokens=16)}
             if profile not in budgets:raise ValueError('Budget del confronto non valido.')
             result=backend(workspace,f'/jobs/{job}/evaluate','POST',dict(checkpoint=checkpoint,**budgets[profile]))
             return result['id'],'Confronto avviato nel worker: nessun peso viene aggiornato.'
@@ -674,7 +806,11 @@ def register(app):
                 details.append(html.Li(f"Testo di {item['context']} token: lettura iniziale {item['prefill_speedup']:.2f} volte la velocità dell'originale, "
                                        f"scrittura {item['decode_speedup']:.2f} volte; memoria "
                                        + (f"{memory:.0%} in meno." if memory >= 0 else f"{-memory:.0%} in più.")))
-            return [table,html.P('Velocità e memoria rispetto al modello originale (sopra 1 = più veloce):', className='mb-1'),html.Ul(details),
+            saving=[item['context'] for item in report['comparison'] if item['total_cache_reduction']>=0]
+            longest=max((item['context'] for item in report['comparison']),default=0)
+            verdict=(f"Da {min(saving):,} token in su la copia occupa meno memoria del modello originale." if saving else
+                     f"Fino a {longest:,} token la copia occupa ancora più memoria del modello originale: il risparmio arriva con testi più lunghi.")
+            return [table,html.P('Velocità e memoria rispetto al modello originale (sopra 1 = più veloce):', className='mb-1'),html.Ul(details),html.P(verdict),
                     html.P('Verifica piccola e su testi brevi: dice se la copia è migliore del modello originale su questo testo, non quanto vale in generale.', className='small text-muted')],report
         except ValueError as exc:return str(exc),None
 
@@ -707,12 +843,16 @@ def register(app):
 
     @app.callback(Output('lm-generation-id','data'), Output('lm-generation-status','children'),
                   Input('lm-generate','n_clicks'), State('lm-workspace','data'), State('lm-job','value'),
-                  State('lm-checkpoint','value'), State('lm-prompt','value'), State('lm-new-tokens','value'), State('lm-inspect-generation','value'), prevent_initial_call=True)
-    def start_generation(click, workspace, job, checkpoint, prompt, count, inspect):
+                  State('lm-checkpoint','value'), State('lm-prompt','value'), State('lm-new-tokens','value'), State('lm-inspect-generation','value'),
+                  State('lm-full-length','value'), prevent_initial_call=True)
+    def start_generation(click, workspace, job, checkpoint, prompt, count, inspect, full_length=True):
         try:
             if not job or not checkpoint:
                 raise ValueError('Seleziona progetto e checkpoint, poi metti in pausa il training.')
-            result = backend(workspace, f'/jobs/{job}/generate', 'POST', dict(checkpoint=checkpoint,prompt=prompt,max_new_tokens=count,inspect_layers=bool(inspect)))
+            request = dict(checkpoint=checkpoint,prompt=prompt,max_new_tokens=count,inspect_layers=bool(inspect))
+            if full_length:
+                request['full_length'] = True
+            result = backend(workspace, f'/jobs/{job}/generate', 'POST', request)
             return result['id'], 'Generazione avviata dal checkpoint selezionato.'
         except ValueError as exc:
             return None, str(exc)
