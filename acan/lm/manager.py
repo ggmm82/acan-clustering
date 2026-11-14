@@ -27,7 +27,7 @@ def launch(store, job, kind='train', generation_id=None):
                 '--lease-fd', str(resource.fileno()), '--kind', kind]
         if generation_id:
             args += ['--generation', generation_id]
-        log = store.directory('small_tests' if kind == 'small-test' else 'jobs', job['id']) / 'worker.log'
+        log = store.directory({'small-test': 'small_tests', 'build': 'builds'}.get(kind, 'jobs'), job['id']) / 'worker.log'
         with log.open('ab', buffering=0) as stream:
             subprocess.Popen(args, stdout=stream, stderr=subprocess.STDOUT, start_new_session=True,
                              pass_fds=(resource.fileno(),))
@@ -45,7 +45,7 @@ def snapshots(store, job):
     from .retention import protect_available
     protect_available(root)
     result = []
-    paths = list(root.glob('step-*'))
+    paths = list(root.glob('step-*'))+list(root.glob('milestone-*'))
     pointer = root/'best.json'
     best = json.loads(pointer.read_text()) if pointer.exists() else None
     if best:
@@ -60,7 +60,7 @@ def snapshots(store, job):
                 continue
             result.append(dict(name=path.name, step=manifest['step'],
                                validation_nll=state.get('validation_nll'),compatible=manifest.get('contract')==checkpoints.contract(),
-                               best=bool(best and path.name==best['name'])))
+                               best=bool(best and path.name==best['name']), milestone=path.name.startswith('milestone-')))
     return sorted(result, key=lambda item:(not item['best'], -item['step']))
 
 
@@ -68,11 +68,11 @@ def snapshots(store, job):
 def request_generation(store, job, owner, options):
     if job['status'] in ACTIVE:
         raise ValueError('Premi Pausa e attendi il salvataggio prima di provare il checkpoint sulla stessa GPU.')
-    allowed = {'prompt','checkpoint','max_new_tokens','temperature','seed','inspect_layers','full_length'}
+    allowed = {'prompt','checkpoint','max_new_tokens','temperature','seed','inspect_layers','full_length','chat'}
     if set(options) - allowed:
         raise ValueError('Opzioni generazione non valide.')
-    request = dict(dict(max_new_tokens=64, temperature=.7, seed=42, inspect_layers=False, full_length=False), **options)
-    if not isinstance(request['inspect_layers'], bool) or not isinstance(request['full_length'], bool):
+    request = dict(dict(max_new_tokens=64, temperature=.7, seed=42, inspect_layers=False, full_length=False, chat=False), **options)
+    if not all(isinstance(request[key], bool) for key in ('inspect_layers', 'full_length', 'chat')):
         raise ValueError('Ispezione layer non valida.')
     if not isinstance(request.get('prompt'), str) or not 1 <= len(request['prompt']) <= 32000:
         raise ValueError('Prompt non valido.')
@@ -158,6 +158,32 @@ def request_small_test(store, owner, options):
         store.update_small_test(identifier, status='failed', error='Worker occupato: metti in pausa il progetto attivo e riprova.')
         raise
     return identifier
+
+
+def request_build(store, owner, options):
+    """Prepare a mixture of Italian and English data in the worker (acan/lm/dialogue_data.py)."""
+    from .dialogue_data import MIXTURES
+    if not isinstance(options, dict) or set(options) != {'mixture'} or options['mixture'] not in MIXTURES:
+        raise ValueError('Scegli una delle miscele disponibili.')
+    identifier = uuid.uuid4().hex
+    with store.db() as db:
+        db.execute('INSERT INTO builds(id,owner,status,request,phase,created) VALUES(?,?,?,?,?,?)',
+                   (identifier, owner, 'queued', json.dumps(options), 'In attesa del worker', time.time()))
+    resume_build(store, identifier, owner)
+    return identifier
+
+
+def resume_build(store, identifier, owner):
+    item = store.build(identifier, owner)
+    if item['status'] in ('running', 'completed'):
+        raise ValueError('Preparazione già in corso o finita.')
+    store.update_build(identifier, status='queued', phase='In attesa del worker', error=None)
+    try:
+        launch(store, dict(id=identifier), 'build', identifier)
+    except Exception:
+        store.update_build(identifier, status='paused', phase='Worker occupato: riprendi quando è libero')
+        raise
+    return store.build(identifier, owner)
 
 
 def request_evaluation(store,job,owner,options):

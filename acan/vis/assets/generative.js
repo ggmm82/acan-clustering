@@ -13,7 +13,7 @@
     const zone = document.getElementById('lm-file-upload');
     if (zone && !zone.dataset.bound) {
       zone.dataset.bound = 'true';
-      const input = document.createElement('input'); input.type='file'; input.accept='.txt,.jsonl';
+      const input = document.createElement('input'); input.type='file'; input.accept='.txt,.jsonl,.md,.markdown,.py,.zip,.epub,.docx,.pdf';
       input.setAttribute('aria-label','Corpus di training TXT o JSONL');
       const button = document.createElement('button'); button.textContent='Carica il tuo testo'; button.className='btn btn-outline-primary my-2';
       zone.append(input, button);

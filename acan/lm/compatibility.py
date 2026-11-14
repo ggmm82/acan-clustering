@@ -24,12 +24,16 @@ PRE_GRAPH_INFERENCE = 'b852b117e99c71a1fe0e15dff94e509f8804995e6bbfcfd4cb5443beb
 # projects of every profile, concept-graph-v1 included, continue unchanged.
 PRE_ONE_STEP_TRAINING = 'd2bc3973bcb12064c65a42088568c2c9758c9371e4d32cde4b2b57e3e8ff751a'
 PRE_ONE_STEP_INFERENCE = '6f7e154f97725ffa1da7f441f33f67ba849303c8e788caf846af3d033eb9b521'
+# Sources of release 8.6.0, before the native model, learning queues, milestones and answer probes.
+# These additions act only when a project asks for them, so every earlier project continues.
+PRE_NATIVE_TRAINING = 'd7c50cf716bbb41b944dd2328458915a0582f0bcd6b0f69dfa02e128ca9af281'
+PRE_NATIVE_INFERENCE = '6ee3c0106aa03e15396eb9b9f9c38869f7b80f03ba1d395d69a57e8d63ffb80a'
 
 
 def training_identity(values, config, checkpoint_root, selected, current):
     from pathlib import Path
     from . import checkpoints
-    candidates = [current, PRE_ONE_STEP_TRAINING]
+    candidates = [current, PRE_NATIVE_TRAINING, PRE_ONE_STEP_TRAINING]
     if config.get('routing_profile') != 'concept-graph-v1':
         candidates.append(PRE_GRAPH_TRAINING)
     if config.get('routing_profile') not in ('cp-v9', 'concept-graph-v1'):

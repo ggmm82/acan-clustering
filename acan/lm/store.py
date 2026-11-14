@@ -67,6 +67,8 @@ class Store:
                     status TEXT, request TEXT, result TEXT, error TEXT);
                 CREATE TABLE IF NOT EXISTS small_tests (id TEXT PRIMARY KEY, owner TEXT, status TEXT, request TEXT,
                     phase TEXT, result TEXT, error TEXT, created REAL);
+                CREATE TABLE IF NOT EXISTS builds (id TEXT PRIMARY KEY, owner TEXT, status TEXT, request TEXT,
+                    phase TEXT, result TEXT, error TEXT, created REAL);
             ''')
 
     @contextmanager
@@ -82,7 +84,7 @@ class Store:
             connection.close()
 
     def directory(self, kind, identifier):
-        if kind not in ('jobs', 'corpora', 'small_tests') or not re.fullmatch('[0-9a-f]{32}', identifier):
+        if kind not in ('jobs', 'corpora', 'small_tests', 'builds') or not re.fullmatch('[0-9a-f]{32}', identifier):
             raise ValueError('Identificatore non valido.')
         directory = self.root / kind / identifier
         directory.mkdir(parents=True, exist_ok=True)
@@ -167,6 +169,44 @@ class Store:
         with self.db() as db:
             db.execute('UPDATE small_tests SET '+', '.join(f'{key}=?' for key in changes)+' WHERE id=?', (*changes.values(), identifier))
 
+    def build(self, identifier, owner=None):
+        with self.db() as db:
+            row = db.execute('SELECT * FROM builds WHERE id=?', (identifier,)).fetchone()
+        if row is None or (owner is not None and row['owner'] != owner):
+            raise KeyError('Preparazione non trovata.')
+        item = dict(row)
+        item['request'] = json.loads(item['request'])
+        item['result'] = json.loads(item['result']) if item['result'] else None
+        return item
+
+    def builds(self, owner):
+        with self.db() as db:
+            ids = [row[0] for row in db.execute('SELECT id FROM builds WHERE owner=? ORDER BY created DESC LIMIT 20', (owner,))]
+        return [self.build(identifier, owner) for identifier in ids]
+
+    def update_build(self, identifier, **changes):
+        allowed = {'status', 'phase', 'result', 'error'}
+        if not changes or not set(changes).issubset(allowed):
+            raise ValueError('Aggiornamento della preparazione non valido.')
+        if 'result' in changes and changes['result'] is not None:
+            changes['result'] = json.dumps(changes['result'], allow_nan=False)
+        with self.db() as db:
+            db.execute('UPDATE builds SET '+', '.join(f'{key}=?' for key in changes)+' WHERE id=?', (*changes.values(), identifier))
+
+    def adopt_corpus(self, owner, name, path):
+        """A corpus prepared in the worker becomes a ready corpus of the workspace, without copying it."""
+        path = Path(path)
+        size = path.stat().st_size
+        if not 1 <= size <= 8*1024**3:
+            raise ValueError('Corpus preparato vuoto o oltre 8 GiB.')
+        identifier = uuid.uuid4().hex
+        target = self.directory('corpora', identifier)/'corpus'
+        os.replace(path, target)
+        with self.db() as db:
+            db.execute('INSERT INTO corpora(id,owner,name,expected,received,status) VALUES(?,?,?,?,?,?)',
+                       (identifier, owner, Path(name).name, size, size, 'uploading'))
+        return self.finish_corpus(identifier, owner)
+
     def update(self, identifier, **changes):
         allowed = {'status', 'progress', 'checkpoint', 'pause', 'error'}
         if not changes or not set(changes).issubset(allowed):
@@ -237,8 +277,9 @@ class Store:
         if space.free < size + reserve:
             raise ValueError('Spazio insufficiente per il corpus e la riserva checkpoint.')
         name = Path(name).name
-        if not name.lower().endswith(('.txt', '.jsonl')):
-            raise ValueError('Carica un corpus UTF-8 .txt o .jsonl (campo text).')
+        from .documents import ACCEPTED
+        if not name.lower().endswith(ACCEPTED):
+            raise ValueError('Formati accettati: .txt, .jsonl (campo text), .md, .py, .zip, .epub, .docx, .pdf.')
         identifier = uuid.uuid4().hex
         self.directory('corpora', identifier)
         with self.db() as db:
@@ -281,6 +322,14 @@ class Store:
         if corpus['received'] != corpus['expected']:
             raise ValueError('Upload incompleto.')
         path = self.directory('corpora', identifier) / 'corpus'
+        if not corpus['name'].lower().endswith(('.txt', '.jsonl')):
+            # Markdown, Python, archives, books and documents become JSONL records of plain text.
+            from .documents import convert
+            convert(path, corpus['name'])
+            name = corpus['name']+'.jsonl'
+            with self.db() as db:
+                db.execute('UPDATE corpora SET name=?, expected=?, received=? WHERE id=?',
+                           (name, path.stat().st_size, path.stat().st_size, identifier))
         # Strict incremental UTF-8 validation does not load a multi-GB file.
         with path.open('r', encoding='utf-8') as stream:
             for _ in iter(lambda: stream.read(1024*1024), ''):
@@ -308,3 +357,5 @@ class Store:
             db.execute("UPDATE generations SET status='failed',error='Worker interrotto.' WHERE status='running'")
             db.execute("UPDATE evaluations SET status='failed',error='Worker interrotto.' WHERE status IN ('running','cancelling')")
             db.execute("UPDATE small_tests SET status='failed',error='Worker interrotto: avvia di nuovo la prova.' WHERE status IN ('running','cancelling')")
+            db.execute("UPDATE builds SET status='interrupted',phase='Interrotta da un riavvio: riparte da sola dal punto raggiunto' WHERE status IN ('queued','running')")
+            db.execute("UPDATE builds SET status='paused',phase='In pausa: riprendi quando vuoi, il lavoro fatto resta' WHERE status='pausing'")
