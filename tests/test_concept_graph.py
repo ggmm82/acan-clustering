@@ -124,6 +124,34 @@ class SavedGraphTest(unittest.TestCase):
         self.assertGreater(shifted, max(element['position']['y'] for element in drawn if element.get('classes') == 'level-concept'))
         self.assertIn('level-edge', classes)
         self.assertIn('livello 1', graph_view.navigation(graph)[4])
+        # Every concept of a level is inspectable like a group: typical values and relevance.
+        for level in levels:
+            self.assertEqual(np.asarray(level['groups']).shape, (level['concepts'], len(root.cols)))
+            self.assertEqual(np.asarray(level['relevance']).shape, (level['concepts'], len(root.cols)))
+        from acan.vis.render import eInfo
+        self.assertIn('L1', str(eInfo(graph.to_json(), graph.rootId, 0, depth=1)))
+        import json
+        older = json.loads(graph.to_json())                       # a model saved before level prototypes
+        for level in older['clusterModel'][str(graph.rootId)]['routing_parameters']['levels']:
+            level.pop('groups'), level.pop('relevance')
+        self.assertIn('Riaddestralo', str(eInfo(json.dumps(older), graph.rootId, 0, depth=1)))
+        # Edge ids carry the model: another model in the same page cannot inherit a stale edge.
+        ids = {element['data']['id'] for element in drawn if element.get('classes') == 'level-edge'}
+        other = train_native(frame.sample(frac=1, random_state=3), ['kind'], options)
+        again = {element['data']['id'] for element in graph_view.elements(other) if element.get('classes') == 'level-edge'}
+        if other.clusterModel[other.rootId].routing_parameters['levels'] != levels:
+            self.assertFalse(ids & again)
+        # The whole model, readable: levels with parents and prototypes, groups, edges.
+        structure = graph_view.model_structure(graph)
+        self.assertEqual([len(level['concepts']) for level in structure['levels']], [level['concepts'] for level in levels[:-1]])
+        self.assertEqual(len(structure['groups']), root.k())
+        for level in structure['levels'][1:]+[dict(concepts=structure['groups'])]:
+            for concept in level['concepts']:
+                self.assertAlmostEqual(sum(concept['parents'].values()), 1, delta=.05)
+        self.assertTrue(all(concept['prototype'] for level in structure['levels'] for concept in level['concepts']))
+        import json
+        self.assertEqual(json.loads(json.dumps(structure)), structure)
+        self.assertIn('Livello 1', str(graph_view.model_overview(structure)))
         payload = graph.to_json()
         predicted = infer(payload, frame.drop(columns=['kind']).assign(kind=np.nan).iloc[::6], 'complete')['kind']
         self.assertGreater((predicted.astype(str).to_numpy() == frame.kind.iloc[::6].to_numpy()).mean(), .8)
