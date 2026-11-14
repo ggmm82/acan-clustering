@@ -98,8 +98,8 @@ La scheda **Generativo** innesta lo strato a concetti in SmolLM2 (135M su CPU;
 360M e 1.7B richiedono una GPU), lo adatta con LoRA su un corpus scelto, con
 pausa e ripresa da checkpoint, e genera testo dai checkpoint salvati. Per
 sapere se i concetti funzionano, il confronto valido è con il **controllo
-denso**: lo stesso addestramento con attenzione completa, avviato dal riquadro
-sezione 5 della scheda, che compare sullo stesso grafico con il verdetto.
+denso**: lo stesso addestramento con attenzione completa, avviato dalla
+sezione 5 della scheda; compare sullo stesso grafico con il verdetto.
 Scendere sotto il modello di partenza non basta, perché qualunque adattamento al
 corpus lo fa. La scheda permette anche di eseguire esperimenti in serie, di
 misurare memoria e velocità su testi lunghi, di rinominare ed eliminare i
