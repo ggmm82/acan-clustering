@@ -268,6 +268,11 @@ class TestPublicExperiments(unittest.TestCase):
                 self.assertTrue(metadata.exists())
                 fresh = create_app(root, token).test_client()
                 self.assertEqual(len(fresh.get('/state', headers=headers).get_json()['jobs']), 2)
+                with patch('acan.lm.service.launch'):             # the control names the project it controls
+                    control = client.post('/jobs/'+job['id']+'/dense-control', headers=headers)
+                self.assertEqual(control.status_code, 200, control.get_data(as_text=True))
+                self.assertEqual(control.get_json()['config']['control_of'], job['id'])
+                self.assertEqual(control.get_json()['config']['architecture'], 'dense-control')
 
     def test_bad_hash_unknown_source_and_busy_worker_cannot_start(self):
         import fcntl

@@ -184,6 +184,7 @@ def create_app(root=None, token=None):
             raise ValueError('Metti in pausa il progetto attivo prima di avviare il controllo.')
         from .research_options import validate_options as controlled_options
         config=controlled_options(dict(job['config'],architecture='dense-control',name='Controllo denso · '+job['config']['name']))
+        config['control_of']=job['id']                         # the interface draws both on one chart
         control=store.create_job(request.workspace,config)
         launch(store,control)
         return jsonify(control)

@@ -232,6 +232,16 @@ b,?,no
         self.assertEqual(paired_job([concepts, other_corpus, dense], concepts)['id'], 'dense')
         self.assertEqual(paired_job([concepts, dense], dense)['id'], 'acan')
         self.assertIsNone(paired_job([concepts, other_corpus], concepts))
+        twin = dict(concepts, id='twin')                                   # same name and settings: ambiguous
+        self.assertIsNone(paired_job([concepts, twin, dense], dense))
+        linked = dict(dense, id='linked', config=dict(dense['config'], control_of='twin'))
+        self.assertEqual(paired_job([concepts, twin, linked], linked)['id'], 'twin')   # an explicit link always wins
+        self.assertEqual(paired_job([concepts, twin, linked], twin)['id'], 'linked')
+        from acan.vis.generative import project_label, unique_name
+        self.assertNotEqual(project_label(concepts, [concepts, twin]), project_label(twin, [concepts, twin]))
+        self.assertEqual(project_label(dense, [concepts, dense]), 'Controllo denso · ACAN-LM experiment · paused · passo 400')
+        self.assertTrue(unique_name('ACAN-LM experiment', [concepts]).startswith('ACAN-LM experiment · '))
+        self.assertEqual(unique_name('Nuovo', [concepts]), 'Nuovo')
         text, color = comparison_summary(concepts, dense)
         self.assertIn('+0.060', text)
         self.assertIn('non costano qualità', text)
@@ -312,7 +322,8 @@ b,?,no
             ('lm-length','value',64),('lm-batch','value',1),('lm-accum','value',1),('lm-lr','value',.0001),
             ('lm-slots','value',16),('lm-window','value',16),('lm-rank','value',8),('lm-save','value',5),
             ('lm-device','value','cpu'),('lm-distill','value',True),('lm-fraction','value',1.),
-            ('lm-patience','value',5),('lm-min-delta','value',.001),('lm-routing','value','shared-algebra-v1'),('lm-cp-weight','value',.2)]
+            ('lm-patience','value',5),('lm-min-delta','value',.001),('lm-routing','value','shared-algebra-v1'),('lm-cp-weight','value',.2),
+            ('lm-state','data',{'jobs':[]})]
         with patch('acan.vis.generative.backend',side_effect=[{'id':'new-job'},{}]) as backend:
             result=self.invoke('..lm-active-job.data',[('lm-start','n_clicks',1),('lm-pause','n_clicks',0),('lm-resume','n_clicks',0)],states)
         options=backend.call_args_list[0].args[3]
@@ -322,7 +333,7 @@ b,?,no
         self.assertEqual(options['routing_profile'],'shared-algebra-v1')
         self.assertEqual(options['cp_weight'],0.)
         self.assertEqual(result['lm-active-job']['data'],'new-job')
-        states[-2]=('lm-routing','value','cp-joint-v1')
+        states[-3]=('lm-routing','value','cp-joint-v1')
         with patch('acan.vis.generative.backend',side_effect=[{'id':'joint-job'},{}]) as backend:
             self.invoke('..lm-active-job.data',[('lm-start','n_clicks',2),('lm-pause','n_clicks',0),('lm-resume','n_clicks',0)],states)
         self.assertEqual(backend.call_args_list[0].args[3]['cp_weight'],.2)
