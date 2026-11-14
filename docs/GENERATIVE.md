@@ -6,6 +6,10 @@ This implementation starts from the newly supplied
 It is separate from the withdrawn character-language experiment and does not
 change the tabular ACAN objective. See [LM audit](LM-AUDIT.md) for differences.
 
+> New projects use the `concept-graph-v1` attention layer, the same model as the
+> tabular core ([MODEL.md](MODEL.md)). Operation, persistence and checkpoints below
+> are unchanged; how to judge a run is in [CONTROLLED-LM.md](CONTROLLED-LM.md).
+
 ## What is implemented
 
 The supported pretrained family is **SmolLM2** (135M, 360M, 1.7B), loaded from
@@ -28,7 +32,7 @@ must be measured on the actual hardware/data; no single-GPU speed claim is made.
 
 ## User workflow
 
-1. Open **Generative** and connect the separately deployed worker. Save the
+1. Open **Generativo** and connect the separately deployed worker. Save the
    recovery-key JSON. This random browser-local key owns the persistent workspace;
    importing it in another browser restores access without an account. Treat it
    like a private project capability. Other workspace keys cannot see the files,
@@ -149,7 +153,7 @@ the Hostinger frontend. No human login is added to the GUI.
 
 ## Guided public-corpus experiments
 
-The Generative tab now offers **Avvio guidato · dati pubblici**. Choose a source
+The **Generativo** tab now offers **Avvio guidato · dati pubblici**. Choose a source
 and a bounded preset, then explicitly click **Scarica e avvia la prova**. No user
 file or training parameters are required. The action verifies/downloads text,
 creates a separate workspace-local corpus/project and launches the existing

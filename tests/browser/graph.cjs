@@ -14,7 +14,7 @@ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:pa
       const page=await browser.newPage({viewport:{width,height:1000}});const errors=[];
       page.on('pageerror',e=>errors.push(e.message));
       await page.goto(process.env.ACAN_TEST_URL||'http://127.0.0.1:4000');
-      await page.getByText('Model',{exact:true}).click();
+      await page.getByText('Modello',{exact:true}).click();
       await page.locator('#upload-model input[type=file]').setInputFiles(file);
       await page.waitForFunction(()=>document.getElementById('org-chart')?._cyreg?.cy.nodes('.local-group').length===12);
       await page.locator('#graph-window-summary').filter({hasText:'15 prototipi senza assegnazioni hard'}).waitFor();

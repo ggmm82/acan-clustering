@@ -83,6 +83,56 @@ media ± errore standard:
   resto del divario dalla libreria (1,3 punti) è nella codifica delle categorie vuote.
 - Sono dati di sviluppo, esaminati più volte.
 
+### Dataset nuovi, letti per la prima volta
+
+Cinque tabelle mai usate nello sviluppo, stesso protocollo (split dell'app
+80/20), dieci split, media ± errore standard:
+
+| Dataset | righe | Grafo dei concetti | KNN 5 | Random Forest | HistGB |
+|---|---:|---:|---:|---:|---:|
+| Vote | 435 | 96,2 ± 0,5 | 93,2 ± 0,6 | 96,4 ± 0,4 | 95,6 ± 0,4 |
+| Vehicle | 846 | **76,9 ± 0,9** | 70,7 ± 0,9 | 73,8 ± 1,0 | 76,5 ± 0,7 |
+| Mushroom | 8.124 | 100,0 | 100,0 | 100,0 | 100,0 |
+| Sick | 3.772 | 97,2 ± 0,1 | 96,2 ± 0,1 | 98,2 ± 0,1 | **98,7 ± 0,1** |
+| credit-g | 1.000 | 67,3 ± 1,4 | 72,3 ± 0,7 | **75,9 ± 0,9** | 75,7 ± 0,8 |
+
+```bash
+python scripts/evaluate_concepts.py vote.arff vehicle.arff credit-g.arff sick.arff mushroom.arff --seeds 1 2 3 4 5 6 7 8 9 10 --output reports/nuovi.json
+```
+
+**credit-g: il giudizio con la riga tolta è troppo ottimista.** Sui concetti
+scelti stima −0,50 per riga, sulle righe di prova il valore è −0,73/−0,83,
+peggio della classe maggioritaria (−0,61). Togliere una riga dalle somme del
+concetto che ha contribuito a formare non annulla la forma che gli ha dato:
+con concetti piccoli e 20 attributi, quasi tutti categorici, i concetti
+risultano migliori di quanto sono. Misurata su righe mai usate (validazione
+incrociata a cinque turni), la curva ha il massimo a 2 concetti (−0,583) e da
+3 in su è sotto la classe maggioritaria; il modello ne sceglieva 40–50.
+
+Due correzioni provate, dieci split (credit-g su cinque), disponibili come
+opzioni del nucleo e **non attive**:
+
+| Dataset | attuale | 20% delle righe solo per giudicare (`holdout=0.2`) | validazione incrociata (`folds=5`) |
+|---|---:|---:|---:|
+| credit-g | 67,3 | **73,9** | 70,0 |
+| Sonar | **86,4** | 81,9 | 84,3 |
+| Titanic | **81,8** | 77,2 | 81,5 |
+| Adult | 75,2 | 76,5 | 75,2 |
+| Vote | 96,2 | — | 96,6 |
+| Vehicle | 76,9 | — | 76,0 |
+| Gioco | **100** | 100 | 97,0 |
+| Letter (un seme) | 97,9 | 97,6 | — |
+
+La prima toglie troppe righe alle tabelle piccole; la seconda è quasi neutra
+ma su credit-g sceglie un solo concetto. Il difetto di fondo è nel
+riconoscimento: le prove di tutti gli attributi si moltiplicano come se fossero
+indipendenti, e con molti attributi una riga è attribuita troppo presto a un
+concetto piccolo. Con meno attributi o attributi numerici non si vede.
+
+Anche il peso del target è stato provato (oggi pesa quanto tutti gli attributi
+insieme): radice del numero di attributi o peso di un attributo aiutano solo
+credit-g (+2,5) e peggiorano Sonar (−7) e Vehicle (−2/−8).
+
 ### Il documento «Utilità della CP quadratica al centro dell'apprendimento»
 
 | Affermazione | Esito |

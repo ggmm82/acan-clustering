@@ -80,7 +80,9 @@ class ConceptModel:
 
     def __init__(self, max_concepts=1024, rows_per_concept=4, kappa=1., seed=0,
                  judged_rows=2000, merge_fraction=.05, em_steps=3, restarts=5, restart_rows=5000,
-                 covariance=True, covariance_attributes=128, shared_start=128):
+                 covariance=True, covariance_attributes=128, shared_start=128, holdout=0., folds=0, fold_rows=3000):
+        self.holdout, self.building = holdout, None
+        self.folds, self.fold_rows = folds, fold_rows
         self.shared_start = shared_start
         self.covariance, self.covariance_attributes = covariance, covariance_attributes
         self.cross, self.cov = None, np.zeros(0, int)            # cross products of the working level, if adopted
@@ -96,6 +98,8 @@ class ConceptModel:
     def _statistics(self, t, data):
         """Sums over the members. ``PV`` and ``PP`` add up the scale each member has in the level above."""
         x, mask, onehot = data[:3]
+        if self.building is not None and len(t) == len(self.building):
+            t = t*self.building[:, None]                         # rows kept for judging do not build concepts
         s = dict(C=t.sum(0), Cm=t.T@mask, U=t.T@x, Q=t.T@(x*x), N=t.T@onehot)
         if len(data) > 3:
             scale, frequency, impurity = data[3:]
@@ -364,6 +368,8 @@ class ConceptModel:
         x, mask, onehot = (part[rows] for part in data[:3])
         scale, frequency = (part[rows] for part in data[3:5]) if len(data) > 3 else self._root_scale(x, onehot)[:2]
         t = self._route(s, (x, mask, onehot), weights)[0]
+        if self.building is not None:
+            t = t*self.building[rows][:, None]                   # a held-out row put nothing in the sums
         k, encoder = len(s['C']), self.encoder
         above = self._prior(s)
         scores = np.empty(len(x))
@@ -415,7 +421,9 @@ class ConceptModel:
         path = []
         # Generalization is a greedy search: repeat it from other specific concepts.
         for restart in range(restarts or (self.restarts if n <= self.restart_rows else 1)):
-            seeds = rng.choice(n, k, replace=False)
+            pool = np.arange(n) if self.building is None else np.flatnonzero(self.building > 0)
+            k = min(k, len(pool))
+            seeds = rng.choice(pool, k, replace=False)
             seed_t = np.zeros((n, k))
             seed_t[seeds, np.arange(k)] = 1
             s = self._em(self._statistics(seed_t, data), data, weights, 10)
@@ -474,6 +482,37 @@ class ConceptModel:
         _, centre, variance, frequency, impurity = self._above(s, data, weights, hard)
         return (data[0]-centre*data[1], data[1], data[2], variance, frequency, impurity)
 
+    def _cross_validated(self, root, weights, rng, every, nodes):
+        """How many concepts, decided by rows that never shaped them: every row judges once.
+
+        Each fold builds the generalization without its rows and reads them at every step. The
+        number of concepts is the most general within one standard error of the best mean over
+        all rows; the working level is the step of the full search with that number.
+        """
+        n = len(root[0])
+        order = rng.permutation(n)
+        curves = []
+        for fold in range(self.folds):
+            held = np.sort(order[fold::self.folds])
+            self.building = np.ones(n)
+            self.building[held] = 0
+            path = [step for step in self._path(root, weights, held, rng, restarts=1) if np.isfinite(step['score'])]
+            curves.append((held, path))
+        self.building = None
+        candidates = sorted({step['k'] for step in every if np.isfinite(step['score'])})
+        table = np.empty((len(candidates), n))
+        for held, path in curves:                                # every row, read at the nearest number of concepts
+            ks = np.array([step['k'] for step in path])
+            for place, k in enumerate(candidates):
+                table[place, held] = path[int(np.abs(np.log(ks)-np.log(k)).argmin())]['scores']
+        mean = table.mean(1)
+        top = int(mean.argmax())
+        gain = table-table[top]
+        error = gain.std(1)/np.sqrt(n)
+        chosen = min(k for k, m, e in zip(candidates, mean, error) if m >= mean[top]-e-1e-9)
+        self.folded = dict(candidates=candidates, mean=mean.tolist(), chosen=chosen)
+        return min((step for step in every if step['k'] == chosen), key=lambda step: (nodes(step), -step['score']))
+
     @staticmethod
     def _most_general(steps):
         """The cut with the largest pair criterion; among near ties (TIE), the one with fewest concepts."""
@@ -495,6 +534,13 @@ class ConceptModel:
         weights = self.train_weights = self._weights(float(max(features, 1)))   # targets weigh as much as all features
         rng = np.random.default_rng(self.seed)
         judged = np.sort(rng.choice(n, min(n, self.judged_rows), replace=False))
+        self.building = None
+        if self.holdout:
+            # Judge on rows that never shape the concepts: removing a row from the sums of the concept
+            # it helped to shape leaves the shape, and small concepts then look better than they are.
+            judged = np.sort(rng.choice(n, min(int(n*self.holdout), self.judged_rows), replace=False))
+            self.building = np.ones(n)
+            self.building[judged] = 0
         root = base
 
         # Level 1: the general concepts of the whole table, on the scale of the root.
@@ -520,6 +566,8 @@ class ConceptModel:
         nodes = lambda step: step['k']+(first['k'] if step['data'] is not root else 0)
         working = min((step for step in every if step['score'] >= best['score']-best['error']-1e-9),
                       key=lambda step: (nodes(step), -step['score']))
+        if self.folds > 1 and self.labels and n <= self.fold_rows:
+            working = self._cross_validated(root, weights, rng, every, nodes)
         local_work = any(step is working for step in particular)
         data, pool = (local, particular) if local_work else (root, general)
         # Levels between the general concepts and the working level: each is the cut that
@@ -558,6 +606,7 @@ class ConceptModel:
                 break
             levels.append(following)
             current = following
+        self.building = None                                     # chosen: every row refines the concepts
         self.statistics = self._em(working['statistics'], data, weights, 20)
         levels = [level for level in levels if level['data'] is not data or level['k'] < len(self.statistics['C'])]
         # The working level is chosen by judgment, so its size says nothing against the level above:
@@ -603,8 +652,11 @@ class ConceptModel:
                 parents = (routed[place-1].T@membership)/np.maximum(mass, 1e-12)
             criterion = self.pair_criterion(self._statistics(self._hard(membership), above))
             above = self._context(statistics, level['data'], weights, hard=True)
+            # ``table``: the same concepts summed over the rows as they are in the table, whatever
+            # level they are seen through: what a person reads when inspecting the concept.
             self.levels.append(dict(depth=place+1, concepts=int(membership.shape[1]), pair_criterion=criterion,
-                                    score=level['score'], mass=mass/n, parents=parents, statistics=statistics))
+                                    score=level['score'], mass=mass/n, parents=parents, statistics=statistics,
+                                    table=self._statistics(membership, base)))
         first_edge, second_edge, weight = self._edges(last)
         self.edges = [(int(i), int(j), float(w/n)) for i, j, w in zip(first_edge, second_edge, weight)]
         self.final_score = float(self._score(self.statistics, data, weights, judged).mean())

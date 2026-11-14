@@ -90,18 +90,9 @@ def train(learner, epochs):
 
     model = ConceptModel(seed=learner.random_state).fit(x, labels, encoder=encoder, progress=progress)
     s = model.statistics
-    g, v, log_p = model._parameters(s)
     k, m = len(s['C']), len(learner.cols)
-    groups, relevance = np.zeros((k, m)), np.zeros((k, m))
-    groups[:, encoder.numeric_index] = g*encoder.std+encoder.mean
-    relevance[:, encoder.numeric_index] = np.where(encoder.constant, 0., np.clip(1-v, 0, 1))
-    for name in encoder.categorical:
-        block, indices = encoder.block(name), encoder.blocks[name]
-        p, root = np.exp(log_p[:, block]), model.root_p[block]
-        groups[:, indices] = p
-        impurity = 1-(root*root).sum()
-        gain = ((p-root)**2).sum(1)/impurity if impurity > 1e-12 else np.zeros(k)
-        relevance[:, indices] = np.clip(gain, 0, 1)[:, None]
+    groups, relevance = _prototypes(model, encoder, s, m)
+    g, v, log_p = model._parameters(s)
     data = encoder.transform(x)
     full_t = model._route(s, model._seen(data)[0], model.train_weights)[0]
     view_t = model._route(s, model._seen(encoder.transform(learner.NormDataset))[0], model.train_weights)[0].T
@@ -159,6 +150,23 @@ def _recognition(model, encoder, s, feature_numeric, feature_blocks):
                 for name in feature_blocks])
 
 
+def _prototypes(model, encoder, s, m):
+    """Typical value and relevance of every attribute for each concept, in the units of the app's matrix."""
+    g, v, log_p = model._parameters(s)
+    k = len(s['C'])
+    groups, relevance = np.zeros((k, m)), np.zeros((k, m))
+    groups[:, encoder.numeric_index] = g*encoder.std+encoder.mean
+    relevance[:, encoder.numeric_index] = np.where(encoder.constant, 0., np.clip(1-v, 0, 1))
+    for name in encoder.categorical:
+        block, indices = encoder.block(name), encoder.blocks[name]
+        p, root = np.exp(log_p[:, block]), model.root_p[block]
+        groups[:, indices] = p
+        impurity = 1-(root*root).sum()
+        gain = ((p-root)**2).sum(1)/impurity if impurity > 1e-12 else np.zeros(k)
+        relevance[:, indices] = np.clip(gain, 0, 1)[:, None]
+    return groups, relevance
+
+
 def _level(model, encoder, level):
     """One level of the graph as it is saved: its concepts and the dense matrix towards the level above."""
     _, _, log_p = model._parameters(level['statistics'])
@@ -168,7 +176,9 @@ def _level(model, encoder, level):
             columns = [str(encoder.columns[index]) for index in encoder.blocks[name]]
             values = [column[len(name)+1:] if column.startswith(name+'_') else column for column in columns]
             reads.append([f'{name}: {values[place]}' for place in log_p[:, encoder.block(name)].argmax(1)])
+    groups, relevance = _prototypes(model, encoder, level['table'], len(encoder.columns))
     return dict(depth=level['depth'], concepts=level['concepts'], pair_criterion=float(level['pair_criterion']),
+                groups=np.round(groups, 6).tolist(), relevance=np.round(relevance, 4).tolist(),
                 mass=np.round(level['mass'], 6).tolist(),
                 reads=['\n'.join(parts) for parts in zip(*reads)] if reads else [],
                 # parents[i][j] = P(concept i of the level above | concept j): every column sums to one
