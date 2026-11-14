@@ -4,6 +4,9 @@ from .grafting import load_base,add_lora
 
 
 def load_model(path,options,device='cpu',evaluate_base=None):
+    if options.get('architecture')=='native':
+        from .native import build
+        return build(path,options,device,evaluate_base)
     if options.get('architecture','hybrid')=='hybrid' and options.get('graft_fraction',.5)==.5:
         model,report=load_base(path,options,device,evaluate_base)
         return shared_adapter(model,report,options)
@@ -51,13 +54,14 @@ def inference_contract():
 
 def check_inference_contract(options,state):
     recorded=state.get('model_contract')
-    from .compatibility import LEGACY_INFERENCE, PRE_JOINT_INFERENCE, PRE_V9_INFERENCE, PRE_GRAPH_INFERENCE, PRE_ONE_STEP_INFERENCE
+    from .compatibility import LEGACY_INFERENCE, PRE_JOINT_INFERENCE, PRE_V9_INFERENCE, PRE_GRAPH_INFERENCE, PRE_ONE_STEP_INFERENCE, PRE_NATIVE_INFERENCE
     legacy = ('routing_profile' not in options and recorded == LEGACY_INFERENCE) or (options.get('routing_profile') in ('shared-algebra-v1','legacy-causal-v1') and recorded == 'c823eeaae94de3b650709710cc2f245328a9a693d7b640af3096d6c8ddf6ba8b')
     legacy = legacy or (options.get('routing_profile') in ('shared-algebra-v1','legacy-causal-v1','cp-routing-v1') and recorded == PRE_JOINT_INFERENCE)
     # Earlier profiles are numerically unchanged by the addition of cp-v9.
     legacy = legacy or (options.get('routing_profile') not in ('cp-v9','concept-graph-v1') and recorded == PRE_V9_INFERENCE)
     legacy = legacy or (options.get('routing_profile')!='concept-graph-v1' and recorded == PRE_GRAPH_INFERENCE)
     legacy = legacy or recorded == PRE_ONE_STEP_INFERENCE        # same merges, sums in another order
+    legacy = legacy or (recorded == PRE_NATIVE_INFERENCE and options.get('architecture') != 'native')
     if recorded is not None and recorded!=inference_contract() and not legacy:
         raise ValueError('Modello di un’altra versione: usare l’immagine worker che lo ha creato.')
     if options.get('graft_fraction',.5)==1. and recorded is None:

@@ -255,7 +255,7 @@ class TestPublicExperiments(unittest.TestCase):
                 data = result.get_json(); job = data['job']
                 self.assertEqual(job['config']['total_steps'], 20)
                 self.assertEqual(job['config']['accumulation'], 1)
-                self.assertEqual(job['config']['base_model'], 'HuggingFaceTB/SmolLM2-135M')
+                self.assertEqual((job['config']['architecture'], job['config']['native_size']), ('native', 'micro'))   # born from zero
                 download.assert_called_once(); launch.assert_called_once()
                 self.assertEqual(client.get('/state', headers=other).get_json()['corpora'], [])
                 self.assertEqual(client.post('/jobs/'+job['id']+'/pause', headers=other).status_code, 404)
@@ -268,11 +268,14 @@ class TestPublicExperiments(unittest.TestCase):
                 self.assertTrue(metadata.exists())
                 fresh = create_app(root, token).test_client()
                 self.assertEqual(len(fresh.get('/state', headers=headers).get_json()['jobs']), 2)
+                self.assertEqual(client.post('/jobs/'+job['id']+'/dense-control', headers=headers).status_code, 400)  # not started yet
+                app.store.update(job['id'], status='paused', checkpoint='step-000000000001-0-x')
                 with patch('acan.lm.service.launch'):             # the control names the project it controls
                     control = client.post('/jobs/'+job['id']+'/dense-control', headers=headers)
                 self.assertEqual(control.status_code, 200, control.get_data(as_text=True))
                 self.assertEqual(control.get_json()['config']['control_of'], job['id'])
-                self.assertEqual(control.get_json()['config']['architecture'], 'dense-control')
+                self.assertEqual((control.get_json()['config']['architecture'], control.get_json()['config']['native_attention']),
+                                 ('native', 'dense'))            # the same native model with ordinary attention
 
     def test_bad_hash_unknown_source_and_busy_worker_cannot_start(self):
         import fcntl
@@ -389,7 +392,7 @@ class TestProjectManagementAndSeries(unittest.TestCase):
         self.assertEqual([job['config']['series']['order'] for job in jobs], [0, 1, 2])
         self.assertEqual(jobs[1]['config']['slots'], base['slots']//2)
         dense = jobs[2]['config']
-        self.assertEqual(dense['architecture'], 'dense-control')
+        self.assertEqual((dense['architecture'], dense['native_attention']), ('native', 'dense'))
         self.assertEqual(dense['control_of'], jobs[0]['id'])                      # drawn with the chosen settings
         self.assertTrue(dense['name'].startswith('Controllo denso · '))
         launch.assert_called_once()
