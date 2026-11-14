@@ -105,6 +105,13 @@ def create_app(root=None, token=None):
             raise ValueError('Specificare soltanto dataset e profilo della prova pubblica.')
         return jsonify(experiment(store, request.workspace, body['dataset'], body['preset']))
 
+    @app.post('/public-corpora/<dataset>/import')
+    def import_public_corpus(dataset):
+        """A public text stored in the workspace, without starting a project."""
+        from .public_corpus import import_corpus
+        corpus, source = import_corpus(store, request.workspace, dataset)
+        return jsonify(corpus=corpus, source=source)
+
     @app.post('/corpora')
     def begin_upload():
         body = request.get_json()
@@ -182,6 +189,26 @@ def create_app(root=None, token=None):
                                                  name=CONTROL_NAME + reference['config']['name']))
         launch(store, store.job(jobs[0]['id'], request.workspace))
         return jsonify(series=series, jobs=[store.job(job['id'], request.workspace) for job in jobs])
+
+    @app.post('/small-tests')
+    def create_small_test():
+        from .manager import request_small_test
+        return jsonify(id=request_small_test(store, request.workspace, request.get_json() or {}))
+
+    @app.get('/small-tests')
+    def list_small_tests():
+        return jsonify(store.small_tests(request.workspace))
+
+    @app.get('/small-tests/<identifier>')
+    def small_test(identifier):
+        return jsonify(store.small_test(identifier, request.workspace))
+
+    @app.post('/small-tests/<identifier>/cancel')
+    def cancel_small_test(identifier):
+        test = store.small_test(identifier, request.workspace)
+        if test['status'] == 'running':
+            store.update_small_test(identifier, status='cancelling', phase='Arresto richiesto')
+        return jsonify(store.small_test(identifier, request.workspace))
 
     @app.post('/jobs/<identifier>/start')
     def start(identifier):

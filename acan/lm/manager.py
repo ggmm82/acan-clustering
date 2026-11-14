@@ -27,7 +27,7 @@ def launch(store, job, kind='train', generation_id=None):
                 '--lease-fd', str(resource.fileno()), '--kind', kind]
         if generation_id:
             args += ['--generation', generation_id]
-        log = store.directory('jobs', job['id']) / 'worker.log'
+        log = store.directory('small_tests' if kind == 'small-test' else 'jobs', job['id']) / 'worker.log'
         with log.open('ab', buffering=0) as stream:
             subprocess.Popen(args, stdout=stream, stderr=subprocess.STDOUT, start_new_session=True,
                              pass_fds=(resource.fileno(),))
@@ -137,6 +137,27 @@ def continue_series(store, identifier):
     following = min(waiting, key=lambda other: other['config']['series']['order'])
     launch(store, following)
     return following['id']
+
+
+def request_small_test(store, owner, options):
+    """Train the three small models on a corpus of the workspace, in the worker."""
+    from .small_test import BUDGETS
+    if not isinstance(options, dict) or set(options)-{'corpus_id', 'budget'}:
+        raise ValueError('Opzioni della prova non valide.')
+    if options.get('budget') not in BUDGETS:
+        raise ValueError('Durata della prova non valida.')
+    corpus = store.corpus(options.get('corpus_id'), owner, ready=True)
+    identifier = uuid.uuid4().hex
+    request = dict(corpus_id=corpus['id'], corpus_name=corpus['name'], budget=options['budget'])
+    with store.db() as db:
+        db.execute('INSERT INTO small_tests(id,owner,status,request,phase,created) VALUES(?,?,?,?,?,?)',
+                   (identifier, owner, 'running', json.dumps(request), 'In attesa del worker', time.time()))
+    try:
+        launch(store, dict(id=identifier), 'small-test', identifier)
+    except Exception:
+        store.update_small_test(identifier, status='failed', error='Worker occupato: metti in pausa il progetto attivo e riprova.')
+        raise
+    return identifier
 
 
 def request_evaluation(store,job,owner,options):

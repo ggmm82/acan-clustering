@@ -65,6 +65,8 @@ class Store:
                 CREATE TABLE IF NOT EXISTS layer_inspections (job TEXT PRIMARY KEY, pending INTEGER NOT NULL DEFAULT 0, result TEXT);
                 CREATE TABLE IF NOT EXISTS generations (id TEXT PRIMARY KEY, job TEXT, owner TEXT,
                     status TEXT, request TEXT, result TEXT, error TEXT);
+                CREATE TABLE IF NOT EXISTS small_tests (id TEXT PRIMARY KEY, owner TEXT, status TEXT, request TEXT,
+                    phase TEXT, result TEXT, error TEXT, created REAL);
             ''')
 
     @contextmanager
@@ -80,7 +82,7 @@ class Store:
             connection.close()
 
     def directory(self, kind, identifier):
-        if kind not in ('jobs', 'corpora') or not re.fullmatch('[0-9a-f]{32}', identifier):
+        if kind not in ('jobs', 'corpora', 'small_tests') or not re.fullmatch('[0-9a-f]{32}', identifier):
             raise ValueError('Identificatore non valido.')
         directory = self.root / kind / identifier
         directory.mkdir(parents=True, exist_ok=True)
@@ -140,6 +142,30 @@ class Store:
             rows = db.execute("SELECT id, result FROM evaluations WHERE job=? AND owner=? AND status='completed' ORDER BY rowid",
                               (identifier, owner)).fetchall()
         return [dict(id=row['id'], **json.loads(row['result'])) for row in rows]
+
+    def small_test(self, identifier, owner=None):
+        with self.db() as db:
+            row = db.execute('SELECT * FROM small_tests WHERE id=?', (identifier,)).fetchone()
+        if row is None or (owner is not None and row['owner'] != owner):
+            raise KeyError('Prova non trovata.')
+        item = dict(row)
+        item['request'] = json.loads(item['request'])
+        item['result'] = json.loads(item['result']) if item['result'] else None
+        return item
+
+    def small_tests(self, owner):
+        with self.db() as db:
+            ids = [row[0] for row in db.execute('SELECT id FROM small_tests WHERE owner=? ORDER BY created DESC LIMIT 20', (owner,))]
+        return [self.small_test(identifier, owner) for identifier in ids]
+
+    def update_small_test(self, identifier, **changes):
+        allowed = {'status', 'phase', 'result', 'error'}
+        if not changes or not set(changes).issubset(allowed):
+            raise ValueError('Aggiornamento della prova non valido.')
+        if 'result' in changes and changes['result'] is not None:
+            changes['result'] = json.dumps(changes['result'], allow_nan=False)
+        with self.db() as db:
+            db.execute('UPDATE small_tests SET '+', '.join(f'{key}=?' for key in changes)+' WHERE id=?', (*changes.values(), identifier))
 
     def update(self, identifier, **changes):
         allowed = {'status', 'progress', 'checkpoint', 'pause', 'error'}
@@ -281,3 +307,4 @@ class Store:
             db.execute("UPDATE jobs SET status='interrupted',error='Worker interrotto: riprendi dall’ultimo checkpoint verificato.' WHERE status IN ('queued','preparing','running','pausing')")
             db.execute("UPDATE generations SET status='failed',error='Worker interrotto.' WHERE status='running'")
             db.execute("UPDATE evaluations SET status='failed',error='Worker interrotto.' WHERE status IN ('running','cancelling')")
+            db.execute("UPDATE small_tests SET status='failed',error='Worker interrotto: avvia di nuovo la prova.' WHERE status IN ('running','cancelling')")

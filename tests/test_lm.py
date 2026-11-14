@@ -347,6 +347,14 @@ class TestProjectManagementAndSeries(unittest.TestCase):
             item.stop()
         self.root.cleanup()
 
+    def test_public_text_is_imported_once_without_a_project(self):
+        first = self.client.post('/public-corpora/fixture/import', headers=self.headers)
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        again = self.client.post('/public-corpora/fixture/import', headers=self.headers).get_json()
+        self.assertEqual(first.get_json()['corpus']['id'], again['corpus']['id'])       # reused, not downloaded again
+        self.assertEqual(len(self.client.get('/state', headers=self.headers).get_json()['jobs']), 1)   # no new project
+        self.assertEqual(self.client.post('/public-corpora/unknown/import', headers=self.headers).status_code, 400)
+
     def test_rename_and_delete(self):
         other = {**self.headers, 'X-ACAN-Workspace': 'b'*64}
         renamed = self.client.post(f"/jobs/{self.job['id']}/rename", headers=self.headers, json=dict(name='Dante, prima prova'))
