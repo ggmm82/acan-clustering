@@ -3,7 +3,8 @@ import math
 from .trainer import validate_options as legacy_options
 
 EXTRA=dict(protocol='controlled-v1',routing_profile='shared-algebra-v1',architecture='hybrid',graft_fraction=.5,distillation_weight=0.,distillation_temperature=2.,
-           early_stop_patience=3,early_stop_min_delta=.01,validation_batches=8,cp_weight=0.)
+           early_stop_patience=3,early_stop_min_delta=.01,validation_batches=8,cp_weight=0.,
+           milestone_steps=0,chat_probes=False,probe_prompts=[],auto_resume=False,passes=0,warm_start=False)
 
 
 def validate_options(options):
@@ -24,6 +25,16 @@ def validate_options(options):
         value=extra[key]
         if isinstance(value,bool) or not isinstance(value,int) or not lo<=value<=hi:
             raise ValueError('Parametro non valido: '+key)
+    if isinstance(extra['milestone_steps'],bool) or not isinstance(extra['milestone_steps'],int) or not 0<=extra['milestone_steps']<=10_000_000:
+        raise ValueError('Parametro non valido: milestone_steps')
+    if any(not isinstance(extra[key],bool) for key in ('chat_probes','auto_resume','warm_start')):
+        raise ValueError('Parametro non valido: chat_probes, auto_resume o warm_start')
+    if isinstance(extra['passes'],bool) or not isinstance(extra['passes'],(int,float)) or not 0<=extra['passes']<=1000:
+        raise ValueError('Giri sul testo: da 0 (usa i passi) a 1000.')
+    prompts=extra['probe_prompts']
+    if not isinstance(prompts,list) or len(prompts)>6 or any(not isinstance(item,str) or not 0<len(item.strip())<=300 for item in prompts):
+        raise ValueError('Domande di prova: al massimo 6, ciascuna fino a 300 caratteri.')
+    extra['probe_prompts']=[item.strip() for item in prompts]
     result=legacy_options({key:value for key,value in options.items() if key not in EXTRA})
     if extra['routing_profile'] in ('cp-routing-v1','cp-joint-v1') and result['device']!='cuda' and (result['sequence_length']>32 or result['slots']>8):
         raise ValueError('CP diretta su CPU: massimo 32 token per blocco e 8 slot. La GUI applica questo budget ai nuovi progetti.')

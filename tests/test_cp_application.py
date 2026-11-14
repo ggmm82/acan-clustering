@@ -31,4 +31,5 @@ class CPApplicationTests(unittest.TestCase):
         self.assertIn(b'concept-graph-v1',layout.data)
         self.assertNotIn(b'"value":"cp-joint-v1"',layout.data.replace(b' ',b''))   # not offered for new models
         self.assertIn(b'page-mathematics',layout.data)
-        self.assertEqual(show_page('Matematica')[-1],{'display':'block'})
+        self.assertEqual(show_page('Matematica')[-2],{'display':'block'})       # the last page is Informatica
+        self.assertEqual(show_page('Informatica')[-1],{'display':'block'})

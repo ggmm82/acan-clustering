@@ -16,6 +16,40 @@ from .trainer import BASE_MODELS, validate_options
 CONTROL_NAME = 'Controllo denso · '
 
 
+def resume_after_restart(store):
+    """After a restart of the server (scheduled maintenance), long work continues by itself.
+
+    A long training with ``auto_resume`` that was interrupted, or an interrupted data preparation,
+    is started again from its last saved point, one at a time. A pause chosen by the user is never
+    undone, and a failure is not retried.
+    """
+    if store.busy():
+        return
+    from .manager import launch, resume_build
+    with store.db() as db:
+        build = db.execute("SELECT id, owner FROM builds WHERE status='interrupted' ORDER BY created LIMIT 1").fetchone()
+        jobs = db.execute("SELECT id, owner FROM jobs WHERE status='interrupted' ORDER BY updated").fetchall()
+    try:
+        for row in jobs:
+            job = store.job(row['id'], row['owner'])
+            if job['config'].get('auto_resume'):
+                # A process killed again and again at the same step (memory, a bad file) must not loop:
+                # after three restarts without progress the project waits for the user.
+                marker = store.directory('jobs', job['id'])/'auto-resume.json'
+                seen = json.loads(marker.read_text()) if marker.exists() else {}
+                step = job['progress'].get('step', 0)
+                count = seen.get('count', 0)+1 if seen.get('step') == step else 1
+                if count > 3:
+                    continue
+                marker.write_text(json.dumps(dict(step=step, count=count)))
+                launch(store, job)
+                return
+        if build is not None:
+            resume_build(store, build['id'], build['owner'])
+    except ValueError:
+        pass                                                    # the worker became busy meanwhile
+
+
 def create_app(root=None, token=None):
     app = Flask(__name__)
     app.config['MAX_CONTENT_LENGTH'] = 2*1024*1024
@@ -50,13 +84,14 @@ def create_app(root=None, token=None):
     @app.get('/state')
     def state():
         store.reconcile()
+        resume_after_restart(store)
         jobs = store.jobs(request.workspace)
         summaries=request.args.get('summary')=='1'
         selected=request.args.get('selected','')
         for job in jobs:
             detailed=not summaries or job['id']==selected
             if not detailed:
-                job['progress']={key:job['progress'][key] for key in ('step','tokens_trained') if key in job['progress']}
+                job['progress']={key:job['progress'][key] for key in ('step','tokens_trained','validation_nll','best_validation_nll','tokens_per_second') if key in job['progress']}
             job['snapshots'] = snapshots(store, job) if detailed else []
             job['history'] = [{key:row[key] for key in ('step','training_nll','validation_nll') if key in row}
                               for row in store.history(job['id'],request.workspace,overview=True)] if detailed else []
@@ -158,6 +193,56 @@ def create_app(root=None, token=None):
     def job_evaluations(identifier):
         return jsonify(store.evaluations(identifier, request.workspace))
 
+    @app.post('/queues')
+    def create_queue():
+        """A learning queue: one project per text, in order; each starts from the weights of the previous one."""
+        import uuid as _uuid
+        from .resources import check_profile
+        import torch
+        body = request.get_json() or {}
+        base, corpora = body.get('base'), body.get('corpora')
+        if not isinstance(base, dict) or base.get('protocol') != 'controlled-v1':
+            raise ValueError('Una coda richiede il protocollo controllato.')
+        if not isinstance(corpora, list) or not 1 <= len(corpora) <= 200:
+            raise ValueError('Scegli da 1 a 200 testi per la coda.')
+        queue = _uuid.uuid4().hex[:8]
+        jobs = [queue_item(base, corpus, queue, order) for order, corpus in enumerate(corpora)]
+        for config in jobs:
+            check_profile(config, torch.cuda.is_available())
+        created = [store.create_job(request.workspace, config) for config in jobs]
+        message = 'Coda creata: il primo testo è partito.'
+        try:
+            launch(store, store.job(created[0]['id'], request.workspace))
+        except ValueError as exc:
+            message = f'Coda creata ma non avviata: {exc} Usa Riprendi sul primo testo quando il worker è libero.'
+        return jsonify(queue=queue, jobs=[store.job(job['id'], request.workspace) for job in created], message=message)
+
+    @app.post('/queues/<queue>/add')
+    def add_to_queue(queue):
+        """Another text at the end of an existing queue, with the same settings."""
+        corpus = (request.get_json() or {}).get('corpus_id')
+        members = [job for job in store.jobs(request.workspace) if (job['config'].get('series') or {}).get('id') == queue]
+        if not members:
+            raise KeyError(queue)
+        last = max(members, key=lambda job: job['config']['series']['order'])
+        base = {key: value for key, value in last['config'].items() if key not in ('series', 'corpus_id', 'name', 'warm_start')}
+        base['name'] = last['config']['name'].split(' · ')[0]
+        job = store.create_job(request.workspace, queue_item(base, corpus, queue, last['config']['series']['order']+1))
+        if not any(other['status'] in ACTIVE or other['status'] == 'created' for other in members) and not store.busy():
+            try:
+                launch(store, store.job(job['id'], request.workspace))
+            except ValueError:
+                pass
+        return jsonify(store.job(job['id'], request.workspace))
+
+    def queue_item(base, corpus_id, queue, order):
+        from .research_options import validate_options as controlled_options
+        corpus = store.corpus(corpus_id, request.workspace, ready=True)
+        config = controlled_options(dict(base, corpus_id=corpus['id'], warm_start=order > 0,
+                                         name=f"{base.get('name', 'Coda')} · {order+1} · {corpus['name']}"))
+        config['series'] = dict(id=queue, order=order, variant='queue', label=corpus['name'])
+        return config
+
     @app.post('/series')
     def create_series():
         """Several projects on the same text, run one after the other by the worker."""
@@ -190,6 +275,61 @@ def create_app(root=None, token=None):
                                                  name=CONTROL_NAME + reference['config']['name']))
         launch(store, store.job(jobs[0]['id'], request.workspace))
         return jsonify(series=series, jobs=[store.job(job['id'], request.workspace) for job in jobs])
+
+    @app.get('/jobs/<identifier>/footprint')
+    def job_footprint(identifier):
+        """The sizes of a project while it learns: parameters, speed, memory and disk."""
+        import shutil
+        job = store.job(identifier, request.workspace)
+        directory = store.directory('jobs', identifier)
+        size = lambda path: sum(item.stat().st_size for item in path.rglob('*') if item.is_file()) if path.exists() else 0
+        root = directory/'checkpoints'
+        kinds = {kind: [path for path in root.glob(kind+'-*')] if root.exists() else [] for kind in ('step', 'milestone', 'best')}
+        latest = root/job['checkpoint'] if job['checkpoint'] else None
+        corpus = store.directory('corpora', job['config']['corpus_id'])/'corpus'
+        disk = shutil.disk_usage(store.root)
+        return jsonify(progress=job['progress'], config=job['config'], status=job['status'],
+                       checkpoint_bytes=size(latest) if latest and latest.exists() else 0,
+                       checkpoints={kind: dict(count=len(paths), bytes=sum(size(path) for path in paths)) for kind, paths in kinds.items()},
+                       token_bytes=sum(path.stat().st_size for path in directory.glob('*.bin')),
+                       corpus_bytes=corpus.stat().st_size if corpus.exists() else 0,
+                       disk_free=disk.free, disk_total=disk.total)
+
+    @app.get('/jobs/<identifier>/answers')
+    def job_answers(identifier):
+        from .probes import read_answers
+        store.job(identifier, request.workspace)
+        return jsonify(read_answers(store.directory('jobs', identifier)))
+
+    @app.get('/dialogue-data')
+    def dialogue_catalog():
+        from .dialogue_data import catalog
+        return jsonify(catalog())
+
+    @app.post('/builds')
+    def create_build():
+        from .manager import request_build
+        return jsonify(id=request_build(store, request.workspace, request.get_json() or {}))
+
+    @app.get('/builds')
+    def list_builds():
+        return jsonify(store.builds(request.workspace))
+
+    @app.get('/builds/<identifier>')
+    def get_build(identifier):
+        return jsonify(store.build(identifier, request.workspace))
+
+    @app.post('/builds/<identifier>/pause')
+    def pause_build(identifier):
+        item = store.build(identifier, request.workspace)
+        if item['status'] in ('queued', 'running'):
+            store.update_build(identifier, status='pausing', phase='Pausa richiesta: salvo il punto raggiunto')
+        return jsonify(store.build(identifier, request.workspace))
+
+    @app.post('/builds/<identifier>/resume')
+    def resume_build(identifier):
+        from .manager import resume_build as resume
+        return jsonify(resume(store, identifier, request.workspace))
 
     @app.post('/small-tests')
     def create_small_test():
