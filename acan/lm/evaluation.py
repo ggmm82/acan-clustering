@@ -11,7 +11,7 @@ from .grafting import reset_streams
 from .research_data import Blocks
 from .research_model import load_model,check_inference_contract
 from .store import Store,digest_file
-from .trainer import resolve_base
+from .native import resolve_base
 
 
 class Cancelled(Exception):

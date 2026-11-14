@@ -10,8 +10,10 @@ from .data import PreparationPaused
 from .research_data import prepare, Blocks
 from .distillation import objective
 from .store import Store
+from .retention import retain_with_milestones
 from .research_model import load_model as load_base,inference_contract
-from .trainer import BASE_MODELS, resolve_base, validation_loss, wsd_lr
+from .trainer import BASE_MODELS, validation_loss, wsd_lr
+from .native import resolve_base
 
 
 def contract():
@@ -217,7 +219,7 @@ def run_training(root, identifier, stop_event=None):
                         store.update(identifier,pause=1,status='pausing')
                     previous = checkpoints.save(checkpoint_root, model, optimizer, state, identity)
                     store.update(identifier, checkpoint=previous.name)
-                    checkpoints.retain(checkpoint_root, milestone=config.get('milestone_steps', 0))
+                    retain_with_milestones(checkpoint_root, milestone=config.get('milestone_steps', 0))
                     if config.get('chat_probes'):
                         # What the model answers now, to the same questions at every save: progress made visible.
                         from .probes import record_answers
@@ -228,7 +230,7 @@ def run_training(root, identifier, stop_event=None):
             if store.job(identifier)['checkpoint'] != previous.name or should_pause():
                 previous = checkpoints.save(checkpoint_root, model, optimizer, state, identity)
                 store.update(identifier, checkpoint=previous.name)
-                checkpoints.retain(checkpoint_root, milestone=config.get('milestone_steps', 0))
+                retain_with_milestones(checkpoint_root, milestone=config.get('milestone_steps', 0))
             store.update(identifier, status='completed' if state['step'] >= config['total_steps'] else 'paused',
                          pause=0, progress=state, error=None)
     except PreparationPaused:

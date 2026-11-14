@@ -76,6 +76,17 @@ def _hashes(directory):
     return {item.name: hashlib.sha256(item.read_bytes()).hexdigest() for item in sorted(Path(directory).iterdir()) if item.is_file()}
 
 
+def resolve_base(store, job, options):
+    """The base of a project: the tokenizer of a native model, or the pretrained model of the others.
+
+    trainer.resolve_base is part of the checkpoint contract and stays unchanged; callers use this.
+    """
+    if options.get('architecture') == 'native':
+        return resolve(store, job, options)
+    from .trainer import resolve_base as pretrained
+    return pretrained(store, job, options)
+
+
 def resolve(store, job, options):
     """The tokenizer of a native project: learned on its text, or the one of the previous item of its queue."""
     from .store import atomic_json
@@ -86,7 +97,13 @@ def resolve(store, job, options):
         if _hashes(folder) != base['files_sha256']:
             raise ValueError('Tokenizer del progetto modificato: ripristinare il backup.')
         return str(folder), base
-    if options.get('warm_start'):
+    if options.get('control_of'):
+        # The control of a native model reads the same tokens: it takes the tokenizer of its project.
+        source = store.directory('jobs', options['control_of'])/'tokenizer'
+        if not source.exists():
+            raise ValueError('Il progetto da controllare non ha ancora un tokenizer: avvialo prima del controllo.')
+        shutil.copytree(source, folder, dirs_exist_ok=True)
+    elif options.get('warm_start'):
         from .research_trainer import warm_source
         source = warm_source(store, job).parent.parent/'tokenizer'
         if not source.exists():
@@ -118,17 +135,24 @@ def build(path, options, device='cpu', evaluate_base=None):
     config._attn_implementation = 'eager'
     state = torch.random.get_rng_state()
     torch.manual_seed(options['seed'])                          # the same seed gives the same model, also when reloading
+    dense = options.get('native_attention') == 'dense'          # the control: the same model with ordinary attention
     try:
-        model = FullConceptLlama(config)
-        for index, layer in enumerate(model.model.layers):
-            layer.self_attn = FullConceptAttention(config, index, slots=options['slots'], window=options['window'])
+        if dense:
+            from transformers import LlamaForCausalLM
+            model = LlamaForCausalLM(config)
+        else:
+            model = FullConceptLlama(config)
+            for index, layer in enumerate(model.model.layers):
+                layer.self_attn = FullConceptAttention(config, index, slots=options['slots'], window=options['window'])
     finally:
         torch.random.set_rng_state(state)
     dtype = torch.bfloat16 if device == 'cuda' and torch.cuda.is_bf16_supported() else torch.float32
     model = model.to(device=device, dtype=dtype)
-    report = dict(profile='acan-native-v1', replaced_layers=list(range(item['layers'])), total_layers=item['layers'],
-                  slots=options['slots'], window=options['window'], fraction=1., size=options['native_size'],
-                  vocabulary=len(tokenizer), baseline_nll=None)
-    model, report = shared_adapter(model, report, options)
+    report = dict(profile='acan-native-dense-control-v1' if dense else 'acan-native-v1',
+                  replaced_layers=[] if dense else list(range(item['layers'])), total_layers=item['layers'],
+                  slots=0 if dense else options['slots'], window=0 if dense else options['window'], fraction=0. if dense else 1.,
+                  size=options['native_size'], vocabulary=len(tokenizer), baseline_nll=None)
+    if not dense:
+        model, report = shared_adapter(model, report, options)
     report['baseline_nll'] = evaluate_base(model) if evaluate_base else None
     return model, report

@@ -400,7 +400,18 @@ def create_app(root=None, token=None):
         if store.busy():
             raise ValueError('Metti in pausa il progetto attivo prima di avviare il controllo.')
         from .research_options import validate_options as controlled_options
-        config=controlled_options(dict(job['config'],architecture='dense-control',name=CONTROL_NAME+job['config']['name']))
+        source={key:value for key,value in job['config'].items() if key not in ('series','warm_start','control_of')}
+        if source.get('architecture')=='native':
+            # A native model is controlled by the same model born from zero with ordinary attention,
+            # on the same text with the same tokenizer, steps and seed.
+            if source.get('native_attention')=='dense':
+                raise ValueError('Questo progetto è già un controllo con attenzione normale.')
+            if not job['checkpoint']:
+                raise ValueError('Avvia prima il progetto: il controllo usa il suo tokenizer.')
+            source['passes']=0
+            config=controlled_options(dict(source,native_attention='dense',name=CONTROL_NAME+source['name']))
+        else:
+            config=controlled_options(dict(source,architecture='dense-control',name=CONTROL_NAME+source['name']))
         config['control_of']=job['id']                         # the interface draws both on one chart
         control=store.create_job(request.workspace,config)
         launch(store,control)

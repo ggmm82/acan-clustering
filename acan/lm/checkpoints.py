@@ -114,15 +114,10 @@ def latest(root, identity):
     return candidates[0]
 
 
-def retain(root, keep=3, milestone=0):
-    """Keep the latest ``keep`` checkpoints; with ``milestone``, one every that many steps is kept for good."""
+def retain(root, keep=3):
     directories = sorted(Path(root).glob('step-*'), reverse=True)
     for directory in directories[keep:]:
-        step = int(directory.name.split('-')[1])
-        if milestone and step and step % milestone == 0:
-            os.replace(directory, directory.with_name('milestone-'+directory.name[len('step-'):]))
-        else:
-            shutil.rmtree(directory)
+        shutil.rmtree(directory)
     sync_directory(root)
 
 

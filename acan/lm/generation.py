@@ -11,7 +11,7 @@ from .research_model import load_model as load_base,check_inference_contract
 from .grafting import reset_streams
 from .attention import ACANConceptAttentionLayer
 from .store import Store
-from .trainer import resolve_base
+from .native import resolve_base
 
 
 def generate(root, request_id):

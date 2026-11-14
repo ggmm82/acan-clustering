@@ -4,7 +4,7 @@ from .trainer import validate_options as legacy_options
 
 EXTRA=dict(protocol='controlled-v1',routing_profile='shared-algebra-v1',architecture='hybrid',graft_fraction=.5,distillation_weight=0.,distillation_temperature=2.,
            early_stop_patience=3,early_stop_min_delta=.01,validation_batches=8,cp_weight=0.,
-           milestone_steps=0,chat_probes=False,probe_prompts=[],auto_resume=False,passes=0,warm_start=False,native_size='micro',vocabulary=32000)
+           milestone_steps=0,chat_probes=False,probe_prompts=[],auto_resume=False,passes=0,warm_start=False,native_size='micro',vocabulary=32000,native_attention='concepts')
 
 
 def validate_options(options):
@@ -32,6 +32,8 @@ def validate_options(options):
         raise ValueError('Dimensione del modello nativo non valida.')
     if isinstance(extra['vocabulary'],bool) or not isinstance(extra['vocabulary'],int) or not 4000<=extra['vocabulary']<=65536:
         raise ValueError('Vocabolario: da 4.000 a 65.536 token.')
+    if extra['native_attention'] not in ('concepts','dense'):
+        raise ValueError('Attenzione del modello nativo: concepts oppure dense (il controllo).')
     if extra['architecture']=='native' and extra['routing_profile']!='concept-graph-v1':
         raise ValueError('Il modello nativo usa il grafo dei concetti (concept-graph-v1).')
     if any(not isinstance(extra[key],bool) for key in ('chat_probes','auto_resume','warm_start')):

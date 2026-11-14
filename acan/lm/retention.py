@@ -76,3 +76,19 @@ def protect_available(root):
                 # An incompatible historical checkpoint remains listed for
                 # inspection; it must not break the entire workspace listing.
                 continue
+
+
+def retain_with_milestones(root, keep=3, milestone=0):
+    """The latest ``keep`` checkpoints stay; with ``milestone``, one every that many steps is kept for good.
+
+    Kept here, not in checkpoints.py: that file is part of the contract every checkpoint is verified
+    against, and changing it would make every saved project unreadable.
+    """
+    from . import checkpoints
+    root = Path(root)
+    if milestone:
+        for directory in sorted(root.glob('step-*'), reverse=True)[keep:]:
+            step = int(directory.name.split('-')[1])
+            if step and step % milestone == 0:
+                os.replace(directory, directory.with_name('milestone-'+directory.name[len('step-'):]))
+    checkpoints.retain(root, keep)

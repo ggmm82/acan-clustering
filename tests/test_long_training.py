@@ -72,7 +72,7 @@ class DocumentsTest(unittest.TestCase):
 
 class MilestoneTest(unittest.TestCase):
     def test_old_checkpoints_on_a_milestone_are_kept(self):
-        from acan.lm.checkpoints import retain
+        from acan.lm.retention import retain_with_milestones as retain
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             for step in (500, 1000, 1500, 2000, 2500, 3000):
@@ -250,3 +250,58 @@ class NativeModelTest(unittest.TestCase):
             loss.backward()
             self.assertTrue(torch.isfinite(loss))
             self.assertAlmostEqual(parameters('micro', report['vocabulary'])/1e6, sum(value.numel() for value in first.parameters() if value.requires_grad)/1e6, delta=.1)
+
+
+class ContractTest(unittest.TestCase):
+    """Saved projects must stay readable after an update."""
+
+    def test_the_checkpoint_contract_files_are_unchanged(self):
+        # Every checkpoint is verified against a hash of attention.py, grafting.py, trainer.py, data.py and
+        # checkpoints.py: changing any of them makes every saved project unreadable. Put new behaviour in
+        # other modules (retention.py, native.py ...). Update this value only together with a migration.
+        from acan.lm import checkpoints
+        self.assertEqual(checkpoints.contract(), 'b43c8db4a1027a352ab8bf8a3b896116247b6a784e9989b18dfc7d00d17b2365')
+
+    @unittest.skipUnless(SERVICE, 'Requires LM service dependencies')
+    def test_projects_of_release_8_6_0_are_accepted(self):
+        from acan.lm.compatibility import PRE_NATIVE_INFERENCE
+        from acan.lm.research_model import check_inference_contract
+        check_inference_contract(dict(routing_profile='concept-graph-v1', graft_fraction=1.), dict(model_contract=PRE_NATIVE_INFERENCE))
+        with self.assertRaises(ValueError):
+            check_inference_contract(dict(routing_profile='concept-graph-v1', architecture='native'), dict(model_contract=PRE_NATIVE_INFERENCE))
+
+
+@unittest.skipUnless(SERVICE, 'Requires LM service dependencies')
+class NativeControlTest(unittest.TestCase):
+    def test_control_is_the_same_native_model_with_ordinary_attention(self):
+        import shutil
+        from acan.lm.native import build, train_tokenizer
+        from acan.lm.service import create_app
+        from acan.lm.store import Store
+        with tempfile.TemporaryDirectory() as root:
+            client = create_app(root, 'x'*40).test_client()
+            headers = {'Authorization': 'Bearer '+'x'*40, 'X-ACAN-Workspace': 'e'*64}
+            text = '\n'.join(json.dumps(dict(text=f'Frase numero {i}, una frase qualunque.')) for i in range(400)).encode()
+            corpus = client.post('/corpora', headers=headers, json=dict(name='t.jsonl', size=len(text))).get_json()
+            client.post(f"/corpora/{corpus['id']}/chunks", headers={**headers, 'X-Offset': '0'}, data=text)
+            client.post(f"/corpora/{corpus['id']}/finish", headers=headers)
+            job = client.post('/jobs', headers=headers, json=dict(corpus_id=corpus['id'], protocol='controlled-v1', routing_profile='concept-graph-v1',
+                                                                  architecture='native', native_size='micro', vocabulary=4000, graft_fraction=1.,
+                                                                  device='cpu', sequence_length=64)).get_json()
+            store = Store(root)
+            self.assertEqual(client.post(f"/jobs/{job['id']}/dense-control", headers=headers).status_code, 400)  # no tokenizer yet
+            train_tokenizer(store.directory('corpora', corpus['id'])/'corpus', store.directory('jobs', job['id'])/'tokenizer', 4000)
+            store.update(job['id'], status='paused', checkpoint='step-000000000001-0-x')
+            with mock.patch('acan.lm.service.launch'):
+                control = client.post(f"/jobs/{job['id']}/dense-control", headers=headers).get_json()
+            self.assertEqual((control['config']['architecture'], control['config']['native_attention'], control['config']['control_of']),
+                             ('native', 'dense', job['id']))
+            from acan.lm.native import resolve
+            path, base = resolve(store, store.job(control['id']), control['config'])
+            self.assertEqual(base['files_sha256'], json.loads(json.dumps(
+                {item.name: __import__('hashlib').sha256(item.read_bytes()).hexdigest()
+                 for item in sorted((store.directory('jobs', job['id'])/'tokenizer').iterdir())})))    # the same tokenizer
+            model, report = build(path, control['config'])
+            from acan.lm.attention import ACANConceptAttentionLayer
+            self.assertFalse(any(isinstance(module, ACANConceptAttentionLayer) for module in model.modules()))
+            self.assertEqual(report['replaced_layers'], [])

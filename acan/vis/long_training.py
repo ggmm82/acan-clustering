@@ -127,8 +127,10 @@ def footprint_view(item):
             ('Parametri che imparano', f"{trainable:,} ({100*trainable/overall:.1f}%)" if trainable and overall else '—'),
             ('Origine', 'nato da zero (pesi casuali)' if config.get('architecture') == 'native' else 'adattato da un modello preaddestrato'),
             ('Vocabolario', f"{graft['vocabulary']:,} token" if graft.get('vocabulary') else '—'),
-            ('Layer a concetti', f"{len(layers)} su {total_layers}" if layers and total_layers else ('tutti' if config.get('graft_fraction') == 1. else 'metà')),
-            ('Memoria di lettura per layer', f"{config['window']} token esatti + {config['slots']} concetti = {kept} vettori, a qualunque lunghezza"),
+            ('Layer a concetti', 'nessuno: attenzione normale (è il controllo)' if config.get('native_attention') == 'dense' else
+             f"{len(layers)} su {total_layers}" if layers and total_layers else ('tutti' if config.get('graft_fraction') == 1. else 'metà')),
+            ('Memoria di lettura per layer', 'un vettore per ogni token letto (cresce con il testo)' if config.get('native_attention') == 'dense' else
+             f"{config['window']} token esatti + {config['slots']} concetti = {kept} vettori, a qualunque lunghezza"),
             ('Testo letto per pezzo', f"{config['sequence_length']} token")]),
         ('Avanzamento e velocità', [
             ('Passo', f'{step:,} di {total:,}'),
@@ -231,7 +233,12 @@ layout = dbc.Card(dbc.CardBody([
     dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-queue', placeholder='Coda da seguire', clearable=False), md=6),
              dbc.Col([dbc.Button('Pausa e salva', id='lm-long-pause', color='warning', className='me-2'),
                       dbc.Button('Riprendi', id='lm-long-resume', color='primary', className='me-2'),
-                      dbc.Button('Mostra nel grafico', id='lm-long-chart', outline=True, color='primary')], md=6)], className='mt-3 mb-2'),
+                      dbc.Button('Mostra nel grafico', id='lm-long-chart', outline=True, color='primary', className='me-2'),
+                      dbc.Button('Avvia il controllo', id='lm-long-control', outline=True, color='secondary')], md=6)], className='mt-3 mb-2'),
+    html.P("Il controllo è lo stesso modello, nato da zero sugli stessi dati e con lo stesso tokenizer, ma con l'attenzione "
+           "normale: compare sullo stesso grafico. Se le due linee restano vicine, i concetti non costano qualità; la "
+           "differenza è il prezzo della memoria fissa. Si avvia quando il worker è libero (dopo una pausa).",
+           className='small text-muted'),
     html.Div(id='lm-long-queue-view'),
     dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-add-corpus', placeholder='Aggiungi un testo in fondo alla coda'), md=8),
              dbc.Col(dbc.Button('Aggiungi', id='lm-long-add', outline=True, color='primary'), md=4)], className='mb-1'),
@@ -349,9 +356,10 @@ def register(app):
 
     @app.callback(Output('lm-long-queue-status', 'children'), Output('lm-active-job', 'data', allow_duplicate=True),
                   Input('lm-long-add', 'n_clicks'), Input('lm-long-pause', 'n_clicks'), Input('lm-long-resume', 'n_clicks'),
+                  Input('lm-long-control', 'n_clicks'),
                   State('lm-workspace', 'data'), State('lm-long-queue', 'value'), State('lm-long-add-corpus', 'value'),
                   State('lm-state', 'data'), prevent_initial_call=True)
-    def queue_action(add, pause, resume, workspace, queue, corpus, state):
+    def queue_action(add, pause, resume, control, workspace, queue, corpus, state):
         items = queues((state or {}).get('jobs', [])).get(queue)
         try:
             if not items:
@@ -362,6 +370,13 @@ def register(app):
                 job = backend(workspace, f'/queues/{queue}/add', 'POST', dict(corpus_id=corpus))
                 return f"Aggiunto come testo {job['config']['series']['order']+1}.", dash.no_update
             job = current_item(items)
+            if dash.ctx.triggered_id == 'lm-long-control':
+                learned = [item for item in items if item['checkpoint']]
+                if not learned:
+                    raise ValueError('Il controllo si avvia dopo il primo salvataggio del primo testo.')
+                result = backend(workspace, f"/jobs/{learned[0]['id']}/dense-control", 'POST', {})
+                return ('Controllo avviato sul primo testo della coda, con lo stesso tokenizer, gli stessi passi e lo stesso seme. '
+                        'Lo trovi in «Segui i progetti».'), result['id']
             if dash.ctx.triggered_id == 'lm-long-pause':
                 backend(workspace, f"/jobs/{job['id']}/pause", 'POST')
                 return 'Pausa richiesta: salva il punto raggiunto e si ferma. Puoi aggiornare il server tranquillamente.', dash.no_update
