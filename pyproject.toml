@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acan-clustering"
-version = "8.5.0"
+version = "8.6.0"
 description = "Algebraic Concept Attention Network (ACAN): White-Box Differentiable Concept Discovery and Universal Tabular Autocompletion"
 readme = "README.md"
 license = {text = "MIT"}

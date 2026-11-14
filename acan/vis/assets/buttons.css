@@ -1,0 +1,5 @@
+/* A button with an outline but no colour gets the class btn-outline-undefined, which has no
+   border and no background: it looks like plain text. Give every such button a visible outline. */
+.btn-outline-undefined { color: #0d6efd; border-color: #0d6efd; background-color: transparent; }
+.btn-outline-undefined:hover, .btn-outline-undefined:focus { color: #fff; background-color: #0d6efd; border-color: #0d6efd; }
+.btn-outline-undefined:disabled { color: #6c757d; border-color: #adb5bd; }
