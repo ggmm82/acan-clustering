@@ -1,5 +1,8 @@
 # Confronto con i tre file storici allegati dopo la PR8
 
+> **Documento storico.** Descrive una versione precedente del modello. Il modello attuale è in [MODEL.md](MODEL.md), con le misure in [MODEL-RESULTS.md](MODEL-RESULTS.md); dove questa pagina differisce, valgono quelle.
+
+
 L'utente conferma che il precedente risultato >0,9 era **accuracy dalla matrice di
 confusione**. Non viene reinterpretato come un indice di errore differente.
 Questi tre file costituiscono una versione diversa dallo ZIP v8 già confrontato.

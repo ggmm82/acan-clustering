@@ -1,5 +1,8 @@
 > Documento del modello joint della PR8, conservato come riferimento storico. Per la proposta corrente con selezione delle masse, formula estesa e risultati aggiornati vedere [CP-SELECTION.md](CP-SELECTION.md).
 
+> **Documento storico.** Descrive una versione precedente del modello. Il modello attuale è in [MODEL.md](MODEL.md), con le misure in [MODEL-RESULTS.md](MODEL-RESULTS.md); dove questa pagina differisce, valgono quelle.
+
+
 # Unico nucleo matematico CP: tabulare e generativo
 
 Il profilo **`cp-joint-v1`** usa lo stesso modello concettuale nei due percorsi.
