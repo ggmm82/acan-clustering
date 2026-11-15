@@ -11,7 +11,7 @@ def validate_options(options):
     extra={key:options.get(key,value) for key,value in EXTRA.items()}
     if isinstance(extra['graft_fraction'],bool) or extra['graft_fraction'] not in (.5,1.):
         raise ValueError('Frazione ACAN ammessa: 0.5 oppure 1.0.')
-    if extra['routing_profile'] not in ('legacy-causal-v1','shared-algebra-v1','cp-routing-v1','cp-joint-v1','cp-v9','concept-graph-v1'):
+    if extra['routing_profile'] not in ('legacy-causal-v1','shared-algebra-v1','cp-routing-v1','cp-joint-v1','cp-v9','concept-graph-v1','concept-graph-v2'):
         raise ValueError('Profilo algebrico non valido.')
     if extra['architecture'] not in ('hybrid','dense-control','native'):
         raise ValueError('Architettura non supportata.')
@@ -34,7 +34,7 @@ def validate_options(options):
         raise ValueError('Vocabolario: da 4.000 a 65.536 token.')
     if extra['native_attention'] not in ('concepts','dense'):
         raise ValueError('Attenzione del modello nativo: concepts oppure dense (il controllo).')
-    if extra['architecture']=='native' and extra['routing_profile']!='concept-graph-v1':
+    if extra['architecture']=='native' and extra['routing_profile'] not in ('concept-graph-v1','concept-graph-v2'):
         raise ValueError('Il modello nativo usa il grafo dei concetti (concept-graph-v1).')
     if any(not isinstance(extra[key],bool) for key in ('chat_probes','auto_resume','warm_start')):
         raise ValueError('Parametro non valido: chat_probes, auto_resume o warm_start')

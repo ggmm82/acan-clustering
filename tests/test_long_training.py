@@ -249,6 +249,25 @@ class NativeModelTest(unittest.TestCase):
             loss = first(batch, labels=batch).loss
             loss.backward()
             self.assertTrue(torch.isfinite(loss))
+            # New projects read through concept-graph-v2: the same weights, another reading layer.
+            from acan.lm.graph_attention import ConceptGraphScanAttention
+            newer, later = build(str(Path(folder)/'tokenizer'), dict(options, routing_profile='concept-graph-v2'))
+            self.assertEqual(later['algebra'], 'concept-graph-v2')
+            self.assertEqual(sum(isinstance(module, ConceptGraphScanAttention) for module in newer.modules()), 4)
+            for (key, a), (_, b) in zip(first.state_dict().items(), newer.state_dict().items()):
+                self.assertTrue(torch.equal(a, b), key)
+            newer.eval()
+            torch.manual_seed(0)
+            mixed = torch.randint(0, report['vocabulary'], (1, 96))
+            with torch.no_grad():                                 # a prompt read at once and continued token by token
+                whole = newer(mixed, use_cache=False).logits
+                start = newer(mixed[:, :40], use_cache=True)
+                rest = newer(mixed[:, 40:], past_key_values=start.past_key_values, use_cache=True).logits
+            # In single precision a nearly tied pair may be added together differently in the two
+            # ways of reading: the readings stay close, they are not bit for bit the same.
+            gap = (whole[:, 40:]-rest).abs()
+            self.assertLess(float(gap.mean()), 5e-3)
+            self.assertLess(float(gap.max()), .1*float(whole.abs().max()))
             self.assertAlmostEqual(parameters('micro', report['vocabulary'])/1e6, sum(value.numel() for value in first.parameters() if value.requires_grad)/1e6, delta=.1)
 
 

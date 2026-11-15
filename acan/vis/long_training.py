@@ -24,13 +24,13 @@ QUEUE_NAME = 'LLM a concetti'
 
 def profile(cuda, size='micro'):
     """The settings of a native concept model: random weights, every weight learns, concepts in every layer."""
-    settings = dict(protocol='controlled-v1', routing_profile='concept-graph-v1', architecture='native', native_size=size,
+    settings = dict(protocol='controlled-v1', routing_profile='concept-graph-v2', architecture='native', native_size=size,
                     graft_fraction=1., vocabulary=32000, distillation_weight=0., early_stop_patience=0, validation_batches=16,
                     save_seconds=300, device='auto', chat_probes=True, auto_resume=True)
     if cuda:
         settings.update(sequence_length=1024, batch_size=8, accumulation=4, slots=64, window=64,
                         learning_rate={'micro': 1e-3, 'small': 6e-4, 'base': 4e-4}[size])
-    else:   # CPU: pieces of 256 tokens, 16 exact tokens and 16 concepts
+    else:   # CPU: pieces of 256 tokens, 16 exact tokens and 16 concepts for every level of the graph
         settings.update(sequence_length=256, batch_size=1, accumulation=8, slots=16, window=16,
                         learning_rate={'micro': 1e-3, 'small': 6e-4, 'base': 4e-4}[size])
     return settings
@@ -121,7 +121,9 @@ def footprint_view(item):
     trainable, overall = progress.get('trainable_parameters'), progress.get('total_parameters')
     graft = progress.get('graft') or {}
     layers, total_layers = graft.get('replaced_layers') or [], graft.get('total_layers')
+    graph = config.get('routing_profile') == 'concept-graph-v2'
     kept = config['window']+config['slots']
+    levels = max(config['sequence_length']-config['window'], 1).bit_length()
     rows = [
         ('Modello', [
             ('Parametri totali', f'{overall:,}' if overall else '—'),
@@ -131,6 +133,8 @@ def footprint_view(item):
             ('Layer a concetti', 'nessuno: attenzione normale (è il controllo)' if config.get('native_attention') == 'dense' else
              f"{len(layers)} su {total_layers}" if layers and total_layers else ('tutti' if config.get('graft_fraction') == 1. else 'metà')),
             ('Memoria di lettura per layer', 'un vettore per ogni token letto (cresce con il testo)' if config.get('native_attention') == 'dense' else
+             f"{config['window']} token esatti + {config['slots']} concetti per livello: al massimo {config['window']+config['slots']*levels} vettori "
+             f"su un pezzo di {config['sequence_length']} token (un livello in più a ogni raddoppio)" if graph else
              f"{config['window']} token esatti + {config['slots']} concetti = {kept} vettori, a qualunque lunghezza"),
             ('Testo letto per pezzo', f"{config['sequence_length']} token")]),
         ('Avanzamento e velocità', [
@@ -201,8 +205,8 @@ def build_view(build):
 layout = dbc.Card(dbc.CardBody([
     html.H4('Apprendimento lungo · LLM a concetti'),
     html.P("Un modello a concetti nativo, nato da zero: pesi casuali, tutti i pesi imparano, nessun modello preaddestrato "
-           "e nessun adattatore. Ogni layer legge il testo attraverso i concetti ACAN: gli ultimi token esatti più un numero "
-           "fisso di concetti per tutto il resto, a qualunque lunghezza. Anche il tokenizer nasce dai tuoi testi, in "
+           "e nessun adattatore. Ogni layer legge il testo attraverso i concetti ACAN: gli ultimi token esatti più pochi "
+           "concetti per ogni livello del passato (vicino preciso, lontano più generale). Anche il tokenizer nasce dai tuoi testi, in "
            "italiano e inglese insieme. L'addestramento salva il lavoro ogni 100 passi e ogni 5 minuti, riprende da solo "
            "dopo un riavvio del server, e a ogni salvataggio risponde alle domande di prova: le vedi qui sotto mentre impara.",
            className='small'),
@@ -234,7 +238,7 @@ layout = dbc.Card(dbc.CardBody([
             className='mb-2'),
     dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Token letti per pezzo'), dbc.Input(id='lm-long-length', type='number', value=256, min=64, max=2048, step=64)]), md=4),
              dbc.Col(html.Small("Per il testo bastano 256. Un'immagine è circa 1.060 token (servono almeno 1.088); una cifra pronunciata e un "
-                                "video di cifre stanno sotto 2.048. Un secondo di un tuo WAV sono 8.000 token: non entra intero. Più lungo = più lento per passo, la memoria dei concetti resta fissa.",
+                                "video di cifre stanno sotto 2.048. Un secondo di un tuo WAV sono 8.000 token: non entra intero. Più lungo = più lento per passo; la memoria dei concetti cresce di un livello a ogni raddoppio.",
                                 className='text-muted'), md=8)], className='mb-2'),
     dbc.Label('Domande di prova (una per riga, al massimo 6; vuoto = domande predefinite in italiano e inglese)'),
     dbc.Textarea(id='lm-long-questions', rows=3, placeholder='Ciao! Chi sei?\nQual è la capitale della Francia?'),
@@ -247,7 +251,7 @@ layout = dbc.Card(dbc.CardBody([
                       dbc.Button('Avvia il controllo', id='lm-long-control', outline=True, color='secondary')], md=6)], className='mt-3 mb-2'),
     html.P("Il controllo è lo stesso modello, nato da zero sugli stessi dati e con lo stesso tokenizer, ma con l'attenzione "
            "normale: compare sullo stesso grafico. Se le due linee restano vicine, i concetti non costano qualità; la "
-           "differenza è il prezzo della memoria fissa. Si avvia quando il worker è libero (dopo una pausa).",
+           "differenza è il prezzo della memoria piccola. Si avvia quando il worker è libero (dopo una pausa).",
            className='small text-muted'),
     html.Div(id='lm-long-queue-view'),
     dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-add-corpus', placeholder='Aggiungi un testo in fondo alla coda'), md=8),

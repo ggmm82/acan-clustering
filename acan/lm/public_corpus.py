@@ -161,7 +161,7 @@ def experiment(store, owner, dataset, preset):
     corpus, provenance = import_corpus(store, owner, dataset)
     # A native concept model born from zero on the public text (tokenizer learned from it, concepts in every layer).
     config = validate_options(dict(corpus_id=corpus['id'], name=spec['title']+' · '+settings['title'], batch_size=1,
-                                   architecture='native', native_size='micro', routing_profile='concept-graph-v1',
+                                   architecture='native', native_size='micro', routing_profile='concept-graph-v2',
                                    graft_fraction=1., learning_rate=1e-3, slots=16, window=16,
                                    **{k:v for k,v in settings.items() if k != 'title'}))
     job = store.create_job(owner, config)
