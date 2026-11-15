@@ -217,37 +217,61 @@ def graph_scan(q, raw, keys, v, window, bins, scale, frequency, details=False):
 
 
 class GraphStream:
-    """The same reading one token at a time: ``window`` exact tokens and a binary counter of blocks."""
+    """The same reading one token at a time: exact tokens and a binary counter of blocks.
+
+    The exact tokens are the window and, behind it, the old tokens that do not yet fill a block of
+    ``unit`` tokens; when they do, they become a block and equal blocks are generalized (a carry).
+    What a reader needs of each block is computed when the block is made, not at every reading.
+    """
 
     def __init__(self, window, bins, scale, frequency):
         self.window, self.bins, self.scale, self.frequency = window, bins, scale, frequency
-        self.keys = self.values = self.raw = self.received = self.table = None
-        self.counter, self.seen = [], 0
+        self.unit = unit_of(bins)
+        self.keys = self.values = self.raw = self.received = self.table = self.shares = None
+        self.counter, self.ready, self.seen = [], [], 0          # counter[i]: the block of unit * 2^i tokens, if any
 
-    def _table(self):
-        """Every block of the counter side by side, as it is read: built when the counter changes."""
-        parts = [readable(node, self.frequency) for node in self.counter if node is not None]
-        return tuple(torch.cat(items, 2) for items in zip(*parts)) if parts else None
+    def _block(self, raw, values, received, first):
+        """``unit`` consecutive tokens (b, h, unit[, d]) starting at position ``first`` as a block of the counter."""
+        return tokens(raw, values, received, torch.arange(first, first+raw.shape[2], device=raw.device))
+
+    def _carry(self, node):
+        level = 0
+        while level < len(self.counter) and self.counter[level] is not None:      # at most log2(n) steps
+            older = self.counter[level]
+            node = generalize({name: torch.cat((older[name], node[name]), 2) for name in node}, self.bins)
+            self.counter[level] = self.ready[level] = None
+            level += 1
+        if level == len(self.counter):
+            self.counter.append(None)
+            self.ready.append(None)
+        self.counter[level], self.ready[level] = node, readable(node, self.frequency)
+        parts = [item for item in self.ready if item is not None]
+        self.table = tuple(torch.cat(items, 2) for items in zip(*parts))
 
     def load(self, raw, keys, values, received):
         """Start from a whole prefix (b, h, n, d): what ``step`` would hold after its n tokens."""
         length = raw.shape[2]
         old = max(length-self.window, 0)
-        self.seen, self.counter, self.table = length, [None]*old.bit_length(), None
-        self.keys, self.values, self.raw, self.received = keys[:, :, old:], values[:, :, old:], raw[:, :, old:], received[:, :, old:].clone()
-        unit, start = unit_of(self.bins), 0
-        for level in reversed(range(old.bit_length())):          # the blocks of the binary writing of ``old``
-            size = 1 << level
-            if not old & size:
+        blocks = old//self.unit
+        self.seen, self.table = length, None
+        self.counter, self.ready = [None]*blocks.bit_length(), [None]*blocks.bit_length()
+        start = 0
+        for level in reversed(range(blocks.bit_length())):       # the blocks of the binary writing of the old tokens
+            size = self.unit << level
+            if not blocks >> level & 1:
                 continue
-            part = slice(start, start+size)
-            shape = (max(size//unit, 1), min(size, unit))
-            cut = lambda x: x[:, :, part].reshape(*x.shape[:2], *shape, *x.shape[3:])
-            node = tokens(cut(raw), cut(values), cut(received), torch.arange(start, start+size, device=raw.device).reshape(shape))
+            cut = lambda x: x[:, :, start:start+size].reshape(*x.shape[:2], size//self.unit, self.unit, *x.shape[3:])
+            node = tokens(cut(raw), cut(values), cut(received), torch.arange(start, start+size, device=raw.device).reshape(-1, self.unit))
             while node['C'].shape[2] > 1:
                 node = generalize(pair(node), self.bins)
             self.counter[level] = {name: value[:, :, 0] for name, value in node.items()}
+            self.ready[level] = readable(self.counter[level], self.frequency)
             start += size
+        parts = [item for item in self.ready if item is not None]
+        if parts:
+            self.table = tuple(torch.cat(items, 2) for items in zip(*parts))
+        self.keys, self.values, self.raw = keys[:, :, start:], values[:, :, start:], raw[:, :, start:]
+        self.received = received[:, :, start:].clone()
         return self
 
     def step(self, q, raw, key, v):
@@ -256,28 +280,15 @@ class GraphStream:
         self.keys, self.values, self.raw = add(self.keys, key), add(self.values, v), add(self.raw, raw)
         self.seen += 1
         exact = self.scale*(self.keys@q[..., None]).squeeze(-1)
-        near = exact.softmax(-1).detach()                        # the reader's shares inside its window
+        near = exact[:, :, -self.window:].softmax(-1).detach()   # the reader's shares inside its window
         self.received = add(self.received, near.new_zeros(near.shape[:2]))
-        if self.keys.shape[2] > self.window:                     # the oldest exact token becomes old
-            self.received[:, :, 1:] += exact[:, :, 1:].softmax(-1).detach()
-            node = tokens(self.raw[:, :, :1], self.values[:, :, :1], self.received[:, :, :1],
-                          torch.full((1,), self.seen-self.window-1, device=q.device))
-            self.keys, self.values, self.raw = self.keys[:, :, 1:], self.values[:, :, 1:], self.raw[:, :, 1:]
-            self.received, exact = self.received[:, :, 1:], exact[:, :, 1:]
-            level = 0
-            while level < len(self.counter) and self.counter[level] is not None:   # a carry: at most log2(n) steps
-                older = self.counter[level]
-                node = generalize({name: torch.cat((older[name], node[name]), 2) for name in node}, self.bins)
-                self.counter[level] = None
-                level += 1
-            if level == len(self.counter):
-                self.counter.append(None)
-            self.counter[level] = node
-            self.table = None
-        else:
-            self.received += near
-        if self.table is None:
-            self.table = self._table()
+        self.received[:, :, -near.shape[2]:] += near
+        if self.keys.shape[2] == self.window+self.unit:          # the oldest exact tokens fill a block
+            unit = self.unit
+            self._carry(self._block(self.raw[:, :, :unit], self.values[:, :, :unit], self.received[:, :, :unit],
+                                    self.seen-self.window-unit))
+            self.keys, self.values, self.raw, self.received = (item[:, :, unit:] for item in (self.keys, self.values, self.raw, self.received))
+            exact = exact[:, :, unit:]
         logits, values = exact, self.values
         if self.table is not None:
             centre, mass, mean = self.table
