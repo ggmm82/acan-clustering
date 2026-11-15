@@ -126,12 +126,17 @@ def pair(node):
     return out
 
 
-def read(queries, node, scale, frequency):
-    """Logits of queries (..., r, d) over the concepts of their block (..., k[, d]): log C + s q.centre."""
+def readable(node, frequency):
+    """What a reader needs of a block: centres at the mean position, log masses (-inf if empty), mean values."""
     mass = node['C'].clamp(min=1.)
     centre = rotate(node['U']/mass[..., None], node['P']/mass, frequency)
-    logits = scale*queries@centre.transpose(-1, -2)+mass.log()[..., None, :]
-    return logits.masked_fill((node['C'] <= .5)[..., None, :], -torch.inf)
+    return centre, mass.log().masked_fill(node['C'] <= .5, -torch.inf), node['V']/mass[..., None]
+
+
+def read(queries, node, scale, frequency):
+    """Logits of queries (..., r, d) over the concepts of their block (..., k[, d]): log C + s q.centre."""
+    centre, mass, _ = readable(node, frequency)
+    return scale*queries@centre.transpose(-1, -2)+mass[..., None, :]
 
 
 def unit_of(bins):
@@ -219,6 +224,11 @@ class GraphStream:
         self.keys = self.values = self.raw = self.received = self.table = None
         self.counter, self.seen = [], 0
 
+    def _table(self):
+        """Every block of the counter side by side, as it is read: built when the counter changes."""
+        parts = [readable(node, self.frequency) for node in self.counter if node is not None]
+        return tuple(torch.cat(items, 2) for items in zip(*parts)) if parts else None
+
     def load(self, raw, keys, values, received):
         """Start from a whole prefix (b, h, n, d): what ``step`` would hold after its n tokens."""
         length = raw.shape[2]
@@ -266,13 +276,13 @@ class GraphStream:
             self.table = None
         else:
             self.received += near
-        if self.table is None:                                   # every block of the counter side by side: one reading
-            nodes = [node for node in self.counter if node is not None]
-            self.table = {name: torch.cat([node[name] for node in nodes], 2) for name in nodes[0]} if nodes else {}
+        if self.table is None:
+            self.table = self._table()
         logits, values = exact, self.values
-        if self.table:
-            logits = torch.cat((logits, read(q[:, :, None], self.table, self.scale, self.frequency).squeeze(2)), -1)
-            values = torch.cat((values, self.table['V']/self.table['C'].clamp(min=1.)[..., None]), 2)
+        if self.table is not None:
+            centre, mass, mean = self.table
+            logits = torch.cat((logits, self.scale*(centre@q[..., None]).squeeze(-1)+mass), -1)
+            values = torch.cat((values, mean), 2)
         self.shares = logits.softmax(-1)
         return (self.shares[..., None]*values).sum(2)
 
