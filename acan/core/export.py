@@ -15,7 +15,7 @@ import numpy as np
 PACKAGE = 'modello_concetti'
 TEMPLATE = Path(__file__).resolve().parent.parent/'export_template'
 OPTIONS = ('max_concepts', 'rows_per_concept', 'kappa', 'seed', 'judged_rows', 'merge_fraction', 'em_steps',
-           'restarts', 'restart_rows', 'covariance', 'covariance_attributes', 'shared_start')
+           'restarts', 'restart_rows', 'covariance', 'covariance_attributes', 'shared_start', 'bins', 'refine_rows')
 
 
 def _lists(value):
@@ -83,7 +83,9 @@ def build_package(graph):
                 'import numpy as np\nimport pandas as pd\n\n\n'
                 + inspect.getsource(concept_adapter.MatrixEncoder) + '\n\n'
                 + inspect.getsource(preprocessing.transform_features))
-    core_source = _source(concepts.__file__).replace('from acan.concept_algebra import', 'from .concept_algebra import')
+    from acan.core import scan
+    local = lambda source: source.replace('from acan.concept_algebra import', 'from .concept_algebra import').replace('from acan.core.scan import', 'from .scan import')
+    core_source = local(_source(concepts.__file__))
     files = {
         'requirements.txt': _requirements(),
         'README.md': (TEMPLATE/'README.md.tmpl').read_text(encoding='utf-8').replace(
@@ -93,6 +95,7 @@ def build_package(graph):
         f'{PACKAGE}/model.py': (TEMPLATE/'model.py.tmpl').read_text(encoding='utf-8'),
         f'{PACKAGE}/concepts.py': core_source,
         f'{PACKAGE}/concept_algebra.py': _source(concept_algebra.__file__),
+        f'{PACKAGE}/scan.py': local(_source(scan.__file__)),
         f'{PACKAGE}/encoding.py': encoding,
         f'{PACKAGE}/state.json': json.dumps(_lists(full)),
     }

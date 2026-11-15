@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 
 from acan.concept_algebra import LOG_2PI, centre_variance, pair_mass, reader_cost, reader_radius, unbiased
+from acan.core.scan import scan
 
 TIE = .05                                                       # relative difference of pair criteria that counts as a tie
 CONSTANT = 1e-6                                                 # standardized dispersion below which an attribute is constant
@@ -79,9 +80,10 @@ class ConceptModel:
     resolution = 0.
 
     def __init__(self, max_concepts=1024, rows_per_concept=4, kappa=1., seed=0,
-                 judged_rows=2000, merge_fraction=.05, em_steps=3, restarts=5, restart_rows=5000,
-                 covariance=True, covariance_attributes=128, shared_start=128):
+                 judged_rows=2000, merge_fraction=.05, em_steps=3, restarts=1, restart_rows=5000,
+                 covariance=True, covariance_attributes=128, shared_start=128, bins=None, refine_rows=20000):
         self.shared_start = shared_start
+        self.bins, self.refine_rows = bins, refine_rows          # concepts of a block of the scan; rows the levels are refined on
         self.covariance, self.covariance_attributes = covariance, covariance_attributes
         self.cross, self.cov = None, np.zeros(0, int)            # cross products of the working level, if adopted
         self.max_concepts, self.rows_per_concept = max_concepts, rows_per_concept
@@ -408,17 +410,26 @@ class ConceptModel:
         return scores
 
     # ---- training --------------------------------------------------------------
-    def _path(self, data, weights, judged, rng, progress=None, restarts=None, start=None):
-        """From specific concepts to one concept; every step is judged and measured against the level above."""
+    def _block(self, k):
+        """Concepts of a block of the scan: a quarter of the specific concepts allowed, between 32 and 128."""
+        if self.bins:
+            return int(self.bins)
+        return int(min(128, max(32, 1 << int(np.log2(max(k//4, 1))))))
+
+    def _path(self, data, weights, judged, rng, progress=None, restarts=None, start=None, specific=None):
+        """From specific concepts to one concept; every step is judged and measured against the level above.
+
+        The specific concepts come from one pass over the rows (acan/core/scan.py): blocks of rows
+        generalized two by two where the reader loses least. ``specific`` gives them when the pass
+        was made on more rows than ``data`` holds.
+        """
         n = len(data[0])
         k = int(min(start or self.max_concepts, max(n//self.rows_per_concept, 1)))
         path = []
-        # Generalization is a greedy search: repeat it from other specific concepts.
-        for restart in range(restarts or (self.restarts if n <= self.restart_rows else 1)):
-            seeds = rng.choice(n, k, replace=False)
-            seed_t = np.zeros((n, k))
-            seed_t[seeds, np.arange(k)] = 1
-            s = self._em(self._statistics(seed_t, data), data, weights, 10)
+        # The blocks depend on the order of the rows: a small table is read in a few orders.
+        for restart in range(1 if specific is not None else restarts or (self.restarts if n <= self.restart_rows else 1)):
+            s = specific if specific is not None else scan(self, data, self._block(k), rng.permutation(n))
+            s = self._em(s, data, weights, 10)
             judged_at = np.inf
             while True:
                 k_now = len(s['C'])

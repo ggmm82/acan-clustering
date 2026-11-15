@@ -1,8 +1,16 @@
-"""Tabular concepts from one pass over the rows: the dyadic blocks of the language layer, with the tabular cost."""
-import os, sys, time, numpy as np, pandas as pd
-from pathlib import Path
-sys.path.insert(0, 'tests')
-from acan.core.concepts import ConceptModel
+"""Specific concepts of a table from one pass over its rows: the dyadic blocks of the language layer.
+
+The rows are read once, in blocks of ``bins`` rows in which every row is a concept of its own. Two
+equal blocks become one block of twice the rows: their concepts are added together, pair by pair
+where the reader loses least (reader_cost, acan/concept_algebra.py, with the tabular radius of
+ConceptModel), until ``bins`` remain. The same structure and the same rule read the context of
+the language model (acan/lm/graph_scan.py); a table has no age, so what is read is only the top:
+the concepts of the blocks that are left, at most ``bins`` for every power of two in the number of
+rows. They are sums over every row of the table, and they are where the generalization of
+ConceptModel starts. Memory is one chunk of rows and the blocks left; time is linear in the rows.
+"""
+import numpy as np
+
 from acan.concept_algebra import reader_cost
 
 KEYS = ('C', 'Cm', 'U', 'Q', 'N', 'PV', 'PP', 'PG')
@@ -73,59 +81,3 @@ def scan(model, data, bins, order, chunk=4096):
     out = {key: np.concatenate([part[key] for part in left]) for key in KEYS}
     alive = out['C'] > 0
     return {key: value[alive] for key, value in out.items()}
-
-
-class ScanConceptModel(ConceptModel):
-    """ConceptModel whose specific concepts come from the scan instead of random rows and their refinement."""
-    refine = True                                               # reassign the rows while generalizing (as today)
-
-    def _em(self, s, data, weights, steps):
-        return super()._em(s, data, weights, steps) if self.refine else s
-
-    def _path(self, data, weights, judged, rng, progress=None, restarts=None, start=None):
-        n = len(data[0])
-        k = int(min(start or self.max_concepts, max(n//self.rows_per_concept, 1)))
-        bins = int(os.environ.get('BINS', 16))
-        s = scan(self, data, bins, rng.permutation(n))
-        s = self._em(s, data, weights, self.em_steps)
-        path, judged_at = [], np.inf
-        while True:
-            k_now = len(s['C'])
-            step = dict(k=k_now, restart=0, data=data, statistics=s, pair_criterion=self.pair_criterion(s), score=-np.inf, error=0.)
-            if k_now <= 64 or k_now <= .9*judged_at:
-                scores, judged_at = self._score(s, data, weights, judged), k_now
-                step.update(score=float(scores.mean()), scores=scores, error=float(scores.std()/np.sqrt(len(scores))))
-            path.append(step)
-            if len(s['C']) == 1:
-                break
-            s = self._generalize(s, data, weights, max(int(len(s['C'])*self.merge_fraction), 1))
-            s = self._em(s, data, weights, self.em_steps)
-        return path
-
-
-if __name__ == '__main__':
-    from test_quality_regression import bundled, local
-    from acan.vis.datasets import clean_frame, read_arff, split_for_training, target_and_filters
-    def table(path):
-        path = str(path)
-        raw = pd.read_csv(path) if path.endswith('.csv') else read_arff(Path(path).read_bytes())
-        frame = clean_frame(raw); labels, filters = target_and_filters(frame); return frame, labels, filters
-    cases = [('iris', lambda: (bundled('iris'), ['kind'], []), range(10), .95), ('wine', lambda: (bundled('wine'), ['kind'], []), range(10), .95),
-             ('breast_cancer', lambda: (bundled('breast_cancer'), ['kind'], []), range(2), .92), ('sonar', lambda: table('tests/data/sonar.csv'), range(1, 6), .83),
-             ('vehicle', lambda: table('tests/data/vehicle.arff'), range(1, 4), .75), ('vote', lambda: table('tests/data/vote.arff'), range(1, 6), .94),
-             ('titanic', lambda: table(local('titanic.csv')), range(1, 11), .80), ('credit-g', lambda: table(local('credit-g.arff')), range(1, 6), .63),
-             ('letter', lambda: table('.data/letter.arff'), range(1, 2), .0)]
-    variants = sys.argv[1].split(','); only = sys.argv[2:]
-    for name, load, seeds, threshold in cases:
-        if only and name not in only: continue
-        frame, labels, filters = load(); line = f"{name:13s} soglia {threshold:.2f}"
-        for variant in variants:
-            scores, sizes, seconds = [], [], 0.
-            for seed in seeds:
-                train, test, _ = split_for_training(frame, labels, filters, seed=seed)
-                model = ConceptModel(seed=seed) if variant == 'attuale' else ScanConceptModel(seed=seed)
-                model.refine = variant != 'somme'
-                t = time.time(); model.fit(train, labels); seconds += time.time()-t
-                scores.append((model.predict(test, labels[0]) == test[labels[0]].astype(str)).mean()); sizes.append(model.concepts)
-            line += f" | {variant} {np.mean(scores):.3f} ({int(np.median(sizes))} concetti, {seconds/len(seeds):.1f}s)"
-        print(line, flush=True)
