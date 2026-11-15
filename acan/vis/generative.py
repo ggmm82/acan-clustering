@@ -19,7 +19,7 @@ TRAINING_HELP = {'lm-length': 'Quanto testo il modello legge in una volta (in to
  'lm-batch': 'Quanti pezzi di testo legge insieme. Su CPU lascia 1.',
  'lm-accum': 'Quanti pezzi legge prima di correggersi una volta. Più alto = passi più stabili ma più lenti.',
  'lm-lr': "Quanto si corregge a ogni passo. Se l'errore sale o oscilla molto, abbassalo.",
- 'lm-slots': 'Quanti concetti riassumono il testo più vecchio. Più concetti = più fedele ma più memoria.',
+ 'lm-slots': 'Quanti concetti riassumono ogni livello del testo più vecchio (i livelli crescono con il logaritmo della lunghezza). Più concetti = più fedele ma più memoria.',
  'lm-window': 'Quanti token recenti restano esatti, non riassunti.',
  'lm-rank': 'Quanto è grande la parte del modello che si addestra (LoRA). Più alto = più capacità e memoria.',
  'lm-save': 'Ogni quanti passi salvare una copia del modello da cui provare a generare.',
@@ -168,16 +168,16 @@ layout = dbc.Container([
                 dbc.Row([dbc.Col([dbc.Label(label), dbc.Input(id=id, type='number', value=value, min=lo, max=hi),html.Small(TRAINING_HELP.get(id,''),className='text-muted')], md=4, className='mb-2')
                          for label,id,value,lo,hi in [('Lunghezza del testo letto (token)','lm-length',256,16,2048),('Pezzi letti insieme','lm-batch',1,1,8),
                              ('Pezzi per correzione','lm-accum',8,1,256),('Velocità di apprendimento','lm-lr',.001,.0000001,.01),
-                             ('Numero di concetti','lm-slots',16,2,64),('Token recenti esatti','lm-window',16,1,128),
+                             ('Concetti per livello','lm-slots',16,2,64),('Token recenti esatti','lm-window',16,1,128),
                              ('Salva il modello ogni … passi','lm-save',100,1,10000),
                              ('Pausa automatica dopo … controlli senza miglioramenti','lm-patience',3,0,20),('Miglioramento minimo','lm-min-delta',.01,0,1),
                              ('Pezzi di testo per ogni controllo','lm-validation',8,1,64)]]),
                 # Kept for callbacks shared with earlier projects; the native model fixes them.
                 html.Div([dbc.Input(id='lm-cp-weight',type='number',value=0.), dbc.Input(id='lm-rank',type='number',value=8),
-                          dcc.Dropdown(id='lm-routing',value='concept-graph-v1',options=[{'label':'concept-graph-v1','value':'concept-graph-v1'}]),
+                          dcc.Dropdown(id='lm-routing',value='concept-graph-v2',options=[{'label':'concept-graph-v2','value':'concept-graph-v2'},{'label':'concept-graph-v1','value':'concept-graph-v1'}]),
                           dcc.Dropdown(id='lm-fraction',value=1.,options=[{'label':'1','value':1.}]), dbc.Checkbox(id='lm-distill', value=False)],
                          style={'display':'none'}),
-                html.P('Ogni layer legge il testo attraverso il grafo dei concetti, lo stesso modello della scheda tabulare: i token recenti esatti, quelli più vecchi riassunti in concetti.',className='small text-muted'),
+                html.P('Ogni layer legge il testo attraverso il grafo dei concetti, lo stesso modello della scheda tabulare: i token recenti esatti, quelli più vecchi riassunti in concetti a livelli (vicino fine, lontano più generale).',className='small text-muted'),
                 html.P("Il testo viene diviso in tre parti che non si mescolano: una per addestrare, una per controllare i progressi durante l'addestramento, una per la verifica finale. Viene conservata sempre la copia migliore.", className='small text-muted'),
                 dbc.Label('Dove addestrare'), dcc.Dropdown(id='lm-device', options=[{'label':'Automatico','value':'auto'},{'label':'Scheda grafica (GPU)','value':'cuda'},{'label':'Processore (CPU)','value':'cpu'}], value='auto', clearable=False),
                 html.P("Il lavoro viene salvato ogni 5 minuti e a ogni pausa: un arresto improvviso fa perdere al massimo i passi dall'ultimo salvataggio.", className='small text-muted'),
@@ -252,7 +252,7 @@ def native_config(corpus, size, name, steps, length, batch, accumulation, lr, sl
     """A project of the manual form: a native model born from zero, concepts in every layer."""
     return dict(corpus_id=corpus, name=name, total_steps=steps, sequence_length=length, batch_size=batch, accumulation=accumulation,
                 learning_rate=lr, slots=slots, window=window, save_steps=save_steps, device=device, protocol='controlled-v1',
-                routing_profile='concept-graph-v1', architecture='native', native_size=size or 'micro', graft_fraction=1.,
+                routing_profile='concept-graph-v2', architecture='native', native_size=size or 'micro', graft_fraction=1.,
                 distillation_weight=0., early_stop_patience=patience, early_stop_min_delta=min_delta,
                 validation_batches=int(validation or 8))
 
@@ -487,7 +487,7 @@ def small_facts(result):
     if cost:
         last = cost['rows'][-1]
         text = (f"Costo: a {last['length']:,} token di contesto l'attenzione normale tiene {last['dense']['kept_vectors']:,} "
-                f"vettori per layer e cresce con il testo; i concetti ne tengono {last['concepts']['kept_vectors']} sempre. "
+                f"vettori per layer e cresce con il testo; i concetti ne tengono {last['concepts']['kept_vectors']} (crescono con il logaritmo della lunghezza). "
                 f"Tempo per token: attenzione normale da {cost['rows'][0]['dense']['milliseconds_per_token']:.2f} a "
                 f"{last['dense']['milliseconds_per_token']:.2f} ms, concetti circa {cost['concepts_flat']:.2f} ms fissi.")
         if cost.get('faster_beyond'):
@@ -700,7 +700,7 @@ def register(app):
                 state['select_job'] = active
             capabilities = backend(workspace, '/capabilities')
             state['capabilities']=capabilities
-            hardware = 'CUDA disponibile' if capabilities['cuda'] else 'CPU · profilo di verifica 135M'
+            hardware = 'CUDA disponibile' if capabilities['cuda'] else 'CPU'
             upgrade=' Per il caricamento rapido dei progetti aggiorna anche il worker.' if 'detail_job' not in state else ''
             return state, f'Worker collegato · {hardware} · persistenza attiva · una sola operazione alla volta.'+upgrade
         except ValueError as exc:
@@ -945,7 +945,7 @@ def register(app):
                 detail.append(html.P('Con un campione così piccolo differenze di NLL inferiori a circa 0,15 fra progetti non sono distinguibili dal caso: '
                                      'per confrontare due modelli usare «Confronta sul test», che misura l’intero insieme di test.', className='small text-muted'))
             detail.append(html.P(f"Documenti distinti: {data['documents']}; duplicati rimossi: {data['duplicates']}; passaggi equivalenti sul training: {metrics.get('tokens_trained',0)/max(1,unique):.2f}. Il test è escluso dalla scelta dei checkpoint."))
-        concept_layer = job['config'].get('routing_profile') in ('concept-graph-v1','cp-v9')
+        concept_layer = job['config'].get('routing_profile') in ('concept-graph-v2','concept-graph-v1','cp-v9')
         for key,label in [('gradient_norm',"Ampiezza dell'ultima correzione (norma del gradiente)"),('acan_gradient_norm','Gradiente ACAN'),('lora_gradient_norm','Correzione degli adattatori (solo progetti precedenti)'),('teacher_kl','Distanza dal modello originale (distillazione)')]:
             if key == 'acan_gradient_norm' and (concept_layer or job['config'].get('architecture') == 'dense-control'):
                 continue
@@ -960,7 +960,7 @@ def register(app):
         if metrics.get('graft'):
             graft=metrics['graft']
             detail.append(html.P(f"Struttura: {len(graft['replaced_layers'])} layer su {graft['total_layers']} leggono il contesto attraverso i concetti "
-                                 f"({graft['slots']} concetti, ultimi {graft['window']} token esatti)." if graft['replaced_layers'] else
+                                 f"({graft['slots']} concetti{' per livello' if job['config'].get('routing_profile')=='concept-graph-v2' else ''}, ultimi {graft['window']} token esatti)." if graft['replaced_layers'] else
                                  f"Struttura: tutti i {graft['total_layers']} layer usano l'attenzione normale."))
         last_step = max((s['step'] for s in job['snapshots']), default=0)
         detail.append(html.P(f'La linea di addestramento oscilla perché ogni passo legge un pezzo di testo diverso. La linea su testo mai visto si aggiorna a ogni salvataggio (ultimo: checkpoint passo {last_step}). I token elaborati possono contare più volte lo stesso testo.', className='small text-muted'))

@@ -24,13 +24,13 @@ QUEUE_NAME = 'LLM a concetti'
 
 def profile(cuda, size='micro'):
     """The settings of a native concept model: random weights, every weight learns, concepts in every layer."""
-    settings = dict(protocol='controlled-v1', routing_profile='concept-graph-v1', architecture='native', native_size=size,
+    settings = dict(protocol='controlled-v1', routing_profile='concept-graph-v2', architecture='native', native_size=size,
                     graft_fraction=1., vocabulary=32000, distillation_weight=0., early_stop_patience=0, validation_batches=16,
                     save_seconds=300, device='auto', chat_probes=True, auto_resume=True)
     if cuda:
         settings.update(sequence_length=1024, batch_size=8, accumulation=4, slots=64, window=64,
                         learning_rate={'micro': 1e-3, 'small': 6e-4, 'base': 4e-4}[size])
-    else:   # CPU: pieces of 256 tokens, 16 exact tokens and 16 concepts
+    else:   # CPU: pieces of 256 tokens, 16 exact tokens and 16 concepts for every level of the graph
         settings.update(sequence_length=256, batch_size=1, accumulation=8, slots=16, window=16,
                         learning_rate={'micro': 1e-3, 'small': 6e-4, 'base': 4e-4}[size])
     return settings
