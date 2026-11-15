@@ -124,7 +124,7 @@ paper, le ricevute dei benchmark sintetici e le prove HTTP dell'immagine.
 
 ## Contenuto del repository
 
-- `acan/`: libreria (`acan/core/concepts.py` nucleo tabulare,
+- `acan/`: libreria (`acan/core/concepts.py` nucleo tabulare, `acan/core/scan.py` passata a blocchi sulle righe,
   `acan/lm/graph_scan.py` strato di attenzione (v2), `acan/lm/concept_attention.py` (v1),
   `acan/concept_algebra.py` funzioni comuni)
 - `tests/`: test unitari e, in `tests/browser/`, test nel browser

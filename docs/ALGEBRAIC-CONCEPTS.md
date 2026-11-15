@@ -28,10 +28,13 @@ valgono per tutti e due:
 | generalizzazione | si unisce la coppia di costo minimo | si unisce la coppia di costo minimo |
 | costo | `reader_cost`: letture × raggio | `reader_cost`: letture × raggio |
 | letture | la massa (ogni riga legge i suoi concetti) | le quote di attenzione ricevute |
+| concetti specifici | i blocchi rimasti dopo l'ultima riga | i blocchi della scrittura binaria dell'età |
 | livelli | annidati e additivi, scelti dal criterio a coppie | annidati e additivi, fissati dall'età |
 
-Il modello tabulare è `ConceptModel` e non cambia. Nel linguaggio cambia solo
-l'ultima riga: **quando** e **fra quali** concetti avviene la generalizzazione.
+Dalla 8.8.0 anche la tabella parte dagli stessi blocchi
+([`acan/core/scan.py`](../acan/core/scan.py)): vedi «La tabella sugli stessi
+blocchi» più sotto. Nel linguaggio i blocchi fissano **quando** e **fra quali**
+concetti avviene la generalizzazione.
 
 ## La struttura fissa
 
@@ -194,7 +197,105 @@ il riempitivo.
 massimo della Category Utility con divisioni significative, più divisioni di
 Fisher per la previsione). Superava le soglie dei test, ma su Letter impiegava
 358 s contro 98 s con 2.605 concetti e usava due criteri invece di uno. Non è
-stato adottato: il modello tabulare resta `ConceptModel`.
+stato adottato.
+
+## La tabella sugli stessi blocchi (8.8.0)
+
+Prima il modello tabulare partiva da fino a 1.024 righe scelte a caso, rifinite
+riassegnando tutte le righe, e sulle tabelle piccole ripeteva tutto cinque
+volte. Teneva la tabella in memoria insieme a una matrice righe × concetti: non
+poteva crescere.
+
+Ora i concetti specifici vengono da **una passata a blocchi**
+(`acan/core/scan.py`), con la stessa struttura del linguaggio:
+
+- ogni riga è un concetto di un solo membro; le righe entrano in blocchi di `B`;
+- due blocchi uguali diventano un blocco doppio: i loro `2B` concetti si
+  uniscono a coppie, dove chi legge perde meno, finché ne restano `B`. Il costo
+  è `reader_cost` con il raggio tabulare (dispersione per attributo sulla scala
+  del livello sopra, categorie, valori mancanti) e le letture uguali alla massa;
+- alla fine restano al massimo `B` concetti per ogni potenza di due nel numero
+  di righe. Sono somme su tutte le righe, e da lì parte la generalizzazione di
+  `ConceptModel`, che non è cambiata;
+- `B` è un quarto dei concetti specifici ammessi, fra 32 e 128. Una tabella
+  fino a 256 righe non viene generalizzata a blocchi: ogni riga è un concetto
+  specifico (con poche righe e molti attributi unire subito è prematuro: su
+  Sonar costava da 2 a 5 punti).
+
+**Tabelle grandi** (`ConceptModel.fit_chunks`, usato da `fit` oltre 20.000
+righe): tre passate lineari con un pezzo di tabella in memoria. (1) Scala degli
+attributi ed estrazione uniforme di 20.000 righe. (2) I blocchi su tutte le
+righe, anche in più processi: i blocchi di pezzi diversi si sommano. (3) I
+livelli sulle righe estratte, a partire dai concetti dei blocchi; poi ogni riga
+della tabella è aggiunta ai concetti del livello di lavoro.
+
+### Misure
+
+Stessi split dei test di qualità (`tests/test_quality_regression.py`):
+
+| Dataset | Soglia | Prima | Ora | Concetti prima → ora | Tempo prima → ora |
+|---|---:|---:|---:|---|---|
+| Iris | 0,95 | 0,973 | 0,977 | 3 → 3 | 0,1 → 0,1 s |
+| Wine | 0,95 | 0,978 | 0,978 | 5 → 3 | 0,4 → 0,5 s |
+| Breast cancer | 0,92 | 0,939 | 0,952 | 12 → 20 | 9,7 → 4,0 s |
+| Sonar | 0,83 | 0,867 | 0,900 | 18 → 92 | 2,7 → 3,8 s |
+| Vehicle | 0,75 | 0,790 | 0,796 | 35 → 28 | 6,7 → 2,6 s |
+| Vote | 0,94 | 0,961 | 0,961 | 6 → 7 | 1,5 → 1,1 s |
+| Titanic | 0,80 | 0,818 | 0,812 | 28 → 25 | 3,0 → 1,1 s |
+| credit-g | 0,63 | 0,671 | 0,706 | 45 → 35 | 45 → 10 s |
+| Letter (1 split) | — | 0,974 | 0,976 | 546 → 389 | 119 → 91 s |
+
+Venti split (semi da 0 a 19, `scripts/evaluate_concepts.py`), confronto riga
+per riga con la versione precedente, media ± errore standard:
+
+| Dataset | Prima | Ora | Differenza | Concetti prima → ora | Tempo prima → ora |
+|---|---:|---:|---:|---|---|
+| Sonar | 85,1 | 85,5 ± 1,8 | +0,4 ± 1,4 | 17 → 74 | 3,2 → 3,9 s |
+| Titanic | 81,4 | 81,1 ± 0,7 | −0,4 ± 0,5 | 28 → 25 | 3,3 → 1,1 s |
+| Adult minimale | 75,2 | 75,9 ± 0,9 | +0,7 ± 0,5 | 5 → 5 | 1,0 → 0,3 s |
+| Gioco | 100 | 100 | 0 | 4 → 4 | — |
+
+Senza target: Gioco, 4 concetti in 8 tabelle su 8; due famiglie, 2 concetti
+generali; stesso seme, stesso modello (i test di comportamento sono invariati).
+
+Tabella sintetica grande (10 numeri, 3 categorie, 5% di valori mancanti, 12
+classi, 60 gruppi di grandezza molto diversa; accuratezza massima possibile
+circa 0,909):
+
+| Righe | Processi | Tempo | Righe al secondo | Accuratezza | Memoria del processo |
+|---:|---:|---:|---:|---:|---:|
+| 200.000 | 1 | 113 s | 1.771 | 0,9095 | 0,9 GB |
+| 200.000 | 4 | 72 s | 2.791 | 0,9090 | 0,8 GB |
+| 1.000.000 | 2 | 211 s | 4.746 | 0,9093 | 1,0 GB |
+| 2.000.000 | 2 | 370 s | 5.402 | 0,9096 | 1,1 GB |
+
+La memoria comprende la tabella generata in memoria per la prova. Circa 46
+secondi di ogni riga sono la ricerca dei livelli sulle 20.000 righe estratte:
+non dipendono dalla grandezza.
+
+### Che cosa dicono, e che cosa no
+
+- Tutte le soglie sono superate e su venti split nessuna differenza con la
+  versione precedente supera il suo errore. I tempi scendono fino a 4 volte,
+  tranne sulle tabelle piccolissime, dove sono uguali.
+- Su Sonar il livello di lavoro ha molti più concetti di prima (74 contro 17 su
+  166 righe): partendo da ogni riga il giudizio sceglie un livello più fine.
+  L'accuratezza non ne risente, la leggibilità sì.
+- Il tempo è lineare nelle righe e la memoria non cresce con esse.
+- Leggere tutte le righe invece delle sole 20.000 estratte **non** ha aumentato
+  l'accuratezza nella prova sintetica (entrambe al massimo possibile): ciò che
+  è garantito è che le somme dei concetti siano sull'intera tabella.
+- Un miliardo di righe non è stato misurato. Alla velocità misurata (circa
+  3.000 righe al secondo per processo, tre passate comprese) sono circa 90 ore
+  con un processo e proporzionalmente meno con più processi.
+- Provato e scartato: non riassegnare mai le righe dopo i blocchi (pura somma,
+  come nel linguaggio). Sonar scende a 0,71 e Letter a 0,86: nella tabella la
+  riassegnazione serve, e resta.
+- Blocchi da 16 bastano ai dataset piccoli ma non a Letter (0,934); da qui la
+  regola fra 32 e 128.
+- Leggere le tabelle piccole in più ordini (le ripartenze di prima): nessun
+  guadagno oltre il rumore, tempo triplo. Limitare i concetti specifici a un
+  quarto delle righe: Sonar −5 punti.
 
 ## Compatibilità
 
