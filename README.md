@@ -7,8 +7,8 @@ opzionale. Richiede Python 3.9 o successivo.
 
 ## Il modello
 
-Tabella e linguaggio usano **un solo modello**, il grafo dei concetti (profilo
-`concept-graph-v1`): un concetto è un nodo che riassume con somme le
+Tabella e linguaggio usano **un solo modello**, il grafo dei concetti (profili
+`concept-graph-v1` e, per i nuovi progetti di linguaggio, `concept-graph-v2`): un concetto è un nodo che riassume con somme le
 osservazioni che gli appartengono; riconoscere è massa per somiglianza attesa;
 generalizzare unisce i due concetti la cui unione costa meno a chi legge;
 giudicare usa solo osservazioni che il concetto non contiene. La ricerca dei
@@ -34,7 +34,9 @@ Stato, in breve:
   stesso protocollo. I numeri e i limiti sono in MODEL-RESULTS.
 - **Linguaggio.** Con SmolLM2-135M a pesi invariati, 64 token esatti più 64
   concetti danno NLL 3,01 contro 3,23 del controllo a pari memoria e 2,76
-  dell'attenzione densa. Lo strato è più lento della densa ai contesti provati.
+  dell'attenzione densa. Lo strato v1 è più lento della densa ai contesti provati;
+  lo strato v2 (struttura fissa, `docs/ALGEBRAIC-CONCEPTS.md`) la supera sui
+  contesti lunghi.
   Che un modello addestrato con lo strato a concetti eguagli la densa non è
   ancora dimostrato: il laboratorio generativo serve a misurarlo.
 
@@ -123,7 +125,7 @@ paper, le ricevute dei benchmark sintetici e le prove HTTP dell'immagine.
 ## Contenuto del repository
 
 - `acan/`: libreria (`acan/core/concepts.py` nucleo tabulare,
-  `acan/lm/concept_attention.py` strato di attenzione,
+  `acan/lm/graph_scan.py` strato di attenzione (v2), `acan/lm/concept_attention.py` (v1),
   `acan/concept_algebra.py` funzioni comuni)
 - `tests/`: test unitari e, in `tests/browser/`, test nel browser
 - `scripts/`: valutazioni e sonde che rigenerano le misure dei documenti
