@@ -28,12 +28,18 @@ PRE_ONE_STEP_INFERENCE = '6f7e154f97725ffa1da7f441f33f67ba849303c8e788caf846af3d
 # These additions act only when a project asks for them, so every earlier project continues.
 PRE_NATIVE_TRAINING = 'd7c50cf716bbb41b944dd2328458915a0582f0bcd6b0f69dfa02e128ca9af281'
 PRE_NATIVE_INFERENCE = '6ee3c0106aa03e15396eb9b9f9c38869f7b80f03ba1d395d69a57e8d63ffb80a'
+# Sources of release 8.6.0 as merged, before the concept-graph-v2 layer (acan/lm/graph_scan.py).
+# The new layer is chosen by its own profile, so projects of every earlier profile continue.
+PRE_SCAN_TRAINING = '98e8088b3515ea60663323dcf2820e3cc33a103f981fb234fd9f2457cc5f3bab'
+PRE_SCAN_INFERENCE = 'a5d6ce979b49f4936fa371fb4f60f760de18916ccd95453f063fa76fc426b727'
 
 
 def training_identity(values, config, checkpoint_root, selected, current):
     from pathlib import Path
     from . import checkpoints
     candidates = [current, PRE_NATIVE_TRAINING, PRE_ONE_STEP_TRAINING]
+    if config.get('routing_profile') != 'concept-graph-v2':
+        candidates.insert(1, PRE_SCAN_TRAINING)
     if config.get('routing_profile') != 'concept-graph-v1':
         candidates.append(PRE_GRAPH_TRAINING)
     if config.get('routing_profile') not in ('cp-v9', 'concept-graph-v1'):

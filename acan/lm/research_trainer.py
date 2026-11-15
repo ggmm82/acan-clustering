@@ -19,7 +19,7 @@ from .native import resolve_base
 def contract():
     root=Path(__file__).parent
     return hashlib.sha256(b''.join((root/name).read_bytes() for name in
-        ('research_trainer.py','research_data.py','distillation.py','cp_objective.py','research_options.py','research_model.py','full_attention.py','shared_attention.py','compatibility.py'))+(root.parent/'algebra.py').read_bytes()+(root/'cp_attention.py').read_bytes()+(root.parent/'core'/'variational.py').read_bytes()+(root/'concept_attention.py').read_bytes()+(root.parent/'concept_algebra.py').read_bytes()).hexdigest()
+        ('research_trainer.py','research_data.py','distillation.py','cp_objective.py','research_options.py','research_model.py','full_attention.py','shared_attention.py','compatibility.py'))+(root.parent/'algebra.py').read_bytes()+(root/'cp_attention.py').read_bytes()+(root.parent/'core'/'variational.py').read_bytes()+(root/'concept_attention.py').read_bytes()+(root.parent/'concept_algebra.py').read_bytes()+(root/'graph_scan.py').read_bytes()+(root/'graph_attention.py').read_bytes()).hexdigest()
 
 
 def warm_source(store, job):
