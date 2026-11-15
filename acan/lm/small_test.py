@@ -81,7 +81,7 @@ class TinyLM(nn.Module):
                 return Attention(d, heads)
             if kind == 'graph':                                  # the dyadic concept graph (acan/lm/graph_scan.py)
                 from acan.lm.graph_scan import GraphScanAttention
-                return GraphScanAttention(d, heads, window=window, bins=slots, seed=index)
+                return GraphScanAttention(d, heads, window=window, bins=slots)
             if kind == 'window':
                 return Attention(d, heads, window)
             layer = ConceptGraphAttention(config, index, slots=slots, window=window)
