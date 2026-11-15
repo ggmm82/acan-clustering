@@ -55,7 +55,7 @@ class ModelPackageTest(unittest.TestCase):
         names = set(zipfile.ZipFile(io.BytesIO(self.blob)).namelist())
         self.assertEqual(names, {'requirements.txt', 'README.md', '__main__.py', 'modello_concetti/__init__.py',
                                  'modello_concetti/model.py', 'modello_concetti/concepts.py',
-                                 'modello_concetti/concept_algebra.py', 'modello_concetti/encoding.py',
+                                 'modello_concetti/concept_algebra.py', 'modello_concetti/scan.py', 'modello_concetti/encoding.py',
                                  'modello_concetti/state.json'})                # only what is needed
         requirements = zipfile.ZipFile(io.BytesIO(self.blob)).read('requirements.txt').decode()
         self.assertIn('numpy', requirements)

@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 
 from acan.concept_algebra import LOG_2PI, centre_variance, pair_mass, reader_cost, reader_radius, unbiased
-from acan.core.scan import scan
+from acan.core.scan import Scan, scan, scan_part
 
 TIE = .05                                                       # relative difference of pair criteria that counts as a tie
 CONSTANT = 1e-6                                                 # standardized dispersion below which an attribute is constant
@@ -40,6 +40,34 @@ class Encoder:
         std = np.nan_to_num(np.nanstd(values, axis=0)) if values.size else np.zeros(0)
         self.std = np.where(std > 1e-12, std, 1.)
         self.categories = {c: sorted(frame[c].dropna().astype(str).unique()) for c in self.categorical}
+        self.offsets, start = {}, 0
+        for c in self.categorical:
+            self.offsets[c] = start
+            start += len(self.categories[c])
+        self.width = start
+        return self
+
+    def fit_chunks(self, chunks):
+        """The same statistics from a table read a chunk at a time: sums are enough."""
+        count = total = square = None
+        for frame in chunks:
+            if count is None:
+                self.numeric = [c for c in frame if pd.api.types.is_numeric_dtype(frame[c])]
+                self.categorical = [c for c in frame if c not in self.numeric]
+                count, total, square = (np.zeros(len(self.numeric)) for _ in range(3))
+                seen = {c: set() for c in self.categorical}
+            values = frame[self.numeric].apply(pd.to_numeric, errors='coerce').to_numpy(float) if self.numeric else np.zeros((len(frame), 0))
+            present = ~np.isnan(values)
+            values = np.where(present, values, 0.)
+            count, total, square = count+present.sum(0), total+values.sum(0), square+(values*values).sum(0)
+            for c in self.categorical:
+                seen[c].update(frame[c].dropna().astype(str).unique())
+        if count is None:
+            raise ValueError('Tabella vuota.')
+        self.mean = np.where(count > 0, total/np.maximum(count, 1), 0.)
+        std = np.sqrt(np.maximum(square/np.maximum(count, 1)-self.mean**2, 0.))
+        self.std = np.where(std > 1e-12, std, 1.)
+        self.categories = {c: sorted(seen[c]) for c in self.categorical}
         self.offsets, start = {}, 0
         for c in self.categorical:
             self.offsets[c] = start
@@ -81,9 +109,11 @@ class ConceptModel:
 
     def __init__(self, max_concepts=1024, rows_per_concept=4, kappa=1., seed=0,
                  judged_rows=2000, merge_fraction=.05, em_steps=3, restarts=1, restart_rows=5000,
-                 covariance=True, covariance_attributes=128, shared_start=128, bins=None, refine_rows=20000):
+                 covariance=True, covariance_attributes=128, shared_start=128, bins=None, refine_rows=20000, chunk_rows=100000, workers=1):
         self.shared_start = shared_start
         self.bins, self.refine_rows = bins, refine_rows          # concepts of a block of the scan; rows the levels are refined on
+        self.chunk_rows = chunk_rows                             # rows read at a time from a large table
+        self.workers = workers                                   # processes that read the chunks of a large table
         self.covariance, self.covariance_attributes = covariance, covariance_attributes
         self.cross, self.cov = None, np.zeros(0, int)            # cross products of the working level, if adopted
         self.max_concepts, self.rows_per_concept = max_concepts, rows_per_concept
@@ -491,17 +521,89 @@ class ConceptModel:
         top = max(step['pair_criterion'] for step in steps)
         return min((step for step in steps if step['pair_criterion'] >= top-TIE*abs(top)), key=lambda step: step['k'])
 
-    def fit(self, frame, labels=(), encoder=None, progress=None):
-        self.labels = list(labels)
-        self.encoder = encoder or Encoder().fit(frame)
-        base = self.encoder.transform(frame)
-        n = len(frame)
+    def _roots(self, base):
+        """Frequencies and impurities of the table, and the grid of its numbers: the scale of the root."""
         observed = np.zeros(self.encoder.width)
         for block in self._blocks():
             observed[block] = max(base[2][:, block].sum(), 1)
         self.root_p = np.maximum(base[2].sum(0)/observed, 1e-12)
         self.root_g = np.array([1-(self.root_p[block]**2).sum() for block in self._blocks()])
         self.resolution = self._resolution(base)
+
+    def fit(self, frame, labels=(), encoder=None, progress=None):
+        if len(frame) > self.refine_rows:                        # a large table is read a chunk at a time
+            step = self.chunk_rows
+            return self.fit_chunks(lambda: (frame.iloc[start:start+step] for start in range(0, len(frame), step)),
+                                   labels, encoder, progress)
+        self.labels = list(labels)
+        self.encoder = encoder or Encoder().fit(frame)
+        self.rows = len(frame)
+        return self._learn(self.encoder.transform(frame), progress)
+
+    def fit_chunks(self, read, labels=(), encoder=None, progress=None):
+        """Learn from a table too large to hold: ``read()`` gives its rows as an iterator of frames.
+
+        Three passes, each linear in the rows and with one chunk in memory:
+        1. the scale of every attribute, and ``refine_rows`` rows drawn at random;
+        2. the scan: every row enters a block once, and the blocks are generalized (acan/core/scan.py);
+        3. the levels are found on the rows drawn, starting from the concepts of the scan, and in a
+           last pass every row is added to the concepts of the working level: their sums are over
+           the whole table.
+        """
+        self.labels = list(labels)
+        rng = np.random.default_rng(self.seed)
+        self.encoder = encoder or Encoder().fit_chunks(read())
+        drawn, keys, self.rows = None, np.zeros(0), 0
+        for frame in read():                                     # the rows with the smallest random keys: a uniform draw
+            self.rows += len(frame)
+            key = rng.random(len(frame))
+            drawn = frame if drawn is None else pd.concat((drawn, frame))
+            keys = np.concatenate((keys, key))
+            if len(keys) > self.refine_rows:
+                keep = np.sort(np.argpartition(keys, self.refine_rows)[:self.refine_rows])
+                drawn, keys = drawn.iloc[keep], keys[keep]
+        sample = self.encoder.transform(drawn)
+        self._roots(sample)
+        k = int(min(self.max_concepts, max(self.rows//self.rows_per_concept, 1)))
+        blocks = Scan(self, self._block(k))
+        if self.workers > 1:                                     # chunks are independent: their blocks are added afterwards
+            import multiprocessing
+            from concurrent.futures import ProcessPoolExecutor
+            with ProcessPoolExecutor(self.workers, mp_context=multiprocessing.get_context('spawn')) as pool:
+                waiting = []
+                for frame in read():                             # a few chunks in flight, in the order of the table
+                    waiting.append(pool.submit(scan_part, (self, blocks.bins, frame)))
+                    if len(waiting) >= 2*self.workers:
+                        blocks.absorb(waiting.pop(0).result())
+                for part in waiting:
+                    blocks.absorb(part.result())
+        else:
+            for frame in read():
+                blocks.push(self.encoder.transform(frame))
+        self._learn(sample, progress, specific=blocks.result())
+        if self.rows > len(drawn):
+            self._finish(read)
+        return self
+
+    def _finish(self, read):
+        """Every row of the table is added to the concepts of the working level, as it recognizes them."""
+        total, cross = None, None
+        for frame in read():
+            data = self._seen(self.encoder.transform(frame))[0]
+            t = self._route(self.statistics, data, self.train_weights)[0]
+            part = self._statistics(t, data)
+            total = part if total is None else {key: total[key]+part[key] for key in part}
+            if self.cross is not None:
+                products = self._cross(t, data)
+                cross = products if cross is None else cross+products
+        self.statistics = total
+        if self.cross is not None:
+            self.cross = cross
+        self.levels[-1]['statistics'] = self.statistics
+
+    def _learn(self, base, progress=None, specific=None):
+        n = len(base[0])
+        self._roots(base)
         features = len(self.encoder.numeric)+len(self.encoder.categorical)-len(self.labels)
         weights = self.train_weights = self._weights(float(max(features, 1)))   # targets weigh as much as all features
         rng = np.random.default_rng(self.seed)
@@ -509,7 +611,7 @@ class ConceptModel:
         root = base
 
         # Level 1: the general concepts of the whole table, on the scale of the root.
-        general = self._path(root, weights, judged, rng, progress)
+        general = self._path(root, weights, judged, rng, progress, specific=specific)
         single = min(general, key=lambda step: step['k'])
         first = self._most_general(general)
         if first['pair_criterion'] <= 1e-9:
