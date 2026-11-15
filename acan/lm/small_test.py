@@ -79,9 +79,9 @@ class TinyLM(nn.Module):
         def attention(index):
             if kind == 'dense':
                 return Attention(d, heads)
-            if kind == 'algebraic':                              # concepts without loops (acan/lm/algebraic_attention.py)
-                from acan.lm.algebraic_attention import AlgebraicConceptAttention
-                return AlgebraicConceptAttention(d, heads, window=window, seed=index)
+            if kind == 'graph':                                  # the dyadic concept graph (acan/lm/graph_scan.py)
+                from acan.lm.graph_scan import GraphScanAttention
+                return GraphScanAttention(d, heads, window=window, bins=slots, seed=index)
             if kind == 'window':
                 return Attention(d, heads, window)
             layer = ConceptGraphAttention(config, index, slots=slots, window=window)

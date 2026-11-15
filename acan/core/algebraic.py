@@ -16,7 +16,7 @@ Here a row's concept is a code computed in closed form:
   chooses how many levels, the fewest within one standard error of the best.
 
 No merge is searched; the only repetitions are over levels (at most ``max_depth``), each a pass of
-grouped sums over all rows. The same rule assigns tokens in acan/lm/algebraic_attention.py, where
+grouped sums over all rows. A fixed structure also assigns tokens in acan/lm/graph_scan.py, where
 the code is the age of a token and the signs of its key.
 """
 import numpy as np

@@ -1,76 +1,103 @@
-# Concetti algebrici: la lettura del contesto senza cicli
+# Concetti algebrici: il grafo dei concetti senza cicli
 
-Stato: prototipo in sviluppo (`acan/lm/algebraic_attention.py`), non integrato
-nel laboratorio né nel modello nativo. Questo documento raccoglie la
-matematica e le misure.
+Stato: prototipo misurato, **non integrato** nell'apprendimento lungo. Il piano
+per portarlo nel prodotto è in [ALGEBRAIC-REVISION-PLAN.md](ALGEBRAIC-REVISION-PLAN.md).
 
-## Che cosa resta uguale
+## Il livello del linguaggio: `acan/lm/graph_scan.py`
 
-Il concetto è quello del grafo dei concetti (MODEL.md), lo stesso della parte
-tabulare: un nodo che conserva solo **somme** delle osservazioni che contiene,
+### Che cosa resta uguale al modello del main
 
-    C = Σ 1,   U = Σ z,   Q = Σ z²,   Y = Σ y,
+Tutto ciò che è matematica del concetto (MODEL.md, `concept_attention.py`):
 
-e che si legge con **massa per somiglianza attesa**:
+- il nodo conserva solo somme: `C = Σ 1`, `U = Σ chiave` (prima della posizione),
+  `P = Σ posizione`, `V = Σ valore`;
+- si legge con massa per somiglianza: `logit = log C + s · q · centro`, il centro
+  ruotato alla posizione media dei suoi membri;
+- gli ultimi `window` token sono letti esatti;
+- la struttura è scelta senza gradiente, le somme sono differenziabili;
+- con abbastanza concetti la lettura **è** l'attenzione normale (verificato a 10⁻¹⁰).
 
-    logit = log C + E[s·q·z] ≈ log C + s·q·g + ½ s² q²·σ²,   g = U/C,  σ² = Q/C − g².
+### Che cosa cambia: come si decide chi va con chi
 
-Nel linguaggio l'osservazione `z` di un token è la sua chiave (con la sua
-posizione), `y` il suo valore, `q` la domanda di chi legge. Gli ultimi
-`window` token sono letti esatti, come oggi.
+Nel main, quando i concetti superano il massimo, un ciclo unisce una coppia alla
+volta (quella che costa meno al lettore): ogni passo dipende dal precedente, e
+il ciclo gira per ogni blocco di 16 token. È il motivo della lentezza.
 
-## Che cosa cambia: a quale concetto va un'osservazione
+Qui la struttura è **fissa e diadica**, come i livelli del grafo tabulare:
 
-Oggi lo strato **cerca** le unioni: quando i concetti sono troppi unisce la
-coppia che costa meno a chi legge, una coppia alla volta. È una ricerca
-greedy: ogni passo dipende dal precedente, quindi non si parallelizza.
+- un blocco di livello `j` copre `2ʲ` token consecutivi e ha al massimo `bins`
+  concetti; è la generalizzazione dei suoi due figli di livello `j−1`;
+- finché i figli hanno insieme al massimo `bins` concetti restano esatti;
+- altrimenti i loro `2·bins` concetti si sommano in `bins`: la partizione è
+  quella che abbassa la dispersione delle chiavi dentro i concetti, cioè alza la
+  CP (segni lungo le direzioni principali dei centri, poi un passo di Lloyd, che
+  può solo abbassarla). Numero di passi fisso, tutti i blocchi insieme;
+- chi legge in posizione `t` ha `n = t − window + 1` token vecchi e legge i
+  blocchi della scrittura binaria di `n`: fine vicino, grosso lontano, al massimo
+  `bins · (log₂ n + 1)` concetti. **Il numero di concetti non può esplodere.**
 
-Il prototipo **assegna con una formula**, nota prima di leggere:
+Ogni concetto di un livello è la somma di concetti del livello sotto: livelli
+annidati e additivi, come nel grafo tabulare.
 
-- **Livelli per età.** I token vecchi di chi legge in posizione `t` (quelli
-  prima della sua finestra, `n = t − window + 1`) sono coperti dai segmenti
-  della scrittura binaria di `n` (decomposizione di Fenwick): i token vecchi
-  più recenti in segmenti piccoli, i più antichi in segmenti grandi. Al
-  massimo `log₂ n + 1` segmenti. I livelli del grafo tabulare (concetti
-  generali sopra, particolari sotto) qui sono le dimensioni dei segmenti.
-- **Contenuto.** Dentro ogni segmento una chiave va in uno di `2ʳ` gruppi
-  secondo i segni di `r` proiezioni fisse (fissate dal seme, senza parametri):
-  chiavi diverse restano separate.
+**Addestramento**: tutti i livelli una volta sola per tutti i lettori
+(`log₂ T` prodotti fra matrici, struttura fissa come i layer di una rete).
+**Generazione**: gli stessi blocchi tenuti come un contatore binario; quando un
+token esce dalla finestra entra al livello 0 e i blocchi uguali si generalizzano
+con la stessa funzione. I due modi danno lo stesso risultato (differenze sotto
+10⁻¹⁰, nei test).
 
-Poiché l'assegnazione è nota, ogni statistica di ogni concetto per ogni
-lettore è una **differenza di somme cumulative**. Tutto il calcolo è fatto di
-somme cumulative, prodotti fra matrici e una softmax: niente ricerca e
-nessun ciclo che dipenda dai dati. L'unica ripetizione è sui livelli
-(`log₂ T + 1` passi fissi, come i layer di una rete).
+### Misure (CPU, un thread, un solo seme)
 
-**Memoria mentre scrive.** Le somme dei segmenti si tengono come un contatore
-binario: all'arrivo di un token due segmenti uguali si sommano. Per lettore e
-per layer: `window` token esatti più al massimo `(log₂ T + 1)·2ʳ` concetti.
-Con un milione di token e `r = 2`: 16 + 84 vettori, contro un milione
-dell'attenzione normale.
+Addestramento, token al secondo, modello micro (256 dimensioni, 4 layer,
+finestra 32):
 
-## Verifiche
+| Token per pezzo | Attenzione normale | Main (32 concetti) | Grafo, 8 per blocco | Grafo, 16 per blocco |
+|---:|---:|---:|---:|---:|
+| 256 | 3.469 | 511 | 2.238 | 2.358 |
+| 1.024 | 2.415 | 354 | 1.984 | 2.291 |
+| 2.048 | 1.023 | 331 | 2.226 | 2.161 |
+| 4.096 | 485 | — | 2.082 | 2.261 |
+| 8.192 | 242 | — | 1.894 | 2.017 |
 
-- La versione veloce coincide con una versione di riferimento scritta con
-  i cicli (differenze sotto 10⁻⁹), con e senza il termine di varianza.
-- Nessuna posizione legge il futuro (gradiente nullo verso i token
-  successivi) e i token più vecchi sono letti, attraverso i concetti.
-- I segmenti di un lettore coprono esattamente i suoi token vecchi.
+Generazione, token al secondo di un layer dopo N token di contesto:
 
-## Velocità (CPU, un thread, addestramento, modello di 256 dimensioni e 4 layer)
+| Contesto | Attenzione normale | Main | Grafo, 8 | Grafo, 16 |
+|---:|---:|---:|---:|---:|
+| 256 | 3.853 | 830 | 2.000 | 2.104 |
+| 1.024 | 1.705 | 921 | 2.024 | 1.902 |
+| 4.096 | 313 | 937 | 1.919 | 1.794 |
+| 16.384 | 59 | 793 | 1.664 | 1.343 |
 
-| Token per pezzo | Attenzione normale | Concetti attuali | Concetti algebrici |
-|---:|---:|---:|---:|
-| 256 | 2.241 | 378 | 903 |
-| 1.024 | 1.747 | 468 | 975 |
-| 2.048 | 933 | 384 | 899 |
-| 4.096 | 400 | — | 688 |
-| 8.192 | 177 | — | 551 |
+Vettori tenuti a 16.384 token: attenzione normale 16.448, grafo 48 (8 per
+blocco) o 64 (16 per blocco).
 
-Token al secondo. A 16.384 token l'attenzione normale ha esaurito la memoria
-del server; i concetti algebrici no. Sui pezzi corti l'attenzione normale
-resta più veloce (le sue moltiplicazioni fra matrici sono le più ottimizzate
-che esistano); dai 2.048 token in su i concetti algebrici la superano.
+Qualità, prova in piccolo (modellini da 64 dimensioni, finestra 16, 16 concetti
+nel main):
+
+| Prova | Attenzione normale | Solo finestra | Main | Grafo, 16 | Grafo, 8 | Grafo, 4 |
+|---|---:|---:|---:|---:|---:|---:|
+| Memoria (risposta a 49 token), % giuste | 100 | 5,5 | 94,2 | **99,9** | 88,0 | 47,1 |
+| Memoria lontana (fino a 177 token), % giuste | 100 | — | **93,0** | 24,2 | 25,0 | — |
+| Testo, bit per carattere (meno è meglio) | 2,518 | 2,451 | 2,538 | 2,527 | 2,529 | 2,521 |
+| Tempo della prova di memoria | 84 s | 83 s | 363 s | 183 s | 220 s | 206 s |
+
+**Che cosa dicono.** Il grafo è da 4 a 6 volte più veloce del main in
+addestramento e circa 2 volte in generazione, costante con la lunghezza; supera
+l'attenzione normale da circa 1.200 token in su. Sulla memoria vicina e sul
+testo è alla pari o meglio del main. **Sulla memoria lontana fallisce**: 24%
+contro 93%. Il main tiene esatti i token che le domande continuano a leggere;
+la partizione del grafo guarda solo la dispersione delle chiavi e, dopo più
+generalizzazioni, mescola le risposte con il riempitivo. Finché questo non è
+risolto il grafo non può sostituire il main.
+
+Provato e scartato:
+
+- contenitori per segni di proiezioni casuali (la prima versione,
+  `algebraic_attention.py`, tolta): memoria 25%, e più lenta;
+- unione a coppie di minimo aumento della dispersione (Ward) a passi fissi:
+  memoria 25%;
+- dispersione pesata con l'energia delle domande viste fin lì (opzione
+  `reader`, spenta): nessun guadagno sulla memoria lontana, peggio sulla vicina.
 
 ## Prima la tabella: `acan/core/algebraic.py`
 
@@ -166,18 +193,14 @@ passano. Restano da migliorare: Letter è lenta (358 s contro 98 s: la ricerca
 della struttura per ogni concetto è ancora un ciclo Python sui concetti) e Vote
 è vicina alla soglia.
 
-## Qualità del linguaggio
+## Coerenza fra tabella e linguaggio: valutazione
 
-Rimandata: prima la tabella, compresa la parte senza target.
-
-## Verso il modello unico, tabulare e generativo
-
-Il nodo e la lettura sono già quelli tabulari: stesse somme, stessa formula
-di somiglianza attesa con la varianza. Resta diversa la **partizione**: nella
-tabella la trova una ricerca (il criterio CP), qui la dà una formula. La
-direzione per unificarle è la stessa nei due casi: una partizione gerarchica
-data da un codice (i bit dei segni delle proiezioni, e nel linguaggio i bit
-dell'età), con le statistiche additive di ogni prefisso del codice. Nella
-tabella questo vorrebbe dire concetti come celle di un albero di proiezioni,
-calcolati per gruppi in un solo passaggio; va misurato sui dataset tabulari
-prima di adottarlo.
+- **Uguale nei due**: il nodo (somme), la lettura (massa per somiglianza), il
+  criterio di partizione (dispersione dentro i concetti, cioè la CP), i livelli
+  annidati e additivi.
+- **Diverso**: nella tabella i livelli nascono dai dati e finiscono dove le
+  divisioni non sono più significative; nel linguaggio sono fissati dall'età.
+- **`CUConceptModel` non è pronto a sostituire il modello tabulare del main**:
+  supera le soglie, ma su Letter impiega 358 s contro 98 s e usa 2.605 concetti,
+  e per prevedere aggiunge un secondo criterio (Fisher) che non viene dalla CP.
+  Resta un prototipo di studio.
