@@ -159,7 +159,9 @@ livello in $\lfloor\log_2 T\rfloor$ passi, contro $O(T^2d)$ dell'attenzione
 ordinaria. Mentre il modello scrive, gli stessi blocchi sono un contatore
 binario: il token che esce dalla finestra entra al livello 0 e due blocchi
 uguali diventano il loro genitore con la stessa $\operatorname{gen}_B$; lettura
-in addestramento e in scrittura coincidono.
+in addestramento e in scrittura coincidono (in doppia precisione esattamente;
+in precisione singola due unioni di costo quasi uguale possono scambiarsi e la
+lettura cambia di poco).
 
 Nel profilo precedente (`concept-graph-v1`) i concetti del passato erano un
 solo gruppo di $B$ e le unioni seguivano l'ordine di arrivo dei token, con le

@@ -93,8 +93,10 @@ testo della stessa lunghezza. Quindi:
   unioni) e si fanno per tutti i blocchi contemporaneamente; dopo ogni unione
   si ricalcola solo la riga del concetto nuovo;
 - mentre scrive, il modello tiene gli stessi blocchi e li aggiorna un token alla
-  volta: il risultato è identico a quello dell'addestramento (verificato a
-  dieci cifre), anche se riceve un prompt intero e poi continua.
+  volta: il risultato è quello dell'addestramento (identico a dieci cifre in
+  doppia precisione; nei modelli veri, in precisione singola, due unioni di
+  costo quasi uguale possono scambiarsi e la lettura cambia di poco), anche
+  se riceve un prompt intero e poi continua.
 
 Che cosa **non** è cambiato: che cos'è un concetto, come lo si legge e il costo
 con cui si decide chi unire. Con abbastanza concetti il layer **è** l'attenzione

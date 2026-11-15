@@ -90,7 +90,14 @@ lungo il testo. Restano cicli di lunghezza fissa: i livelli e le `B` unioni.
 
 - addestramento e scrittura danno la stessa lettura (differenza sotto 10⁻¹⁰ in
   doppia precisione), anche caricando un prompt e continuando, e leggendo a
-  tratti di lunghezza qualsiasi;
+  tratti di lunghezza qualsiasi. In precisione singola, quella dei modelli
+  veri, due unioni di costo quasi uguale possono essere scelte in ordine
+  diverso nei due modi: sul modello micro appena nato, leggendo 600 token
+  tutti insieme oppure un prompt e poi il seguito, i logit differiscono al
+  massimo di 0,018 su un'ampiezza di 1,4 (v1: 0,001); su un testo fatto di
+  una sequenza ripetuta, dove le copie sono moltissime, di 0,03. Trattare
+  come copie esatte i concetti molto stretti toglie questo scarto ma ha
+  peggiorato la memoria lontana (85% invece di 99%) e non è stato adottato;
 - con abbastanza concetti, o una finestra che copre tutto, lo strato coincide
   con l'attenzione ordinaria del modello;
 - nessuna posizione legge il futuro; i token vecchi sono letti;
@@ -161,6 +168,8 @@ v1 26% e 26%. Memoria lontana: v2 25% e 26%, attenzione normale 25% e 26%.
   1.300 token, sul modello intero fino a circa 1.000.
 - Sulla qualità v2 non è sotto v1 in nessuna prova fatta.
 - La memoria non è più fissa: cresce con il logaritmo del contesto.
+- In precisione singola la lettura mentre scrive può scostarsi di poco da
+  quella dell'addestramento (vedi le garanzie): l'addestramento non ne risente.
 - Le prove sono su modellini e su pochi semi. Su GPU e sui modelli grandi la
   velocità va rimisurata.
 
