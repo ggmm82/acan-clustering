@@ -34,8 +34,11 @@ class SmallTestTest(unittest.TestCase):
         self.assertEqual((case['nearest_answer_distance'], case['layers']), (41, 3))
         self.assertTrue(0 <= case['concepts']['accuracy'] <= 1)
         self.assertEqual(set(result['efficiency']), {'text', 'memory'})
-        rows = result['cost']['rows']                                     # concepts keep the same vectors at every length
-        self.assertEqual({row['concepts']['kept_vectors'] for row in rows}, {32})
+        rows = result['cost']['rows']                                     # concepts: the window and 16 per level, not the length
+        for row in rows:
+            self.assertLessEqual(row['concepts']['kept_vectors'], 16+16*row['length'].bit_length())
+        from acan.lm.small_test import kept
+        self.assertEqual([kept(length, 16, 16) for length in (16, 40, 4096)], [16, 16+8+16, 16+16*8])
         self.assertEqual([row['dense']['kept_vectors'] for row in rows], [row['length'] for row in rows])
         self.assertGreater(result['memory_setup']['nearest_answer_distance'], result['memory_setup']['exact_tokens'])
         json.dumps(result, allow_nan=False)

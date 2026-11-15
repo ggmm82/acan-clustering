@@ -109,9 +109,64 @@ zero solo fra due copie dello stesso concetto: unire copie è sempre gratuito.
 
 Si parte da molti concetti specifici e si unisce ogni volta la coppia con
 $\Delta$ minimo. La sequenza delle unioni è un albero di generalizzazione: in
-basso i casi particolari, in alto un solo concetto. Nel linguaggio i token che
-le query continuano a leggere, come i primi del contesto, hanno un costo alto
-e restano esatti da soli.
+basso i casi particolari, in alto un solo concetto.
+
+**Nel linguaggio: la stessa regola su una struttura fissa.** Il costo
+$\Delta$ è lo stesso, calcolato dalle stesse somme. Le letture ricevute da un
+token sono le quote di attenzione che ha avuto dai lettori che lo avevano nella
+finestra esatta di $w$ token:
+
+$$
+a_p=\sum_{t=p}^{p+w-1}\frac{e^{\lambda\,q_t\cdot k_p}}{\sum_{u=t-w+1}^{t}e^{\lambda\,q_t\cdot k_u}} ,
+$$
+
+note nel momento in cui il token esce dalla finestra; un concetto somma quelle
+dei suoi membri (i concetti mai letti pesano un millesimo della media, così le
+copie si uniscono comunque per prime). Il raggio è la dispersione delle chiavi
+attorno al centro, $\rho_i^2=\frac1d\big(S_i/C_i-\lVert U_i\rVert^2/C_i^2\big)$ con
+$S_i=\sum\lVert k\rVert^2$: le chiavi di una testa hanno tutte la stessa scala.
+
+Ciò che è fissato è **quando** e **fra quali** concetti si unisce. I token più
+vecchi della finestra sono divisi in blocchi diadici: un blocco di livello $j$
+copre $2^j$ token consecutivi e ha al massimo $B$ concetti. È la
+generalizzazione dei suoi due figli di livello $j-1$:
+
+$$
+\mathcal B_j=\operatorname{gen}_B\big(\mathcal B_{j-1}^{\text{sinistro}}\cup\mathcal B_{j-1}^{\text{destro}}\big),
+$$
+
+dove $\operatorname{gen}_B$ lascia i concetti come sono se sono al massimo $B$
+(il blocco è esatto) e altrimenti unisce la coppia di $\Delta$ minimo finché ne
+restano $B$: da $2B$ a $B$ sono esattamente $B$ unioni, un numero che dipende
+dalle dimensioni e non dai dati. Ogni concetto di un livello è somma di
+concetti del livello sotto: i livelli sono annidati e additivi come quelli del
+grafo tabulare.
+
+Chi legge in posizione $t$ ha $n=t-w+1$ token vecchi e legge i blocchi della
+scrittura binaria di $n$: se $n=\sum_j b_j2^j$, un blocco di livello $j$ per
+ogni $b_j=1$, i più grandi sui token più antichi. Coprono ogni token vecchio
+una volta sola, e sono al massimo $\lfloor\log_2 n\rfloor+1$:
+
+$$
+\#\{\text{vettori letti}\}\;\le\;w+B\,(\lfloor\log_2 n\rfloor+1).
+$$
+
+Con $B\ge n$ nessuna unione avviene e la lettura è l'attenzione ordinaria.
+
+Poiché la struttura non dipende dai dati, ogni livello è lo stesso calcolo per
+tutti i blocchi e per tutti i lettori insieme: $O(T\,B\,d)$ operazioni per
+livello in $\lfloor\log_2 T\rfloor$ passi, contro $O(T^2d)$ dell'attenzione
+ordinaria. Mentre il modello scrive, gli stessi blocchi sono un contatore
+binario: il token che esce dalla finestra entra al livello 0 e due blocchi
+uguali diventano il loro genitore con la stessa $\operatorname{gen}_B$; lettura
+in addestramento e in scrittura coincidono (in doppia precisione esattamente;
+in precisione singola due unioni di costo quasi uguale possono scambiarsi e la
+lettura cambia di poco).
+
+Nel profilo precedente (`concept-graph-v1`) i concetti del passato erano un
+solo gruppo di $B$ e le unioni seguivano l'ordine di arrivo dei token, con le
+letture contate anche dopo l'ingresso nel concetto: lo stesso costo, ma una
+ricerca in cui ogni passo dipende dal precedente.
 
 ### 4. Archi e rilevanza: la struttura che si può ispezionare
 
@@ -230,9 +285,11 @@ $$
 **Linguaggio.** Il prefisso è una tabella: ogni token passato è una riga con
 una chiave e un valore, e la query è una riga di cui si cerca il valore. Le
 chiavi vengono riassunte prima della rotazione di posizione e il concetto è
-riportato alla posizione media dei suoi membri. Uno stato di dimensione fissa
-non può conservare tutto un contesto arbitrariamente lungo: si riduce la
-perdita, non la si annulla.
+riportato alla posizione media dei suoi membri. I livelli del grafo sono i
+blocchi diadici del paragrafo 3: vicino al lettore blocchi piccoli ed esatti,
+lontano blocchi grandi e generali. Una memoria che cresce solo con il
+logaritmo non può conservare tutto un contesto arbitrariamente lungo: si
+riduce la perdita, non la si annulla.
 
 ### 7. Cosa dimostrano le verifiche
 
@@ -273,15 +330,32 @@ Limiti misurati:
 - Con poche osservazioni il numero di livelli cambia da una prova all'altra.
 - L'addestramento fa due ricerche invece di una: su Letter circa due minuti
   contro uno.
-- **Linguaggio.** Sostituendo l'attenzione di un modello preaddestrato in tutti
-  i livelli, senza addestrare nulla, l'errore di previsione è 2,76 con
+- **Linguaggio, modello preaddestrato (profilo v1).** Sostituendo l'attenzione
+  in tutti i livelli, senza addestrare nulla, l'errore di previsione è 2,76 con
   l'attenzione completa, 3,23 tenendo esatti i primi token e gli ultimi 124, e
   3,01 con 64 token esatti più 64 concetti. I concetti recuperano parte del
-  divario, non lo chiudono, e lo strato è ancora più lento dell'attenzione
-  completa. Leggere il contesto attraverso due livelli con comportamenti
-  condivisi, a parità di memoria, è risultato **peggiore** dei concetti su un
-  solo livello: nel linguaggio il modello usa i concetti del prefisso e, sotto,
-  la finestra esatta.
+  divario, non lo chiudono.
+- **Linguaggio, struttura fissa (profilo v2).** Modellini addestrati da zero
+  (64 dimensioni, finestra 16, 16 concetti; un processore, un thread):
+
+  | Prova (seme 0) | Attenzione normale | Solo finestra | v1 | v2 |
+  |---|---:|---:|---:|---:|
+  | Memoria, risposta a 49 token: % giuste | 100 | 5,5 | 94,2 | 100 |
+  | Memoria lontana, fino a 177 token: % giuste | 100 | — | 93 | 99 |
+  | Testo, bit per carattere (meno è meglio) | 2,518 | 2,451 | 2,538 | 2,522 |
+
+  La memoria lontana di v2 è 99-100% a ogni distanza provata, da 0 a 176 token.
+  Su altri due semi la prova di memoria non viene imparata in 2.000 passi
+  nemmeno dall'attenzione normale (25%, cioè il caso): lì v2 è 25% e 100% sulla
+  memoria vicina, v1 26% e 26%. Sono modellini e pochi semi: mostrano che la
+  struttura fissa non perde rispetto alla ricerca, non che un modello grande
+  converserà bene.
+
+  Le verifiche automatiche controllano che la lettura in addestramento e in
+  scrittura coincidano (anche caricando un prompt intero e poi continuando),
+  che con abbastanza concetti lo strato sia l'attenzione ordinaria, che nessuna
+  posizione legga il futuro, e che la memoria non superi
+  $w+B(\lfloor\log_2 n\rfloor+1)$. Velocità misurate: scheda Informatica.
 
 Le formule spiegano il comportamento e i suoi limiti; i risultati sui dati
 stabiliscono quanto quel comportamento sia utile nel problema concreto.

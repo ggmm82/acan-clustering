@@ -17,10 +17,11 @@ quadrato (testo lungo il doppio, lavoro quattro volte); anche la memoria cresce,
 perché si conserva un vettore per ogni pezzo letto.
 
 ACAN sostituisce l'attenzione con i **concetti**: gli ultimi pezzi restano
-esatti, quelli più vecchi vengono riassunti in un numero fisso di concetti. Ogni
-nuovo pezzo legge pochi pezzi esatti più i concetti, qualunque sia la lunghezza
-del testo. Obiettivo: un modello che conversa come un LLM tradizionale, con
-memoria fissa e costo per pezzo che non cresce con il testo.
+esatti, quelli più vecchi vengono riassunti in pochi concetti: precisi per il
+passato vicino, più generali per quello lontano. Ogni nuovo pezzo legge pochi
+pezzi esatti più i concetti. Obiettivo: un modello che conversa come un LLM
+tradizionale, con memoria e costo per pezzo che crescono appena con il testo
+(con il suo logaritmo: raddoppiare il testo aggiunge un solo livello).
 
 ### Token: i pezzi del testo
 
@@ -38,7 +39,7 @@ testo: basta che il tokenizer lo veda all'inizio, così impara pezzi come
 `    return`. Un'immagine diventa 32 righe di 32 pixel, ognuno uno di 256 colori;
 un suono 8.000 numeri al secondo; un'animazione una serie di piccole immagini.
 Il modello li legge e li scrive come parole, e la pagina li mostra come
-immagini, suoni e animazioni. Sono sequenze lunghe: è qui che la memoria fissa
+immagini, suoni e animazioni. Sono sequenze lunghe: è qui che la memoria piccola
 dei concetti conviene di più.
 
 ### Come legge un layer a concetti
@@ -51,16 +52,55 @@ precedenti, e il risultato è una media dei loro valori pesata dalla somiglianza
 In un layer a concetti:
 
 1. gli ultimi 16 token (la **finestra**) restano esatti;
-2. quando un token esce dalla finestra, entra in un **concetto**: un riassunto
-   che conserva solo somme (quanti token, la somma delle chiavi, dei valori,
-   delle posizioni) da cui si ricavano il centro e il valore medio;
-3. se i concetti sono più del massimo (16 sulla CPU), i due che si possono unire
-   costando meno a chi li legge diventano uno solo;
-4. la domanda del token nuovo legge insieme la finestra esatta e i concetti; un
-   concetto pesa quanto i token che riassume.
+2. quando un token esce dalla finestra, diventa un **concetto** di un solo
+   membro: un riassunto che conserva solo somme (quanti token, la somma delle
+   chiavi, dei valori, delle posizioni, e quanto è stato letto finché era nella
+   finestra), da cui si ricavano il centro e il valore medio;
+3. i concetti sono organizzati a **livelli**, come un contachilometri in base
+   due: un blocco copre 1, 2, 4, 8… token consecutivi e contiene al massimo 16
+   concetti. Due blocchi uguali, appena sono completi, diventano un blocco
+   grande il doppio;
+4. finché i due blocchi hanno insieme al massimo 16 concetti restano esatti;
+   se ne hanno di più, si uniscono a due a due i concetti che costano meno a chi
+   li legge, finché ne restano 16. È la stessa regola con cui il modello
+   tabulare generalizza le righe di una tabella: due copie dello stesso
+   concetto si uniscono gratis, un token che è stato letto molto resta da solo;
+5. la domanda del token nuovo legge insieme la finestra esatta e i blocchi del
+   suo passato: quelli vicini sono piccoli e precisi, quelli lontani grandi e
+   generali. Un concetto pesa quanto i token che riassume.
 
-Il numero di vettori letti resta finestra + concetti, a qualunque lunghezza.
-Nell'apprendimento lungo di questo laboratorio **tutti i layer** leggono così.
+I livelli crescono con il logaritmo della lunghezza: dopo 1.000 token un layer
+tiene al massimo 16 + 16 × 10 vettori, dopo un milione 16 + 16 × 20, contro
+1.000 e un milione dell'attenzione normale. Nell'apprendimento lungo di questo
+laboratorio **tutti i layer** leggono così.
+
+### Perché non c'è più il ciclo lento
+
+Nella versione precedente (`concept-graph-v1`) c'era un solo gruppo di concetti
+per tutto il passato: ogni 16 token nuovi un ciclo univa una coppia alla volta,
+e ogni unione dipendeva dalla precedente. Per questo un pezzo di testo andava
+letto a tratti, in sequenza, e il calcolo non si poteva fare tutto insieme.
+
+Ora (`concept-graph-v2`) **quando** si unisce e **fra quali** concetti è deciso
+dalla posizione, non da una ricerca: i blocchi sono sempre gli stessi per ogni
+testo della stessa lunghezza. Quindi:
+
+- durante l'addestramento tutti i blocchi di un livello si calcolano insieme,
+  con poche operazioni fra matrici, e tutti i token del pezzo leggono in un
+  colpo solo; i passi sono tanti quanti i livelli (circa il logaritmo della
+  lunghezza), come i layer di una rete;
+- dentro un blocco le unioni sono un numero fisso (da 32 concetti a 16: sedici
+  unioni) e si fanno per tutti i blocchi contemporaneamente; dopo ogni unione
+  si ricalcola solo la riga del concetto nuovo;
+- mentre scrive, il modello tiene gli stessi blocchi e li aggiorna un token alla
+  volta: il risultato è quello dell'addestramento (identico a dieci cifre in
+  doppia precisione; nei modelli veri, in precisione singola, due unioni di
+  costo quasi uguale possono scambiarsi e la lettura cambia di poco), anche
+  se riceve un prompt intero e poi continua.
+
+Che cosa **non** è cambiato: che cos'è un concetto, come lo si legge e il costo
+con cui si decide chi unire. Con abbastanza concetti il layer **è** l'attenzione
+normale (verificato). I progetti creati prima continuano con il loro strato.
 
 ### Come impara
 
@@ -105,7 +145,8 @@ Nell'apprendimento lungo di questo laboratorio **tutti i layer** leggono così.
   segnale di fine turno.
 - **Memoria mentre scrive.** Con l'attenzione normale ogni token scritto
   aggiunge un vettore alla memoria di ogni layer. Con i concetti la memoria di
-  un layer resta finestra + concetti.
+  un layer è la finestra più 16 concetti per livello: cresce con il logaritmo
+  del testo.
 
 ### Come si capisce se funziona
 
@@ -117,15 +158,52 @@ Nell'apprendimento lungo di questo laboratorio **tutti i layer** leggono così.
 3. **Risposte di prova**: le stesse domande a ogni salvataggio, per leggere i
    miglioramenti con i propri occhi.
 
+### Quanto è veloce (misurato)
+
+Sul processore di sviluppo, un thread, modello micro (4 layer, 256 dimensioni),
+token al secondo in addestramento:
+
+| Token per pezzo | Attenzione normale | Concetti di prima (v1) | Concetti di adesso (v2) |
+|---:|---:|---:|---:|
+| 256 | 3.534 | 542 | 1.543 |
+| 1.024 | 2.297 | 494 | 1.880 |
+| 2.048 | 956 | 437 | 2.025 |
+| 4.096 | 476 | — | 1.892 |
+| 8.192 | 250 | — | 1.845 |
+
+Sono i soli layer che leggono. Con tutto il resto del modello nativo micro
+(vocabolario di 32.000 token, strati interni), lo stesso confronto dà 886, 403 e
+765 token al secondo a 256 token, e 581, 337 e 792 a 2.048.
+
+Mentre scrive, per layer, dopo N token di contesto:
+
+| Contesto | Attenzione normale | v1 | v2 |
+|---:|---:|---:|---:|
+| 256 | 3.644 | 678 | 1.682 |
+| 1.024 | 1.924 | 892 | 1.531 |
+| 4.096 | 324 | 1.047 | 819 |
+| 16.384 | 67 | 917 | 1.254 |
+
+Dopo 16.384 token l'attenzione normale tiene 16.384 vettori per layer, i
+concetti 64. (Il valore a 4.096 cade nel momento in cui molti blocchi si
+uniscono insieme: è il caso peggiore, non la media.)
+
+L'attenzione normale rallenta con la lunghezza; i concetti no. Sui pezzi corti
+l'attenzione normale resta la più veloce, perché le sue moltiplicazioni fra
+matrici sono le più ottimizzate che esistano.
+
 ### Limiti attuali, in chiaro
 
-- Lo strato a concetti unisce i concetti con un ciclo in sequenza: sui testi
-  corti è da 10 a 25 volte più lento dell'attenzione normale; diventa più
-  veloce intorno ai 5.000 token di contesto.
+- Sui pezzi di 256 token lo strato a concetti è ancora più lento
+  dell'attenzione normale; la supera sui contesti lunghi (tabella sopra).
+- Le prove di qualità sono su modellini e su pochi semi: dicono che il
+  meccanismo non perde rispetto a quello di prima, non che un modello grande
+  converserà bene.
+- La memoria non è più fissa ma cresce con il logaritmo della lunghezza: è il
+  prezzo per poter calcolare tutto insieme.
 - Un modello che nasce da zero deve imparare tutto: la lingua, i fatti, il
-  modo di conversare. Sulla CPU il modello micro elabora qualche centinaio di
-  token al secondo (circa un miliardo in qualche mese); un chatbot che risponde
-  bene richiede miliardi di token e modelli più grandi, quindi una GPU.
+  modo di conversare. Un chatbot che risponde bene richiede miliardi di token
+  e modelli più grandi, quindi una GPU.
 - Un modello piccolo resta limitato con o senza concetti: impara a scrivere in
   modo scorrevole prima di sapere i fatti.
 - I concetti non riducono i dati necessari: lo strato cambia come si legge il
