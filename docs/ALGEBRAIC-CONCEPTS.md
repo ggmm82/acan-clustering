@@ -72,9 +72,43 @@ del server; i concetti algebrici no. Sui pezzi corti l'attenzione normale
 resta più veloce (le sue moltiplicazioni fra matrici sono le più ottimizzate
 che esistano); dai 2.048 token in su i concetti algebrici la superano.
 
-## Qualità
+## Prima la tabella: `acan/core/algebraic.py`
 
-(prova in piccolo: vedi la sezione aggiunta alla fine delle misure)
+Il modello tabulare algebrico riusa tutto `ConceptModel` (codifica, valori
+mancanti, somme dei concetti, lettura, giudizio sulle righe non viste,
+covarianza adottata se il giudizio la conferma, previsione) e cambia solo
+l'assegnazione: ogni concetto si divide in due alla propria media lungo la
+propria direzione, calcolata in forma chiusa (con un target la direzione di
+Fisher fra le sue classi, altrimenti la sua direzione principale). Ogni
+attributo pesa uno anche nelle direzioni. Il giudizio sceglie solo la
+profondità: la più semplice che legge le righe non viste come la migliore,
+confrontate riga per riga.
+
+Con target, stessi split dei test di qualità:
+
+| Dataset | Soglia | Algebrico | Attuale | Tempo algebrico / attuale |
+|---|---:|---:|---:|---|
+| Iris (10 split) | 0,95 | 0,977 | 0,973 | 0,0 / 0,1 s |
+| Wine (10) | 0,95 | 0,967 | 0,978 | 0,0 / 0,5 s |
+| Breast cancer (2) | 0,92 | 0,956 | 0,939 | 0,2 / 8 s |
+| Sonar (5) | 0,83 | 0,843 | 0,867 | 0,1 / 2,5 s |
+| Vehicle (3) | 0,75 | 0,810 | 0,790 | 0,4 / 6 s |
+| Vote (5) | 0,94 | 0,949 | 0,961 | 0,1 / 1,4 s |
+| Titanic (10) | 0,80 | 0,807 | 0,818 | 0,1 / 2,8 s |
+| credit-g (5) | 0,63 | 0,750 | 0,671 | 0,8 / 38 s |
+| Letter (1) | — | 0,973 | 0,974 | 39 / 98 s |
+
+Tutte le soglie sono superate, credit-g di molto.
+
+**Senza target non funziona ancora.** Sul gioco (quattro combinazioni di due
+attributi più rumore) le direzioni principali tagliano le combinazioni invece
+di separarle: 8-16 concetti e combinazioni mescolate, dove il modello attuale
+ne trova esattamente quattro. Anche la struttura dei livelli è diversa: ogni
+livello divide in due, quindi i concetti generali sono sempre due.
+
+## Qualità del linguaggio
+
+Rimandata: prima la tabella, compresa la parte senza target.
 
 ## Verso il modello unico, tabulare e generativo
 
