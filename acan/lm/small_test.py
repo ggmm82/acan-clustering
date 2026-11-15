@@ -4,8 +4,9 @@ Three tiny transformers, identical except for attention, are trained from scratc
 
 * ``dense``: ordinary attention over every previous token (the best one can do);
 * ``window``: only the last ``window`` tokens (the same memory as concepts, no concepts);
-* ``concepts``: the last ``window`` tokens exact, older ones summarized in ``slots`` concepts
-  (the concept-graph layer, acan/lm/concept_attention.py).
+* ``concepts``: the last ``window`` tokens exact, older ones summarized in at most ``slots``
+  concepts for every level of the concept graph (the layer of new projects, acan/lm/graph_scan.py;
+  ``concepts-v1`` is the earlier layer, acan/lm/concept_attention.py).
 
 Two tasks with a plain measure each:
 
@@ -79,6 +80,9 @@ class TinyLM(nn.Module):
         def attention(index):
             if kind == 'dense':
                 return Attention(d, heads)
+            if kind == 'concepts':                               # the layer of new projects (acan/lm/graph_scan.py)
+                from acan.lm.graph_scan import GraphScanAttention
+                return GraphScanAttention(d, heads, window=window, bins=slots)
             if kind == 'window':
                 return Attention(d, heads, window)
             layer = ConceptGraphAttention(config, index, slots=slots, window=window)
@@ -205,13 +209,19 @@ def memory(kind, pairs, filler, values, settings, shape, seed, check, varied=Fal
                 accuracy_by_question=[float(value) for value in by_question], training_curve=curve)
 
 
+def kept(length, window, slots):
+    """Vectors a concept layer holds after ``length`` tokens: the window and the blocks of its older tokens."""
+    old = max(length-window, 0)
+    return min(length, window)+sum(min(1 << level, slots) for level in range(old.bit_length()) if old >> level & 1)
+
+
 @torch.no_grad()
 def cost(shape, lengths, check):
     """Time per token of one pass over contexts of growing length, and the vectors each layer keeps.
 
     Ordinary attention compares every token with all the previous ones: its time per token grows
     with the context and its memory (the cache) holds every token. Concepts keep ``window`` exact
-    tokens and ``slots`` concepts whatever the length. The models are untrained: only the cost is measured.
+    tokens and at most ``slots`` concepts for every level: the levels grow with the logarithm of the length. The models are untrained: only the cost is measured.
     """
     rows = []
     for kind in ('dense', 'concepts'):
@@ -225,7 +235,7 @@ def cost(shape, lengths, check):
             started = time.perf_counter()
             model(ids)
             row[kind] = dict(milliseconds_per_token=1000*(time.perf_counter()-started)/length,
-                             kept_vectors=length if kind == 'dense' else shape['window']+shape['slots'])
+                             kept_vectors=length if kind == 'dense' else kept(length, shape['window'], shape['slots']))
         rows.append(row)
     # Ordinary attention: time per token = a + b*length; concepts: about constant. Where they cross:
     x = torch.tensor([row['length'] for row in rows], dtype=torch.float64)

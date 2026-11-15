@@ -7,9 +7,13 @@ precedenti (MATHEMATICAL-FOUNDATION, CONCEPT-GRAPH, CP-V9-RESULTS,
 CP-GRAPH-RESULTS) restano come storia di come ci si è arrivati; dove
 differiscono da questa pagina, vale questa pagina.
 
-Profilo: `concept-graph-v1`, in entrambi i casi.
+Profilo: `concept-graph-v1` nella tabella; nel linguaggio `concept-graph-v2` per i
+progetti nuovi (`concept-graph-v1` per quelli già creati).
 Codice: nucleo tabulare [`acan/core/concepts.py`](../acan/core/concepts.py),
-strato di attenzione [`acan/lm/concept_attention.py`](../acan/lm/concept_attention.py).
+strato di attenzione [`acan/lm/graph_scan.py`](../acan/lm/graph_scan.py) e
+[`acan/lm/graph_attention.py`](../acan/lm/graph_attention.py) (v2),
+[`acan/lm/concept_attention.py`](../acan/lm/concept_attention.py) (v1).
+La struttura fissa del linguaggio, con le misure: [ALGEBRAIC-CONCEPTS.md](ALGEBRAIC-CONCEPTS.md).
 Misure: [MODEL-RESULTS.md](MODEL-RESULTS.md).
 
 ## 1. Oggetti
@@ -242,10 +246,10 @@ problema, non dal modello.
 
 | | Tabella | Attenzione | Motivo |
 |---|---|---|---|
-| letture ricevute $a_i$ | la massa $C_i$ | attenzione ricevuta dalle query passate | in una tabella ogni riga legge i concetti a cui appartiene |
-| quanti concetti | scelti dal giudizio, con la regola dell'errore standard | fissati dalla memoria disponibile | nel linguaggio la memoria è la risorsa da limitare |
+| letture ricevute $a_i$ | la massa $C_i$ | attenzione ricevuta dalle query passate (v2: finché il token era nella finestra esatta) | in una tabella ogni riga legge i concetti a cui appartiene |
+| quanti concetti | scelti dal giudizio, con la regola dell'errore standard | fissati dalla memoria disponibile (v2: per ogni blocco; i blocchi letti crescono con il logaritmo del contesto) | nel linguaggio la memoria è la risorsa da limitare |
 | riassegnazione dei membri | sì | no | il passato di una sequenza non si rilegge |
-| livelli | scelti dal criterio a coppie | due: i concetti del prefisso e, sotto, la finestra esatta in cui ogni token è un concetto | a pesi invariati, due livelli di concetti con comportamenti condivisi leggono peggio di uno solo ([misura](MODEL-RESULTS.md)) |
+| livelli | scelti dal criterio a coppie | v1: due, i concetti del prefisso e, sotto, la finestra esatta in cui ogni token è un concetto; v2: i blocchi diadici per età, annidati e additivi | a pesi invariati, due livelli di concetti con comportamenti condivisi leggono peggio di uno solo ([misura](MODEL-RESULTS.md)) |
 | varianza nel riconoscere | predittiva (M1) | ordine zero | i membri di un concetto di attenzione sono dati memorizzati, non un campione |
 
 Nell'attenzione i concetti riassumono le chiavi prima della rotazione di

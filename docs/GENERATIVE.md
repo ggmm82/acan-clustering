@@ -6,8 +6,10 @@ This implementation starts from the newly supplied
 It is separate from the withdrawn character-language experiment and does not
 change the tabular ACAN objective. See [LM audit](LM-AUDIT.md) for differences.
 
-> New projects use the `concept-graph-v1` attention layer, the same model as the
-> tabular core ([MODEL.md](MODEL.md)). Operation, persistence and checkpoints below
+> New projects use the `concept-graph-v2` attention layer: the concepts, the reading and
+> the cost of the tabular core ([MODEL.md](MODEL.md)) on a fixed dyadic structure, so that
+> a whole block is read at once ([ALGEBRAIC-CONCEPTS.md](ALGEBRAIC-CONCEPTS.md)). Earlier
+> projects keep `concept-graph-v1`. Operation, persistence and checkpoints below
 > are unchanged; how to judge a run is in [CONTROLLED-LM.md](CONTROLLED-LM.md).
 
 ## What is implemented
