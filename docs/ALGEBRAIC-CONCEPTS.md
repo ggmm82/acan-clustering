@@ -127,26 +127,44 @@ Ogni concetto si divide nei figli che massimizzano la CU sulle proprie righe:
   divisione che spiega solo l'attributo di cui è fatta passa anche sul
   rimescolato, quindi i concetti non si moltiplicano sul rumore.
 
-Il giudizio sulle righe non viste sceglie il livello che fa le previsioni.
+**Due fasi, un solo criterio di lettura.**
+
+1. *Struttura* (non supervisionata, la CP della tesi): i livelli del grafo sono
+   solo le divisioni significative. Dove la struttura finisce, i concetti sono
+   quelli naturali della tabella.
+2. *Previsione* (solo se c'è un target): sotto la struttura ogni concetto si
+   divide alla propria media lungo la direzione di Fisher fra le sue classi
+   (forma chiusa); in alternativa la stessa divisione parte dalla radice.
+
+Le previsioni leggono i concetti naturali, a meno che un livello più profondo
+legga le righe non viste meglio **oltre l'errore** (le stesse righe, confronto
+riga per riga, ogni riga letta da concetti che non l'hanno vista): allora il
+livello che le legge meglio. Nessun parametro scelto a mano: la struttura dice
+quanti concetti ci sono, il giudizio dice se servono concetti più fini per
+prevedere.
 
 Senza target: sul gioco, in 8 casi su 8, esattamente le 4 combinazioni e mai
-mescolate; due famiglie: 2 concetti generali, poi 8 gruppi (i veri sono 6).
+mescolate; due famiglie: 2 concetti generali, poi 8 gruppi (i veri sono 6);
+Iris in 10 split su 10: livelli 2 e 3, 3 concetti; stesso seme, stesso modello.
 
-Con target, CP non supervisionata, stessi split dei test:
+Con target, stessi split dei test di qualità:
 
 | Dataset | Soglia | CP della tesi | Attuale |
 |---|---:|---:|---:|
-| Iris | 0,95 | 0,970 (6 concetti) | 0,973 |
-| Wine | 0,95 | 0,981 (5) | 0,978 |
-| Breast cancer | 0,92 | **0,908** (14) | 0,939 |
-| Sonar | 0,83 | **0,819** (33) | 0,867 |
-| Vehicle | 0,75 | 0,753 (110) | 0,790 |
-| Vote | 0,94 | 0,956 (12) | 0,961 |
-| Titanic | 0,80 | 0,807 (25) | 0,818 |
-| credit-g | 0,63 | 0,687 (7) | 0,671 |
+| Iris | 0,95 | 0,977 (3 concetti) | 0,973 (3) |
+| Wine | 0,95 | 0,978 (4) | 0,978 (5) |
+| Breast cancer | 0,92 | 0,956 (16) | 0,939 (12) |
+| Sonar | 0,83 | 0,857 (32) | 0,867 (18) |
+| Vehicle | 0,75 | 0,816 (16) | 0,790 (35) |
+| Vote | 0,94 | 0,943 (16) | 0,961 (6) |
+| Titanic | 0,80 | 0,815 (49) | 0,818 (28) |
+| credit-g | 0,63 | 0,751 (8) | 0,671 (45) |
+| Letter (1 split) | — | 0,975 (2.605) | 0,974 |
 
-Due soglie non sono superate e Vehicle ha 110 concetti: da capire prima di
-andare avanti.
+Tutte le soglie sono superate e tutti i test di comportamento senza target
+passano. Restano da migliorare: Letter è lenta (358 s contro 98 s: la ricerca
+della struttura per ogni concetto è ancora un ciclo Python sui concetti) e Vote
+è vicina alla soglia.
 
 ## Qualità del linguaggio
 

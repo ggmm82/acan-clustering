@@ -63,6 +63,18 @@ def centred_codes(features, directions):
     return cells
 
 
+def fisher_split(part, classes, smallest):
+    """Two children of a concept: its rows on either side of its centre along its own direction."""
+    direction = own_direction(part, classes)
+    if direction is None:
+        return None, 0., False
+    projection = part@direction
+    children = (projection > projection.mean()).astype(int)
+    if children.min() == children.max():
+        return None, 0., False
+    return children, 1., True
+
+
 def own_direction(part, classes=None):
     """The direction along which a concept splits: Fisher's between its classes, else its principal one."""
     centred = part-part.mean(0)
@@ -278,7 +290,7 @@ class Attributes:
         return threshold, float(cu[best])
 
 
-def cu_children(attributes, features, rows, categorical_codes, most=3, directions=2, rng=None, permutations=0):
+def cu_children(attributes, features, rows, categorical_codes, most=3, directions=2, rng=None, permutations=0, classes=None):
     """Best partition and its CU, kept only if it beats what the same search finds with independent attributes.
 
     The reference: every attribute's values shuffled over the rows separately (links between
@@ -286,30 +298,37 @@ def cu_children(attributes, features, rows, categorical_codes, most=3, direction
     A division that only explains the attribute it is made of is found as well on shuffled data,
     so it does not pass: concepts do not multiply on noise.
     """
-    codes, value = _cu_search(attributes, features, rows, categorical_codes, most, directions)
+    codes, value = _cu_search(attributes, features, rows, categorical_codes, most, directions, classes=classes)
     if codes is None or not permutations:
-        return codes, value
+        return codes, value, codes is not None
     null = []
+    numeric = np.asarray(attributes.numeric_columns, int)
+    real = attributes.columns[rows]
+    if len(numeric):
+        centre = real[:, numeric].mean(0)
+        covariance = np.atleast_2d(np.cov(real[:, numeric].T))
+        # Square root of the covariance (eigenvectors), so that a draw has exactly that covariance.
+        values, vectors = np.linalg.eigh(covariance)
+        root = vectors*np.sqrt(np.maximum(values, 0))
     for _ in range(permutations):
+        # One concept as the model means it: the numeric attributes one Gaussian with the concept's
+        # own mean and covariance (their correlations kept), each categorical attribute independent.
         orders = [rng.permutation(len(rows)) for _ in attributes.groups]
-        columns = attributes.columns[rows].copy()
+        columns = real.copy()
         for order, group in zip(orders, attributes.groups):
-            columns[:, group] = columns[order][:, group]
+            columns[:, group] = real[order][:, group]
+        if len(numeric):
+            columns[:, numeric] = centre+rng.standard_normal((len(rows), len(numeric)))@root.T
         shuffled = Attributes(columns, attributes.groups, attributes.weights)
         shuffled.assign_weights = getattr(attributes, 'assign_weights', attributes.weights)
         local = np.arange(len(rows))
-        # The features and categorical codes follow the same shuffles as their attributes.
-        feature_part = np.zeros_like(features[rows])
-        for j in range(features.shape[1]):
-            feature_part[:, j] = features[rows][orders[attributes.feature_group[j]], j]
+        feature_part = columns[:, attributes.feature_columns]
         codes_part = [c[rows][orders[g]] for c, g in zip(categorical_codes, attributes.categorical_group)]
         null.append(_cu_search(shuffled, feature_part, local, codes_part, most, directions, full=True)[1])
-    if value <= max(null):
-        return None, value
-    return codes, value
+    return codes, value, value > max(null)
 
 
-def _cu_search(attributes, features, rows, categorical_codes, most=3, directions=2, full=False):
+def _cu_search(attributes, features, rows, categorical_codes, most=3, directions=2, full=False, classes=None):
     """``full``: ``features`` and codes are already the rows of the concept."""
     """The partition of a concept that maximizes the corrected Category Utility, or None.
 
@@ -337,6 +356,15 @@ def _cu_search(attributes, features, rows, categorical_codes, most=3, directions
             threshold, _ = attributes.best_threshold(projection, local_rows)
             if threshold is not None:
                 candidates.append((projection > threshold).astype(int))
+    if classes is not None:                                    # the direction that separates the classes of the concept
+        own = classes if full else classes[rows]
+        if len(np.unique(own)) > 1 and part.shape[1]:
+            fisher = fisher_directions(part, own)
+            for direction in fisher.T[:1]:
+                projection = part@direction
+                threshold, _ = attributes.best_threshold(projection, local_rows)
+                if threshold is not None:
+                    candidates.append((projection > threshold).astype(int))
     if not candidates:
         return None, 0.
     local = rows if not full else np.arange(len(part))
@@ -388,9 +416,9 @@ class CUConceptModel(ConceptModel):
     like the others, and predicting it is completing it.
     """
 
-    def __init__(self, max_levels=12, permutations=19, **options):
+    def __init__(self, max_levels=12, permutations=19, folds=4, **options):
         super().__init__(**options)
-        self.max_levels_cu, self.permutations = max_levels, permutations
+        self.max_levels_cu, self.permutations, self.folds = max_levels, permutations, folds
 
     def _attributes(self, base, target_weight):
         x, mask, onehot = base[:3]
@@ -406,73 +434,227 @@ class CUConceptModel(ConceptModel):
         attributes.assign_weights = np.ones(len(groups))           # unsupervised: all attributes, as in the CP
         # Which attribute each feature column and each categorical code belongs to (for the shuffles).
         attributes.feature_group = [j for j, name in enumerate(self.encoder.numeric) if name not in self.labels]
+        attributes.numeric_columns = list(range(len(self.encoder.numeric)))            # numeric attributes come first, one column each
+        attributes.feature_columns = attributes.feature_group                         # the feature columns among them
         offset = len(self.encoder.numeric)
         attributes.categorical_group = [offset+i for i, name in enumerate(self.encoder.categorical) if name not in self.labels]
         return attributes
 
-    def fit(self, frame, labels=(), encoder=None, progress=None):
-        self.labels = list(labels)
-        self.encoder = encoder or Encoder().fit(frame)
-        base = self.encoder.transform(frame)
+    def _hierarchy(self, base, attributes, features, categorical_codes, rng, predictive=None, classes=None):
+        # Every concept divides into the children that maximize the CU on its rows, down to the
+        # smallest concepts. A division is *structure* only when it beats one concept (a Gaussian with
+        # the concept's own covariance, categorical attributes independent): only those levels are
+        # the levels of the graph. Below them the divisions still maximize the CU and serve the
+        # predictions; the judgment on unseen rows chooses how deep the predictions read.
+        n = len(base[0])
+        cell = np.zeros(n, int)
+        generations, structural = [cell.copy()], [True]
+        phase = 'structure'
+        for _ in range(self.max_levels_cu):
+            below = phase == 'predictive'
+            following = np.zeros(n, int)
+            next_id, changed = 0, False
+            for c in range(cell.max()+1):
+                rows = np.flatnonzero(cell == c)
+                if len(rows) < 2*self.rows_per_concept:
+                    children, value, real = None, 0., False
+                elif below:
+                    # Below the structure: the concept splits at its centre along the direction that
+                    # separates its classes (Fisher, closed form), or its principal one.
+                    children, value, real = fisher_split(self._features_of(base, rows), classes[rows], self.rows_per_concept)
+                else:
+                    children, value, real = cu_children(attributes, features, rows, categorical_codes, rng=rng,
+                                                        permutations=self.permutations)
+                # In the structure a concept divides only if its own division beats one concept.
+                if children is None or value <= 0 or (not below and not real):
+                    following[rows] = next_id; next_id += 1
+                else:
+                    following[rows] = next_id+children; next_id += children.max()+1; changed = True
+            if not changed:
+                if phase == 'structure' and predictive is not None:
+                    phase = 'predictive'                                # the structure ends; divisions for predictions follow
+                    continue
+                break
+            cell = following
+            generations.append(cell.copy())
+            structural.append(not below)
+        return generations, structural
+
+    def _honest_depth(self, frame, base, weights, rng):
+        """Depth whose predictions read best rows the hierarchy never saw (two halves, both ways)."""
         n = len(frame)
+        order = rng.permutation(n)
+        folds = np.array_split(order, self.folds)
+        totals = {}
+        pairs = [(np.concatenate(folds[:i]+folds[i+1:]), folds[i]) for i in range(self.folds)]
+        for build, judge in pairs:
+            part = CUConceptModel(max_levels=self.max_levels_cu, permutations=self.permutations, seed=self.seed,
+                                  rows_per_concept=self.rows_per_concept, folds=self.folds)
+            part.labels, part.encoder = self.labels, self.encoder
+            sub = tuple(item[build] for item in base)
+            part._prepare(sub)
+            attributes = part._attributes(sub, 1.)
+            features, codes = part._inputs(sub)
+            predictive, classes = part._predictive(sub)
+            generations, _ = part._hierarchy(sub, attributes, features, codes, rng, predictive, classes)
+            judged = tuple(item[judge] for item in base)
+            inner = np.sort(rng.choice(len(build), min(len(build), self.judged_rows), replace=False))
+            for depth, cells in enumerate(generations):
+                # Each depth as the model will use it: with the covariance of its concepts if the
+                # judgment on the building half adopts it.
+                part.statistics = part._statistics(np.eye(cells.max()+1)[cells], sub)
+                part.cross, part.cov = None, np.zeros(0, int)
+                part.train_weights = weights
+                part._together(sub, weights, inner)
+                statistics = part.statistics
+                t = part._route(statistics, judged, part._weights(0.))[0]
+                label = self.labels[0]
+                if label in self.encoder.categorical:
+                    _, _, log_p = part._parameters(statistics)
+                    block = self.encoder.block(label)
+                    p = np.maximum(t@np.exp(log_p[:, block]), 1e-12)
+                    truth = judged[2][:, block]
+                    score = (np.log(p)*truth).sum(1)
+                else:
+                    g, v, _ = part._parameters(statistics)
+                    j = self.encoder.numeric.index(label)
+                    mean = t@g[:, j]
+                    score = -(judged[0][:, j]-mean)**2
+                totals.setdefault(depth, []).append(score)
+        scored = {depth: np.concatenate(values) for depth, values in totals.items() if len(values) == self.folds}
+        best = max(scored, key=lambda depth: scored[depth].mean())
+        def as_good(depth):
+            gap = scored[best]-scored[depth]
+            return gap.mean() <= gap.std()/np.sqrt(len(gap))+1e-9
+        return min(depth for depth in scored if as_good(depth))
+
+    def _prepare(self, base):
+        """Scales of the root (as ConceptModel.fit)."""
         observed = np.zeros(self.encoder.width)
         for block in self._blocks():
             observed[block] = max(base[2][:, block].sum(), 1)
         self.root_p = np.maximum(base[2].sum(0)/observed, 1e-12)
         self.root_g = np.array([1-(self.root_p[block]**2).sum() for block in self._blocks()])
         self.resolution = self._resolution(base)
-        features_count = len(self.encoder.numeric)+len(self.encoder.categorical)-len(self.labels)
-        weights = self.train_weights = self._weights(float(max(features_count, 1)))
-        rng = np.random.default_rng(self.seed)
-        judged = np.sort(rng.choice(n, min(n, self.judged_rows), replace=False))
-        # The CP of the thesis is unsupervised: every attribute weighs one, a target included.
-        attributes = self._attributes(base, 1.)
-        x, mask, onehot = base[:3]
-        numeric = [j for j, name in enumerate(self.encoder.numeric) if name not in self.labels]
-        features = x[:, numeric]
-        categorical_codes = [onehot[:, self.encoder.block(name)].argmax(1)*(onehot[:, self.encoder.block(name)].sum(1) > 0)
-                             + (onehot[:, self.encoder.block(name)].sum(1) == 0)*onehot[:, self.encoder.block(name)].shape[1]
-                             for name in self.encoder.categorical if name not in self.labels]
+
+    def _refine_from_root(self, base, classes):
+        """Levels of Fisher divisions of the whole table, as below the structure but from the root."""
+        n = len(base[0])
         cell = np.zeros(n, int)
         generations = [cell.copy()]
         for _ in range(self.max_levels_cu):
-            following = cell.copy()*0
-            next_id, changed = 0, False
+            following, next_id, changed = np.zeros(n, int), 0, False
             for c in range(cell.max()+1):
                 rows = np.flatnonzero(cell == c)
-                children, value = ((None, 0.) if len(rows) < 2*self.rows_per_concept else
-                                   cu_children(attributes, features, rows, categorical_codes, rng=rng, permutations=self.permutations))
-                if children is None or value <= 0:
+                children = None
+                if len(rows) >= 2*self.rows_per_concept:
+                    children = fisher_split(self._features_of(base, rows), classes[rows], self.rows_per_concept)[0]
+                if children is None:
                     following[rows] = next_id; next_id += 1
                 else:
-                    following[rows] = next_id+children; next_id += children.max()+1; changed = True
+                    following[rows] = next_id+children; next_id += 2; changed = True
             if not changed:
                 break
             cell = following
             generations.append(cell.copy())
+        return generations
+
+    def _features_of(self, base, rows):
+        """The features of some rows as the directions see them: every attribute weighs one."""
+        if not hasattr(self, '_feature_table') or self._feature_table[0] is not base:
+            self._feature_table = (base, AlgebraicConceptModel._features(self, base))
+        return self._feature_table[1][rows]
+
+    def _predictive(self, base):
+        """Below the structure, the same CP with the utility weight of the attribute to predict.
+
+        CP^2 = sum w_j eta_j^2 / sum w_j, the weights uniform without prior information (thesis).
+        Asking for a column to predict is prior information: its weight becomes that of all the
+        other attributes together. Rows are still assigned from the attributes observed in use.
+        """
+        if not self.labels:
+            return None, None
+        features = len(self.encoder.numeric)+len(self.encoder.categorical)-len(self.labels)
+        predictive = self._attributes(base, float(max(features, 1)))
+        predictive.assign_weights = np.array([0. if name in self.labels else 1.
+                                              for name in self.encoder.numeric+self.encoder.categorical])
+        label = self.labels[0]
+        if label in self.encoder.categorical:
+            block = base[2][:, self.encoder.block(label)]
+            classes = np.where(block.sum(1) > 0, block.argmax(1), -1)
+        else:
+            value = base[0][:, self.encoder.numeric.index(label)]
+            classes = (value > np.median(value)).astype(int)
+        return predictive, classes
+
+    def _inputs(self, base):
+        """Numeric features and categorical codes (a missing value is a code of its own), targets excluded."""
+        x, mask, onehot = base[:3]
+        numeric = [j for j, name in enumerate(self.encoder.numeric) if name not in self.labels]
+        codes = []
+        for name in self.encoder.categorical:
+            if name in self.labels:
+                continue
+            block = onehot[:, self.encoder.block(name)]
+            codes.append(np.where(block.sum(1) > 0, block.argmax(1), block.shape[1]))
+        return x[:, numeric], codes
+
+    def fit(self, frame, labels=(), encoder=None, progress=None):
+        self.labels = list(labels)
+        self.encoder = encoder or Encoder().fit(frame)
+        base = self.encoder.transform(frame)
+        n = len(frame)
+        self._prepare(base)
+        features_count = len(self.encoder.numeric)+len(self.encoder.categorical)-len(self.labels)
+        weights = self.train_weights = self._weights(float(max(features_count, 1)))
+        rng = np.random.default_rng(self.seed)
+        judged = np.sort(rng.choice(n, min(n, self.judged_rows), replace=False))
+        attributes = self._attributes(base, 1.)                 # the CP of the thesis: unsupervised, every attribute one
+        features, categorical_codes = self._inputs(base)
+        predictive, classes = self._predictive(base)
+        generations, structural = self._hierarchy(base, attributes, features, categorical_codes, rng, predictive, classes)
         steps = []
         for level, codes in enumerate(generations):
             membership = np.eye(codes.max()+1)[codes]
-            statistics = self._statistics(membership, base)
-            score = self._score(statistics, base, weights, judged)
-            steps.append(dict(depth=level, k=membership.shape[1], statistics=statistics, membership=membership,
-                              rows=score, score=float(score.mean()), error=float(score.std()/np.sqrt(len(score)))))
-        best = max(steps, key=lambda step: step['score'])
-        def as_good(step):
-            gap = best['rows']-step['rows']
-            return gap.mean() <= gap.std()/np.sqrt(len(gap))+1e-9
-        working = min((step for step in steps if as_good(step)), key=lambda step: step['k'])
+            steps.append(dict(depth=level, k=membership.shape[1], statistics=self._statistics(membership, base), membership=membership))
+        # The predictions read at least the natural concepts (the deepest level whose divisions are
+        # structure); deeper only if the honest judgment asks for it: a hierarchy built on half the
+        # rows reads the other half, which its divisions never saw, then the halves swap.
+        depth = max([level for level, real in enumerate(structural) if real]+[0])
+        if self.labels and depth > 0:
+            # The refinement may also start from the root: the judgment chooses between the
+            # predictive levels below the structure and those of a refinement of the whole table.
+            root_generations = self._refine_from_root(base, classes)
+            for codes in root_generations[1:]:
+                membership = np.eye(codes.max()+1)[codes]
+                steps.append(dict(depth=len(steps), k=membership.shape[1], statistics=self._statistics(membership, base),
+                                  membership=membership, from_root=True))
+                structural.append(False)
+        if self.labels:
+            # The natural concepts (the structure) make the predictions, unless a deeper level reads
+            # unseen rows better beyond doubt: then the level that reads them best (each row read by
+            # concepts that never saw it, the two compared row by row on the same rows).
+            scores = {level: self._score(steps[level]['statistics'], base, weights, judged)
+                      for level in range(len(steps)) if level >= depth or steps[level].get('from_root')}
+            best = max(scores, key=lambda level: scores[level].mean())
+            gap = scores[best]-scores[depth]
+            if gap.mean() > gap.std()/np.sqrt(len(gap)):
+                depth = best
+        working = steps[depth]
         self.statistics = working['statistics']
         self.cross, self.cov, self.above = None, np.zeros(0, int), None
         self._together(base, weights, judged)
-        self.path = [dict(k=step['k'], score=step['score'], restart=0) for step in steps]
-        self.selection = dict(best_k=best['k'], best_score=best['score'], standard_error=best['error'],
-                              chosen_k=working['k'], chosen_score=working['score'], depth=working['depth'])
+        self.path = [dict(k=step['k'], score=None, restart=0) for step in steps]
+        shown = max([level for level, real in enumerate(structural) if real]+[0])
+        self.selection = dict(chosen_k=working['k'], depth=depth, structural_depth=shown)
+        # The graph: the levels whose divisions are structure (they beat one concept), then the
+        # working level if it is deeper.
         self.levels = []
-        for place, step in enumerate(steps[1:working['depth']+1], start=1):
-            membership = step['membership']
+        for place in range(1, (shown if steps[depth].get('from_root') else max(shown, depth))+1):
+            membership = steps[place]['membership']
             parents = None if place == 1 else (steps[place-1]['membership'].T@membership)/np.maximum(membership.sum(0), 1e-12)
-            self.levels.append(dict(depth=place, concepts=int(membership.shape[1]), pair_criterion=None, score=step['score'],
-                                    mass=membership.sum(0)/n, parents=parents, statistics=step['statistics'], table=step['statistics']))
-        self.edges, self.final_score = [], working['score']
+            self.levels.append(dict(depth=place, concepts=int(membership.shape[1]), pair_criterion=None, score=None,
+                                    structural=bool(structural[place]), mass=membership.sum(0)/n, parents=parents,
+                                    statistics=steps[place]['statistics'], table=steps[place]['statistics']))
+        self.edges, self.final_score = [], None
         return self
