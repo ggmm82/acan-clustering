@@ -111,6 +111,39 @@ Si parte da molti concetti specifici e si unisce ogni volta la coppia con
 $\Delta$ minimo. La sequenza delle unioni è un albero di generalizzazione: in
 basso i casi particolari, in alto un solo concetto.
 
+**Da dove vengono i concetti specifici: una sola passata, a blocchi.** Ogni
+osservazione nasce come concetto di un solo membro. Le osservazioni entrano in
+blocchi di $B$; due blocchi uguali, appena completi, diventano un blocco che
+copre il doppio delle osservazioni:
+
+$$
+\mathcal B_j=\operatorname{gen}_B\big(\mathcal B_{j-1}\cup\mathcal B'_{j-1}\big),
+$$
+
+dove $\operatorname{gen}_B$ unisce la coppia di $\Delta$ minimo finché restano
+$B$ concetti: da $2B$ a $B$ sono $B$ unioni. Ogni concetto è somma di concetti
+del livello sotto, e ogni somma del blocco è la somma delle sue osservazioni.
+Questa struttura è la stessa per una tabella e per un testo; cambia che cosa si
+legge alla fine.
+
+*Tabella.* Le righe non hanno un'età: si leggono i concetti dei blocchi rimasti
+dopo l'ultima riga, al massimo $B$ per ogni potenza di due nel numero delle
+righe, cioè $B\,(\lfloor\log_2(n/B)\rfloor+1)$. Da lì prosegue la
+generalizzazione descritta sopra, che riassegna le righe ai concetti a ogni
+passo. Tempo $O(n\,B\,m)$ con $m$ attributi, memoria un pezzo di tabella più i
+blocchi rimasti. $B$ è un quarto dei concetti specifici ammessi, fra 32 e 128;
+una tabella fino a 256 righe non si generalizza a blocchi, ogni riga è un
+concetto specifico.
+Poiché le somme si sommano, pezzi diversi della tabella si leggono in processi
+diversi e i loro blocchi si uniscono dopo.
+
+*Tabelle che non stanno in memoria.* Tre passate, ciascuna lineare: (1) media e
+deviazione di ogni attributo e un'estrazione uniforme di $r$ righe ($r=20.000$);
+(2) i blocchi, su tutte le righe; (3) i livelli, cercati sulle righe estratte a
+partire dai concetti dei blocchi, e infine ogni riga della tabella aggiunta ai
+concetti del livello di lavoro, così che le loro somme siano sull'intera
+tabella. Le tabelle fino a $r$ righe si leggono come prima, tutte.
+
 **Nel linguaggio: la stessa regola su una struttura fissa.** Il costo
 $\Delta$ è lo stesso, calcolato dalle stesse somme. Le letture ricevute da un
 token sono le quote di attenzione che ha avuto dai lettori che lo avevano nella
@@ -126,21 +159,12 @@ copie si uniscono comunque per prime). Il raggio è la dispersione delle chiavi
 attorno al centro, $\rho_i^2=\frac1d\big(S_i/C_i-\lVert U_i\rVert^2/C_i^2\big)$ con
 $S_i=\sum\lVert k\rVert^2$: le chiavi di una testa hanno tutte la stessa scala.
 
-Ciò che è fissato è **quando** e **fra quali** concetti si unisce. I token più
-vecchi della finestra sono divisi in blocchi diadici: un blocco di livello $j$
-copre $2^j$ token consecutivi e ha al massimo $B$ concetti. È la
-generalizzazione dei suoi due figli di livello $j-1$:
-
-$$
-\mathcal B_j=\operatorname{gen}_B\big(\mathcal B_{j-1}^{\text{sinistro}}\cup\mathcal B_{j-1}^{\text{destro}}\big),
-$$
-
-dove $\operatorname{gen}_B$ lascia i concetti come sono se sono al massimo $B$
-(il blocco è esatto) e altrimenti unisce la coppia di $\Delta$ minimo finché ne
-restano $B$: da $2B$ a $B$ sono esattamente $B$ unioni, un numero che dipende
-dalle dimensioni e non dai dati. Ogni concetto di un livello è somma di
-concetti del livello sotto: i livelli sono annidati e additivi come quelli del
-grafo tabulare.
+Ciò che è fissato è **quando** e **fra quali** concetti si unisce: sono i
+blocchi del paragrafo precedente, con i token più vecchi della finestra al
+posto delle righe. Un blocco di livello $j$ copre $2^j$ token consecutivi; se i
+suoi concetti sono al massimo $B$ resta esatto, altrimenti $\operatorname{gen}_B$
+ne lascia $B$ con un numero di unioni che dipende dalle dimensioni e non dai
+dati.
 
 Chi legge in posizione $t$ ha $n=t-w+1$ token vecchi e legge i blocchi della
 scrittura binaria di $n$: se $n=\sum_j b_j2^j$, un blocco di livello $j$ per
@@ -328,8 +352,17 @@ Limiti misurati:
 - La CP a coppie preferisce concetti grandi: gruppi adiacenti lungo una
   direzione compaiono prima uniti e si separano al livello successivo.
 - Con poche osservazioni il numero di livelli cambia da una prova all'altra.
-- L'addestramento fa due ricerche invece di una: su Letter circa due minuti
-  contro uno.
+- L'addestramento fa due ricerche invece di una. Con i concetti specifici presi
+  dai blocchi, Letter richiede circa 90 secondi e arriva a 97,6% su uno split
+  (prima, partendo da righe scelte a caso: circa due minuti, 97,4%).
+- **Tabelle grandi.** Su una tabella sintetica (10 numeri, 3 categorie, valori
+  mancanti, 12 classi) due milioni di righe richiedono 370 secondi con due
+  processi e un milione 211: il tempo cresce con le righe, la memoria no.
+  L'accuratezza è quella che si ottiene dalle sole 20.000 righe estratte
+  (90,9%, il massimo possibile su quei dati): leggere tutte le righe non l'ha
+  aumentata in questa prova, garantisce che le somme dei concetti siano
+  sull'intera tabella. Non è stata misurata una tabella da un miliardo di
+  righe: a questa velocità sono circa 90 ore con un processo.
 - **Linguaggio, modello preaddestrato (profilo v1).** Sostituendo l'attenzione
   in tutti i livelli, senza addestrare nulla, l'errore di previsione è 2,76 con
   l'attenzione completa, 3,23 tenendo esatti i primi token e gli ultimi 124, e
