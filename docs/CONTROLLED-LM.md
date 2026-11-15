@@ -51,14 +51,16 @@ piccola garantisce il comportamento con miliardi di token. Dice però se il
 meccanismo fa ciò che deve (recuperare informazione lontana con memoria fissa);
 se fallisce qui, un modello grande erediterebbe il difetto.
 
-**Passo 2 · Modello vero.** Da fare dopo il passo 1. Due progetti
-SmolLM2-135M sullo stesso testo, con gli stessi passi e lo stesso seme: metà
-dei layer a concetti, e attenzione normale. Risponde a una domanda sola: i
-concetti innestati in un modello addestrato ne peggiorano la qualità? Non può
-dire se servono: su pezzi di 128 token il modello usa quasi solo i token
-vicini, che restano esatti, quindi le curve vengono simili in ogni caso. Partono uno dopo l'altro. Quando entrambi sono finiti, si avvia la
-verifica finale su ciascuno. Criterio: sul testo di verifica la NLL dei
-concetti supera quella dell'attenzione normale di al massimo 0,15.
+**Passo 2 · Modello nativo vero.** Da fare dopo il passo 1. Due modelli
+nativi micro nascono da zero sullo stesso testo, uno dopo l'altro, con lo
+stesso tokenizer, gli stessi passi e lo stesso seme: uno con i concetti in ogni
+layer, uno con l'attenzione normale (`native_attention='dense'`). Quando
+entrambi sono finiti, si avvia la verifica finale su ciascuno. Criterio: sul
+testo di verifica la NLL dei concetti supera quella dell'attenzione normale di
+al massimo 0,15. È lo stesso modello che l'apprendimento lungo addestra, quindi
+la domanda è quella giusta: i concetti costano qualità al modello nativo?
+(Le versioni precedenti confrontavano SmolLM2 adattato con LoRA; quei progetti
+restano leggibili.)
 
 **Passo 3 · Decisione.** «Pronto per la GPU» solo se tutti i criteri sono
 superati; «Non ancora» se uno fallisce; «sospesa» se manca un risultato.

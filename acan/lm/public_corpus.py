@@ -159,8 +159,10 @@ def experiment(store, owner, dataset, preset):
         raise ValueError('Worker occupato: metti in pausa il progetto attivo prima di avviare una prova pubblica.')
     spec, settings = CATALOG[dataset], PRESETS[preset]
     corpus, provenance = import_corpus(store, owner, dataset)
-    config = validate_options(dict(corpus_id=corpus['id'], name=spec['title']+' · '+settings['title'],
-                                   base_model='HuggingFaceTB/SmolLM2-135M', batch_size=1,
+    # A native concept model born from zero on the public text (tokenizer learned from it, concepts in every layer).
+    config = validate_options(dict(corpus_id=corpus['id'], name=spec['title']+' · '+settings['title'], batch_size=1,
+                                   architecture='native', native_size='micro', routing_profile='concept-graph-v1',
+                                   graft_fraction=1., learning_rate=1e-3, slots=16, window=16,
                                    **{k:v for k,v in settings.items() if k != 'title'}))
     job = store.create_job(owner, config)
     atomic_json(store.directory('jobs', job['id'])/'public-source.json', provenance)
