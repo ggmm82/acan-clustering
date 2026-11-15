@@ -106,6 +106,48 @@ di separarle: 8-16 concetti e combinazioni mescolate, dove il modello attuale
 ne trova esattamente quattro. Anche la struttura dei livelli è diversa: ogni
 livello divide in due, quindi i concetti generali sono sempre due.
 
+## Concetti come massimo della CP della tesi (`CUConceptModel`)
+
+La CP della tesi, con frequenze e rilevanze al quadrato, è la Category Utility
+(MATHEMATICAL-FOUNDATION, proposizione 2): CP² è la media delle η² degli
+attributi e lo scarto fra concetti vale K volte la CU. È **non supervisionata**:
+ogni attributo pesa uno, il target compreso; prevedere è completare.
+
+Ogni concetto si divide nei figli che massimizzano la CU sulle proprie righe:
+
+- candidati in forma chiusa: i valori di un attributo categorico, la soglia
+  migliore di un attributo numerico o di una direzione principale (somme
+  cumulative), e le celle di due o tre candidati presi insieme;
+- passi di Lloyd nella metrica della CP: con le celle date possono solo
+  alzarla, e assorbono le celle residue delle combinazioni;
+- la divisione per K fissa da sola il numero di figli (sul gioco le 4
+  combinazioni valgono 0,125 contro 0,083 di un solo attributo);
+- un concetto si divide solo se la sua CU batte quella che la stessa ricerca
+  trova con gli attributi rimescolati indipendentemente (19 volte, 5%): una
+  divisione che spiega solo l'attributo di cui è fatta passa anche sul
+  rimescolato, quindi i concetti non si moltiplicano sul rumore.
+
+Il giudizio sulle righe non viste sceglie il livello che fa le previsioni.
+
+Senza target: sul gioco, in 8 casi su 8, esattamente le 4 combinazioni e mai
+mescolate; due famiglie: 2 concetti generali, poi 8 gruppi (i veri sono 6).
+
+Con target, CP non supervisionata, stessi split dei test:
+
+| Dataset | Soglia | CP della tesi | Attuale |
+|---|---:|---:|---:|
+| Iris | 0,95 | 0,970 (6 concetti) | 0,973 |
+| Wine | 0,95 | 0,981 (5) | 0,978 |
+| Breast cancer | 0,92 | **0,908** (14) | 0,939 |
+| Sonar | 0,83 | **0,819** (33) | 0,867 |
+| Vehicle | 0,75 | 0,753 (110) | 0,790 |
+| Vote | 0,94 | 0,956 (12) | 0,961 |
+| Titanic | 0,80 | 0,807 (25) | 0,818 |
+| credit-g | 0,63 | 0,687 (7) | 0,671 |
+
+Due soglie non sono superate e Vehicle ha 110 concetti: da capire prima di
+andare avanti.
+
 ## Qualità del linguaggio
 
 Rimandata: prima la tabella, compresa la parte senza target.
