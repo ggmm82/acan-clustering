@@ -61,7 +61,7 @@ def backend(workspace, path, method='GET', data=None, raw=False, headers=None, t
 layout = dbc.Container([
     html.H4('LLM a concetti', className='mt-3'),
     html.P("Un modello linguistico in cui ogni layer legge il testo attraverso i concetti ACAN invece dell'attenzione "
-           "normale: memoria fissa e costo per token che non cresce con il testo. Qui lo prepari, lo addestri a lungo "
+           "normale: memoria e costo per token che crescono appena con il testo (con il suo logaritmo). Qui lo prepari, lo addestri a lungo "
            "in italiano e inglese, lo segui e lo provi; sotto c'è il laboratorio che verifica il meccanismo in piccolo. "
            "Come funziona, in parole semplici: scheda Informatica."),
     dcc.Store(id='lm-workspace', storage_type='local'), dcc.Store(id='lm-state'),
@@ -101,9 +101,9 @@ layout = dbc.Container([
                 dcc.Dropdown(id='lm-validation-text', placeholder='Scegli il testo', clearable=False, className='mb-3'),
                 html.H6('Passo 1 · Prova in piccolo, da zero (CPU, minuti)'),
                 html.P("Domanda: un modello che legge il testo lontano attraverso i concetti ricorda ciò che serve, come uno "
-                       "con l'attenzione normale, a un costo per token che non cresce con il testo? Tre modellini identici "
+                       "con l'attenzione normale, a un costo per token che quasi non cresce con il testo? Tre modellini identici "
                        "imparano da zero, cambiando solo come leggono: attenzione normale, solo le ultime 16 parole, concetti "
-                       "(ultime 16 parole esatte più 16 concetti per il resto).", className='small mb-1'),
+                       "(ultime 16 parole esatte più 16 concetti per ogni livello del resto).", className='small mb-1'),
                 html.Ul([html.Li("Memoria (criterio): coppie da ricordare, testo di riempimento, poi la domanda; la risposta è a "
                                  "49 token, oltre le 16 parole esatte."),
                          html.Li("Memoria lontana (criterio, solo nella prova completa): la risposta a 177 token. Se qui i "
