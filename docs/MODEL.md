@@ -248,6 +248,7 @@ problema, non dal modello.
 |---|---|---|---|
 | letture ricevute $a_i$ | la massa $C_i$ | attenzione ricevuta dalle query passate (v2: finché il token era nella finestra esatta) | in una tabella ogni riga legge i concetti a cui appartiene |
 | quanti concetti | scelti dal giudizio, con la regola dell'errore standard | fissati dalla memoria disponibile (v2: per ogni blocco; i blocchi letti crescono con il logaritmo del contesto) | nel linguaggio la memoria è la risorsa da limitare |
+| concetti specifici | i blocchi rimasti dopo una passata sulle righe ([`acan/core/scan.py`](../acan/core/scan.py)) | i blocchi della scrittura binaria dell'età | una tabella non ha un prima e un dopo |
 | riassegnazione dei membri | sì | no | il passato di una sequenza non si rilegge |
 | livelli | scelti dal criterio a coppie | v1: due, i concetti del prefisso e, sotto, la finestra esatta in cui ogni token è un concetto; v2: i blocchi diadici per età, annidati e additivi | a pesi invariati, due livelli di concetti con comportamenti condivisi leggono peggio di uno solo ([misura](MODEL-RESULTS.md)) |
 | varianza nel riconoscere | predittiva (M1) | ordine zero | i membri di un concetto di attenzione sono dati memorizzati, non un campione |

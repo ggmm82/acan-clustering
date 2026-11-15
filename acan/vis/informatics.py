@@ -102,6 +102,21 @@ Che cosa **non** è cambiato: che cos'è un concetto, come lo si legge e il cost
 con cui si decide chi unire. Con abbastanza concetti il layer **è** l'attenzione
 normale (verificato). I progetti creati prima continuano con il loro strato.
 
+### Lo stesso meccanismo per le tabelle
+
+I blocchi non servono solo al testo. Anche una tabella viene letta così: le
+righe entrano una volta sola, a blocchi; due blocchi uguali diventano un blocco
+doppio unendo i concetti che costano meno a chi legge. La differenza è che una
+tabella non ha un prima e un dopo: alla fine si leggono solo i concetti rimasti
+in cima, e da quelli parte la ricerca dei livelli della scheda Modello.
+
+Per questo una tabella grande non deve più stare in memoria: si legge a pezzi,
+tre volte (le scale degli attributi; i blocchi; l'aggiunta di ogni riga ai
+concetti finali), e i pezzi si possono leggere in più processi insieme. La
+ricerca dei livelli lavora su 20.000 righe estratte a caso, perciò il suo tempo
+non dipende dalla grandezza della tabella. Misurato: due milioni di righe in
+circa sei minuti con due processi.
+
 ### Come impara
 
 - **Obiettivo.** Il modello vede un pezzo di testo e, per ogni posizione, deve

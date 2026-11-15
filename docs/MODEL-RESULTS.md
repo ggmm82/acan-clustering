@@ -54,6 +54,24 @@ Lettura:
   di concetti in meno.
 - Percorso dell'app su Letter, tre semi: 97,85%.
 
+### Dalla 8.8.0: concetti specifici da una passata a blocchi
+
+I numeri di questa pagina sono della ricerca che partiva da righe scelte a caso.
+Dalla 8.8.0 i concetti specifici vengono da una passata a blocchi sulle righe
+([ALGEBRAIC-CONCEPTS.md](ALGEBRAIC-CONCEPTS.md), «La tabella sugli stessi
+blocchi»). Confronto riga per riga su venti split (semi da 0 a 19), solo il
+grafo dei concetti:
+
+| Dataset | Prima | Dalla 8.8.0 | Differenza |
+|---|---:|---:|---:|
+| Sonar | 85,1 | 85,5 ± 1,8 | +0,4 ± 1,4 |
+| Titanic | 81,4 | 81,1 ± 0,7 | −0,4 ± 0,5 |
+| Adult minimale | 75,2 | 75,9 ± 0,9 | +0,7 ± 0,5 |
+| Gioco | 100 | 100 | 0 |
+
+Letter, uno split dei test di qualità: 97,6% in circa 90 secondi (prima 97,4%
+in circa 120).
+
 ### Sonar e Titanic su venti split
 
 Tre split da 42 righe non bastano a distinguere tre punti. Semi da 1 a 20,
