@@ -440,10 +440,15 @@ class ConceptModel:
         return scores
 
     # ---- training --------------------------------------------------------------
-    def _block(self, k):
-        """Concepts of a block of the scan: a quarter of the specific concepts allowed, between 32 and 128."""
+    def _block(self, k, n):
+        """Concepts of a block of the scan: a quarter of the specific concepts allowed, between 32 and 128.
+
+        A table of at most 256 rows is not generalized in blocks: every row is a specific concept.
+        """
         if self.bins:
             return int(self.bins)
+        if n <= 256:
+            return int(n)
         return int(min(128, max(32, 1 << int(np.log2(max(k//4, 1))))))
 
     def _path(self, data, weights, judged, rng, progress=None, restarts=None, start=None, specific=None):
@@ -458,7 +463,7 @@ class ConceptModel:
         path = []
         # The blocks depend on the order of the rows: a small table is read in a few orders.
         for restart in range(1 if specific is not None else restarts or (self.restarts if n <= self.restart_rows else 1)):
-            s = specific if specific is not None else scan(self, data, self._block(k), rng.permutation(n))
+            s = specific if specific is not None else scan(self, data, self._block(k, n), rng.permutation(n))
             s = self._em(s, data, weights, 10)
             judged_at = np.inf
             while True:
@@ -565,8 +570,10 @@ class ConceptModel:
         sample = self.encoder.transform(drawn)
         self._roots(sample)
         k = int(min(self.max_concepts, max(self.rows//self.rows_per_concept, 1)))
-        blocks = Scan(self, self._block(k))
-        if self.workers > 1:                                     # chunks are independent: their blocks are added afterwards
+        blocks = Scan(self, self._block(k, self.rows))
+        # Chunks are independent: their blocks are added afterwards. The processes are started afresh
+        # (spawn), so a script that asks for them must protect its entry point with ``if __name__ == '__main__'``.
+        if self.workers > 1:
             import multiprocessing
             from concurrent.futures import ProcessPoolExecutor
             with ProcessPoolExecutor(self.workers, mp_context=multiprocessing.get_context('spawn')) as pool:
