@@ -375,19 +375,18 @@ b,?,no
         with patch('acan.vis.generative.backend',side_effect=[{'id':'new-job'},{}]) as backend:
             result=self.invoke('..lm-active-job.data',[('lm-start','n_clicks',1),('lm-pause','n_clicks',0),('lm-resume','n_clicks',0)],states)
         options=backend.call_args_list[0].args[3]
-        # The manual form makes a native model born from zero, whatever the hidden controls of earlier profiles say.
+        # The manual form makes the concept model, whatever the hidden controls of earlier profiles say.
         self.assertEqual(options['protocol'],'controlled-v1');self.assertEqual(options['distillation_weight'],0.)
-        self.assertEqual((options['architecture'],options['native_size']),('native','micro'))
-        self.assertEqual(options['graft_fraction'],1.);self.assertEqual(options['early_stop_patience'],5)
-        self.assertEqual(options['early_stop_min_delta'],.001)
-        self.assertEqual(options['routing_profile'],'concept-graph-v2')
-        self.assertNotIn('lora_rank',options);self.assertNotIn('base_model',options)
+        self.assertEqual((options['architecture'],options['routing_profile']),('concepts','concept-lm-v1'))
+        self.assertEqual((options['sequence_length'],options['save_steps'],options['validation_batches']),(64,5,32))
+        for network in ('lora_rank','base_model','native_size','learning_rate','slots','window','cp_weight'):
+            self.assertNotIn(network,options)
         self.assertEqual(result['lm-active-job']['data'],'new-job')
         states[-4]=('lm-routing','value','cp-joint-v1')
         with patch('acan.vis.generative.backend',side_effect=[{'id':'joint-job'},{}]) as backend:
             self.invoke('..lm-active-job.data',[('lm-start','n_clicks',2),('lm-pause','n_clicks',0),('lm-resume','n_clicks',0)],states)
         self.assertNotIn('cp_weight',backend.call_args_list[0].args[3])         # earlier profiles cannot be chosen any more
-        self.assertEqual(backend.call_args_list[0].args[3]['routing_profile'],'concept-graph-v2')
+        self.assertEqual(backend.call_args_list[0].args[3]['routing_profile'],'concept-lm-v1')
 
     def test_sessions_receive_distinct_server_identifiers(self):
         other = self.app.server.test_client()
