@@ -86,7 +86,7 @@ a,Y,yes
 b,?,no
 """
         result=self.invoke('..data-store.data',[('upload-data','contents','data:;base64,'+base64.b64encode(raw).decode())],
-            [('upload-data','filename','fixture.ARFF'),('upload-data','last_modified',0),('label-store','data',[])])
+            [('upload-data','filename','fixture.ARFF'),('upload-data','last_modified',0),('label-store','data',[]),('tab-session','data','t'*32)])
         data=result['data-store']['data']
         self.assertEqual(data['feature'][0],'a')
         self.assertIsNone(data['flag'][1])
@@ -154,7 +154,7 @@ b,?,no
         contents = 'data:text/csv;base64,' + base64.b64encode(frame.to_csv(index=False).encode()).decode()
         result = self.invoke('..data-store.data', [('upload-data', 'contents', contents)],
                              [('upload-data', 'filename', 'sample.csv'),
-                              ('upload-data', 'last_modified', 0), ('label-store', 'data', [])])
+                              ('upload-data', 'last_modified', 0), ('label-store', 'data', []), ('tab-session', 'data', 't'*32)])
         data = result['data-store']['data']
         self.assertEqual(data['PassengerId'], list(range(120)))
         result = self.invoke('..dpdnLabel.options', [('data-store', 'data', data)],

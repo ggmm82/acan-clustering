@@ -1,228 +1,228 @@
-"""How the language model of the project works, in plain words: goal, learning, generation."""
+"""What the software does, step by step, when a concept language model or a table is trained."""
 from dash import dcc, html
 
 TEXT = r"""
-## Informatica: come funziona il modello linguistico a concetti
+## Che cosa fa il programma, passo per passo
 
-### L'obiettivo del progetto
+Questa pagina segue ciò che succede quando premi i pulsanti: prima
+l'apprendimento lungo del modello linguistico (scheda Generativo), poi
+l'addestramento di una tabella (scheda Modello). Le formule sono nella scheda
+Matematica; qui c'è il meccanismo.
 
-Un modello linguistico (LLM) scrive un testo un pezzo alla volta: a ogni passo
-guarda tutto quello che c'è prima e sceglie il pezzo successivo. Nei modelli
-tradizionali questo «guardare prima» si chiama **attenzione**: ogni nuovo pezzo
-viene confrontato con **tutti** i pezzi precedenti, uno per uno.
+---
 
-Il problema: più il testo è lungo, più confronti servono. Il costo di un passo
-cresce con la lunghezza del testo, e quello di tutto il testo cresce con il suo
-quadrato (testo lungo il doppio, lavoro quattro volte); anche la memoria cresce,
-perché si conserva un vettore per ogni pezzo letto.
+## Parte A · Il modello linguistico a concetti
 
-ACAN sostituisce l'attenzione con i **concetti**: gli ultimi pezzi restano
-esatti, quelli più vecchi vengono riassunti in pochi concetti: precisi per il
-passato vicino, più generali per quello lontano. Ogni nuovo pezzo legge pochi
-pezzi esatti più i concetti. Obiettivo: un modello che conversa come un LLM
-tradizionale, con memoria e costo per pezzo che crescono appena con il testo
-(con il suo logaritmo: raddoppiare il testo aggiunge un solo livello).
+**In breve.** Un modello linguistico scrive un pezzo alla volta: a ogni passo
+guarda ciò che c'è prima e sceglie il pezzo successivo. Nei modelli
+tradizionali ogni pezzo nuovo viene confrontato con *tutti* i precedenti
+(l'attenzione): più il testo è lungo, più lavoro e più memoria servono. Qui
+ogni pezzo legge gli ultimi 16 esatti e, per tutto il resto, pochi **concetti**:
+precisi per il passato vicino, più generali per quello lontano.
 
-### Token: i pezzi del testo
+### Passo 1 · Preparare i dati
 
-Il testo viene diviso in **token**: parole intere, pezzi di parola, segni di
-punteggiatura. Il modello lavora solo con numeri: ogni token ha un numero, e il
-modello impara a prevedere il numero del token successivo. Il tokenizer del modello
-nativo impara dai testi dell'addestramento quali pezzi sono frequenti (BPE sui
-byte, 32.000 token): così l'italiano non paga i token in più di un vocabolario
-costruito per l'inglese, e qualunque carattere si può scrivere.
+Premendo «Prepara i dati» il programma scarica le fonti una alla volta da
+versioni fissate, controlla ogni file, tiene solo il testo e cancella il resto.
+Divide i documenti in tre parti: quelli **per imparare**, circa l'1% di
+**validazione** (mai usati per imparare, servono a misurare) e una parte di
+**test** tenuta da parte. La preparazione si può mettere in pausa e riprendere.
 
-### Non solo parole: codice, immagini, suoni
+### Passo 2 · Il testo diventa numeri
 
-Tutto ciò che diventa una sequenza di token si può insegnare. Il codice è
-testo: basta che il tokenizer lo veda all'inizio, così impara pezzi come
-`    return`. Un'immagine diventa 32 righe di 32 pixel, ognuno uno di 256 colori;
-un suono 8.000 numeri al secondo; un'animazione una serie di piccole immagini.
-Il modello li legge e li scrive come parole, e la pagina li mostra come
-immagini, suoni e animazioni. Sono sequenze lunghe: è qui che la memoria piccola
-dei concetti conviene di più.
+Un **tokenizer** divide il testo in *token*: parole intere, pezzi di parola,
+segni. Lo si costruisce dai testi stessi, all'inizio: guarda quali sequenze di
+caratteri sono frequenti e ne fa un vocabolario di 32.000 pezzi. Così
+l'italiano non paga i pezzi in più di un vocabolario fatto per l'inglese, e
+qualunque carattere si può scrivere.
 
-### Come legge un layer a concetti
+Tutto ciò che diventa una sequenza di token si può insegnare: il codice è
+testo; un'immagine diventa 32 righe di 32 punti; un suono migliaia di numeri
+al secondo; un'animazione una serie di piccole immagini.
 
-Ogni token produce tre vettori: una **domanda** (che cosa cerco), una **chiave**
-(come mi riconoscono) e un **valore** (che cosa porto). Nell'attenzione normale
-la domanda del token nuovo si confronta con le chiavi di tutti i token
-precedenti, e il risultato è una media dei loro valori pesata dalla somiglianza.
+### Passo 3 · Il modello nasce
 
-In un layer a concetti:
+Il modello è una pila di strati (4 nella misura «micro», 8 nella «piccolo», 12
+nella «base»). Tutti i pesi partono casuali, dal seme del progetto: nessun
+modello già addestrato, nessun adattatore. All'inizio l'errore è circa 10,4:
+il logaritmo di 32.000, cioè tirare a caso fra tutti i token.
 
-1. gli ultimi 16 token (la **finestra**) restano esatti;
-2. quando un token esce dalla finestra, diventa un **concetto** di un solo
-   membro: un riassunto che conserva solo somme (quanti token, la somma delle
-   chiavi, dei valori, delle posizioni, e quanto è stato letto finché era nella
-   finestra), da cui si ricavano il centro e il valore medio;
-3. i concetti sono organizzati a **livelli**, come un contachilometri in base
-   due: un blocco copre 1, 2, 4, 8… token consecutivi e contiene al massimo 16
-   concetti. Due blocchi uguali, appena sono completi, diventano un blocco
-   grande il doppio;
-4. finché i due blocchi hanno insieme al massimo 16 concetti restano esatti;
-   se ne hanno di più, si uniscono a due a due i concetti che costano meno a chi
-   li legge, finché ne restano 16. È la stessa regola con cui il modello
-   tabulare generalizza le righe di una tabella: due copie dello stesso
-   concetto si uniscono gratis, un token che è stato letto molto resta da solo;
-5. la domanda del token nuovo legge insieme la finestra esatta e i blocchi del
-   suo passato: quelli vicini sono piccoli e precisi, quelli lontani grandi e
-   generali. Un concetto pesa quanto i token che riassume.
+### Passo 4 · Un passo di addestramento
 
-I livelli crescono con il logaritmo della lunghezza: dopo 1.000 token un layer
-tiene al massimo 16 + 16 × 10 vettori, dopo un milione 16 + 16 × 20, contro
-1.000 e un milione dell'attenzione normale. Nell'apprendimento lungo di questo
-laboratorio **tutti i layer** leggono così.
+1. Si prende un **pezzo** di testo di 256 token.
+2. Ogni token diventa un vettore e attraversa gli strati. In ogni strato deve
+   leggere i token precedenti; lo fa così:
+   - gli ultimi 16 (la **finestra**) li legge uno per uno;
+   - i token più vecchi sono raccolti in **blocchi** di 16, 32, 64, 128…
+     token, come le cifre di un contachilometri in base due. Un blocco ha al
+     massimo 16 concetti: finché i token sono pochi restano esatti, poi si
+     uniscono a due a due quelli che costano meno a chi legge. Due token uguali
+     si uniscono gratis; un token che è stato letto molto resta da solo;
+   - il token legge insieme la finestra e i blocchi del suo passato.
+3. Dopo l'ultimo strato il modello dà, per ogni posizione, una probabilità a
+   ogni token del vocabolario. L'**errore** è quanto poca ne ha data al token
+   vero che seguiva.
+4. L'errore dice come cambiare ogni peso per sbagliare meno. Si accumulano 8
+   pezzi, poi si corregge: questo è **un passo** (2.048 token letti).
 
-### Perché non c'è più il ciclo lento
+I blocchi dipendono solo dalla posizione, non dal testo: per questo tutti i
+token di un pezzo vengono letti con poche operazioni fatte insieme, senza un
+ciclo che avanzi un token alla volta.
 
-Nella versione precedente (`concept-graph-v1`) c'era un solo gruppo di concetti
-per tutto il passato: ogni 16 token nuovi un ciclo univa una coppia alla volta,
-e ogni unione dipendeva dalla precedente. Per questo un pezzo di testo andava
-letto a tratti, in sequenza, e il calcolo non si poteva fare tutto insieme.
+### Passo 5 · Salvare, riprendere, mettere in coda
 
-Ora (`concept-graph-v2`) **quando** si unisce e **fra quali** concetti è deciso
-dalla posizione, non da una ricerca: i blocchi sono sempre gli stessi per ogni
-testo della stessa lunghezza. Quindi:
+Ogni 100 passi e ogni 5 minuti il programma salva un **checkpoint** (pesi,
+stato della correzione, punto raggiunto nei dati) e misura l'errore sul testo
+di validazione. Dopo una pausa o un riavvio del server riprende da lì, da solo.
+Tiene gli ultimi tre, il migliore e, se richiesto, uno ogni N passi per sempre.
 
-- durante l'addestramento tutti i blocchi di un livello si calcolano insieme,
-  con poche operazioni fra matrici, e tutti i token del pezzo leggono in un
-  colpo solo; i passi sono tanti quanti i livelli (circa il logaritmo della
-  lunghezza), come i layer di una rete;
-- dentro un blocco le unioni sono un numero fisso (da 32 concetti a 16: sedici
-  unioni) e si fanno per tutti i blocchi contemporaneamente; dopo ogni unione
-  si ricalcola solo la riga del concetto nuovo;
-- mentre scrive, il modello tiene gli stessi blocchi e li aggiorna un token alla
-  volta: il risultato è quello dell'addestramento (identico a dieci cifre in
-  doppia precisione; nei modelli veri, in precisione singola, due unioni di
-  costo quasi uguale possono scambiarsi e la lettura cambia di poco), anche
-  se riceve un prompt intero e poi continua.
+I testi della **coda** vengono imparati uno dopo l'altro: ognuno parte dai pesi
+lasciati dal precedente.
 
-Che cosa **non** è cambiato: che cos'è un concetto, come lo si legge e il costo
-con cui si decide chi unire. Con abbastanza concetti il layer **è** l'attenzione
-normale (verificato). I progetti creati prima continuano con il loro strato.
+### Passo 6 · Le domande di prova
 
-### Lo stesso meccanismo per le tabelle
+A ogni salvataggio il modello risponde alle stesse domande, sempre scegliendo
+il token più probabile: le differenze fra «prima» e «adesso» vengono solo da
+ciò che ha imparato. All'inizio le risposte sono ripetizioni; poi compaiono
+frasi corrette nella forma e sbagliate nei fatti; i fatti arrivano per ultimi.
 
-I blocchi non servono solo al testo. Anche una tabella viene letta così: le
-righe entrano una volta sola, a blocchi; due blocchi uguali diventano un blocco
-doppio unendo i concetti che costano meno a chi legge. La differenza è che una
-tabella non ha un prima e un dopo: alla fine si leggono solo i concetti rimasti
-in cima, e da quelli parte la ricerca dei livelli della scheda Modello.
+### Passo 7 · Come scrive
 
-Per questo una tabella grande non deve più stare in memoria: si legge a pezzi,
-tre volte (le scale degli attributi; i blocchi; l'aggiunta di ogni riga ai
-concetti finali), e i pezzi si possono leggere in più processi insieme. La
-ricerca dei livelli lavora su 20.000 righe estratte a caso, perciò il suo tempo
-non dipende dalla grandezza della tabella. Misurato: due milioni di righe in
-circa sei minuti con due processi.
+Il modello dà una probabilità a ogni token, se ne sceglie uno, lo si aggiunge e
+si ripete. Con temperatura 0 si prende sempre il più probabile; più alta, il
+testo è più vario e meno preciso. In una conversazione la domanda è scritta con
+i segnali `<|im_start|>user … <|im_end|>` e il modello scrive fino al segnale
+di fine turno.
 
-### Come impara
+Mentre scrive, ogni strato tiene la finestra e i blocchi, e li aggiorna a ogni
+token: dopo 1.000 token sono al massimo 16 + 16 × 10 vettori, dopo un milione
+16 + 16 × 20, contro 1.000 e un milione dell'attenzione normale.
 
-- **Obiettivo.** Il modello vede un pezzo di testo e, per ogni posizione, deve
-  dare la probabilità del token vero successivo. L'errore è il logaritmo
-  negativo di quella probabilità, mediato: **NLL**. Più basso è meglio; 0
-  vorrebbe dire certezza assoluta. La **perplessità** ($e^{\text{NLL}}$) è fra
-  quanti token in media il modello è incerto.
-- **Correzione.** A ogni passo l'errore indica come cambiare i pesi per
-  sbagliare meno (discesa del gradiente, ottimizzatore AdamW). Un passo legge
-  8 pezzi di testo (accumulo) prima di correggere.
-- **Che cosa si addestra.** Il modello nasce da zero: tutti i pesi partono
-  casuali (dal seme del progetto) e tutti imparano, senza un modello
-  preaddestrato e senza adattatori. Anche il **tokenizer** nasce dai testi
-  dell'addestramento, italiano e inglese insieme. Dimensioni: micro (circa 12
-  milioni di parametri, 4 layer), piccolo (circa 50 milioni, 8 layer), base
-  (circa 138 milioni, 12 layer, solo con GPU). I concetti non hanno pesi
-  propri: si formano dalle chiavi del testo.
-- **Validazione.** Una parte dei testi (circa l'1%) non viene mai usata per
-  imparare. A ogni salvataggio il modello viene misurato lì: se l'errore su
-  quel testo smette di scendere mentre quello di addestramento scende ancora,
-  il modello sta imparando a memoria invece di generalizzare.
-- **Salvataggi.** Ogni 100 passi e ogni 5 minuti si salva un checkpoint
-  (pesi, ottimizzatore, posizione nei dati): dopo una pausa o un riavvio
-  l'addestramento riprende esattamente da lì. Si tengono gli ultimi tre, il
-  migliore sulla validazione e, se lo si chiede, uno ogni N passi per sempre.
-- **Coda di apprendimento.** I testi vengono imparati uno dopo l'altro; ognuno
-  riparte dai pesi lasciati dal precedente, quindi niente di quanto imparato
-  viene buttato. Ogni testo ha il suo avanzamento.
+### Come leggere le grandezze della pagina
 
-### Come genera e come conversa
+| Voce | Che cosa dice |
+|---|---|
+| Parametri totali / che imparano | Quanti pesi ha il modello; nel modello nato da zero imparano quasi tutti. |
+| Layer a concetti | Quanti strati leggono attraverso i concetti: tutti. |
+| Memoria di lettura per layer | Finestra + concetti per livello: i vettori che uno strato tiene per leggere un pezzo. |
+| Passo | Correzioni fatte sul totale previsto per questo testo. |
+| Token elaborati | Token letti finora (passi × 2.048). |
+| Velocità | Token letti al secondo, misurati sul server. |
+| Tempo che manca | Token rimasti diviso la velocità attuale. |
+| Errore sul testo di addestramento | L'errore sui pezzi appena letti: oscilla, perché ogni passo legge testo diverso. |
+| Errore su testo mai visto | L'errore sulla validazione: è quello che conta. Se risale mentre l'altro scende, il modello impara a memoria. |
+| Al passo 0 | L'errore prima di imparare: il punto di partenza. |
+| Passo di apprendimento | Quanto forte è ogni correzione; sale all'inizio e poi cala. |
+| Ampiezza della correzione | Norma del gradiente: valori stabili sono un buon segno, salti grandi no. |
+| Checkpoint tenuti / spazio | Quanti salvataggi ci sono e quanto disco occupano. |
 
-- **Un token alla volta.** Il modello dà una probabilità a ogni token del
-  vocabolario; se ne sceglie uno, lo si aggiunge al testo e si ripete.
-- **Scelta.** Con *temperatura 0* si prende sempre il più probabile (risposte
-  ripetibili: le usano le domande di prova); con temperatura più alta si
-  pesca secondo le probabilità, e il testo è più vario e meno preciso.
-- **Conversazione.** I dati di dialogo sono scritti con dei segnali che dicono
-  chi parla: `<|im_start|>user` … `<|im_end|>` per la persona,
-  `<|im_start|>assistant` … `<|im_end|>` per il modello. Quando gli si fa una
-  domanda, il modello riceve la domanda in questo formato e scrive fino al
-  segnale di fine turno.
-- **Memoria mentre scrive.** Con l'attenzione normale ogni token scritto
-  aggiunge un vettore alla memoria di ogni layer. Con i concetti la memoria di
-  un layer è la finestra più 16 concetti per livello: cresce con il logaritmo
-  del testo.
+L'errore è un logaritmo: $e^{\text{errore}}$ è fra quanti token, in media, il
+modello è incerto. Errore 5 vuol dire circa 150 token possibili; errore 3,
+circa 20.
 
-### Come si capisce se funziona
+Il **controllo** è lo stesso modello, sugli stessi dati, con l'attenzione
+normale: se le due linee del grafico restano vicine, i concetti non costano
+qualità.
 
-1. **Prova in piccolo** (laboratorio): tre modellini identici imparano da zero;
-   cambia solo come leggono. Si misura se i concetti ritrovano informazione
-   lontana come l'attenzione normale (memoria) e se non peggiorano il testo.
-2. **Errore sul riferimento fisso** durante l'addestramento lungo: deve
-   scendere nel tempo.
-3. **Risposte di prova**: le stesse domande a ogni salvataggio, per leggere i
-   miglioramenti con i propri occhi.
+### Quanto è veloce
 
-### Quanto è veloce (misurato)
+Token al secondo in addestramento, modello micro intero, un processore di
+sviluppo con un thread:
 
-Sul processore di sviluppo, un thread, modello micro (4 layer, 256 dimensioni),
-token al secondo in addestramento:
+| Token per pezzo | Attenzione normale | Concetti |
+|---:|---:|---:|
+| 256 | 886 | 765 |
+| 1.024 | 907 | 812 |
+| 2.048 | 581 | 792 |
 
-| Token per pezzo | Attenzione normale | Concetti di prima (v1) | Concetti di adesso (v2) |
-|---:|---:|---:|---:|
-| 256 | 3.534 | 542 | 1.543 |
-| 1.024 | 2.297 | 494 | 1.880 |
-| 2.048 | 956 | 437 | 2.025 |
-| 4.096 | 476 | — | 1.892 |
-| 8.192 | 250 | — | 1.845 |
+Solo gli strati che leggono, a contesti più lunghi:
 
-Sono i soli layer che leggono. Con tutto il resto del modello nativo micro
-(vocabolario di 32.000 token, strati interni), lo stesso confronto dà 886, 403 e
-765 token al secondo a 256 token, e 581, 337 e 792 a 2.048.
+| Token per pezzo | Attenzione normale | Concetti |
+|---:|---:|---:|
+| 2.048 | 956 | 2.025 |
+| 4.096 | 476 | 1.892 |
+| 8.192 | 250 | 1.845 |
 
-Mentre scrive, per layer, dopo N token di contesto:
+L'attenzione normale rallenta con la lunghezza; i concetti quasi no. Sul
+server la velocità reale è quella mostrata dalla pagina: dipende dal
+processore.
 
-| Contesto | Attenzione normale | v1 | v2 |
-|---:|---:|---:|---:|
-| 256 | 3.644 | 678 | 1.682 |
-| 1.024 | 1.924 | 892 | 1.531 |
-| 4.096 | 324 | 1.047 | 819 |
-| 16.384 | 67 | 917 | 1.254 |
+### Limiti, in chiaro
 
-Dopo 16.384 token l'attenzione normale tiene 16.384 vettori per layer, i
-concetti 64. (Il valore a 4.096 cade nel momento in cui molti blocchi si
-uniscono insieme: è il caso peggiore, non la media.)
+- Sui pezzi di 256 token i concetti sono un po' più lenti dell'attenzione
+  normale; conviene sui contesti lunghi.
+- Un modello nato da zero deve imparare tutto: la lingua, i fatti, il modo di
+  conversare. Il modello micro impara a scrivere in modo scorrevole molto prima
+  di sapere i fatti; un chatbot che risponde bene richiede miliardi di token e
+  modelli più grandi, quindi una GPU.
+- I concetti non riducono i dati necessari: cambiano come si legge il
+  contesto, non dove si conserva la conoscenza, che resta nei pesi.
+- La memoria di lettura non è fissa: cresce di un livello a ogni raddoppio del
+  testo.
 
-L'attenzione normale rallenta con la lunghezza; i concetti no. Sui pezzi corti
-l'attenzione normale resta la più veloce, perché le sue moltiplicazioni fra
-matrici sono le più ottimizzate che esistano.
+---
 
-### Limiti attuali, in chiaro
+## Parte B · Una tabella
 
-- Sui pezzi di 256 token lo strato a concetti è ancora più lento
-  dell'attenzione normale; la supera sui contesti lunghi (tabella sopra).
-- Le prove di qualità sono su modellini e su pochi semi: dicono che il
-  meccanismo non perde rispetto a quello di prima, non che un modello grande
-  converserà bene.
-- La memoria non è più fissa ma cresce con il logaritmo della lunghezza: è il
-  prezzo per poter calcolare tutto insieme.
-- Un modello che nasce da zero deve imparare tutto: la lingua, i fatti, il
-  modo di conversare. Un chatbot che risponde bene richiede miliardi di token
-  e modelli più grandi, quindi una GPU.
-- Un modello piccolo resta limitato con o senza concetti: impara a scrivere in
-  modo scorrevole prima di sapere i fatti.
-- I concetti non riducono i dati necessari: lo strato cambia come si legge il
-  contesto, non come si conserva la conoscenza, che resta nei pesi.
+### Passo 1 · Caricare il file
+
+Il file viene letto e ripulito. Se ha più di 10.000 righe la pagina lavora su
+un **campione** di 10.000 (grafici, filtri, anteprima), mentre la **tabella
+intera** resta sul server per l'addestramento, fino a un milione di righe.
+
+### Passo 2 · Scegliere che cosa prevedere
+
+Il programma propone un target e le colonne da escludere (identificativi, testo
+libero). Senza target cerca solo i gruppi. Una parte delle righe (il 20%) è
+messa da parte per la valutazione.
+
+### Passo 3 · Addestrare
+
+Con una tabella piccola il programma cerca subito i livelli. Con una tabella
+oltre le 20.000 righe la legge tre volte, un pezzo alla volta, e la barra di
+avanzamento dice in quale lettura si trova:
+
+1. **Lettura 1 · scala degli attributi.** Media e deviazione di ogni colonna,
+   e 20.000 righe estratte a caso.
+2. **Lettura 2 · concetti specifici a blocchi.** Ogni riga entra una volta in
+   un blocco; i blocchi uguali si uniscono a due a due. È lo stesso meccanismo
+   dei token del passo 4 qui sopra.
+3. **Ricerca dei livelli.** Dai concetti dei blocchi a un solo concetto,
+   unendo un ventesimo dei concetti alla volta e giudicando ogni passo sulle
+   righe non viste. Si fa due volte: prima i concetti generali, poi ciò che più
+   concetti generali hanno in comune.
+4. **Lettura 3 · ogni riga aggiunta ai concetti finali**, così le loro somme
+   sono sull'intera tabella.
+
+Durante l'addestramento la pagina mostra:
+
+| Voce | Che cosa dice |
+|---|---|
+| Righe lette in questa lettura | A che punto è la lettura in corso. |
+| Concetti nei blocchi | Quanti concetti specifici ci sono finora. |
+| Concetti a questo passo | Quanti concetti restano nella ricerca dei livelli, e da quanti è partita. |
+| Errore sulle righe non viste | Il giudizio del passo attuale: meno è meglio. Scende finché unire concetti non toglie informazione, poi risale. |
+| Tempo trascorso / che manca | La stima usa la parte già fatta; nella ricerca dei livelli è approssimata. |
+| Memoria del processo | Il picco di memoria del processo che addestra. |
+
+Il limite di 15 minuti vale solo per un addestramento che non dà più notizie:
+finché avanza, continua.
+
+### Passo 4 · Leggere il risultato
+
+Il grafo mostra i livelli (i concetti generali in alto, quelli particolari
+sotto), le frecce fra livelli (da quali concetti generali discende ciascuno) e
+le linee tratteggiate fra concetti vicini. La scheda Valutazione misura le
+previsioni sulle righe messe da parte; la scheda Previsione completa una riga
+nuova.
+
+### Limiti, in chiaro
+
+- Oltre un milione di righe il file va addestrato dalla libreria
+  (`ConceptModel.fit_chunks`), non dalla pagina.
+- La pagina addestra con un solo processo; la libreria può usarne di più.
+- Su due milioni di righe sintetiche l'addestramento ha richiesto circa sei
+  minuti con due processi. Un miliardo di righe non è stato misurato.
 """
 
 layout = html.Div(dcc.Markdown(TEXT, mathjax=True), className='p-3', style={'maxWidth': '960px', 'margin': 'auto'})

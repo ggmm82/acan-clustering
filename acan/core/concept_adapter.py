@@ -90,7 +90,9 @@ def train(learner, epochs):
             k_active=step['k']))
         return not learner._should_stop
 
-    model = ConceptModel(seed=learner.random_state).fit(x, labels, encoder=encoder, progress=progress)
+    model = ConceptModel(seed=learner.random_state, chunk_rows=20000)   # a large table tells its progress often
+    model.report = getattr(learner, 'report', None)             # the phases and their quantities, for whoever follows
+    model.fit(x, labels, encoder=encoder, progress=progress)
     s = model.statistics
     k, m = len(s['C']), len(learner.cols)
     groups, relevance = _prototypes(model, encoder, s, m)

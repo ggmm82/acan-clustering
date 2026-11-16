@@ -273,6 +273,16 @@ La memoria comprende la tabella generata in memoria per la prova. Circa 46
 secondi di ogni riga sono la ricerca dei livelli sulle 20.000 righe estratte:
 non dipendono dalla grandezza.
 
+### Nell'applicazione (8.9.0)
+
+Un file con più di 10.000 righe: la pagina lavora su un campione di 10.000, la
+tabella intera (fino a un milione di righe) resta sul server e l'addestramento
+la legge tutta, con il percorso a pezzi. Il processo che addestra manda alla
+pagina la fase (le tre letture e la ricerca dei livelli), le righe lette, i
+concetti, l'errore sulle righe non viste, la memoria e una stima del tempo che
+manca. Il limite di 15 minuti conta solo il tempo senza notizie dal processo.
+Misurato con il percorso dell'app: 400.000 righe di addestramento in 92 secondi.
+
 ### Che cosa dicono, e che cosa no
 
 - Tutte le soglie sono superate e su venti split nessuna differenza con la

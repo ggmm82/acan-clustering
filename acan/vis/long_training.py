@@ -344,11 +344,11 @@ def register(app):
             return dbc.Alert(str(exc), color='warning')
 
     @app.callback(Output('lm-long-corpora', 'options'), Output('lm-long-add-corpus', 'options'), Output('lm-long-model', 'options'),
-                  Output('lm-long-queue', 'options'), Output('lm-long-queue', 'value'),
-                  Input('lm-state', 'data'), State('lm-long-queue', 'value'))
-    def queue_options(state, current):
+                  Output('lm-long-queue', 'options'), Output('lm-long-queue', 'value'), Output('lm-long-model', 'value'),
+                  Input('lm-state', 'data'), State('lm-long-queue', 'value'), State('lm-long-model', 'value'))
+    def queue_options(state, current, size=None):
         if not state:
-            return [], [], [], [], None
+            return [], [], [], [], None, size or 'micro'
         corpora = [dict(label=f"{item['name']} ({item['received']/1048576:,.1f} MB)", value=item['id'])
                    for item in state.get('corpora', []) if item['status'] == 'ready']
         cuda = (state.get('capabilities') or {}).get('cuda', False)
@@ -357,7 +357,9 @@ def register(app):
         found = queues(state.get('jobs', []))
         options = [dict(label=f"{items[0]['config']['name'].split(' · ')[0]} · {len(items)} testi · #{key[:4]}", value=key) for key, items in found.items()]
         value = current if current in found else (options[0]['value'] if options else None)
-        return corpora, corpora, models, options, value
+        # The size stays chosen when the options are refreshed (an empty box meant no size was shown).
+        allowed = [item['value'] for item in models if not item['disabled']]
+        return corpora, corpora, models, options, value, size if size in allowed else 'micro'
 
     @app.callback(Output('lm-long-queue-view', 'children'), Input('lm-state', 'data'), Input('lm-long-queue', 'value'))
     def queue_view(state, queue):

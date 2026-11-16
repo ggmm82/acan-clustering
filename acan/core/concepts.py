@@ -114,6 +114,7 @@ class ConceptModel:
         self.bins, self.refine_rows = bins, refine_rows          # concepts of a block of the scan; rows the levels are refined on
         self.chunk_rows = chunk_rows                             # rows read at a time from a large table
         self.workers = workers                                   # processes that read the chunks of a large table
+        self.report = None                                       # called with what is happening while learning, if set
         self.covariance, self.covariance_attributes = covariance, covariance_attributes
         self.cross, self.cov = None, np.zeros(0, int)            # cross products of the working level, if adopted
         self.max_concepts, self.rows_per_concept = max_concepts, rows_per_concept
@@ -465,7 +466,7 @@ class ConceptModel:
         for restart in range(1 if specific is not None else restarts or (self.restarts if n <= self.restart_rows else 1)):
             s = specific if specific is not None else scan(self, data, self._block(k, n), rng.permutation(n))
             s = self._em(s, data, weights, 10)
-            judged_at = np.inf
+            judged_at, first_k = np.inf, len(s['C'])
             while True:
                 k_now = len(s['C'])
                 step = dict(k=k_now, restart=restart, data=data, statistics=s, pair_criterion=self.pair_criterion(s),
@@ -475,6 +476,8 @@ class ConceptModel:
                     scores, judged_at = self._score(s, data, weights, judged), k_now
                     step.update(score=float(scores.mean()), scores=scores, error=float(scores.std()/np.sqrt(len(scores))))
                 path.append(step)
+                self._tell('levels', concepts=k_now, start=first_k, search=1 if start is None else 2,
+                           score=step['score'] if np.isfinite(step['score']) else None)
                 if np.isfinite(step['score']) and progress is not None and progress(step) is False:
                     return path
                 if len(s['C']) == 1:
@@ -526,6 +529,11 @@ class ConceptModel:
         top = max(step['pair_criterion'] for step in steps)
         return min((step for step in steps if step['pair_criterion'] >= top-TIE*abs(top)), key=lambda step: step['k'])
 
+    def _tell(self, phase, **facts):
+        """What is happening now, for whoever follows the learning: the phase and its quantities."""
+        if self.report is not None:
+            self.report(dict(phase=phase, **facts))
+
     def _roots(self, base):
         """Frequencies and impurities of the table, and the grid of its numbers: the scale of the root."""
         observed = np.zeros(self.encoder.width)
@@ -538,7 +546,8 @@ class ConceptModel:
     def fit(self, frame, labels=(), encoder=None, progress=None):
         if len(frame) > self.refine_rows:                        # a large table is read a chunk at a time
             step = self.chunk_rows
-            return self.fit_chunks(lambda: (frame.iloc[start:start+step] for start in range(0, len(frame), step)),
+            self._total = len(frame)
+            return self.fit_chunks(lambda: (frame[start:start+step] for start in range(0, len(frame), step)),
                                    labels, encoder, progress)
         self.labels = list(labels)
         self.encoder = encoder or Encoder().fit(frame)
@@ -559,14 +568,18 @@ class ConceptModel:
         rng = np.random.default_rng(self.seed)
         self.encoder = encoder or Encoder().fit_chunks(read())
         drawn, keys, self.rows = None, np.zeros(0), 0
+        total = getattr(self, '_total', None)                    # known when the table is held in memory
+        join = lambda first, second: pd.concat((first, second)) if hasattr(first, 'iloc') else np.concatenate((first, second))
+        take = lambda rows, index: rows.iloc[index] if hasattr(rows, 'iloc') else rows[index]
         for frame in read():                                     # the rows with the smallest random keys: a uniform draw
             self.rows += len(frame)
             key = rng.random(len(frame))
-            drawn = frame if drawn is None else pd.concat((drawn, frame))
+            drawn = frame if drawn is None else join(drawn, frame)
             keys = np.concatenate((keys, key))
             if len(keys) > self.refine_rows:
                 keep = np.sort(np.argpartition(keys, self.refine_rows)[:self.refine_rows])
-                drawn, keys = drawn.iloc[keep], keys[keep]
+                drawn, keys = take(drawn, keep), keys[keep]
+            self._tell('scale', rows=self.rows, total=total)
         sample = self.encoder.transform(drawn)
         self._roots(sample)
         k = int(min(self.max_concepts, max(self.rows//self.rows_per_concept, 1)))
@@ -582,11 +595,14 @@ class ConceptModel:
                     waiting.append(pool.submit(scan_part, (self, blocks.bins, frame)))
                     if len(waiting) >= 2*self.workers:
                         blocks.absorb(waiting.pop(0).result())
+                        self._tell('scan', rows=blocks.rows, total=self.rows, concepts=blocks.concepts())
                 for part in waiting:
                     blocks.absorb(part.result())
+                    self._tell('scan', rows=blocks.rows, total=self.rows, concepts=blocks.concepts())
         else:
             for frame in read():
                 blocks.push(self.encoder.transform(frame))
+                self._tell('scan', rows=blocks.rows, total=self.rows, concepts=blocks.concepts())
         self._learn(sample, progress, specific=blocks.result())
         if self.rows > len(drawn):
             self._finish(read)
@@ -594,8 +610,10 @@ class ConceptModel:
 
     def _finish(self, read):
         """Every row of the table is added to the concepts of the working level, as it recognizes them."""
-        total, cross = None, None
+        total, cross, done = None, None, 0
         for frame in read():
+            done += len(frame)
+            self._tell('finish', rows=done, total=self.rows, concepts=len(self.statistics['C']))
             data = self._seen(self.encoder.transform(frame))[0]
             t = self._route(self.statistics, data, self.train_weights)[0]
             part = self._statistics(t, data)
