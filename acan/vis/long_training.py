@@ -535,7 +535,16 @@ def register(app):
         if not items:
             return html.P('Compaiono quando il primo testo comincia a imparare.', className='small text-muted')
         try:
-            return footprint_view(backend(workspace, f"/jobs/{current_item(items)['id']}/footprint"))
+            current = current_item(items)
+            learned = [job for job in items if job['checkpoint'] and (job['progress'] or {}).get('graft')]
+            if not (current['progress'] or {}).get('graft') and learned:
+                # The next text is still preparing its tokens: the model is the one learned so far.
+                previous = learned[-1]
+                order = lambda job: (job['config'].get('series') or {}).get('order', 0)+1
+                note = dbc.Alert(f"Il testo {order(current)} sta preparando i token: qui sotto il modello appreso fino al testo "
+                                 f"{order(previous)}, da cui il testo {order(current)} ripartirà.", color='info', className='small py-2')
+                return html.Div([note, footprint_view(backend(workspace, f"/jobs/{previous['id']}/footprint"))])
+            return footprint_view(backend(workspace, f"/jobs/{current['id']}/footprint"))
         except ValueError as exc:
             return html.P(str(exc), className='small text-muted')
 
