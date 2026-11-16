@@ -343,7 +343,7 @@ layout = dbc.Card(dbc.CardBody([
     html.H5('3 · Cosa risponde adesso', className='mt-3'),
     html.P("Le stesse domande a ogni salvataggio, con la stessa estrazione casuale (seme fisso): le differenze vengono solo da ciò che il modello "
            "ha imparato. Per fargli domande libere: Pausa e salva, poi «Fai scrivere un modello» negli strumenti avanzati "
-           "con la casella «Conversazione», poi Riprendi. Scaricare e ispezionare il modello si fa da «Segui i progetti».",
+           "con la casella «Conversazione», poi Riprendi. Per scaricare il modello: scegli il progetto in «Segui i progetti», poi negli strumenti avanzati «Fai scrivere un modello addestrato» scegli la copia salvata e premi «Scarica questa copia del modello». Si può scaricare anche mentre impara. I concetti del modello si vedono nelle «Grandezze del modello mentre impara».",
            className='small'),
     html.Div(id='lm-long-answers'),
     dcc.Store(id='lm-long-catalog'), dcc.Store(id='lm-long-builds'), dcc.Interval(id='lm-long-poll', interval=5000),

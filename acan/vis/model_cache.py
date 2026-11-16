@@ -5,7 +5,8 @@ and back to the server with every callback that reads it (the graph, the evaluat
 and the page would seem stuck after training. ``keep`` writes the JSON once to a cache folder, named by its
 SHA-256, and returns ``acan-model:<sha>``; ``resolve`` gives the JSON back for a reference and leaves any other
 value as it is (a model uploaded from a file before this change, or by a test). Files are shared by every
-process of the server and the oldest are removed beyond ``LIMIT``.
+process of the server; the oldest are removed beyond a size limit. On the server the cache is a volume
+(``ACAN_MODEL_CACHE``), so a model survives a restart or an update of the server.
 """
 import hashlib
 import os
@@ -14,31 +15,59 @@ import tempfile
 from pathlib import Path
 
 PREFIX = 'acan-model:'
-LIMIT = 200
+PERSISTENT_BYTES = 512 << 20                                   # on the server's volume (survives restarts)
+TEMPORARY_BYTES = 96 << 20                                     # in /tmp, which is small and lost at a restart
 
 
 def folder():
-    path = Path(os.environ.get('ACAN_MODEL_CACHE') or Path(tempfile.gettempdir())/'acan-models')
+    """The cache: ACAN_MODEL_CACHE (a volume of the server) when it can be written, else the temporary folder."""
+    preferred = os.environ.get('ACAN_MODEL_CACHE')
+    if preferred:
+        path = Path(preferred)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            if os.access(path, os.W_OK):
+                return path, PERSISTENT_BYTES
+        except OSError:
+            pass
+    path = Path(tempfile.gettempdir())/'acan-models'
     path.mkdir(parents=True, exist_ok=True)
-    return path
+    return path, TEMPORARY_BYTES
+
+
+def _prune(root, limit):
+    files = sorted(root.glob('*.json'), key=lambda path: path.stat().st_mtime)
+    total = sum(path.stat().st_size for path in files)
+    for old in files[:-1]:                                      # the newest model always stays
+        if total <= limit:
+            break
+        total -= old.stat().st_size
+        old.unlink(missing_ok=True)
 
 
 def keep(model_json):
-    """The reference of a model's JSON, written to the cache if it is not there yet."""
+    """The reference of a model's JSON, written to the cache if it is not there yet.
+
+    If the cache cannot be written (a full or read-only disk) the JSON itself is kept in the page, as before.
+    """
     if not isinstance(model_json, str) or model_json.startswith(PREFIX):
         return model_json
     digest = hashlib.sha256(model_json.encode()).hexdigest()
-    root = folder()
-    target = root/f'{digest}.json'
-    if not target.exists():
-        temporary = root/f'.{digest}.{os.getpid()}.tmp'
-        temporary.write_text(model_json, encoding='utf-8')
-        os.replace(temporary, target)
-        files = sorted(root.glob('*.json'), key=lambda path: path.stat().st_mtime)
-        for old in files[:max(len(files)-LIMIT, 0)]:
-            old.unlink(missing_ok=True)
-    else:
-        target.touch()
+    try:
+        root, limit = folder()
+        target = root/f'{digest}.json'
+        if target.exists():
+            target.touch()
+        else:
+            temporary = root/f'.{digest}.{os.getpid()}.tmp'
+            try:
+                temporary.write_text(model_json, encoding='utf-8')
+                os.replace(temporary, target)
+            finally:
+                temporary.unlink(missing_ok=True)
+            _prune(root, limit)
+    except OSError:
+        return model_json
     return PREFIX+digest
 
 
@@ -49,7 +78,7 @@ def resolve(data):
     digest = data[len(PREFIX):]
     if not re.fullmatch('[0-9a-f]{64}', digest):
         raise ValueError('Riferimento al modello non valido.')
-    path = folder()/f'{digest}.json'
+    path = folder()[0]/f'{digest}.json'
     try:
         return path.read_text(encoding='utf-8')
     except FileNotFoundError:
