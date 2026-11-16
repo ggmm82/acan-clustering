@@ -1,95 +1,70 @@
-"""The concept graph step by step: what happens to a table and to a text, with the formula of every step."""
+"""The concept model step by step: one story for the rows of a table and the positions of a text."""
 from dash import dcc, html
 
 TEXT = r"""
 ## Il modello, passo per passo
 
-Questa pagina segue i dati dall'ingresso al risultato e dà la formula di ogni
-passo. Prima una tabella, poi un testo: il modello è lo stesso, e alla fine una
-tabella mette i due percorsi uno accanto all'altro.
+C'è un solo modello. Le sue osservazioni sono **righe**: una riga di una tabella,
+oppure una posizione di un testo. Questa pagina le segue dall'ingresso alla
+previsione e dà la formula di ogni passo. Ogni passo vale per entrambe; dove una
+riga di tabella e una posizione di testo si comportano diversamente, il passo
+dice come e perché.
 
-**L'idea in tre righe.** Un *concetto* è un riassunto di più osservazioni fatto
-solo di somme. *Riconoscere* un'osservazione vuol dire pesare i concetti per
-quanto le somigliano. *Generalizzare* vuol dire sommare due concetti, scegliendo
-la coppia che costa meno a chi poi li legge. Un insieme di concetti è buono
-quanto permette di leggere ciò che serve da osservazioni che non ha visto.
+**L'idea in tre righe.** Un *concetto* è un riassunto di più righe fatto solo di
+somme. *Riconoscere* una riga vuol dire pesare i concetti per quanto le
+somigliano. *Generalizzare* vuol dire sommare un concetto con un altro o con il
+suo livello sopra, dove chi poi legge perde meno. Un insieme di concetti è buono
+quanto permette di leggere ciò che serve da righe che non ha visto.
 
 ---
 
-## Parte A · Una tabella
+### Passo 1 · I dati diventano righe
 
-### Passo 1 · La tabella diventa numeri
+**Una tabella.** Ogni colonna numerica è portata a media zero e deviazione uno,
+con la media e la deviazione delle righe di addestramento. Ogni colonna
+categorica diventa un gruppo di caselle, una per valore. Un valore mancante non
+viene inventato: è segnato come non osservato e non partecipa ai calcoli.
 
-Ogni colonna numerica è portata a media zero e deviazione uno, con la media e la
-deviazione delle righe di addestramento. Ogni colonna categorica diventa un
-gruppo di caselle, una per valore. Un valore mancante non viene inventato: è
-segnato come non osservato e semplicemente non partecipa ai calcoli.
+**Un testo.** Il tokenizer lo divide in token (parole, pezzi di parola, segni),
+ciascuno con un numero fra $0$ e $V-1$. **Il testo è una tabella**: ogni
+posizione $t$ è una riga, i token che la precedono $x_{t-1},x_{t-2},\dots$ sono i
+suoi attributi (categorie con $V$ valori) e il token in quella posizione, $x_t$,
+è la colonna da prevedere.
 
-Ogni riga ha una parte con cui la si **riconosce**, $z$ (gli attributi noti), e
-una parte che si **legge**, $y$ (il target, se c'è; altrimenti ogni attributo a
-turno). Il target non entra mai nel riconoscere.
+In entrambi i casi una riga ha una parte con cui la si **riconosce**, $z$ (gli
+attributi noti), e una parte che si **legge**, $y$ (il target; in una tabella
+senza target, ogni attributo a turno). Il target non entra mai nel riconoscere.
 
-### Passo 2 · Ogni riga è un concetto di un solo membro
+### Passo 2 · Un concetto è fatto di somme
 
 Un concetto $i$ conserva soltanto somme sui suoi membri:
 
 $$
-C_i=\sum 1,\qquad U_i=\sum z,\qquad Q_i=\sum z^2,\qquad N_i=\text{conteggi dei valori categorici}.
+C_i=\sum 1,\qquad U_i=\sum z,\qquad Q_i=\sum z^2,\qquad N_i(v)=\#\{\text{membri con il valore }v\},\qquad D_i=\#\{v:\ N_i(v)>0\}.
 $$
 
-Da qui si ricavano centro e dispersione:
+Da qui centro e dispersione degli attributi numerici: $g_i=U_i/C_i$,
+$s_i^2=Q_i/C_i-g_i^2$. Aggiungere una riga, toglierla o unire due concetti è
+sempre una somma; le somme crescono con il numero di attributi, non con le
+coppie di attributi.
 
-$$
-g_i=\frac{U_i}{C_i},\qquad s_i^2=\frac{Q_i}{C_i}-g_i^2 .
-$$
+Nel testo un concetto di livello $j$ raccoglie le posizioni con gli **stessi
+ultimi $j$ token**, il contesto $c=(x_{t-j},\dots,x_{t-1})$: ne servono solo
+$C_c$, i token che lo seguono $N_c(y)$ e quanti sono diversi $D_c$, perché il
+contesto è uguale per tutti i membri. Il livello 0 è un solo concetto, tutte le
+righe.
 
-Aggiungere una riga, toglierla o unire due concetti è sempre una somma. Le somme
-crescono con il numero di attributi, non con le coppie di attributi.
+I concetti sono **annidati in livelli**: ogni concetto è contenuto in uno più
+generale, il suo **livello sopra**, e le sue somme sono già comprese in quelle
+del livello sopra. In una tabella i livelli si trovano cercandoli (passo 8); nel
+testo sono dati dalla lunghezza del contesto: il livello sopra di un contesto è
+lo stesso contesto senza il token più lontano.
 
-### Passo 3 · Quanto costa unire due concetti
+### Passo 3 · Riconoscere: a quali concetti appartiene una riga
 
-Leggere un concetto al posto dei suoi membri introduce un errore limitato da due
-quantità: quante letture riceve e quanto i membri distano dal centro. Il
-**raggio** è la dispersione nella parte riconosciuta, sulla scala del livello
-sopra ($\sigma_j^2$, che alla radice vale uno):
-
-$$
-\rho_i=\sqrt{\frac1m\sum_j\frac{s_{ij}^2}{\sigma_j^2}}
-$$
-
-(per un attributo categorico al posto della varianza c'è l'impurità
-$1-\sum_v p_{iv}^2$). Il **costo** di unire $i$ e $l$ è la perdita di chi legge:
-
-$$
-\Delta_{il}=(a_i+a_l)\,\rho_{i\cup l}-a_i\,\rho_i-a_l\,\rho_l ,
-$$
-
-dove $a$ sono le letture ricevute. In una tabella ogni riga legge i concetti a
-cui appartiene, quindi $a_i=C_i$. Il costo non è mai negativo e vale zero solo
-fra due copie dello stesso concetto.
-
-### Passo 4 · Una passata a blocchi: i concetti specifici
-
-Le righe entrano una volta sola, in blocchi di $B$ righe. Due blocchi uguali,
-appena completi, diventano un blocco che copre il doppio delle righe:
-
-$$
-\mathcal B_j=\operatorname{gen}_B\big(\mathcal B_{j-1}\cup\mathcal B'_{j-1}\big),
-$$
-
-dove $\operatorname{gen}_B$ unisce la coppia di $\Delta$ minimo finché restano
-$B$ concetti: da $2B$ a $B$ sono $B$ unioni, un numero che dipende dalle
-dimensioni e non dai dati. Dopo l'ultima riga restano al massimo
-$B\,(\lfloor\log_2(n/B)\rfloor+1)$ concetti, ciascuno somma di righe vere: sono
-i **concetti specifici**.
-
-$B$ è un quarto dei concetti specifici ammessi, fra 32 e 128. Una tabella fino a
-256 righe salta questo passo: ogni riga resta un concetto specifico.
-
-### Passo 5 · Riconoscere: a quali concetti appartiene una riga
-
-Il peso del concetto $i$ per la riga $o$ è la sua massa per la somiglianza
-attesa fra $o$ e i suoi membri:
+**Righe di una tabella.** I numeri possono essere vicini o lontani, quindi una
+riga appartiene un po' a più concetti. Il peso del concetto $i$ per la riga $o$ è
+la sua massa per la somiglianza attesa fra $o$ e i suoi membri:
 
 $$
 \log\big(C_i\,\mathbb E[\kappa]\big)=\log C_i-\frac12\sum_{j\in O}\left[\frac{(o_j-g_{ij})^2}{v_{ij}}+\log v_{ij}\right]
@@ -97,327 +72,236 @@ $$
 T_i(o)=\frac{C_i\,\mathbb E_i[\kappa]}{\sum_lC_l\,\mathbb E_l[\kappa]} ,
 $$
 
-con $O$ gli attributi osservati. Un concetto con pochi membri non può essere
-molto preciso: la sua dispersione e le sue frequenze sono avvicinate a quelle del
-livello sopra con il peso di $\kappa$ osservazioni,
+con $O$ gli attributi osservati e $v_{ij}$, $p_i$ letti come al passo 4.
+
+**Posizioni di un testo.** Due token o sono uguali o non lo sono, e due contesti
+pure: una posizione appartiene a **esattamente un concetto per livello**, quello
+del suo contesto, e i concetti si trovano contando, senza cercarli. È la stessa
+regola nel caso limite: la somiglianza fra due contesti diversi è zero. Usata
+sul testo, la ricerca per somiglianza della tabella trova troppi pochi concetti
+e mescolati (3,47 bit per carattere, contro 2,04 contando i contesti).
+
+**Il testo in corso.** Gli stessi concetti si contano anche sul testo che si sta
+leggendo, usando **solo le posizioni precedenti**: $C^{<t}_c$, $N^{<t}_c(y)$,
+$D^{<t}_c$. Così ciò che il testo ha già detto si può ripetere a qualunque
+distanza (un nome apparso all'inizio, la risposta a una domanda). Nessuna
+posizione legge sé stessa o il futuro.
+
+### Passo 4 · Leggere: il livello sopra come riferimento
+
+Un concetto con pochi membri non può essere molto preciso: le sue frequenze e la
+sua dispersione sono avvicinate a quelle del livello sopra,
 
 $$
-v_{ij}=\frac{C_i\,s_{ij}^2+\kappa\,\sigma_j^2}{C_i+\kappa},\qquad
-p_{i}(v)=\frac{N_i(v)+\kappa D_i\,p_{\text{sopra}}(v)}{C_i+\kappa D_i},
+p_i(v)=\frac{N_i(v)+\kappa D_i\,p_{\text{sopra}}(v)}{C_i+\kappa D_i},\qquad
+v_{ij}=\frac{C_i\,s_{ij}^2+\kappa\,\sigma_j^2}{C_i+\kappa} .
 $$
 
-con $D_i$ il numero di valori diversi che l'attributo ha nel concetto: un concetto
-i cui membri hanno molti valori diversi si appoggia di più al livello sopra.
-Mentre si cercano i concetti $\kappa=1$ e $D$ non conta; trovati i concetti,
-$\kappa$ è scelto dal giudizio (passo 7) fra $2^{-5}$ e $2^{8}$. **È la stessa
-regola, scelta nello stesso modo, con cui il testo legge il token che segue**
-(parte B, passo 3): una sola funzione nel codice, `categorical_reading`.
+Un concetto i cui membri hanno molti valori diversi ($D$ grande) è largo e si
+appoggia di più al livello sopra; uno con un solo valore è stretto e si fida di
+sé. Un concetto senza membri lascia la lettura com'è. È **una sola funzione** nel
+codice, `categorical_reading`, per una categoria di una tabella e per il token
+che segue un contesto.
 
-### Passo 6 · Dai concetti specifici a uno solo
+Nel testo la lettura scende i livelli dal contesto vuoto al più lungo visto, ogni
+livello con il precedente come riferimento, poi continua con i concetti del
+testo in corso:
 
-Si ripete finché resta un solo concetto:
+$$
+p_j(y)=\frac{N_{c_j}(y)+\kappa_jD_{c_j}\,p_{j-1}(y)}{C_{c_j}+\kappa_jD_{c_j}},\quad p_{-1}(y)=\frac1V;
+\qquad
+p^{\text{testo}}_j(y)=\frac{N^{<t}_{c_j}(y)+b_jD^{<t}_{c_j}\,p^{\text{testo}}_{j-1}(y)}{C^{<t}_{c_j}+b_jD^{<t}_{c_j}},\quad p^{\text{testo}}_0=p_{6}.
+$$
 
-1. si uniscono le coppie di $\Delta$ minimo, un ventesimo dei concetti alla volta;
-2. ogni riga viene riassegnata ai concetti con i pesi $T_i$ del passo 5 e le
-   somme vengono ricalcolate (tre volte).
+La tabella sceglie un $\kappa$; il testo un $\kappa_j$ per livello e un $b_j$ per
+livello del testo in corso. Mentre la tabella cerca i suoi concetti $\kappa=1$ e
+$D$ non conta.
 
-La sequenza è un percorso dal particolare al generale: ogni suo punto è un
-possibile insieme di concetti.
+### Passo 5 · Giudicare su ciò che non si è visto
 
-### Passo 7 · Giudicare ogni punto del percorso
+Ogni scelta del modello è presa nello stesso modo: si tiene ciò che legge meglio
+righe che non ha visto.
 
-Per ogni riga si toglie il suo contributo dalle somme e si chiede ai concetti
-rimasti di leggerla:
+**Una tabella.** Per ogni riga si toglie il suo contributo dalle somme e si
+chiede ai concetti rimasti di leggerla:
 
 $$
 C_i^{(-t)}=C_i-T_{it},\quad U_i^{(-t)}=U_i-T_{it}z_t,\quad Q_i^{(-t)}=Q_i-T_{it}z_t^2,
 \qquad J=\frac1n\sum_t\log p^{(-t)}(y_t\mid z_t).
 $$
 
-Un concetto fatto di una sola riga non può sostenere sé stesso. È il numero
-«errore sulle righe non viste» che la pagina mostra durante l'addestramento
-(è $-J$: meno è meglio).
+Un concetto fatto di una sola riga non può sostenere sé stesso.
 
-### Passo 8 · Scegliere il livello di lavoro e i livelli sopra
-
-Il **livello di lavoro**, quello che fa le previsioni, è il più generale fra
-quelli il cui giudizio è entro un errore standard dal migliore:
-
-$$
-K^*=\min\{K:\;J_K\ge\max_{K'}J_{K'}-\mathrm{se}\}.
-$$
-
-I **livelli sopra** sono i tagli del percorso che rendono massima la CP a
-coppie, cioè quanto due righe dello stesso concetto si somigliano più della
-coppia media del livello sopra:
-
-$$
-CP^\circ=\frac1{n(n-1)}\sum_iC_i(C_i-1)\Bigl(1-\frac1m\sum_j\frac{\hat s^2_{ij}}{\bar\sigma'^2_{ij}}\Bigr).
-$$
-
-Un livello resta solo se, come descrizione della tabella, legge le righe non
-viste meglio del livello sopra.
-
-La ricerca viene fatta due volte. La seconda guarda la tabella *attraverso* i
-concetti generali: a ogni riga si toglie il centro del suo concetto e la si
-misura sulla sua dispersione,
-
-$$
-z'_t=z_t-\sum_pT_{pt}\,g_p,\qquad \sigma'^2_{tj}=\sum_pT_{pt}\,s^2_{pj},
-$$
-
-così ciò che si distingue solo dentro un concetto generale diventa visibile, e
-un comportamento che compare in più concetti generali diventa **un solo nodo
-con più genitori**. Due livelli consecutivi sono uniti dalla matrice
-$P_{pi}=\Pr(\text{concetto }p\text{ sopra}\mid\text{concetto }i)$: nel grafo
-dell'app sono le frecce fra le righe.
-
-Infine, se il giudizio lo conferma, il livello di lavoro descrive insieme gli
-attributi numerici che variano insieme (la loro covarianza, ancora una somma).
-
-### Passo 9 · Prevedere
-
-**Classe.** Ogni concetto ha una distribuzione sulle classi e la previsione è
-la loro miscela: $p(y\mid x)=\sum_iT_i(x)\,p_i(y)$.
-
-**Quantità.** Il target è un attributo numerico letto ma mai usato per
-riconoscere: $\hat y(x)=\sum_iT_i(x)\,g_{i,y}$.
-
-**Senza target.** Si legge ogni attributo dagli altri: lo stesso modello
-completa qualunque casella mancante.
-
-### Che cosa mostra il grafo
-
-**Archi.** Due concetti sono collegati quando qualche riga esita fra loro:
-$E_{il}=\frac1n\sum_tT_{it}T_{lt}$ sui due concetti a cui la riga appartiene di
-più (le linee tratteggiate).
-
-**Rilevanza.** Quanta variabilità di un attributo i concetti spiegano:
-
-$$
-r_{ij}=1-\frac{s_{ij}^2}{\sigma_j^2},\qquad \eta_j^2=\sum_i\frac{C_i}{n}\,r_{ij},\qquad CP=\sqrt{\frac1m\sum_j\eta_j^2}.
-$$
-
-La CP sta fra zero e uno ed è riportata, non ottimizzata: crescerebbe sempre
-aumentando i concetti.
-
-### Una tabella più grande della memoria
-
-Oltre 20.000 righe la tabella viene letta tre volte, un pezzo alla volta:
-
-1. **scala**: media e deviazione di ogni attributo, e 20.000 righe estratte a
-   caso con la stessa probabilità;
-2. **blocchi** (passo 4) su tutte le righe; pezzi diversi possono essere letti
-   da processi diversi, perché le somme si sommano;
-3. **livelli** (passi 5–8) sulle righe estratte, a partire dai concetti dei
-   blocchi; poi ogni riga della tabella viene aggiunta ai concetti del livello
-   di lavoro, così le loro somme sono sull'intera tabella.
-
-Tempo proporzionale alle righe; memoria: un pezzo di tabella più i blocchi.
-
----
-
-## Parte B · Un testo
-
-Il testo è una tabella. Non c'è una rete neurale: ci sono gli stessi concetti
-della parte A, con le stesse operazioni.
-
-### Passo 1 · Il testo diventa token, i token diventano righe
-
-Il tokenizer divide il testo in token (parole, pezzi di parola, segni), ciascuno
-con un numero fra $0$ e $V-1$. Ogni posizione $t$ del testo è una **riga**:
-
-- i suoi **attributi** sono i token che la precedono, $x_{t-1},x_{t-2},\dots$;
-- il suo **target** è il token in quella posizione, $x_t$.
-
-Prevedere il testo è prevedere il target di una riga dai suoi attributi.
-
-### Passo 2 · I concetti per contesto
-
-Un concetto di livello $j$ raccoglie tutte le righe con gli **stessi ultimi $j$
-token**: il loro contesto $c=(x_{t-j},\dots,x_{t-1})$. Il livello 0 ha un solo
-concetto, tutte le righe. Il concetto conserva solo somme:
-
-$$
-C_c=\#\{t:\ \text{contesto }c\},\qquad
-N_c(y)=\#\{t:\ \text{contesto }c,\ x_t=y\},\qquad
-D_c=\#\{y:\ N_c(y)>0\}.
-$$
-
-I livelli sono annidati come nella parte A: il concetto $c$ di livello $j$ è
-contenuto nel concetto del suo contesto più corto (senza il token più lontano),
-di livello $j-1$, che è il suo **livello sopra**. Le somme di un concetto sono
-già comprese in quelle del livello sopra.
-
-### Passo 3 · Leggere: il livello sopra come riferimento
-
-È la regola della parte A, passo 5, per un attributo categorico: il token che
-segue è il target categorico della riga, e il suo livello sopra è il contesto più
-corto:
-
-$$
-p_j(y)=\frac{N_{c_j}(y)+\kappa_jD_{c_j}\,p_{j-1}(y)}{C_{c_j}+\kappa_jD_{c_j}},
-\qquad p_{-1}(y)=\frac1V .
-$$
-
-La tabella legge un solo livello e sceglie un $\kappa$; il testo legge un livello
-per lunghezza di contesto e sceglie un $\kappa_j$ per ciascuno, con lo stesso
-giudizio.
-
-Si parte dal livello 0 e si scende finché il contesto è stato visto; un contesto
-mai visto lascia la lettura com'è. Il peso cresce con $D$: un concetto
-seguito da molti token diversi è un concetto largo, e si fida di più del livello
-sopra; uno seguito sempre dallo stesso token è stretto, e si fida di sé.
-
-### Passo 4 · I concetti del testo in corso
-
-Gli stessi concetti si costruiscono anche sul testo che si sta leggendo, usando
-**solo le posizioni precedenti** di quel testo:
-
-$$
-p^{\text{testo}}_j(y)=\frac{N^{<t}_{c_j}(y)+b_j\,D^{<t}_{c_j}\,p^{\text{testo}}_{j-1}(y)}{C^{<t}_{c_j}+b_j\,D^{<t}_{c_j}},
-\qquad p^{\text{testo}}_0=p_{\text{finale}}\ \text{del passo 3}.
-$$
-
-Così ciò che il testo ha già detto si può ripetere, a qualunque distanza: un nome
-apparso all'inizio, la risposta a una domanda. Nessuna posizione legge sé stessa
-o il futuro.
-
-### Passo 5 · I concetti dei token
-
-Due token diversi, per esempio «gatto» e «cane», per i passi 2–4 sono
-semplicemente diversi. Per vedere che si somigliano, il modello tratta **i token
-stessi come righe di una tabella** e ne cerca i concetti con la parte A. La riga
-del token $v$ dice con che frequenza ciascuno dei 256 token più frequenti lo
-precede e lo segue:
-
-$$
-r_v=\Big(\sqrt{\tfrac{\#(u\,v)}{\#(\cdot\,v)}}\Big)_{u}\ \oplus\ \Big(\sqrt{\tfrac{\#(v\,u)}{\#(v\,\cdot)}}\Big)_{u},
-$$
-
-ridotta alle sue direzioni principali (decomposizione ai valori singolari, a 16 e
-a 48 dimensioni). La parte A trova i concetti di queste righe e i loro livelli,
-dal più generale al più particolare: per esempio $2\to9\to20\to33\to325$
-concetti su 8.000 token. Sono i **concetti dei token**: $g(v)$ il concetto
-generale di $v$, $f(v)$ quello particolare.
-
-### Passo 6 · I percorsi verso il token
-
-Il token si può prevedere direttamente (passi 3–4) oppure **lungo un percorso**:
-prima il concetto generale, poi quello particolare dentro il generale, poi il
-token dentro il particolare,
-
-$$
-p(y)=p\big(g(y)\mid\text{contesto}\big)\cdot p\big(f(y)\mid g(y),\text{contesto}\big)\cdot p\big(y\mid f(y),\text{contesto}\big).
-$$
-
-Ogni fattore è la lettura del passo 3 e 4, con le sue somme: un concetto conta le
-righe con lo stesso contesto **e lo stesso nodo del percorso** (il concetto già
-scelto), e il suo target è il passo successivo. Il livello sopra del primo
-livello di un nodo è uniforme sui suoi figli. Il risultato è ancora una
-probabilità esatta su tutto il vocabolario: in ogni nodo i figli sommano a 1.
-
-Il vantaggio è la generalizzazione: un contesto seguito da «cane» alza tutto il
-concetto degli animali, quindi anche «gatto». Nel contesto del percorso il token
-a ogni distanza è preceduto dal suo concetto particolare, così anche contesti
-mai visti esattamente ma fatti di token simili si aiutano.
-
-È una scelta del progetto («Concetti dei token e percorsi», spenta se non la si
-accende): aiuta sui testi piccoli e peggiora su quelli grandi quando la memoria è
-limitata, perché le somme dei percorsi tolgono spazio ai contesti lunghi (parte D).
-
-I percorsi (quello diretto e uno per ogni gerarchia di concetti) si **mescolano**:
-$p(y)=\sum_k w_k\,p_k(y)$, con i pesi $w_k$ scelti dal giudizio come quelli che
-leggono meglio il testo non contato (un'iterazione di attesa e massimizzazione).
-I percorsi leggono contesti fino a 2 token; quello diretto fino a 6.
-
-### Passo 7 · Giudicare i pesi
-
-I pesi $\kappa_j$ (e $b_j$) sono scelti dal giudizio, come nella parte A: si
-prendono i valori (fra $2^{-5}$ e $2^{8}$) che leggono meglio pezzi di testo che
-il modello **non ha contato**,
+**Un testo.** Il testo di validazione non viene mai contato: metà dei suoi pezzi
+sceglie i pesi, l'altra metà misura l'errore,
 
 $$
 (\kappa,b)=\arg\max\ \frac1n\sum_t\log p(x_t\mid x_{<t}),
 $$
 
-un peso alla volta, due giri. Metà dei pezzi di validazione sceglie i pesi,
-l'altra metà misura l'errore: i due insiemi non si toccano.
+un peso alla volta fra $2^{-5},\dots,2^{8}$, due giri. $\kappa$ della tabella è
+scelto fra gli stessi valori. Il numero «errore su righe (o testo) mai viste» che
+le pagine mostrano è $-J$: meno è meglio.
 
-### Passo 8 · Imparare è contare, a blocchi
+### Passo 6 · Contare a blocchi
 
-Un pezzo di testo diventa le sue tabelle di somme. Due tabelle si sommano
-concetto per concetto: $C$, $N$ si sommano, $D$ si ricalcola dai $N$. I pezzi si
-uniscono come i blocchi della parte A, passo 4: due tabelle che coprono lo
-stesso numero di pezzi diventano una tabella che ne copre il doppio. Ogni
-posizione viene sommata circa $\log_2(\text{pezzi})$ volte, e alla fine le somme
-sono quelle dell'intero testo. Un testo successivo della coda aggiunge le sue
-somme a quelle del precedente: nulla viene dimenticato.
+Le righe entrano una volta sola, in blocchi. Due blocchi uguali, appena completi,
+diventano un blocco che copre il doppio delle righe:
 
-### Passo 9 · Restare nella memoria: generalizzare dove chi legge perde meno
+$$
+\mathcal B_j=\operatorname{gen}_B\big(\mathcal B_{j-1}\cup\mathcal B'_{j-1}\big).
+$$
 
-Il numero di contesti diversi cresce con il testo. Oltre la memoria disponibile
-si generalizzano nel livello sopra i concetti che costano meno a chi legge. Il
-costo di un concetto $c$ è quanto peggio i suoi membri sarebbero letti dal
-livello sopra $\bar c$, ciascun membro letto **senza sé stesso** (come il
-giudizio legge righe mai viste):
+**Una tabella.** $\operatorname{gen}_B$ unisce la coppia di costo minimo (passo 7)
+finché restano $B$ concetti: da $2B$ a $B$ sono $B$ unioni, un numero che dipende
+dalle dimensioni e non dai dati. Dopo l'ultima riga restano al massimo
+$B\,(\lfloor\log_2(n/B)\rfloor+1)$ concetti, ciascuno somma di righe vere: i
+**concetti specifici**. $B$ è un quarto dei concetti specifici ammessi, fra 32 e
+128; fino a 256 righe ogni riga resta un concetto specifico.
+
+**Un testo.** Ogni pezzo (un milione di token) diventa le sue tabelle di somme,
+una per livello; due tabelle che coprono lo stesso numero di pezzi si sommano
+concetto per concetto. Ogni posizione è sommata circa $\log_2(\text{pezzi})$
+volte, e alla fine le somme sono quelle dell'intero testo. Un testo successivo
+della coda aggiunge le sue somme a quelle del precedente: nulla viene
+dimenticato.
+
+**Una tabella più grande della memoria** si legge tre volte, un pezzo alla volta:
+la scala di ogni attributo e 20.000 righe estratte a caso; i blocchi su tutte le
+righe (pezzi diversi anche da processi diversi, perché le somme si sommano); i
+livelli sulle righe estratte, poi ogni riga aggiunta ai concetti finali. Un
+milione di righe sintetiche ha richiesto 211 secondi e due milioni 370, con due
+processi e circa 1 GB di memoria.
+
+### Passo 7 · Generalizzare dove chi legge perde meno
+
+Generalizzare toglie una distinzione: due concetti diventano uno, o un concetto
+torna nel suo livello sopra. Il costo è sempre la stessa idea: **letture ×
+perdita** di chi poi legge.
+
+**Una tabella: unire due concetti.** Il **raggio** è la dispersione nella parte
+riconosciuta, sulla scala del livello sopra (per una categoria, l'impurità
+$1-\sum_vp_{iv}^2$),
+
+$$
+\rho_i=\sqrt{\frac1m\sum_j\frac{s_{ij}^2}{\sigma_j^2}},\qquad
+\Delta_{il}=(a_i+a_l)\,\rho_{i\cup l}-a_i\,\rho_i-a_l\,\rho_l ,
+$$
+
+con $a=C$ le letture ricevute. Il costo non è mai negativo e vale zero solo fra
+due copie dello stesso concetto.
+
+**Un testo: restare nella memoria.** I contesti diversi crescono con il testo.
+Oltre il limite di memoria (uno per tutte le somme) un concetto torna nel suo
+livello sopra $\bar c$ se costa poco per byte. Il costo è la log-verosimiglianza
+che i suoi membri perdono, ciascuno letto **senza sé stesso** come nel giudizio:
 
 $$
 \Delta_c=\sum_yN_c(y)\,\log\frac{p^{-}_c(y)}{p_{\bar c}(y)},\qquad
 p^{-}_c(y)=\frac{N_c(y)-1+\kappa D_c\,p_{\bar c}(y)}{C_c-1+\kappa D_c}.
 $$
 
-Un contesto visto una volta sola non dice nulla del suo unico membro: costa zero.
-Senza questa correzione sembrava il concetto più utile da tenere.
+Un contesto visto una volta sola non dice nulla del suo unico membro: costa zero
+e va per primo. Le sue somme restano nel livello sopra. Su wikitext-2 con 400 MB
+di limite l'errore passa da 4,615 a 4,602 tenendo 49 MB di somme invece di 252.
 
-È la stessa idea del costo della parte A (letture × perdita), con le letture
-uguali ai membri. Un concetto che dice la stessa cosa del suo livello sopra
-costa zero e va per primo; le sue somme sono già nel livello sopra, quindi non
-si perde nulla oltre la distinzione. Il livello 0 non si generalizza mai.
+### Passo 8 · I livelli: dal particolare al generale
 
-### Passo 10 · Scrivere
+**Una tabella.** Dai concetti specifici si uniscono le coppie di costo minimo, un
+ventesimo dei concetti alla volta, riassegnando le righe con i pesi del passo 3
+(tre volte), finché resta un solo concetto. Ogni punto del percorso è un insieme
+possibile di concetti, giudicato come al passo 5. Il **livello di lavoro** è il
+più generale entro un errore standard dal migliore:
 
-Per scrivere, si calcola $p(\cdot\mid x_{<t})$ su tutto il vocabolario con i
-passi 3, 4 e 6, si sceglie un token (il più probabile, oppure estratto con
-temperatura $T$: $p^{1/T}$ rinormalizzata), lo si aggiunge e si ripete. Il
-testo scritto entra subito nei concetti del testo in corso.
+$$
+K^*=\min\{K:\;J_K\ge\max_{K'}J_{K'}-\mathrm{se}\}.
+$$
 
----
+I **livelli sopra** sono i tagli del percorso che rendono massima la CP a coppie,
+quanto due righe dello stesso concetto si somigliano più della coppia media del
+livello sopra,
 
-## Parte C · Tabella e testo a confronto
+$$
+CP^\circ=\frac1{n(n-1)}\sum_iC_i(C_i-1)\Bigl(1-\frac1m\sum_j\frac{\hat s^2_{ij}}{\bar\sigma'^2_{ij}}\Bigr),
+$$
 
-| | Tabella | Testo |
-|---|---|---|
-| riga | una riga della tabella | una posizione del testo |
-| attributi | numeri e categorie | solo categorie (token): due valori o sono uguali o no |
-| colonne note | le colonne note | i token precedenti |
-| target | la colonna da prevedere | il token in quella posizione |
-| concetto | somme dei membri | somme dei membri |
-| livello sopra | il concetto più generale | il contesto più corto |
-| lettura di una categoria | $(N+\kappa D\,p_{\text{sopra}})/(C+\kappa D)$, $\kappa$ dal giudizio | la stessa funzione, un $\kappa$ per livello |
-| a quale concetto appartiene | massa × somiglianza: più concetti insieme | il concetto del suo contesto, uno per livello |
-| costo di un'unione | letture × raggio | letture × perdita di log-verosimiglianza |
-| concetti specifici | blocchi di righe uniti a due a due | pezzi di testo uniti a due a due |
-| giudizio | righe non viste | pezzi di testo non contati |
-| quanti concetti | scelti dal giudizio | tutti quelli visti, fino alla memoria; poi generalizzati |
-| memoria a lungo raggio | — | i concetti del testo in corso |
-| valori simili | — (due categorie diverse sono diverse) | i concetti dei token, trovati con la parte A sulle righe dei token |
+e un livello resta solo se legge le righe non viste meglio del livello sopra. La
+ricerca si fa due volte: la seconda guarda la tabella *attraverso* i concetti
+generali,
 
-## Parte D · Che cosa è stato misurato
+$$
+z'_t=z_t-\sum_pT_{pt}\,g_p,\qquad \sigma'^2_{tj}=\sum_pT_{pt}\,s^2_{pj},
+$$
 
-Le verifiche automatiche controllano le formule della tabella, l'esclusione del
-target, e per il testo: che la lettura sia esattamente quella del passo 3 e 4
-scritta posizione per posizione, che i concetti del testo in corso usino solo le
-posizioni precedenti, che pezzi sommati in qualunque ordine diano le somme del
-testo intero, che il limite di memoria generalizzi prima i concetti che non
-aggiungono nulla, e che salvare e ricaricare non cambi la lettura. Con i percorsi:
-che la lettura sia la formula del passo 6 posizione per posizione, e che la
-probabilità di ogni token del vocabolario sia la sua lettura e sommi a 1. Non
-dimostrano da sole che il modello generalizzi: per quello servono le misure.
+così ciò che si distingue solo dentro un concetto generale diventa visibile, e
+un comportamento che compare in più concetti generali diventa **un solo nodo con
+più genitori**, uniti dalla matrice $P_{pi}=\Pr(\text{concetto }p\text{
+sopra}\mid\text{concetto }i)$. Se il giudizio lo conferma, il livello di lavoro
+descrive insieme gli attributi numerici che variano insieme (la loro covarianza,
+ancora una somma).
 
-**Tabelle** (divisioni dei test di qualità, accuratezza su righe non viste):
+**Un testo.** I livelli sono le lunghezze di contesto, da 0 a 6 token, e si
+tengono tutti i concetti visti finché la memoria basta (passo 7). Oltre i 3–4
+token quasi non si guadagna: su wikitext-2 l'errore è 4,591 con 4 token, 4,589
+con 6, 8 o 12, perché un contesto esatto di 5 o più token quasi non si ripete.
 
-| Dataset | Accuratezza | Concetti | Tempo |
+### Passo 9 · Valori che si somigliano: i concetti dei token e i percorsi
+
+Due valori diversi di una categoria, nei passi precedenti, sono semplicemente
+diversi: «gatto» e «cane» come due città in una colonna. Per il testo il modello
+può vedere che si somigliano **usando sé stesso**: tratta i token come righe di
+una tabella e ne cerca i concetti con i passi 3–8. La riga del token $v$ dice con
+che frequenza ciascuno dei 256 token più frequenti lo precede e lo segue,
+
+$$
+r_v=\Big(\sqrt{\tfrac{\#(u\,v)}{\#(\cdot\,v)}}\Big)_{u}\ \oplus\ \Big(\sqrt{\tfrac{\#(v\,u)}{\#(v\,\cdot)}}\Big)_{u},
+$$
+
+ridotta alle sue direzioni principali (16 e 48). Ne escono livelli dal generale al
+particolare, per esempio $2\to9\to20\to33\to325$ concetti su 8.000 token:
+$g(v)$ il concetto generale, $f(v)$ quello particolare.
+
+Il token si legge allora anche **lungo un percorso** di concetti,
+
+$$
+p(y)=p\big(g(y)\mid c\big)\cdot p\big(f(y)\mid g(y),c\big)\cdot p\big(y\mid f(y),c\big),
+$$
+
+ogni fattore con la lettura del passo 4 e le sue somme: un concetto conta le
+posizioni con lo stesso contesto e lo stesso nodo del percorso, e nel contesto
+ogni token è preceduto dal suo concetto particolare (fino a 2 token). In ogni
+nodo i figli sommano a 1: il risultato è ancora una probabilità esatta su tutto
+il vocabolario. Un contesto seguito da «cane» alza tutto il concetto degli
+animali, quindi anche «gatto». Il percorso diretto e uno per gerarchia si
+**mescolano**, $p(y)=\sum_kw_k\,p_k(y)$, con i pesi dal giudizio.
+
+Su wikitext-2 l'errore scende da 4,589 a 4,451. Su testi grandi con la memoria
+limitata peggiora (69 milioni di token, 2 GB: da 3,905 a 3,958), perché le somme
+dei percorsi tolgono spazio ai contesti lunghi: per questo è una scelta del
+progetto, spenta se non la si accende. Nella tabella i concetti di valori non sono
+usati: servirebbero solo a categorie con molti valori, e lì non sono stati
+misurati.
+
+### Passo 10 · Prevedere e scrivere
+
+**Una classe.** Ogni concetto ha una distribuzione sulle classi e la previsione è
+la loro miscela: $p(y\mid x)=\sum_iT_i(x)\,p_i(y)$.
+
+**Una quantità.** Il target è un attributo numerico letto ma mai usato per
+riconoscere: $\hat y(x)=\sum_iT_i(x)\,g_{i,y}$.
+
+**Senza target.** Si legge ogni attributo dagli altri: lo stesso modello
+completa qualunque casella mancante.
+
+**Il prossimo token.** È una classe con $V$ valori: la lettura del passo 4 (e del
+passo 9) dà la probabilità di ogni token del vocabolario. Per scrivere se ne
+sceglie uno, il più probabile oppure estratto con temperatura $T$ ($p^{1/T}$
+rinormalizzata), lo si aggiunge e si ripete; il testo scritto entra subito nei
+concetti del testo in corso.
+
+Quanto bene, su righe mai viste:
+
+| Tabella | Accuratezza | Concetti | Tempo |
 |---|---:|---:|---:|
 | Iris | 97,7% | 3 | 0,1 s |
 | Wine | 97,8% | 3 | 0,5 s |
@@ -431,39 +315,13 @@ dimostrano da sole che il modello generalizzi: per quello servono le misure.
 
 Senza target, Gioco dà 4 concetti in otto tabelle su otto.
 
-**Tabelle grandi** (sintetica: 10 numeri, 3 categorie, valori mancanti, 12
-classi): un milione di righe in 211 secondi e due milioni in 370, con due
-processi; la memoria resta intorno a 1 GB. Un miliardo di righe non è stato
-misurato.
-
-**Testo, caratteri.** Stessi dati e stesso protocollo della prova in piccolo
-(wikitext, pezzi di 256 caratteri, errore sulle seconde metà dei pezzi):
-
-| | Rete con attenzione | Rete solo finestra | Modello a concetti |
-|---|---:|---:|---:|
-| Testo, bit per carattere (meno è meglio) | 2,518 | 2,451 | 2,039 |
-| Memoria, risposta a 49 token | 100% | 5,5% | 100% |
-| Memoria lontana, fino a 177 token | 100% | — | 100% |
-| Tempo, un thread | 219 s di addestramento | 213 s | 73 s di conteggio |
-
-Con la memoria dei concetti limitata a 18 MB (il 79% dei concetti generalizzato
-nel livello sopra) l'errore passa da 2,039 a 2,079 bit per carattere.
-
-**Testo, token.** Stesso testo, stesso tokenizer BPE da 8.000 token, 272.000
-token per imparare, 64 pezzi di 256 token mai visti:
-
-| | Rete micro nata da zero (12 milioni di pesi) | Modello a concetti |
-|---|---:|---:|
-| Errore, nat per token (meno è meglio) | 5,652 al suo meglio, poi risale a 5,921 | 5,452 |
-| Tempo | 433 s per arrivare al suo meglio (1,4 milioni di token letti) | 20 s (ogni token contato una volta) |
-
-La rete legge il testo più volte e dopo circa cinque letture comincia a impararlo
-a memoria; il modello a concetti lo conta una volta.
-
-**Testo, token, contro una rete vera.** Tokenizer BPE da 8.000 token, gli stessi
-64 pezzi di 512 token mai visti (wikitext-2 e wikitext-103 hanno lo stesso
-testo di verifica), stesso processore; la rete è una Llama a 4 strati con 6,2
-milioni di pesi e posizione relativa (RoPE), addestrata 90 minuti:
+Sul testo, contro reti neurali sugli stessi dati. Caratteri di wikitext, pezzi di
+256: rete con attenzione 2,518 bit per carattere, rete solo finestra 2,451,
+modello a concetti **2,039** (2,079 con il 79% dei concetti generalizzato per
+stare in 18 MB). Token BPE da 8.000, gli stessi 64 pezzi di 512 token mai visti
+(wikitext-2 e wikitext-103 hanno lo stesso testo di verifica), contro una rete
+Llama a 4 strati con 6,2 milioni di pesi e posizione relativa, 90 minuti sullo
+stesso processore:
 
 | | Testo per imparare | Memoria | Errore | 0–32 token | 256–512 token | Tempo |
 |---|---|---:|---:|---:|---:|---:|
@@ -474,32 +332,54 @@ milioni di pesi e posizione relativa (RoPE), addestrata 90 minuti:
 | Concetti | 69 M token di wikitext-103 | 2 GB | **3,905** | **4,195** | **3,834** | 7 min |
 | Concetti con percorsi | 69 M token di wikitext-103 | 2 GB | 3,958 | 4,275 | 3,891 | 19 min |
 
-Sul testo grande il modello a concetti è avanti a ogni distanza, a parità di
-processore; la rete migliorava ancora e aveva letto un quarto del testo. Sul
-testo piccolo i percorsi lo portano vicino alla rete. Provati e non adottati
-(guadagno nullo o piccolo): contesti esatti oltre 4 token (4,591 con 4 token,
-4,589 con 6, 8 o 12), conteggi di Kneser-Ney, lettura per somiglianza sulle
-posizioni passate, il token da prevedere come vettore di numeri, righe di
-vettori lette dalla parte A, contesti fatti solo di concetti.
+Sul testo grande il modello a concetti è avanti a ogni distanza; la rete
+migliorava ancora e aveva letto un quarto del testo. Provati e non adottati
+(guadagno nullo o piccolo): conteggi di Kneser-Ney, lettura per somiglianza sulle
+posizioni passate, il token da prevedere come vettore di numeri, righe di vettori
+lette dai passi 3–8, contesti fatti solo di concetti.
 
-**Limiti noti.**
+### Che cosa mostra il grafo
 
-- **Valori simili.** Nella tabella due valori diversi di una categoria restano
-  diversi. Nel testo i concetti dei token (passo 5) rendono simili «gatto» e
-  «cane», ma sono fissati all'inizio e, con la memoria limitata, su testi grandi
-  non convengono; una rete continua a migliorare i suoi vettori.
+**Archi.** Due concetti sono collegati quando qualche riga esita fra loro:
+$E_{il}=\frac1n\sum_tT_{it}T_{lt}$ sui due concetti a cui la riga appartiene di
+più (le linee tratteggiate). Le frecce fra le righe del grafo sono la matrice
+$P$ del passo 8.
+
+**Rilevanza.** Quanta variabilità di un attributo i concetti spiegano:
+
+$$
+r_{ij}=1-\frac{s_{ij}^2}{\sigma_j^2},\qquad \eta_j^2=\sum_i\frac{C_i}{n}\,r_{ij},\qquad CP=\sqrt{\frac1m\sum_j\eta_j^2}.
+$$
+
+La CP sta fra zero e uno ed è riportata, non ottimizzata: crescerebbe sempre
+aumentando i concetti.
+
+### Che cosa garantiscono le verifiche, e i limiti
+
+Le verifiche automatiche controllano le formule, l'esclusione del target, che la
+lettura del testo (anche con i percorsi) sia esattamente quella dei passi 4 e 9
+scritta posizione per posizione, che la probabilità di ogni token sia la sua
+lettura e sommi a 1, che il testo in corso usi solo le posizioni precedenti, che
+pezzi sommati in qualunque ordine diano le somme dell'intero testo, che il limite
+di memoria generalizzi prima ciò che non aggiunge nulla, e che salvare e
+ricaricare non cambi nulla. Non dimostrano da sole che il modello generalizzi:
+per quello servono le misure dei passi 6–10.
+
+- **Valori simili.** I concetti dei token sono fissati all'inizio e, con la
+  memoria limitata, su testi grandi non convengono; una rete continua a
+  migliorare i suoi vettori.
 - **Contesto esatto** fino a 6 token; oltre, il testo in corso è ricordato a
   qualunque distanza ma senza sapere a quale.
 - Le misure sul testo sono su wikitext (inglese) e su un processore di sviluppo:
   dicono come il modello si confronta con una rete, non che conversi bene, e non
   sono state ripetute sul server né sulla miscela italiano-inglese.
 - Leggere tutte le righe di una tabella grande, invece delle sole 20.000
-  estratte, non ha aumentato l'accuratezza nella prova sintetica: garantisce
-  che le somme siano sull'intera tabella.
+  estratte, non ha aumentato l'accuratezza nella prova sintetica: garantisce che
+  le somme siano sull'intera tabella. Un miliardo di righe non è stato misurato.
 - Su tabelle con poche righe e molti attributi (Sonar) il livello di lavoro ha
-  molti concetti: accurato, ma meno leggibile.
-- La CP a coppie preferisce concetti grandi: gruppi adiacenti compaiono prima
-  uniti e si separano al livello successivo.
+  molti concetti: accurato, ma meno leggibile. La CP a coppie preferisce concetti
+  grandi: gruppi adiacenti compaiono prima uniti e si separano al livello
+  successivo.
 """
 
 layout = html.Div(dcc.Markdown(TEXT, mathjax=True), className='p-3', style={'maxWidth':'960px','margin':'auto'})
