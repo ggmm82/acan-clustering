@@ -2,9 +2,13 @@
 
 
 def check_profile(options,cuda_available):
+    if options.get('architecture')=='concepts':
+        return
     if options.get('device')=='cuda' and not cuda_available:
         raise ValueError('CUDA non disponibile: usa il profilo CPU 135M oppure collega un worker GPU.')
     if options.get('device')!='cpu' and cuda_available:
+        return
+    if options.get('architecture')=='concepts':                # counting needs no GPU and no network budget
         return
     if options.get('architecture')=='native':
         if options.get('native_size')=='base':
