@@ -40,10 +40,8 @@ CATALOG = {
 CATALOG['wikitext-2'] = {'title': 'WikiText-2 · inglese · train/valid/test ufficiali', 'language': 'en', 'url': 'https://huggingface.co/datasets/Salesforce/wikitext/tree/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1', 'source': 'https://huggingface.co/datasets/Salesforce/wikitext', 'license': 'CC BY-SA 3.0 / GFDL · articoli Wikipedia', 'license_url': 'https://huggingface.co/datasets/Salesforce/wikitext#licensing-information', 'sha256': '5cd2a8282508e6c9c61f146c25d07da32c735e2e185ac3023c738bf630d95b54', 'bytes': 7747362, 'format': 'wikitext', 'note': 'Benchmark linguistico inglese con split ufficiali separati; non insegna da solo a rispondere come un assistente.', 'prompt': 'The history of', 'files': [{'split': 'train', 'bytes': 6357543, 'sha256': 'e83889baabc497075506f91975be5fac0d45c5290b6b20582c8cd1e853d0c9f7', 'url': 'https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1/train-00000-of-00001.parquet'}, {'split': 'validation', 'bytes': 657209, 'sha256': '204929b7ff9d6184953f867dedb860e40aa69c078fc1e54b3baaa8fb28511c4c', 'url': 'https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1/validation-00000-of-00001.parquet'}, {'split': 'test', 'bytes': 732610, 'sha256': '5f1bea067869d04849c0f975a2b29c4ff47d867f484f5010ea5e861eab246d91', 'url': 'https://huggingface.co/datasets/Salesforce/wikitext/resolve/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1/test-00000-of-00001.parquet'}]}
 
 PRESETS = {
-    'check': dict(title='Prova breve · massimo 20 passi · 1.280 token elaborati', total_steps=20,
-                  sequence_length=64, accumulation=1, save_steps=5),
-    'practice': dict(title='Esercizio · massimo 200 passi · 102.400 token elaborati', total_steps=200,
-                     sequence_length=128, accumulation=4, save_steps=20),
+    'check': dict(title='Prova breve · il testo contato a pezzi di 50.000 token', sequence_length=64, piece=50_000),
+    'practice': dict(title='Esercizio · il testo contato a pezzi di 10.000 token, con più salvataggi', sequence_length=128, piece=10_000),
 }
 MAX_BYTES = 8 * 1024 * 1024
 
@@ -159,11 +157,11 @@ def experiment(store, owner, dataset, preset):
         raise ValueError('Worker occupato: metti in pausa il progetto attivo prima di avviare una prova pubblica.')
     spec, settings = CATALOG[dataset], PRESETS[preset]
     corpus, provenance = import_corpus(store, owner, dataset)
-    # A native concept model born from zero on the public text (tokenizer learned from it, concepts in every layer).
-    config = validate_options(dict(corpus_id=corpus['id'], name=spec['title']+' · '+settings['title'], batch_size=1,
-                                   architecture='native', native_size='micro', routing_profile='concept-graph-v2',
-                                   graft_fraction=1., learning_rate=1e-3, slots=16, window=16,
-                                   **{k:v for k,v in settings.items() if k != 'title'}))
+    # The concept model on the public text: its tokenizer is learned from it, the text is counted.
+    config = validate_options(dict(corpus_id=corpus['id'], name=spec['title']+' · '+settings['title'],
+                                   architecture='concepts', routing_profile='concept-lm-v1', vocabulary=4000,
+                                   sequence_length=settings['sequence_length'], save_steps=1, concept_piece=settings['piece'],
+                                   validation_batches=8, chat_probes=False))
     job = store.create_job(owner, config)
     atomic_json(store.directory('jobs', job['id'])/'public-source.json', provenance)
     # Another workspace may acquire the accelerator while the download runs.

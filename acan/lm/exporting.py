@@ -17,6 +17,8 @@ def export_bundle(store, job, name):
     directory = store.directory('jobs', job['id'])
     snapshot = directory/'checkpoints'/name
     receipt = checkpoints.verify(snapshot)
+    if job['config'].get('architecture') == 'concepts':
+        return _export_concepts(directory, snapshot, name, receipt, job)
     state = json.loads((snapshot/'state.json').read_text())
     from .research_model import check_inference_contract
     check_inference_contract(job['config'],state)
@@ -144,3 +146,38 @@ def load_export(directory, device='cpu', cache_dir=None):
     if tokenizer is None:
         tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=False)
     return model, tokenizer
+
+
+def _export_concepts(directory, snapshot, name, receipt, job):
+    """The concept language model: its sums, its weights and its tokenizer, readable with numpy alone."""
+    exports = directory/'exports'; exports.mkdir(exist_ok=True)
+    destination = exports/(name+'.zip')
+    if destination.exists():
+        return destination
+    state = json.loads((snapshot/'state.json').read_text())
+    payloads = {'concepts.safetensors': (snapshot/'trainables.safetensors').read_bytes(),
+                'config.json': json.dumps(job['config'], indent=2).encode(),
+                'training-summary.json': json.dumps({key: state.get(key) for key in ('step', 'tokens_trained', 'validation_nll', 'baseline_nll',
+                                                     'concepts_per_level', 'generalized_concepts', 'weights_global', 'weights_document')}, indent=2).encode(),
+                'README.txt': ('Modello linguistico a concetti ACAN: nessuna rete neurale. Contiene le somme dei concetti per contesto,\n'
+                               'i pesi scelti dal giudizio e il tokenizer. Non contiene il testo di addestramento.\n'
+                               'Estrai lo ZIP e usa:\n'
+                               'from acan.lm.concept_lm import ConceptLM\nfrom safetensors.numpy import load_file\n'
+                               'model = ConceptLM.from_arrays(load_file("concepts.safetensors"))\n'
+                               'ids = tokenizer("testo")["input_ids"]; model.generate(ids, 64)\n'
+                               'Il tokenizer si carica con transformers.AutoTokenizer dalla cartella dei file tokenizer-*.\n').encode()}
+    for item in sorted((directory/'tokenizer').iterdir()):
+        payloads['tokenizer-'+item.name] = item.read_bytes()
+    manifest = dict(format=1, core_contract=receipt['contract'], model_contract=state.get('model_contract'), checkpoint=name,
+                    identity=receipt['identity'], kind='concept-lm-v1',
+                    files_sha256={key: hashlib.sha256(value).hexdigest() for key, value in payloads.items()})
+    temporary = exports/(uuid.uuid4().hex+'.tmp')
+    try:
+        with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            for key, value in payloads.items():
+                archive.writestr(key, value)
+            archive.writestr('export-manifest.json', json.dumps(manifest, indent=2))
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return destination
