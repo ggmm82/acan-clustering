@@ -151,12 +151,19 @@ def encoding_size(frame):
                 largest=sorted(sizes.items(),key=lambda item:item[1],reverse=True)[:6])
 
 
-def check_budget(frame):
+SAMPLE_ROWS = 10000                                             # rows the page works on
+FULL_ROWS, FULL_CELLS = 1_000_000, 50_000_000                   # rows and cells of a table kept on the server for training
+
+
+def check_budget(frame, whole=False):
+    """Refuse a table too large to train. ``whole``: the table kept on the server, read in chunks."""
     size = encoding_size(frame)
-    if size['rows']>10000 or size['columns']>1000 or size['cells']>2_000_000:
+    rows, cells = (FULL_ROWS, FULL_CELLS) if whole else (SAMPLE_ROWS, 2_000_000)
+    if size['rows']>rows or size['columns']>1000 or size['cells']>cells:
         drivers = ', '.join(f'{name}: {count}' for name,count in size['largest'] if count>1)
+        dots = lambda number: f'{number:,}'.replace(',', '.')
         raise ValueError(f"Dopo la codifica: {size['rows']:,} righe, {size['columns']:,} attributi, {size['cells']:,} celle. "
                          f"Espansioni maggiori: {drivers or 'nessuna'}. Usa «Ripristina filtri suggeriti» in Model → Impostazioni avanzate, oppure escludi identificativi/testo ad alta cardinalità nei filtri "
                          "o rimuovi colonne numeriche selezionate per errore come categoriche. "
-                         "Limiti: 10.000 righe, 1.000 attributi codificati, 2 milioni di celle.")
+                         f"Limiti: {dots(rows)} righe, 1.000 attributi codificati, {dots(cells)} celle.")
     return size

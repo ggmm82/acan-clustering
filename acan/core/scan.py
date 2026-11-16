@@ -160,6 +160,10 @@ class Scan:
             self.pending = {key: value[blocks*self.bins:] for key, value in waiting.items()}
         return self
 
+    def concepts(self):
+        """How many concepts the counter holds now."""
+        return int(sum(len(node['C']) for node in self.counter if node is not None)+(len(self.pending['C']) if self.pending is not None else 0))
+
     def result(self):
         """The concepts left: those of the blocks of the counter and the rows that fill no block."""
         parts = [node for node in self.counter if node is not None]+([self.pending] if self.pending is not None else [])

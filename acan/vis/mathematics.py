@@ -1,397 +1,367 @@
-"""A self-contained explanation of the concept graph, the one model of the app."""
+"""The concept graph step by step: what happens to a table and to a text, with the formula of every step."""
 from dash import dcc, html
 
 TEXT = r"""
-## Il grafo dei concetti
+## Il modello, passo per passo
 
-Un concetto è una descrizione riutilizzabile di più osservazioni: per esempio
-«piove e il luogo è un palazzetto». Il modello è **uno solo**, per le tabelle e
-per il linguaggio. Ha un solo tipo di oggetto, il concetto, e tre operazioni:
-riconoscere, generalizzare, giudicare.
+Questa pagina segue i dati dall'ingresso al risultato e dà la formula di ogni
+passo. Prima una tabella, poi un testo: il modello è lo stesso, e alla fine una
+tabella mette i due percorsi uno accanto all'altro.
 
-> Un insieme di concetti è buono quanto permette di **leggere ciò che serve**
-> da osservazioni che i concetti non hanno visto.
+**L'idea in tre righe.** Un *concetto* è un riassunto di più osservazioni fatto
+solo di somme. *Riconoscere* un'osservazione vuol dire pesare i concetti per
+quanto le somigliano. *Generalizzare* vuol dire sommare due concetti, scegliendo
+la coppia che costa meno a chi poi li legge. Un insieme di concetti è buono
+quanto permette di leggere ciò che serve da osservazioni che non ha visto.
 
-Che cosa si legge dipende dal compito. Senza target si legge ogni attributo:
-è clustering non supervisionato. Con una classe o una quantità si legge quel
-target. Nel linguaggio un token legge i valori dei token che lo precedono.
-Le formule sono le stesse nei tre casi.
+---
 
-### 1. Nodi: un concetto è un riassunto che si può sommare
+## Parte A · Una tabella
 
-Ogni osservazione ha una parte con cui la si **riconosce**, $z$, e una parte che
-si **legge**, $y$. In una tabella $z$ sono gli attributi noti e $y$ il target (o
-gli attributi mancanti); in uno strato di attenzione $z$ è la chiave di un token
-e $y$ il suo valore.
+### Passo 1 · La tabella diventa numeri
 
-Un concetto $i$ conserva soltanto somme sulle osservazioni che gli appartengono,
-pesate dalle appartenenze $T_{it}$:
+Ogni colonna numerica è portata a media zero e deviazione uno, con la media e la
+deviazione delle righe di addestramento. Ogni colonna categorica diventa un
+gruppo di caselle, una per valore. Un valore mancante non viene inventato: è
+segnato come non osservato e semplicemente non partecipa ai calcoli.
 
-$$
-C_i=\sum_tT_{it},\qquad U_i=\sum_tT_{it}z_t,\qquad Q_i=\sum_tT_{it}z_t^2,\qquad
-Y_i=\sum_tT_{it}y_t,\qquad A_i=\text{letture ricevute}.
-$$
+Ogni riga ha una parte con cui la si **riconosce**, $z$ (gli attributi noti), e
+una parte che si **legge**, $y$ (il target, se c'è; altrimenti ogni attributo a
+turno). Il target non entra mai nel riconoscere.
 
-Da queste somme si ricavano il centro, la dispersione e la lettura del concetto:
+### Passo 2 · Ogni riga è un concetto di un solo membro
 
-$$
-g_i=\frac{U_i}{C_i},\qquad s_i^2=\frac{Q_i}{C_i}-g_i^2,\qquad \bar y_i=\frac{Y_i}{C_i}.
-$$
-
-Per un attributo categorico le somme sono i conteggi dei valori. Tutte le somme
-crescono in proporzione al numero di attributi: il modello non conserva
-relazioni fra coppie di attributi, quindi il suo costo non cresce più che
-linearmente con le colonne. Aggiungere un'osservazione, toglierla o unire due
-concetti è sempre una somma.
-
-Un cluster non è una classe: due concetti possono prevedere la stessa classe.
-
-### 2. Riconoscere: massa per somiglianza attesa
-
-Il peso di un concetto per un'osservazione $o$ è la sua massa per la
-somiglianza attesa fra $o$ e i suoi membri:
+Un concetto $i$ conserva soltanto somme sui suoi membri:
 
 $$
-T_i(o)=\frac{C_i\;\mathbb E_{z\sim i}[\kappa(o,z)]}{\sum_lC_l\;\mathbb E_{z\sim l}[\kappa(o,z)]},\qquad
-\hat y(o)=\sum_iT_i(o)\,\bar y_i .
+C_i=\sum 1,\qquad U_i=\sum z,\qquad Q_i=\sum z^2,\qquad N_i=\text{conteggi dei valori categorici}.
 $$
 
-In una tabella la riga è osservata esattamente e la formula diventa
+Da qui si ricavano centro e dispersione:
 
 $$
-\log\big(C_i\,\mathbb E[\kappa]\big)=\log C_i-\frac12\sum_{j\in O}\left[\frac{(o_j-g_{ij})^2}{v_{ij}}+\log v_{ij}\right]
-+\sum_{j\in O}\log p_{i,o_j},
+g_i=\frac{U_i}{C_i},\qquad s_i^2=\frac{Q_i}{C_i}-g_i^2 .
 $$
 
-dove $O$ sono gli attributi osservati: uno mancante viene semplicemente omesso,
-e lo stesso modello completa qualunque sottoinsieme di attributi. Il target non
-entra mai in $O$. Un concetto con poche osservazioni non può essere molto
-preciso: la sua dispersione è avvicinata a quella generale, che vale uno, con
-il peso di un'osservazione,
+Aggiungere una riga, toglierla o unire due concetti è sempre una somma. Le somme
+crescono con il numero di attributi, non con le coppie di attributi.
+
+### Passo 3 · Quanto costa unire due concetti
+
+Leggere un concetto al posto dei suoi membri introduce un errore limitato da due
+quantità: quante letture riceve e quanto i membri distano dal centro. Il
+**raggio** è la dispersione nella parte riconosciuta, sulla scala del livello
+sopra ($\sigma_j^2$, che alla radice vale uno):
 
 $$
-v_{ij}=\frac{C_i\,s_{ij}^2+1}{C_i+1}.
+\rho_i=\sqrt{\frac1m\sum_j\frac{s_{ij}^2}{\sigma_j^2}}
 $$
 
-In uno strato di attenzione la somiglianza fra una query $q$ e una chiave $k$ è
-$e^{q^\top k}$ e la stessa formula dà
+(per un attributo categorico al posto della varianza c'è l'impurità
+$1-\sum_v p_{iv}^2$). Il **costo** di unire $i$ e $l$ è la perdita di chi legge:
 
 $$
-\mathrm{out}(q)=\frac{\sum_{\tau\in W}e^{q^\top k_\tau}v_\tau+\sum_iC_i\,e^{q^\top g_i}\,\bar v_i}
-{\sum_{\tau\in W}e^{q^\top k_\tau}+\sum_iC_i\,e^{q^\top g_i}} ,
+\Delta_{il}=(a_i+a_l)\,\rho_{i\cup l}-a_i\,\rho_i-a_l\,\rho_l ,
 $$
 
-dove i token recenti $W$ sono concetti di un solo membro. Con un concetto per
-token questa **è** l'attenzione ordinaria.
+dove $a$ sono le letture ricevute. In una tabella ogni riga legge i concetti a
+cui appartiene, quindi $a_i=C_i$. Il costo non è mai negativo e vale zero solo
+fra due copie dello stesso concetto.
 
-### 3. Generalizzare: unire dove chi legge perde meno
+### Passo 4 · Una passata a blocchi: i concetti specifici
 
-Leggere un concetto al posto dei suoi membri introduce un errore limitato da
-due quantità: quante letture il concetto riceve e quanto i suoi membri distano
-dal centro. Il raggio di un concetto è la sua dispersione nella parte
-riconosciuta, sulla scala generale:
-
-$$
-\rho_i=\sqrt{\frac1m\sum_j\frac{s_{ij}^2}{\sigma_j^2}} .
-$$
-
-Unire due concetti significa sommarne le somme. Il costo dell'unione è la
-perdita di chi legge:
-
-$$
-\Delta_{il}=(a_i+a_l)\,\rho_{i\cup l}-a_i\,\rho_i-a_l\,\rho_l .
-$$
-
-In una tabella ogni riga legge i concetti a cui appartiene, quindi le letture
-ricevute sono la massa: $a_i=C_i$. Nell'attenzione $a_i$ è l'attenzione che il
-concetto ha ricevuto dalle query precedenti. Il costo non è mai negativo e vale
-zero solo fra due copie dello stesso concetto: unire copie è sempre gratuito.
-
-Si parte da molti concetti specifici e si unisce ogni volta la coppia con
-$\Delta$ minimo. La sequenza delle unioni è un albero di generalizzazione: in
-basso i casi particolari, in alto un solo concetto.
-
-**Da dove vengono i concetti specifici: una sola passata, a blocchi.** Ogni
-osservazione nasce come concetto di un solo membro. Le osservazioni entrano in
-blocchi di $B$; due blocchi uguali, appena completi, diventano un blocco che
-copre il doppio delle osservazioni:
+Le righe entrano una volta sola, in blocchi di $B$ righe. Due blocchi uguali,
+appena completi, diventano un blocco che copre il doppio delle righe:
 
 $$
 \mathcal B_j=\operatorname{gen}_B\big(\mathcal B_{j-1}\cup\mathcal B'_{j-1}\big),
 $$
 
 dove $\operatorname{gen}_B$ unisce la coppia di $\Delta$ minimo finché restano
-$B$ concetti: da $2B$ a $B$ sono $B$ unioni. Ogni concetto è somma di concetti
-del livello sotto, e ogni somma del blocco è la somma delle sue osservazioni.
-Questa struttura è la stessa per una tabella e per un testo; cambia che cosa si
-legge alla fine.
+$B$ concetti: da $2B$ a $B$ sono $B$ unioni, un numero che dipende dalle
+dimensioni e non dai dati. Dopo l'ultima riga restano al massimo
+$B\,(\lfloor\log_2(n/B)\rfloor+1)$ concetti, ciascuno somma di righe vere: sono
+i **concetti specifici**.
 
-*Tabella.* Le righe non hanno un'età: si leggono i concetti dei blocchi rimasti
-dopo l'ultima riga, al massimo $B$ per ogni potenza di due nel numero delle
-righe, cioè $B\,(\lfloor\log_2(n/B)\rfloor+1)$. Da lì prosegue la
-generalizzazione descritta sopra, che riassegna le righe ai concetti a ogni
-passo. Tempo $O(n\,B\,m)$ con $m$ attributi, memoria un pezzo di tabella più i
-blocchi rimasti. $B$ è un quarto dei concetti specifici ammessi, fra 32 e 128;
-una tabella fino a 256 righe non si generalizza a blocchi, ogni riga è un
-concetto specifico.
-Poiché le somme si sommano, pezzi diversi della tabella si leggono in processi
-diversi e i loro blocchi si uniscono dopo.
+$B$ è un quarto dei concetti specifici ammessi, fra 32 e 128. Una tabella fino a
+256 righe salta questo passo: ogni riga resta un concetto specifico.
 
-*Tabelle che non stanno in memoria.* Tre passate, ciascuna lineare: (1) media e
-deviazione di ogni attributo e un'estrazione uniforme di $r$ righe ($r=20.000$);
-(2) i blocchi, su tutte le righe; (3) i livelli, cercati sulle righe estratte a
-partire dai concetti dei blocchi, e infine ogni riga della tabella aggiunta ai
-concetti del livello di lavoro, così che le loro somme siano sull'intera
-tabella. Le tabelle fino a $r$ righe si leggono come prima, tutte.
+### Passo 5 · Riconoscere: a quali concetti appartiene una riga
 
-**Nel linguaggio: la stessa regola su una struttura fissa.** Il costo
-$\Delta$ è lo stesso, calcolato dalle stesse somme. Le letture ricevute da un
-token sono le quote di attenzione che ha avuto dai lettori che lo avevano nella
-finestra esatta di $w$ token:
+Il peso del concetto $i$ per la riga $o$ è la sua massa per la somiglianza
+attesa fra $o$ e i suoi membri:
 
 $$
-a_p=\sum_{t=p}^{p+w-1}\frac{e^{\lambda\,q_t\cdot k_p}}{\sum_{u=t-w+1}^{t}e^{\lambda\,q_t\cdot k_u}} ,
+\log\big(C_i\,\mathbb E[\kappa]\big)=\log C_i-\frac12\sum_{j\in O}\left[\frac{(o_j-g_{ij})^2}{v_{ij}}+\log v_{ij}\right]
++\sum_{j\in O}\log p_{i,o_j},\qquad
+T_i(o)=\frac{C_i\,\mathbb E_i[\kappa]}{\sum_lC_l\,\mathbb E_l[\kappa]} ,
 $$
 
-note nel momento in cui il token esce dalla finestra; un concetto somma quelle
-dei suoi membri (i concetti mai letti pesano un millesimo della media, così le
-copie si uniscono comunque per prime). Il raggio è la dispersione delle chiavi
-attorno al centro, $\rho_i^2=\frac1d\big(S_i/C_i-\lVert U_i\rVert^2/C_i^2\big)$ con
-$S_i=\sum\lVert k\rVert^2$: le chiavi di una testa hanno tutte la stessa scala.
+con $O$ gli attributi osservati. Un concetto con pochi membri non può essere
+molto preciso: la sua dispersione è avvicinata a quella del livello sopra con il
+peso di un'osservazione, $v_{ij}=(C_i\,s_{ij}^2+1)/(C_i+1)$.
 
-Ciò che è fissato è **quando** e **fra quali** concetti si unisce: sono i
-blocchi del paragrafo precedente, con i token più vecchi della finestra al
-posto delle righe. Un blocco di livello $j$ copre $2^j$ token consecutivi; se i
-suoi concetti sono al massimo $B$ resta esatto, altrimenti $\operatorname{gen}_B$
-ne lascia $B$ con un numero di unioni che dipende dalle dimensioni e non dai
-dati.
+### Passo 6 · Dai concetti specifici a uno solo
 
-Chi legge in posizione $t$ ha $n=t-w+1$ token vecchi e legge i blocchi della
-scrittura binaria di $n$: se $n=\sum_j b_j2^j$, un blocco di livello $j$ per
-ogni $b_j=1$, i più grandi sui token più antichi. Coprono ogni token vecchio
-una volta sola, e sono al massimo $\lfloor\log_2 n\rfloor+1$:
+Si ripete finché resta un solo concetto:
 
-$$
-\#\{\text{vettori letti}\}\;\le\;w+B\,(\lfloor\log_2 n\rfloor+1).
-$$
+1. si uniscono le coppie di $\Delta$ minimo, un ventesimo dei concetti alla volta;
+2. ogni riga viene riassegnata ai concetti con i pesi $T_i$ del passo 5 e le
+   somme vengono ricalcolate (tre volte).
 
-Con $B\ge n$ nessuna unione avviene e la lettura è l'attenzione ordinaria.
+La sequenza è un percorso dal particolare al generale: ogni suo punto è un
+possibile insieme di concetti.
 
-Poiché la struttura non dipende dai dati, ogni livello è lo stesso calcolo per
-tutti i blocchi e per tutti i lettori insieme: $O(T\,B\,d)$ operazioni per
-livello in $\lfloor\log_2 T\rfloor$ passi, contro $O(T^2d)$ dell'attenzione
-ordinaria. Mentre il modello scrive, gli stessi blocchi sono un contatore
-binario: il token che esce dalla finestra entra al livello 0 e due blocchi
-uguali diventano il loro genitore con la stessa $\operatorname{gen}_B$; lettura
-in addestramento e in scrittura coincidono (in doppia precisione esattamente;
-in precisione singola due unioni di costo quasi uguale possono scambiarsi e la
-lettura cambia di poco).
+### Passo 7 · Giudicare ogni punto del percorso
 
-Nel profilo precedente (`concept-graph-v1`) i concetti del passato erano un
-solo gruppo di $B$ e le unioni seguivano l'ordine di arrivo dei token, con le
-letture contate anche dopo l'ingresso nel concetto: lo stesso costo, ma una
-ricerca in cui ogni passo dipende dal precedente.
-
-### 4. Archi e rilevanza: la struttura che si può ispezionare
-
-**Archi.** Due concetti sono collegati quando qualche osservazione esita fra
-loro. Il peso dell'arco somma, sulle osservazioni, il prodotto delle due
-appartenenze maggiori:
+Per ogni riga si toglie il suo contributo dalle somme e si chiede ai concetti
+rimasti di leggerla:
 
 $$
-E_{il}=\frac1n\sum_tT_{it}\,T_{lt}\quad\text{per i due concetti a cui }t\text{ appartiene di più.}
+C_i^{(-t)}=C_i-T_{it},\quad U_i^{(-t)}=U_i-T_{it}z_t,\quad Q_i^{(-t)}=Q_i-T_{it}z_t^2,
+\qquad J=\frac1n\sum_t\log p^{(-t)}(y_t\mid z_t).
 $$
 
-Gli archi mostrano quali concetti sono vicini e dove passano i confini incerti.
-Nel grafo dell'app sono le linee tratteggiate fra i gruppi.
+Un concetto fatto di una sola riga non può sostenere sé stesso. È il numero
+«errore sulle righe non viste» che la pagina mostra durante l'addestramento
+(è $-J$: meno è meglio).
 
-**Rilevanza:** quanta variabilità di un attributo i concetti spiegano. Per ogni
-attributo la variabilità totale si divide esattamente in una parte interna ai
-concetti e una parte fra i concetti:
+### Passo 8 · Scegliere il livello di lavoro e i livelli sopra
 
-$$
-\sigma_j^2=\sum_iF_i\,s_{ij}^2+\sum_iF_i\,(g_{ij}-\mu_j)^2,\qquad F_i=\frac{C_i}{n}.
-$$
-
-$$
-r_{ij}=1-\frac{s_{ij}^2}{\sigma_j^2},\qquad
-\eta_j^2=\sum_iF_i\,r_{ij},\qquad CP=\sqrt{\frac1m\sum_j\eta_j^2}.
-$$
-
-Un attributo irrilevante ha rilevanza vicina a zero. La CP sta fra zero e uno
-ed è **riportata, non ottimizzata**: crescerebbe sempre aumentando i concetti.
-
-**Livelli.** I concetti non stanno tutti sullo stesso piano. Sotto la radice,
-che è la tabella intera, il livello 1 contiene i concetti generali; i livelli
-successivi contengono i comportamenti particolari, cioè ciò che si distingue
-solo dopo aver tolto quello che il livello sopra già spiega. La radice
-standardizza la tabella con media e deviazione; ogni livello fa lo stesso per
-il livello sotto, con il centro e la dispersione del concetto di ogni
-osservazione:
-
-$$
-z'_t=z_t-\sum_pT_{pt}\,g_p,\qquad \sigma'^2_{tj}=\sum_pT_{pt}\,s^2_{pj}.
-$$
-
-Quanto un livello aggiunge a quello sopra lo misura la **CP a coppie**: la
-media, su tutte le coppie di osservazioni, di «stesso concetto» per quanto le
-due si somigliano più della coppia media del livello sopra:
-
-$$
-CP^\circ=\frac1{n(n-1)}\sum_iC_i(C_i-1)\Bigl(1-\frac1m\sum_j\frac{\hat s^2_{ij}}{\bar\sigma'^2_{ij}}\Bigr).
-$$
-
-Vale zero per un solo concetto, per concetti di una sola osservazione e per un
-livello misurato contro sé stesso; cresce solo con concetti insieme grandi e
-distinti. Il livello 1 è il taglio che la rende massima sulla scala della
-radice; ogni livello successivo è il massimo contro il livello sopra.
-
-Due livelli consecutivi sono uniti da una **matrice densa**
-$P_{pi}=\Pr(\text{concetto }p\text{ sopra}\mid\text{concetto }i)$: un concetto
-può discendere da più concetti del livello sopra. Se lo stesso comportamento
-compare dentro due concetti generali diversi, visto attraverso di essi è un
-solo comportamento e diventa **un solo nodo con due genitori**, non due
-frammenti come in un albero. Nel grafo dell'app i livelli sono le righe sopra
-i gruppi e le frecce fra le righe sono le celle della matrice.
-
-### 5. Giudicare: decide chi non ha visto
-
-Ogni passo della generalizzazione viene giudicato. Per ciascuna osservazione si sottrae
-il suo contributo dalle somme e si chiede ai concetti così ottenuti di leggerla:
-
-$$
-C_i^{(-t)}=C_i-T_{it},\qquad U_i^{(-t)}=U_i-T_{it}z_t,\qquad Q_i^{(-t)}=Q_i-T_{it}z_t^2 ,
-$$
-
-$$
-J=\frac1n\sum_t\log p^{(-t)}(y_t\mid z_t).
-$$
-
-Un concetto fatto di una sola osservazione non può sostenere sé stesso: è il
-principio del sostegno da osservazioni diverse. Il **livello di lavoro**, quello
-che fa le previsioni, è il più generale fra quelli il cui punteggio è entro un
-errore standard dal migliore:
+Il **livello di lavoro**, quello che fa le previsioni, è il più generale fra
+quelli il cui giudizio è entro un errore standard dal migliore:
 
 $$
 K^*=\min\{K:\;J_K\ge\max_{K'}J_{K'}-\mathrm{se}\}.
 $$
 
-La CP a coppie non sa fermarsi da sola, quindi anche i livelli intermedi
-passano dal giudizio: un livello resta solo se, come descrizione della tabella,
-legge le osservazioni non viste meglio del livello sopra.
-
-Nel linguaggio la stessa regola è la causalità: un token è letto solo da somme
-che non lo contengono. Lì il numero di concetti non è scelto dal giudizio ma
-fissato dalla memoria che si vuole usare.
-
-### 6. Le modalità
-
-**Clustering non supervisionato.** Si legge ogni attributo: $J$ è la
-log-probabilità dell'intera riga non vista.
-
-**Classificazione.** Ogni concetto ha una distribuzione sulle classi e la
-previsione è la loro miscela:
+I **livelli sopra** sono i tagli del percorso che rendono massima la CP a
+coppie, cioè quanto due righe dello stesso concetto si somigliano più della
+coppia media del livello sopra:
 
 $$
-p(y\mid x)=\sum_iT_i(x)\,p_i(y).
+CP^\circ=\frac1{n(n-1)}\sum_iC_i(C_i-1)\Bigl(1-\frac1m\sum_j\frac{\hat s^2_{ij}}{\bar\sigma'^2_{ij}}\Bigr).
 $$
 
-Un numero può essere un nome di classe, come 0/1 oppure codici 1…26: in quel
-caso scegliere esplicitamente **Classi, anche codici numerici**.
+Un livello resta solo se, come descrizione della tabella, legge le righe non
+viste meglio del livello sopra.
 
-**Regressione.** Il target è un attributo numerico come gli altri, letto ma
-mai usato per riconoscere:
+La ricerca viene fatta due volte. La seconda guarda la tabella *attraverso* i
+concetti generali: a ogni riga si toglie il centro del suo concetto e la si
+misura sulla sua dispersione,
 
 $$
-\hat y(x)=\sum_iT_i(x)\,g_{i,y}.
+z'_t=z_t-\sum_pT_{pt}\,g_p,\qquad \sigma'^2_{tj}=\sum_pT_{pt}\,s^2_{pj},
 $$
 
-**Linguaggio.** Il prefisso è una tabella: ogni token passato è una riga con
-una chiave e un valore, e la query è una riga di cui si cerca il valore. Le
-chiavi vengono riassunte prima della rotazione di posizione e il concetto è
-riportato alla posizione media dei suoi membri. I livelli del grafo sono i
-blocchi diadici del paragrafo 3: vicino al lettore blocchi piccoli ed esatti,
-lontano blocchi grandi e generali. Una memoria che cresce solo con il
-logaritmo non può conservare tutto un contesto arbitrariamente lungo: si
-riduce la perdita, non la si annulla.
+così ciò che si distingue solo dentro un concetto generale diventa visibile, e
+un comportamento che compare in più concetti generali diventa **un solo nodo
+con più genitori**. Due livelli consecutivi sono uniti dalla matrice
+$P_{pi}=\Pr(\text{concetto }p\text{ sopra}\mid\text{concetto }i)$: nel grafo
+dell'app sono le frecce fra le righe.
 
-### 7. Cosa dimostrano le verifiche
+Infine, se il giudizio lo conferma, il livello di lavoro descrive insieme gli
+attributi numerici che variano insieme (la loro covarianza, ancora una somma).
 
-Le verifiche numeriche controllano le formule, che tabella e attenzione usino
-lo stesso costo di unione, l'esclusione del target, la causalità e che senza
-compressione lo strato coincida con l'attenzione ordinaria. Non dimostrano da
-sole che il modello generalizzi.
+### Passo 9 · Prevedere
 
-Misure su split 80/20 ripetuti tre volte, senza impostazioni per dataset:
+**Classe.** Ogni concetto ha una distribuzione sulle classi e la previsione è
+la loro miscela: $p(y\mid x)=\sum_iT_i(x)\,p_i(y)$.
 
-| Dataset | Accuratezza | Concetti per livello (un seme) | Tempo |
-|---|---:|---|---:|
-| Gioco | 100% | 4 | < 1 s |
-| Adult minimale | 75,3% | 3 → 5 | 1 s |
-| Sonar | 83,3% | 3 → 7 → 26 | 4 s |
-| Titanic | 79,0% | 3 → 9 → 32 | 3 s |
-| Letter | 97,9% | 3 → 12 → 37 → 91 → 614 | circa 2 minuti |
+**Quantità.** Il target è un attributo numerico letto ma mai usato per
+riconoscere: $\hat y(x)=\sum_iT_i(x)\,g_{i,y}$.
 
-Gioco **senza target** dà un solo livello di 4 concetti in otto tabelle su
-otto. Due famiglie lontane con gli stessi tre gruppi interni danno 2 concetti
-generali e 3 comportamenti, ciascuno con due genitori: un albero ne darebbe 6.
+**Senza target.** Si legge ogni attributo dagli altri: lo stesso modello
+completa qualunque casella mancante.
 
-Limiti misurati:
+### Che cosa mostra il grafo
 
-- **Letter.** I concetti sono cercati descrivendo ogni attributo
-  separatamente, così la ricerca resta lineare nel numero di attributi. A
-  ricerca finita, il livello di lavoro può descrivere insieme gli attributi che
-  variano insieme; lo fa solo se le osservazioni non viste sono lette meglio.
-  Su Letter accade sempre e l'accuratezza passa da 93,6% a 97,9%, oltre il
-  **95,78%** storico. Richiede attributi numerici senza valori mancanti.
-- **Titanic.** Su venti split il modello è a 81,7%, uno o due punti sotto i
-  metodi ad alberi (82,5% e 83,0%). Era a 78,1% finché i numeri con pochi
-  valori (classe, familiari a bordo) potevano avere una varianza più piccola
-  della distanza fra due valori. Su Sonar, sugli stessi venti split, è a 85,5%
-  ed è il migliore fra quelli provati.
-- La CP a coppie preferisce concetti grandi: gruppi adiacenti lungo una
-  direzione compaiono prima uniti e si separano al livello successivo.
-- Con poche osservazioni il numero di livelli cambia da una prova all'altra.
-- L'addestramento fa due ricerche invece di una. Con i concetti specifici presi
-  dai blocchi, Letter richiede circa 90 secondi e arriva a 97,6% su uno split
-  (prima, partendo da righe scelte a caso: circa due minuti, 97,4%).
-- **Tabelle grandi.** Su una tabella sintetica (10 numeri, 3 categorie, valori
-  mancanti, 12 classi) due milioni di righe richiedono 370 secondi con due
-  processi e un milione 211: il tempo cresce con le righe, la memoria no.
-  L'accuratezza è quella che si ottiene dalle sole 20.000 righe estratte
-  (90,9%, il massimo possibile su quei dati): leggere tutte le righe non l'ha
-  aumentata in questa prova, garantisce che le somme dei concetti siano
-  sull'intera tabella. Non è stata misurata una tabella da un miliardo di
-  righe: a questa velocità sono circa 90 ore con un processo.
-- **Linguaggio, modello preaddestrato (profilo v1).** Sostituendo l'attenzione
-  in tutti i livelli, senza addestrare nulla, l'errore di previsione è 2,76 con
-  l'attenzione completa, 3,23 tenendo esatti i primi token e gli ultimi 124, e
-  3,01 con 64 token esatti più 64 concetti. I concetti recuperano parte del
-  divario, non lo chiudono.
-- **Linguaggio, struttura fissa (profilo v2).** Modellini addestrati da zero
-  (64 dimensioni, finestra 16, 16 concetti; un processore, un thread):
+**Archi.** Due concetti sono collegati quando qualche riga esita fra loro:
+$E_{il}=\frac1n\sum_tT_{it}T_{lt}$ sui due concetti a cui la riga appartiene di
+più (le linee tratteggiate).
 
-  | Prova (seme 0) | Attenzione normale | Solo finestra | v1 | v2 |
-  |---|---:|---:|---:|---:|
-  | Memoria, risposta a 49 token: % giuste | 100 | 5,5 | 94,2 | 100 |
-  | Memoria lontana, fino a 177 token: % giuste | 100 | — | 93 | 99 |
-  | Testo, bit per carattere (meno è meglio) | 2,518 | 2,451 | 2,538 | 2,522 |
+**Rilevanza.** Quanta variabilità di un attributo i concetti spiegano:
 
-  La memoria lontana di v2 è 99-100% a ogni distanza provata, da 0 a 176 token.
-  Su altri due semi la prova di memoria non viene imparata in 2.000 passi
-  nemmeno dall'attenzione normale (25%, cioè il caso): lì v2 è 25% e 100% sulla
-  memoria vicina, v1 26% e 26%. Sono modellini e pochi semi: mostrano che la
-  struttura fissa non perde rispetto alla ricerca, non che un modello grande
-  converserà bene.
+$$
+r_{ij}=1-\frac{s_{ij}^2}{\sigma_j^2},\qquad \eta_j^2=\sum_i\frac{C_i}{n}\,r_{ij},\qquad CP=\sqrt{\frac1m\sum_j\eta_j^2}.
+$$
 
-  Le verifiche automatiche controllano che la lettura in addestramento e in
-  scrittura coincidano (anche caricando un prompt intero e poi continuando),
-  che con abbastanza concetti lo strato sia l'attenzione ordinaria, che nessuna
-  posizione legga il futuro, e che la memoria non superi
-  $w+B(\lfloor\log_2 n\rfloor+1)$. Velocità misurate: scheda Informatica.
+La CP sta fra zero e uno ed è riportata, non ottimizzata: crescerebbe sempre
+aumentando i concetti.
 
-Le formule spiegano il comportamento e i suoi limiti; i risultati sui dati
-stabiliscono quanto quel comportamento sia utile nel problema concreto.
+### Una tabella più grande della memoria
+
+Oltre 20.000 righe la tabella viene letta tre volte, un pezzo alla volta:
+
+1. **scala**: media e deviazione di ogni attributo, e 20.000 righe estratte a
+   caso con la stessa probabilità;
+2. **blocchi** (passo 4) su tutte le righe; pezzi diversi possono essere letti
+   da processi diversi, perché le somme si sommano;
+3. **livelli** (passi 5–8) sulle righe estratte, a partire dai concetti dei
+   blocchi; poi ogni riga della tabella viene aggiunta ai concetti del livello
+   di lavoro, così le loro somme sono sull'intera tabella.
+
+Tempo proporzionale alle righe; memoria: un pezzo di tabella più i blocchi.
+
+---
+
+## Parte B · Un testo
+
+Il modello linguistico è una pila di strati. In ogni strato ogni token deve
+leggere i token che lo precedono: è qui che entrano i concetti.
+
+### Passo 1 · Ogni token produce tre vettori
+
+Una **domanda** $q$ (che cosa cerco), una **chiave** $k$ (come mi riconoscono)
+e un **valore** $v$ (che cosa porto). Nel vocabolario della parte A: la chiave
+è $z$, il valore è $y$, e la domanda è una riga di cui si cerca il valore.
+
+### Passo 2 · Gli ultimi token restano esatti
+
+Gli ultimi $w$ token (la finestra, 16 sul processore) sono letti uno per uno:
+ciascuno è un concetto di un solo membro.
+
+### Passo 3 · Quanto è stato letto un token
+
+Finché un token è nella finestra dei token successivi, riceve da ciascuno una
+quota di attenzione. La loro somma è la sua lettura:
+
+$$
+a_p=\sum_{t=p}^{p+w-1}\frac{e^{\lambda\,q_t\cdot k_p}}{\sum_{u=t-w+1}^{t}e^{\lambda\,q_t\cdot k_u}} .
+$$
+
+È nota nel momento in cui il token esce dalla finestra. Un concetto somma le
+letture dei suoi membri; chi non è mai stato letto pesa un millesimo della
+media, così le copie si uniscono comunque per prime.
+
+### Passo 4 · I token usciti dalla finestra entrano nei blocchi
+
+Sono gli stessi blocchi della parte A, passo 4, con i token al posto delle
+righe: un blocco di livello $j$ copre $2^j$ token consecutivi e ha al massimo
+$B$ concetti (16 sul processore). Finché ne ha meno resta esatto; altrimenti
+$\operatorname{gen}_B$ unisce le coppie di $\Delta$ minimo, con le letture del
+passo 3 e il raggio
+
+$$
+\rho_i^2=\frac1d\Big(\frac{S_i}{C_i}-\frac{\lVert U_i\rVert^2}{C_i^2}\Big),\qquad S_i=\sum\lVert k\rVert^2 .
+$$
+
+Così due token uguali si uniscono gratis e un token che è stato letto molto
+resta da solo. Le chiavi sono sommate prima della rotazione di posizione; il
+centro è riportato alla posizione media dei suoi membri quando viene letto.
+
+### Passo 5 · Che cosa legge un token
+
+Il token in posizione $t$ ha $n=t-w+1$ token più vecchi della finestra. Legge
+la finestra esatta e i blocchi della scrittura binaria di $n$: se
+$n=\sum_jb_j2^j$, un blocco di livello $j$ per ogni $b_j=1$, i più grandi sui
+token più antichi. Ogni token vecchio è coperto una volta sola. Vicino legge
+blocchi piccoli e precisi, lontano blocchi grandi e generali:
+
+$$
+\#\{\text{vettori letti}\}\;\le\;w+B\,(\lfloor\log_2 n\rfloor+1).
+$$
+
+### Passo 6 · La lettura
+
+È la formula del passo 5 della parte A con la somiglianza $e^{\lambda q\cdot k}$:
+
+$$
+\mathrm{out}(q)=\frac{\sum_{\tau\in W}e^{\lambda q\cdot k_\tau}\,v_\tau+\sum_iC_i\,e^{\lambda q\cdot g_i}\,\bar v_i}
+{\sum_{\tau\in W}e^{\lambda q\cdot k_\tau}+\sum_iC_i\,e^{\lambda q\cdot g_i}} ,
+$$
+
+dove $W$ è la finestra e $i$ scorre sui concetti dei blocchi letti. Un concetto
+pesa quanto i token che riassume. Se $B\ge n$ nessuna unione avviene e questa
+**è** l'attenzione ordinaria.
+
+### Passo 7 · Mentre impara e mentre scrive
+
+I blocchi dipendono solo dalla posizione, quindi sono gli stessi per ogni testo
+della stessa lunghezza.
+
+- **Mentre impara** un livello è lo stesso calcolo per tutti i blocchi e per
+  tutti i token del pezzo insieme: $\lfloor\log_2 T\rfloor$ passi, ciascuno
+  $O(T\,B\,d)$, contro $O(T^2d)$ dell'attenzione ordinaria.
+- **Mentre scrive** i blocchi sono un contatore in base due: i token che
+  escono dalla finestra riempiono un blocco, e due blocchi uguali diventano il
+  loro genitore con la stessa $\operatorname{gen}_B$. La lettura è quella
+  dell'addestramento: esattamente in doppia precisione; in precisione singola
+  due unioni di costo quasi uguale possono scambiarsi e la lettura cambia di
+  poco.
+
+Nessun token legge il futuro: un token è letto solo da somme che non lo
+contengono. È lo stesso principio del passo 7 della parte A.
+
+---
+
+## Parte C · Tabella e testo a confronto
+
+| | Tabella | Testo |
+|---|---|---|
+| osservazione | una riga: attributi e target | un token: chiave e valore |
+| concetto | somme dei membri | somme dei membri |
+| riconoscere | massa × somiglianza attesa | massa × somiglianza attesa |
+| costo di un'unione | letture × raggio | letture × raggio |
+| letture ricevute | la massa | attenzione ricevuta nella finestra |
+| concetti specifici | i blocchi rimasti dopo l'ultima riga | i blocchi della scrittura binaria dell'età |
+| riassegnazione dei membri | sì | no: il passato non si rilegge |
+| quanti concetti | scelti dal giudizio | $B$ per blocco, fissati dalla memoria |
+| livelli sopra | scelti dalla CP a coppie | i blocchi stessi, per età |
+
+---
+
+## Parte D · Che cosa è stato misurato
+
+Le verifiche automatiche controllano le formule, che tabella e testo usino lo
+stesso costo, l'esclusione del target, che nessun token legga il futuro, che con
+abbastanza concetti lo strato sia l'attenzione ordinaria e che la memoria non
+superi il limite del passo 5. Non dimostrano da sole che il modello generalizzi:
+per quello servono le misure.
+
+**Tabelle** (divisioni dei test di qualità, accuratezza su righe non viste):
+
+| Dataset | Accuratezza | Concetti | Tempo |
+|---|---:|---:|---:|
+| Iris | 97,7% | 3 | 0,1 s |
+| Wine | 97,8% | 3 | 0,5 s |
+| Breast cancer | 95,2% | 20 | 4 s |
+| Sonar | 90,0% | 92 | 4 s |
+| Vehicle | 79,6% | 28 | 2 s |
+| Vote | 96,1% | 7 | 1 s |
+| Titanic | 81,2% | 25 | 1 s |
+| credit-g | 70,6% | 35 | 10 s |
+| Letter | 97,6% | 389 | 91 s |
+
+Senza target, Gioco dà 4 concetti in otto tabelle su otto.
+
+**Tabelle grandi** (sintetica: 10 numeri, 3 categorie, valori mancanti, 12
+classi): un milione di righe in 211 secondi e due milioni in 370, con due
+processi; la memoria resta intorno a 1 GB. Un miliardo di righe non è stato
+misurato.
+
+**Testo** (modellini da 64 dimensioni addestrati da zero, finestra 16, 16
+concetti per blocco):
+
+| Prova | Attenzione ordinaria | Solo la finestra | Concetti |
+|---|---:|---:|---:|
+| Memoria, risposta a 49 token: giuste | 100% | 5,5% | 100% |
+| Memoria lontana, fino a 177 token: giuste | 100% | — | 99% |
+| Testo, bit per carattere (meno è meglio) | 2,518 | 2,451 | 2,522 |
+
+**Limiti noti.**
+
+- Sui pezzi di testo corti l'attenzione ordinaria è ancora più veloce; i
+  concetti la superano sui contesti lunghi (numeri nella scheda Informatica).
+- Le prove sul testo sono su modellini e su un solo seme utile: dicono che il
+  meccanismo funziona, non che un modello grande converserà bene.
+- Leggere tutte le righe di una tabella grande, invece delle sole 20.000
+  estratte, non ha aumentato l'accuratezza nella prova sintetica: garantisce
+  che le somme siano sull'intera tabella.
+- Su tabelle con poche righe e molti attributi (Sonar) il livello di lavoro ha
+  molti concetti: accurato, ma meno leggibile.
+- La CP a coppie preferisce concetti grandi: gruppi adiacenti compaiono prima
+  uniti e si separano al livello successivo.
 """
 
 layout = html.Div(dcc.Markdown(TEXT, mathjax=True), className='p-3', style={'maxWidth':'960px','margin':'auto'})

@@ -1,4 +1,4 @@
-// Mathematical explanations must remain complete and render without TeX errors.
+// The step-by-step mathematics must stay complete and render without TeX errors.
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
 (async()=>{
@@ -9,16 +9,18 @@ const assert=require('node:assert/strict');
       const page=await browser.newPage({viewport:{width,height:1000}});
       await page.goto(process.env.ACAN_TEST_URL||'http://127.0.0.1:4000',{waitUntil:'domcontentloaded'});
       await page.getByText('Matematica',{exact:true}).click();
-      await page.getByRole('heading',{name:'7. Cosa dimostrano le verifiche'}).waitFor();
+      await page.getByRole('heading',{name:'Parte D · Che cosa è stato misurato'}).waitFor();
       await page.waitForFunction(()=>document.querySelectorAll('#page-mathematics mjx-container').length>=15);
-      assert(!(await page.locator('#page-mathematics').innerText()).includes('cp-v9'));
       assert.equal(await page.locator('#page-mathematics [data-mjx-error]').count(),0);
-      assert.equal(await page.locator('#page-mathematics h3').count(),7);
+      // Step by step: a table (9 steps and two notes), then a text (7 steps).
+      assert.equal(await page.locator('#page-mathematics h3').count(),18);
+      for(const name of ['Parte A · Una tabella','Parte B · Un testo','Parte C · Tabella e testo a confronto'])
+        assert(await page.getByRole('heading',{name}).isVisible());
       const text=await page.locator('#page-mathematics').innerText();
-      assert(text.includes('non supervisionato')&&text.includes('95,78%'));
-      assert(text.includes('Rilevanza:')&&text.includes('Generalizzare:'));
-      assert(text.includes('Classificazione')&&text.includes('osservazioni diverse'));
-      assert(!text.includes('acan/algebra.py'));
+      assert(text.includes('Passo 4 · Una passata a blocchi')&&text.includes('Passo 5 · Che cosa legge un token'));
+      assert(text.includes('Senza target')&&text.includes('Una tabella più grande della memoria'));
+      for(const gone of ['cp-v9','SmolLM2','acan/algebra.py','revisione precedente'])
+        assert(!text.includes(gone),gone);
       console.log(`Mathematics: ${width}px, all sections and formulas rendered without errors.`);
       await page.close();
     }
