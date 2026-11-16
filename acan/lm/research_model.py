@@ -54,7 +54,7 @@ def inference_contract():
 
 def check_inference_contract(options,state):
     recorded=state.get('model_contract')
-    from .compatibility import LEGACY_INFERENCE, PRE_JOINT_INFERENCE, PRE_V9_INFERENCE, PRE_GRAPH_INFERENCE, PRE_ONE_STEP_INFERENCE, PRE_NATIVE_INFERENCE, PRE_SCAN_INFERENCE
+    from .compatibility import LEGACY_INFERENCE, PRE_JOINT_INFERENCE, PRE_V9_INFERENCE, PRE_GRAPH_INFERENCE, PRE_ONE_STEP_INFERENCE, PRE_NATIVE_INFERENCE, PRE_SCAN_INFERENCE, PRE_CONCEPT_LM_INFERENCE
     legacy = ('routing_profile' not in options and recorded == LEGACY_INFERENCE) or (options.get('routing_profile') in ('shared-algebra-v1','legacy-causal-v1') and recorded == 'c823eeaae94de3b650709710cc2f245328a9a693d7b640af3096d6c8ddf6ba8b')
     legacy = legacy or (options.get('routing_profile') in ('shared-algebra-v1','legacy-causal-v1','cp-routing-v1') and recorded == PRE_JOINT_INFERENCE)
     # Earlier profiles are numerically unchanged by the addition of cp-v9.
@@ -64,6 +64,12 @@ def check_inference_contract(options,state):
     legacy = legacy or (recorded == PRE_NATIVE_INFERENCE and options.get('architecture') != 'native')
     # concept-graph-v2 is a new layer beside the others: every earlier profile reads as before.
     legacy = legacy or (recorded == PRE_SCAN_INFERENCE and options.get('routing_profile') != 'concept-graph-v2')
+    legacy = legacy or recorded == PRE_CONCEPT_LM_INFERENCE        # the concept language model was added beside the others
+    if options.get('architecture') == 'concepts':                    # no network: its checkpoints name the counting code
+        from .concept_trainer import contract as concept_contract
+        if recorded != concept_contract():
+            raise ValueError('Modello di un’altra versione: usare l’immagine worker che lo ha creato.')
+        return
     if recorded is not None and recorded!=inference_contract() and not legacy:
         raise ValueError('Modello di un’altra versione: usare l’immagine worker che lo ha creato.')
     if options.get('graft_fraction',.5)==1. and recorded is None:
