@@ -193,12 +193,19 @@ da 512 token mai visti; wikitext-103 ha lo stesso test):
 | Concetti con 3 percorsi, contesti fino a 2 | wikitext-2 | 400 MB | 4,492 | 30 s |
 | Concetti, solo percorso diretto | 20 M token di wikitext-103 | 512 MB | 4,156 | 90 s |
 | Concetti con 3 percorsi | 20 M token di wikitext-103 | 512 MB | 4,223 | 4 min |
+| Rete Llama a 4 strati (legge 16 M token in 90 min) | wikitext-103 | — | 4,011 | 90 min |
 | Concetti, solo percorso diretto | 69 M token di wikitext-103 | 2 GB | 3,905 | 7 min |
 | Concetti con 3 percorsi | 69 M token di wikitext-103 | 2 GB | 3,958 | 19 min |
 
 Sul testo piccolo i percorsi portano il modello quasi al livello della rete (nei
 primi 32 token e oltre i 256 lo superano); sui testi grandi con la memoria
 limitata il percorso diretto da solo legge meglio.
+
+Su wikitext-103, a parità di processore, il modello a concetti con il solo
+percorso diretto batte la rete a ogni distanza (0–32 token: 4,195 contro 4,521;
+256–512: 3,834 contro 3,964) in 7 minuti contro 90. La rete migliorava ancora
+(circa 0,05 ogni 10 minuti alla fine) e aveva letto un quarto del testo: con molto
+più calcolo è probabile che recuperi.
 
 **Velocità** (un thread, vocabolario 32.000, testo artificiale con frequenze di
 una lingua): circa 414.000 token al secondo per imparare, circa 790 per
