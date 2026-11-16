@@ -273,81 +273,130 @@ def build_view(build):
     return html.Div(lines)
 
 
-layout = dbc.Card(dbc.CardBody([
-    html.H4('Apprendimento lungo · il modello a concetti'),
-    html.P("Lo stesso modello della scheda Modello, applicato al testo: nessuna rete neurale e nessun peso addestrato. "
-           "Il testo è una tabella: ogni posizione è una riga, i token che la precedono sono i suoi attributi, il token "
-           "che segue è il target. Imparare è contare: ogni passo legge un pezzo di testo e aggiunge le sue somme ai "
-           "concetti. Il tokenizer nasce dai tuoi testi, in italiano e inglese insieme. L'apprendimento salva il lavoro "
-           "ogni 10 passi (dieci milioni di token) e ogni 5 minuti, riprende da solo dopo un riavvio del server e a ogni salvataggio risponde "
-           "alle domande di prova. Come funziona: schede Matematica e Informatica.",
-           className='small'),
-    html.H5('1 · I dati: italiano e inglese, più codice, comandi, musica, immagini, suoni e video a scelta', className='mt-3'),
-    html.P("Il worker scarica le fonti una alla volta da versioni fissate, verifica ogni file, tiene solo il testo e "
-           "cancella il resto. La preparazione si mette in pausa e riprende senza perdere nulla.", className='small'),
-    dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-mixture', placeholder='Scegli la quantità di dati', clearable=False), md=6),
-             dbc.Col([dbc.Button('Prepara i dati', id='lm-long-build', color='primary', className='me-2'),
-                      dbc.Button('Pausa', id='lm-long-build-pause', outline=True, color='warning', className='me-2'),
-                      dbc.Button('Riprendi', id='lm-long-build-resume', outline=True, color='primary')], md=6)], className='mb-2'),
-    html.Div(id='lm-long-mixture-info', className='small text-muted'),
-    dbc.Label('Altri dati da aggiungere al testo (facoltativi)', className='mt-2 mb-0'),
-    dbc.Checklist(id='lm-long-extras', value=[], inline=True, className='small'),
-    html.Div(id='lm-long-extras-info', className='small text-muted mb-2'),
-    html.Div(id='lm-long-build-status', role='status', className='small'), html.Div(id='lm-long-build-view'),
-    dbc.Accordion([dbc.AccordionItem(html.Div(id='lm-long-sources'), title='Fonti, licenze e riferimento fisso')],
-                  start_collapsed=True, className='my-2'),
-    html.H5('2 · La coda di apprendimento', className='mt-3'),
-    html.P("I testi vengono imparati uno dopo l'altro: ognuno parte dai concetti del precedente e aggiunge i suoi, "
-           "senza dimenticare nulla. Puoi mettere in coda la miscela preparata e i tuoi file (testo, Markdown, Python, ZIP, "
-           "EPUB, DOCX, PDF), e aggiungerne altri mentre impara con «Carica e aggiungi alla coda», sotto la coda.", className='small'),
-    dbc.Label('Testi da imparare, in ordine'),
-    dcc.Dropdown(id='lm-long-corpora', multi=True, placeholder='Scegli uno o più testi', className='mb-2'),
-    html.Div(id='lm-long-size-info', className='small text-muted mb-2'),
-    dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Salva ogni'), dbc.Input(id='lm-long-save', type='number', value=10, min=1, max=10000), dbc.InputGroupText('passi')]), md=6),
-             dbc.Col(dbc.InputGroup([dbc.InputGroupText('Tieni per sempre ogni'), dbc.Input(id='lm-long-milestone', type='number', value=100, min=0, max=10000000), dbc.InputGroupText('passi')]), md=6)],
-            className='mb-1'),
-    html.Small("Un passo conta un milione di token, quindi i passi sono i milioni di token del testo (un testo di 300 MB ne ha circa 40): "
-               "il testo si legge una volta sola. Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.",
-               className='text-muted d-block mb-2'),
-    dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Memoria massima dei concetti'), dbc.Input(id='lm-long-memory', type='number', value=0, min=0, max=262144, step=256), dbc.InputGroupText('MB')]), md=6),
-             dbc.Col(html.Small("0 = automatica: un quarto della memoria del server (o del suo contenitore), al massimo 2 GB; con il contenitore da 4 GB sono 1.024 MB. Vale per tutte le somme, e mentre somma il processo ne usa al massimo circa il triplo: non superare un quarto della memoria del contenitore. Oltre questo limite i concetti che costano meno a chi "
-                                "legge vengono generalizzati nel livello sopra.", className='text-muted'), md=6)], className='mb-2'),
-    dbc.Row([dbc.Col(dbc.Checkbox(id='lm-long-paths', value=False, label='Concetti dei token e percorsi'), md=6),
-             dbc.Col(html.Small("Il modello trova da sé i concetti dei token («gatto» e «cane» si somigliano) e legge il prossimo token anche dal "
-                                "concetto generale al particolare. Su wikitext-2 (2 milioni di token) l'errore scende da 4,59 a 4,45; su testi "
-                                "grandi, con il limite di memoria, peggiora (69 milioni di token, 2 GB: da 3,91 a 3,96), perché le somme dei "
-                                "percorsi tolgono memoria ai contesti lunghi.", className='text-muted'), md=6)], className='mb-2'),
-    # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
-    html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),
-              dbc.Input(id='lm-long-passes', type='number', value=1), dbc.Input(id='lm-long-length', type='number', value=256)],
-             style={'display': 'none'}),
-    dbc.Label('Domande di prova (una per riga, al massimo 6; vuoto = domande predefinite in italiano e inglese)'),
-    dbc.Textarea(id='lm-long-questions', rows=3, placeholder='Ciao! Chi sei?\nQual è la capitale della Francia?'),
-    dbc.Button('Crea la coda e avvia', id='lm-long-start', color='primary', className='mt-2'),
-    html.Div(id='lm-long-start-status', role='status', className='small mt-1'),
-    dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-queue', placeholder='Coda da seguire', clearable=False), md=6),
-             dbc.Col([dbc.Button('Pausa e salva', id='lm-long-pause', color='warning', className='me-2'),
-                      dbc.Button('Riprendi', id='lm-long-resume', color='primary', className='me-2'),
-                      dbc.Button('Mostra nel grafico', id='lm-long-chart', outline=True, color='primary', className='me-2'),
-                      html.Div(dbc.Button('Avvia il controllo', id='lm-long-control'), style={'display': 'none'})], md=6)], className='mt-3 mb-2'),
-    html.Div(id='lm-long-queue-view'),
-    dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-add-corpus', placeholder='Aggiungi un testo in fondo alla coda'), md=8),
-             dbc.Col(dbc.Button('Aggiungi', id='lm-long-add', outline=True, color='primary'), md=4)], className='mb-1'),
-    html.Div([html.Small('Oppure carica un documento dal computer (testo, Markdown, Python, ZIP, EPUB, DOCX, PDF): '
-                         'viene convertito in testo e aggiunto in fondo alla coda scelta sopra.', className='text-muted d-block'),
-              html.Div(id='lm-long-file-upload'), html.Div(id='lm-long-upload-status', role='status', className='small'),
-              dcc.Store(id='lm-long-upload-state')], className='mb-1'),
-    html.Div(id='lm-long-queue-status', role='status', className='small'),
-    html.H5('Grandezze del modello mentre impara', className='mt-3'),
-    html.Div(id='lm-long-footprint'),
-    html.H5('3 · Cosa risponde adesso', className='mt-3'),
-    html.P("Le stesse domande a ogni salvataggio, con la stessa estrazione casuale (seme fisso): le differenze vengono solo da ciò che il modello "
-           "ha imparato. Per fargli domande libere: Pausa e salva, poi «Fai scrivere un modello» negli strumenti avanzati "
-           "con la casella «Conversazione», poi Riprendi. Per scaricare il modello: scegli il progetto in «Segui i progetti», poi negli strumenti avanzati «Fai scrivere un modello addestrato» scegli la copia salvata e premi «Scarica questa copia del modello». Si può scaricare anche mentre impara. I concetti del modello si vedono nelle «Grandezze del modello mentre impara».",
-           className='small'),
-    html.Div(id='lm-long-answers'),
+FORMATS = 'testo, Markdown, Python, ZIP, EPUB, DOCX, PDF'
+
+
+def step(number, title, *children):
+    return dbc.Card(dbc.CardBody([html.H4(f'{number} · {title}'), *children]), className='my-3', color='primary', outline=True)
+
+
+layout = html.Div([
+    dbc.Alert(id='lm-guide', color='info', className='my-3'),
+    step(1, 'Prepara i testi',
+         html.P("Il modello impara dai testi che prepari qui. Puoi usare una miscela pubblica (italiano e inglese, più codice, comandi, "
+                "musica, immagini, suoni e video a scelta) oppure i tuoi documenti, o entrambi.", className='small'),
+         html.H6('Una miscela pubblica'),
+         html.P("Il server scarica le fonti una alla volta da versioni fissate, verifica ogni file, tiene solo il testo e cancella il resto. "
+                "Si mette in pausa e riprende senza perdere nulla.", className='small text-muted mb-1'),
+         dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-mixture', placeholder='Scegli la quantità di dati', clearable=False), md=6),
+                  dbc.Col([dbc.Button('Prepara i dati', id='lm-long-build', color='primary', className='me-2'),
+                           dbc.Button('Pausa', id='lm-long-build-pause', outline=True, color='warning', className='me-2'),
+                           dbc.Button('Riprendi', id='lm-long-build-resume', outline=True, color='primary')], md=6)], className='mb-2'),
+         html.Div(id='lm-long-mixture-info', className='small text-muted'),
+         dbc.Label('Altri dati da aggiungere (facoltativi)', className='mt-2 mb-0'),
+         dbc.Checklist(id='lm-long-extras', value=[], inline=True, className='small'),
+         html.Div(id='lm-long-extras-info', className='small text-muted mb-2'),
+         html.Div(id='lm-long-build-status', role='status', className='small'), html.Div(id='lm-long-build-view'),
+         dbc.Accordion([dbc.AccordionItem(html.Div(id='lm-long-sources'), title='Fonti, licenze e riferimento fisso')],
+                       start_collapsed=True, className='my-2'),
+         html.H6('I tuoi documenti', className='mt-3'),
+         html.P(f"Scegli un file ({FORMATS}, oppure .jsonl con un campo «text» per riga) e premi il pulsante: viene caricato a pezzi e "
+                "convertito in testo. Quando è pronto compare fra i testi del passo 2.", className='small text-muted mb-1'),
+         html.Div(id='lm-file-upload'), html.Div(id='lm-upload-status', role='status', className='small')),
+    step(2, 'Crea la coda e avvia',
+         html.P("La coda impara i testi uno dopo l'altro: ognuno parte da ciò che hanno imparato i precedenti e aggiunge il suo, senza "
+                "dimenticare nulla. Il vocabolario (32.000 token) si impara una volta, all'avvio, dai testi che sono in coda in quel momento: "
+                "metti subito tutti quelli che vuoi.", className='small'),
+         dbc.Label('Testi da imparare, in ordine'),
+         dcc.Dropdown(id='lm-long-corpora', multi=True, placeholder='Scegli uno o più testi preparati al passo 1', className='mb-2'),
+         html.Div(id='lm-long-size-info', className='small text-muted mb-2'),
+         dbc.Label('Domande di prova (una per riga, al massimo 6; vuoto = domande predefinite in italiano e inglese)'),
+         dbc.Textarea(id='lm-long-questions', rows=3, placeholder='Ciao! Chi sei?\nQual è la capitale della Francia?'),
+         dbc.Accordion([dbc.AccordionItem([
+             dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Salva ogni'), dbc.Input(id='lm-long-save', type='number', value=10, min=1, max=10000), dbc.InputGroupText('passi')]), md=6),
+                      dbc.Col(dbc.InputGroup([dbc.InputGroupText('Tieni per sempre ogni'), dbc.Input(id='lm-long-milestone', type='number', value=100, min=0, max=10000000), dbc.InputGroupText('passi')]), md=6)],
+                     className='mb-1'),
+             html.Small("Un passo conta un milione di token: un testo di 300 MB sono circa 40 passi, e si legge una volta sola. Si salva anche "
+                        "ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
+             dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Memoria massima dei concetti'), dbc.Input(id='lm-long-memory', type='number', value=0, min=0, max=262144, step=256), dbc.InputGroupText('MB')]), md=6),
+                      dbc.Col(html.Small("0 = automatica: un quarto della memoria del server (o del suo contenitore), al massimo 2 GB; con il "
+                                         "contenitore da 4 GB sono 1.024 MB. Mentre somma il processo ne usa fino a circa il triplo: non superare "
+                                         "un quarto della memoria del contenitore. Oltre il limite i concetti che servono meno vengono "
+                                         "generalizzati nel livello sopra.", className='text-muted'), md=6)], className='mb-2'),
+             dbc.Row([dbc.Col(dbc.Checkbox(id='lm-long-paths', value=False, label='Concetti dei token e percorsi'), md=6),
+                      dbc.Col(html.Small("Il modello trova da sé i token che si somigliano («gatto» e «cane») e legge il prossimo token anche "
+                                         "dal concetto generale al particolare. Aiuta sui testi piccoli (wikitext-2, 2 milioni di token: da 4,59 a "
+                                         "4,45); peggiora su quelli grandi con il limite di memoria (69 milioni di token, 2 GB: da 3,91 a 3,96).",
+                                         className='text-muted'), md=6)], className='mb-2'),
+         ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
+         # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
+         html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),
+                   dbc.Input(id='lm-long-passes', type='number', value=1), dbc.Input(id='lm-long-length', type='number', value=256)],
+                  style={'display': 'none'}),
+         dbc.Button('Crea la coda e avvia', id='lm-long-start', color='primary', className='mt-2'),
+         html.Div(id='lm-long-start-status', role='status', className='small mt-1')),
+    step(3, 'Segui la coda',
+         html.P("Qui vedi a che punto è ogni testo, come cresce il modello e cosa risponde. Il server fa una cosa alla volta: mentre la coda "
+                "impara, la preparazione dei dati e la scrittura aspettano.", className='small'),
+         dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-queue', placeholder='Scegli la coda', clearable=False), md=6),
+                  dbc.Col([dbc.Button('Pausa e salva', id='lm-long-pause', color='warning', className='me-2'),
+                           dbc.Button('Riprendi', id='lm-long-resume', color='primary', className='me-2'),
+                           dbc.Button('Apri nel passo 4', id='lm-long-chart', outline=True, color='primary', className='me-2'),
+                           html.Div(dbc.Button('Avvia il controllo', id='lm-long-control'), style={'display': 'none'})], md=6)], className='mb-2'),
+         html.Div(id='lm-long-queue-view'),
+         html.Div(id='lm-long-queue-status', role='status', className='small'),
+         dbc.Accordion([dbc.AccordionItem([
+             dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-add-corpus', placeholder='Un testo già preparato'), md=8),
+                      dbc.Col(dbc.Button('Aggiungi in fondo alla coda', id='lm-long-add', outline=True, color='primary'), md=4)], className='mb-2'),
+             html.Small(f'Oppure un documento dal computer ({FORMATS}): viene caricato, convertito in testo e aggiunto in fondo alla coda scelta. '
+                        'Usa il vocabolario della coda, imparato all\'avvio.', className='text-muted d-block'),
+             html.Div(id='lm-long-file-upload'), html.Div(id='lm-long-upload-status', role='status', className='small'),
+             dcc.Store(id='lm-long-upload-state'),
+         ], title='Aggiungi un testo alla coda')], start_collapsed=True, className='my-2'),
+         html.H5('Il modello mentre impara', className='mt-3'),
+         html.Div(id='lm-long-footprint'),
+         html.H5('Cosa risponde', className='mt-3'),
+         html.P("Le stesse domande a ogni salvataggio, con la stessa estrazione casuale: le differenze vengono solo da ciò che il modello ha "
+                "imparato. Per fargli domande libere e scaricarlo: passo 4.", className='small'),
+         html.Div(id='lm-long-answers')),
     dcc.Store(id='lm-long-catalog'), dcc.Store(id='lm-long-builds'), dcc.Interval(id='lm-long-poll', interval=5000),
-]), className='my-3', color='primary', outline=True)
+])
+
+
+def guide(state, builds):
+    """What to do now, from the state of the workspace: one sentence and the step to go to."""
+    if not state:
+        return 'Collegamento al server in corso…'
+    running = next((item for item in builds or [] if item['status'] in ('queued', 'running', 'pausing')), None)
+    paused = next((item for item in builds or [] if item['status'] in ('paused', 'interrupted')), None)
+    corpora = [item for item in state.get('corpora', []) if item['status'] == 'ready']
+    found = queues(state.get('jobs', []))
+    active = [items for items in found.values() if any(job['status'] in ('queued', 'preparing', 'running', 'pausing') for job in items)]
+    if active:
+        items = active[0]
+        job = current_item(items)
+        order = (job['config'].get('series') or {}).get('order', 0)+1
+        progress = job['progress'] or {}
+        if job['status'] in ('queued', 'preparing') or not progress.get('graft'):
+            now = f"La coda sta preparando i token del testo {order} di {len(items)} ({job['config']['series'].get('label', '')}): poi comincia a imparare da sola."
+        else:
+            now = f"La coda sta imparando il testo {order} di {len(items)}: passo {progress.get('step', 0):,} di {job['config']['total_steps']:,}."
+        learned = [item for item in items if item['status'] == 'completed']
+        tail = (' Puoi seguirla al passo 3; un testo che ha finito si prova e si scarica al passo 4.' if learned else
+                ' Seguila al passo 3. Per provarlo e scaricarlo aspetta che un testo finisca (passo 4).')
+        return [html.B('Adesso: '), now, tail]
+    if running:
+        return [html.B('Adesso: '), 'si stanno preparando i dati (passo 1). Quando sono pronti, crea la coda al passo 2.']
+    if any(job['status'] in ('paused', 'interrupted') for items in found.values() for job in items):
+        return [html.B('Adesso: '), 'la coda è in pausa. Per continuare premi «Riprendi» al passo 3.']
+    if paused:
+        return [html.B('Adesso: '), 'la preparazione dei dati è in pausa: premi «Riprendi» al passo 1.']
+    if found and all(job['status'] == 'completed' for items in found.values() for job in items):
+        return [html.B('Adesso: '), "la coda ha finito. Prova il modello e scaricalo al passo 4 (scegli l'ultimo testo), "
+                "aggiungi altri testi al passo 3, oppure crea una coda nuova al passo 2."]
+    if not corpora:
+        return [html.B('Per cominciare: '), 'prepara una miscela pubblica o carica i tuoi documenti al passo 1.']
+    return [html.B('Prossimo passo: '), 'scegli i testi al passo 2 e premi «Crea la coda e avvia».']
 
 
 def register(app):
@@ -494,7 +543,7 @@ def register(app):
                     raise ValueError('Il controllo si avvia dopo il primo salvataggio del primo testo.')
                 result = backend(workspace, f"/jobs/{learned[0]['id']}/dense-control", 'POST', {})
                 return ('Controllo avviato sul primo testo della coda, con lo stesso tokenizer, gli stessi passi e lo stesso seme. '
-                        'Lo trovi in «Segui i progetti».'), result['id']
+                        'Lo trovi al passo 4, in «Progetto».'), result['id']
             if dash.ctx.triggered_id == 'lm-long-pause':
                 backend(workspace, f"/jobs/{job['id']}/pause", 'POST')
                 return 'Pausa richiesta: salva il punto raggiunto e si ferma. Puoi aggiornare il server tranquillamente.', dash.no_update
@@ -527,6 +576,20 @@ def register(app):
     def size_info(size):
         return ("Non c'è una dimensione da scegliere: il modello è fatto dei concetti del testo che legge e cresce con esso, "
                 "fino alla memoria massima. Contesti fino a 6 token precedenti, più i concetti del testo in corso a qualunque distanza.")
+
+    @app.callback(Output('lm-guide', 'children'), Input('lm-state', 'data'), Input('lm-long-builds', 'data'))
+    def show_guide(state, builds):
+        return guide(state, builds)
+
+    @app.callback(Output('lm-job', 'value', allow_duplicate=True), Input('lm-long-queue', 'value'), State('lm-job', 'value'),
+                  State('lm-state', 'data'), prevent_initial_call=True)
+    def follow_queue(queue, job, state):
+        """Step 4 starts on the last text of the chosen queue that has a saved model."""
+        items = queues((state or {}).get('jobs', [])).get(queue) or []
+        if job and any(item['id'] == job for item in items):
+            return dash.no_update
+        saved = [item for item in items if item['checkpoint']]
+        return saved[-1]['id'] if saved else dash.no_update
 
     @app.callback(Output('lm-long-footprint', 'children'), Input('lm-state', 'data'), Input('lm-long-queue', 'value'),
                   State('lm-workspace', 'data'))

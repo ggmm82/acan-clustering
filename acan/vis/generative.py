@@ -60,10 +60,10 @@ def backend(workspace, path, method='GET', data=None, raw=False, headers=None, t
 
 layout = dbc.Container([
     html.H4('Il modello a concetti che scrive', className='mt-3'),
-    html.P("Un solo modello per le tabelle e per il testo. Qui il testo è la tabella: ogni posizione è una riga, i token "
-           "precedenti sono gli attributi, il token successivo è il target da prevedere. Nessuna rete neurale: il modello "
-           "è fatto di concetti che conservano solo somme. Qui lo prepari, lo fai imparare a lungo in italiano e inglese, "
-           "lo segui e lo provi. Come funziona: schede Matematica e Informatica."),
+    html.P("Lo stesso modello della scheda Modello, applicato al testo: ogni posizione è una riga, i token precedenti sono gli "
+           "attributi, il token successivo è il target. Nessuna rete neurale: il modello conta. Si usa in cinque passi, dall'alto in "
+           "basso: prepari i testi, crei la coda, la segui, provi e scarichi il modello, e se vuoi lo usi da altri programmi. "
+           "Come funziona: schede Matematica e Informatica.", className='small'),
     dcc.Store(id='lm-workspace', storage_type='local'), dcc.Store(id='lm-state'),
     dcc.Store(id='lm-chart-view',storage_type='session'),
     dcc.Store(id='lm-active-job', storage_type='session'),
@@ -71,19 +71,14 @@ layout = dbc.Container([
     html.Div(id='lm-connection', role='status'),
     dcc.Interval(id='lm-poll', interval=5000, disabled=True),
     long_training.layout,
-    html.Hr(), html.H5('Segui i progetti'),
-    dbc.Button("Aggiorna l'elenco dei progetti", id='lm-refresh', outline=True, color='primary', className='my-2 me-2'),
-
-    dcc.Dropdown(id='lm-job', placeholder='Scegli un progetto per seguirlo, metterlo in pausa o riprenderlo'),
-    dbc.Button('Pausa e salva', id='lm-pause', color='warning', className='m-1'),
-    dbc.Button('Riprendi', id='lm-resume', className='m-1'),
-    dbc.Row([
-        dbc.Col(dbc.Input(id='lm-rename-value', placeholder='Nuovo nome del progetto scelto'), md=5, className='mt-1'),
-        dbc.Col([dbc.Button('Rinomina', id='lm-rename', outline=True, color='primary', className='me-2 mt-1'),
-                 dbc.Button('Elimina il progetto', id='lm-delete', outline=True, color='danger', className='mt-1')], md=7),
-    ], className='my-1'),
-    dcc.ConfirmDialog(id='lm-delete-confirm', message='Eliminare il progetto scelto con tutte le sue copie salvate? Non si può annullare.'),
-    html.Div(id='lm-manage-status', role='status', className='small'),
+    dbc.Card(dbc.CardBody([
+    html.H4('4 · Prova il modello e scaricalo'),
+    html.P("Ogni testo della coda è un progetto: il suo modello contiene tutto ciò che la coda ha imparato fino a lui. "
+           "Scegli il progetto (di solito l'ultimo che ha finito) e qui vedi il suo grafico, lo fai scrivere e lo scarichi.",
+           className='small'),
+    dbc.Label('Progetto'),
+    dcc.Dropdown(id='lm-job', placeholder='Scegli un progetto: un testo della coda'),
+    dbc.Button("Aggiorna l'elenco dei progetti", id='lm-refresh', outline=True, color='primary', size='sm', className='my-2 me-2'),
     html.Div(id='lm-action-status', role='status'), html.Div(id='lm-progress'),
     dbc.Row([
         dbc.Col([dbc.Label('Grafico'),dcc.Dropdown(id='lm-history-mode',value='overview',clearable=False,
@@ -94,10 +89,70 @@ layout = dbc.Container([
     ]),
     html.P("Più in basso è la linea, meno il modello sbaglia a indovinare la parola successiva. Conta la linea su testo mai visto (validazione): se risale mentre quella di addestramento continua a scendere, il modello sta imparando a memoria.",className='small text-muted'),
     dcc.Loading(dcc.Graph(id='lm-loss'),delay_show=150),
+    html.H5('Fai scrivere il modello', className='mt-3'),
+            html.P("Scegli una copia salvata (la migliore è indicata) e scrivi l'inizio di una frase, oppure una domanda con la casella «Conversazione»: il modello continua. La prova non cambia il modello. Il server fa una cosa alla volta: se una coda sta imparando, la scrittura non parte; aspetta che finisca o metti in pausa la coda al passo 3, e dopo premi «Riprendi»."),
+            dcc.Dropdown(id='lm-checkpoint', placeholder='Copia salvata del modello: la migliore e le ultime tre'),
+            dbc.Textarea(id='lm-prompt', value='', placeholder="Scrivi l'inizio di una frase, nella lingua del testo di addestramento", rows=3),
+            dbc.Label('Quanto testo scrivere (token, circa pezzi di parola; fino a 256, fino a 4.096 per i modelli nativi: un\'immagine sono circa 1.060 token, iniziando con <|image|>)'), dbc.Input(id='lm-new-tokens', type='number', value=64, min=1, max=256),
+            dbc.Checkbox(id='lm-full-length', value=True, label='Scrivi sempre fino alla lunghezza richiesta (senza fermarsi a fine paragrafo)'),
+            dbc.Checkbox(id='lm-chat', value=False, label='Conversazione: il testo è una domanda e il modello risponde fino a fine turno (per i modelli addestrati sui dialoghi)'),
+            html.Div(dbc.Checkbox(id='lm-inspect-generation', value=False), style={'display': 'none'}),
+            dbc.Button('Continua la frase', id='lm-generate', className='my-2'),
+            html.Div(id='lm-generation-status', role='status'), html.Div(id='lm-output'),
+            html.Div(id='lm-generation-metrics'),
+            dbc.Button('Scarica questa copia del modello', id='lm-export-model', outline=True, color='primary', className='my-2'),
+            html.Small('Contiene i concetti e il tokenizer: si ricarica senza altri file (istruzioni nel README del pacchetto).', className='text-muted d-block'),
+            html.Div(id='lm-export-status', role='status'),
+    dbc.Accordion([dbc.AccordionItem([
+    dbc.Button('Pausa e salva', id='lm-pause', color='warning', className='m-1'),
+    dbc.Button('Riprendi', id='lm-resume', className='m-1'),
+    dbc.Row([
+        dbc.Col(dbc.Input(id='lm-rename-value', placeholder='Nuovo nome del progetto scelto'), md=5, className='mt-1'),
+        dbc.Col([dbc.Button('Rinomina', id='lm-rename', outline=True, color='primary', className='me-2 mt-1'),
+                 dbc.Button('Elimina il progetto', id='lm-delete', outline=True, color='danger', className='mt-1')], md=7),
+    ], className='my-1'),
+    dcc.ConfirmDialog(id='lm-delete-confirm', message='Eliminare il progetto scelto con tutte le sue copie salvate? Non si può annullare.'),
+    html.Div(id='lm-manage-status', role='status', className='small'),
+    ], title='Gestisci il progetto: pausa, ripresa, nome, eliminazione')], start_collapsed=True, className='my-2'),
+]), className='my-3', color='primary', outline=True),
+    dbc.Card(dbc.CardBody([
+    html.H4('5 · Usalo da altri programmi (API compatibile OpenAI)'),
+            html.P("Ogni programma scritto per l'API di OpenAI (la libreria «openai», LangChain, Open WebUI, curl) può usare i "
+                   "modelli a concetti di questo spazio di lavoro: basta cambiare indirizzo e chiave. Il modello è l'id del progetto; "
+                   "risponde con l'ultimo salvataggio, anche mentre continua a imparare.", className='small'),
+            dbc.Row([dbc.Col(dbc.Input(id='lm-api-name', placeholder='Nome della chiave (per esempio: Open WebUI)', maxLength=80), md=8),
+                     dbc.Col(dbc.Button('Crea una chiave', id='lm-api-create', color='primary'), md=4)], className='mb-2'),
+            html.Div(id='lm-api-created', role='status'),
+            html.Div(id='lm-api-keys'),
+            dbc.Row([dbc.Col(dcc.Dropdown(id='lm-api-revoke-key', placeholder='Chiave da revocare'), md=8),
+                     dbc.Col(dbc.Button('Revoca', id='lm-api-revoke', outline=True, color='danger'), md=4)], className='my-2'),
+            html.Div(id='lm-api-status', role='status', className='small'),
+            dcc.Markdown('''
+**Indirizzi** (sullo stesso dominio di questa pagina): `GET /v1/models` · `POST /v1/chat/completions` · `POST /v1/completions`
+
+```python
+from openai import OpenAI
+client = OpenAI(base_url="https://<questo sito>/v1", api_key="acan-…")
+print([m.id for m in client.models.list()])
+risposta = client.chat.completions.create(
+    model="<id del progetto>",
+    messages=[{"role": "user", "content": "Ciao! Chi sei?"}],
+    temperature=0.7, max_tokens=128)
+print(risposta.choices[0].message.content)
+```
+
+Parametri: `temperature`, `top_p`, `max_tokens`, `stop`, `seed`, `stream` (le risposte arrivano un pezzo alla volta).
+Un modello è un progetto (`<id>`), oppure un suo salvataggio preciso (`<id>:<nome del checkpoint>`).
+La chiave si vede solo quando la crei: conservala; se la perdi, revocala e creane un'altra.
+''', className='small'),
+            dcc.Store(id='lm-api-refresh'),
+]), className='my-3', color='primary', outline=True),
+    html.Hr(), html.H5('Strumenti avanzati'),
+    html.P('Non servono per usare il modello: restano per esperimenti, confronti e debug.', className='small text-muted'),
     dbc.Accordion([dbc.AccordionItem([
             dbc.Card(dbc.CardBody([
                 html.H5('Il percorso di validazione'),
-                html.P("Testo da usare nei passi 1 e 2: uno pubblico (si scarica una volta) oppure uno tuo, caricato negli strumenti avanzati.", className='small text-muted mb-1'),
+                html.P("Testo da usare nei passi 1 e 2: uno pubblico (si scarica una volta) oppure uno tuo, caricato al passo 1 («I tuoi documenti»).", className='small text-muted mb-1'),
                 dcc.Dropdown(id='lm-validation-text', placeholder='Scegli il testo', clearable=False, className='mb-3'),
                 html.H6('Passo 1 · Prova in piccolo, da zero (CPU, minuti)'),
                 html.P("Domanda: un modello che legge il testo lontano attraverso i concetti ricorda ciò che serve, come uno "
@@ -131,8 +186,6 @@ layout = dbc.Container([
                 html.Div(id='lm-decision'),
             ]), className='my-3'),
     ], title='Laboratorio: il modello a concetti contro due reti neurali, in piccolo')], start_collapsed=True, className='my-3'),
-    html.Hr(), html.H5('Strumenti avanzati'),
-    html.P('Tutto il resto del laboratorio: non serve per il percorso di validazione, ma resta qui con i dati per il debug.', className='small text-muted'),
     dbc.Accordion([
     dbc.AccordionItem([
             dbc.Card(dbc.CardBody([
@@ -156,8 +209,7 @@ layout = dbc.Container([
     ], title='Avvio guidato su un testo pubblico (prova rapida di funzionamento)'),
     dbc.AccordionItem([
             dbc.Row([
-                dbc.Col([html.H5('1 · Il tuo testo (facoltativo)'), html.Div(id='lm-file-upload'),
-                         html.Div(id='lm-upload-status', role='status'), html.P('Testo (.txt, .md, .py), .jsonl con un campo «text» per riga, documenti e archivi (.docx, .pdf, .epub, .zip), immagini (.png, .jpg, .webp, .bmp), suoni (.wav, .mp3, .ogg, .flac, .m4a) e video (.gif, .mp4, .webm, .mov): tutto diventa token da solo; per audio e video compressi il worker scarica ffmpeg la prima volta che serve. Le immagini diventano 32×32 a 256 colori, i suoni 8 kHz, le animazioni 16×16 a 4 fotogrammi al secondo.', className='small text-muted'), dcc.Dropdown(id='lm-corpus', placeholder='Scegli un testo già caricato')], md=6),
+                dbc.Col([html.H5('1 · Il tuo testo (facoltativo)'), html.Small('Carica i tuoi documenti al passo 1 della pagina, «I tuoi documenti».', className='text-muted d-block'), html.P('Testo (.txt, .md, .py), .jsonl con un campo «text» per riga, documenti e archivi (.docx, .pdf, .epub, .zip), immagini (.png, .jpg, .webp, .bmp), suoni (.wav, .mp3, .ogg, .flac, .m4a) e video (.gif, .mp4, .webm, .mov): tutto diventa token da solo; per audio e video compressi il worker scarica ffmpeg la prima volta che serve. Le immagini diventano 32×32 a 256 colori, i suoni 8 kHz, le animazioni 16×16 a 4 fotogrammi al secondo.', className='small text-muted'), dcc.Dropdown(id='lm-corpus', placeholder='Scegli un testo già caricato')], md=6),
                 dbc.Col([html.H5('2 · Il progetto'),
                          html.Small('Il modello a concetti: nessuna dimensione da scegliere, cresce con il testo che conta.', className='text-muted d-block mb-2'),
                          dbc.Label('Nome del progetto'), dbc.Input(id='lm-name', value='Modello a concetti'),
@@ -183,22 +235,6 @@ layout = dbc.Container([
             ], title='Impostazioni avanzate')], start_collapsed=True, className='my-3'),
             dbc.Button("Crea e avvia l'addestramento", id='lm-start', className='m-1'),
     ], title='Crea un progetto a mano, con tutte le impostazioni'),
-    dbc.AccordionItem([
-            html.Hr(), html.H5('4 · Fai scrivere il modello'),
-            html.P("Metti in pausa l'addestramento, scegli una copia salvata (la migliore è indicata) e scrivi l'inizio di una frase: il modello la continua. La prova non cambia il modello; dopo puoi riprendere l'addestramento."),
-            dcc.Dropdown(id='lm-checkpoint', placeholder='Copia salvata del modello: la migliore e le ultime tre'),
-            dbc.Textarea(id='lm-prompt', value='', placeholder="Scrivi l'inizio di una frase, nella lingua del testo di addestramento", rows=3),
-            dbc.Label('Quanto testo scrivere (token, circa pezzi di parola; fino a 256, fino a 4.096 per i modelli nativi: un\'immagine sono circa 1.060 token, iniziando con <|image|>)'), dbc.Input(id='lm-new-tokens', type='number', value=64, min=1, max=256),
-            dbc.Checkbox(id='lm-full-length', value=True, label='Scrivi sempre fino alla lunghezza richiesta (senza fermarsi a fine paragrafo)'),
-            dbc.Checkbox(id='lm-chat', value=False, label='Conversazione: il testo è una domanda e il modello risponde fino a fine turno (per i modelli addestrati sui dialoghi)'),
-            html.Div(dbc.Checkbox(id='lm-inspect-generation', value=False), style={'display': 'none'}),
-            dbc.Button('Continua la frase', id='lm-generate', className='my-2'),
-            html.Div(id='lm-generation-status', role='status'), html.Div(id='lm-output'),
-            html.Div(id='lm-generation-metrics'),
-            dbc.Button('Scarica questa copia del modello', id='lm-export-model', outline=True, color='primary', className='my-2'),
-            html.Small('Contiene i concetti e il tokenizer: si ricarica senza altri file (istruzioni nel README del pacchetto).', className='text-muted d-block'),
-            html.Div(id='lm-export-status', role='status'),
-    ], title='Fai scrivere un modello addestrato'),
     dbc.AccordionItem([
             html.Hr(),html.H5("5 · Confronto con una rete neurale (facoltativo)"),
             html.P("Per misurare il modello a concetti: una rete neurale piccola nata da zero, sullo stesso testo e con lo stesso tokenizer del progetto scelto. "
@@ -233,37 +269,6 @@ layout = dbc.Container([
                 dbc.Button('Scarica la foto dei layer', id='lm-layer-download', outline=True, color='primary', className='mt-2'), dcc.Download(id='lm-layer-file'),
             ], title='Per esperti · dentro il modello, layer per layer')], start_collapsed=True, className='my-3'), style={'display': 'none'}),   # layers exist only in the networks of earlier projects
     ], title='Per esperti: configurazione e registro'),
-    dbc.AccordionItem([
-            html.P("Ogni programma scritto per l'API di OpenAI (la libreria «openai», LangChain, Open WebUI, curl) può usare i "
-                   "modelli a concetti di questo spazio di lavoro: basta cambiare indirizzo e chiave. Il modello è l'id del progetto; "
-                   "risponde con l'ultimo salvataggio, anche mentre continua a imparare.", className='small'),
-            dbc.Row([dbc.Col(dbc.Input(id='lm-api-name', placeholder='Nome della chiave (per esempio: Open WebUI)', maxLength=80), md=8),
-                     dbc.Col(dbc.Button('Crea una chiave', id='lm-api-create', color='primary'), md=4)], className='mb-2'),
-            html.Div(id='lm-api-created', role='status'),
-            html.Div(id='lm-api-keys'),
-            dbc.Row([dbc.Col(dcc.Dropdown(id='lm-api-revoke-key', placeholder='Chiave da revocare'), md=8),
-                     dbc.Col(dbc.Button('Revoca', id='lm-api-revoke', outline=True, color='danger'), md=4)], className='my-2'),
-            html.Div(id='lm-api-status', role='status', className='small'),
-            dcc.Markdown('''
-**Indirizzi** (sullo stesso dominio di questa pagina): `GET /v1/models` · `POST /v1/chat/completions` · `POST /v1/completions`
-
-```python
-from openai import OpenAI
-client = OpenAI(base_url="https://<questo sito>/v1", api_key="acan-…")
-print([m.id for m in client.models.list()])
-risposta = client.chat.completions.create(
-    model="<id del progetto>",
-    messages=[{"role": "user", "content": "Ciao! Chi sei?"}],
-    temperature=0.7, max_tokens=128)
-print(risposta.choices[0].message.content)
-```
-
-Parametri: `temperature`, `top_p`, `max_tokens`, `stop`, `seed`, `stream` (le risposte arrivano un pezzo alla volta).
-Un modello è un progetto (`<id>`), oppure un suo salvataggio preciso (`<id>:<nome del checkpoint>`).
-La chiave si vede solo quando la crei: conservala; se la perdi, revocala e creane un'altra.
-''', className='small'),
-            dcc.Store(id='lm-api-refresh'),
-    ], title='API compatibile OpenAI'),
     dbc.AccordionItem([
             dbc.Button('Salva la chiave di recupero', id='lm-export-key', outline=True, color='secondary', className='my-2'),
             html.Div(id='lm-recovery-input'), dcc.Download(id='lm-key-download'),
@@ -604,8 +609,8 @@ def decision_view(small, pair=None, tests=None):
                                            f"attenzione normale {dense['status']} al passo {dense['progress'].get('step', 0)}."))
             ready = False
         elif not all(tested):
-            items.append(('Passo 2', None, "Entrambi finiti: manca la verifica finale su testo mai visto. Selezionali in «Segui i "
-                                           "progetti» e avvia «Verifica finale» negli strumenti avanzati, uno per volta."))
+            items.append(('Passo 2', None, "Entrambi finiti: manca la verifica finale su testo mai visto. Selezionali al passo 4 "
+                                           "(«Progetto») e avvia «Verifica finale» negli strumenti avanzati, uno per volta."))
             ready = False
         else:
             gap = tested[0][0]-tested[1][0]
@@ -1038,7 +1043,7 @@ def register(app):
                 'Questo è il controllo denso: è il riferimento con cui confrontare i progetti ACAN dello stesso budget.' if control else
                 'Il modello di partenza non ha visto questo corpus, quindi scendere sotto la sua linea non dimostra che i concetti servano: '
                 + ('il confronto valido è con il progetto ad attenzione normale con lo stesso budget, che compare tratteggiato sul grafico.' if partner is not None else
-                 'il confronto valido è con il controllo denso addestrato con lo stesso budget (strumenti avanzati, «Confronti e serie a mano»).')),
+                 'il confronto valido è con il controllo denso addestrato con lo stesso budget (strumenti avanzati, «Confronto con una rete neurale»).')),
                 color='info'))
             if best is not None and validation > best + .05:
                 detail.append(dbc.Alert(f'La validazione è risalita di {validation-best:.3f} rispetto al migliore mentre il training continua a scendere: '
@@ -1401,7 +1406,7 @@ def register(app):
                           early_stop_patience=6, early_stop_min_delta=.005, validation_batches=32)
             result = backend(workspace, '/series', 'POST', dict(base=config, variants=['chosen', 'dense']))
             return result['jobs'][0]['id'], ("Confronto avviato: prima il progetto con i concetti, poi quello con l'attenzione "
-                                             "normale, in automatico. Li segui in «Segui i progetti».")
+                                             "normale, in automatico. Li segui al passo 4, scegliendoli in «Progetto».")
         except ValueError as exc:
             return dash.no_update, dbc.Alert(str(exc), color='warning')
 

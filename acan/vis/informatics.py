@@ -27,9 +27,10 @@ l'addestramento, fino a un milione di righe.
 **Un testo** si prepara nella scheda Generativo. «Prepara i dati» scarica le
 fonti una alla volta da versioni fissate, controlla ogni file, tiene solo il
 testo e cancella il resto; si mette in pausa e riprende. I tuoi documenti (testo,
-Markdown, Python, ZIP, EPUB, DOCX, PDF) si caricano dal computer: con «Carica e
-aggiungi alla coda», sotto la coda, il file viene caricato a pezzi, convertito in
-testo e messo in fondo alla coda scelta.
+Markdown, Python, ZIP, EPUB, DOCX, PDF) si caricano dal computer al passo 1, «I
+tuoi documenti», oppure al passo 3, «Aggiungi un testo alla coda»: il file viene
+caricato a pezzi, convertito in testo e, nel secondo caso, messo in fondo alla
+coda scelta.
 
 In entrambi i casi una parte dei dati non viene mai usata per imparare: per la
 tabella il 20% delle righe, per il testo i documenti di **validazione** (10%,
