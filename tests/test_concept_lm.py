@@ -91,6 +91,7 @@ class ConceptLMTests(unittest.TestCase):
         self.assertEqual(tight.concepts()[1], free.concepts()[1])      # the contexts that carry the information stay
         self.assertLess(sum(tight.concepts()[2:]), sum(free.concepts()[2:]))    # longer ones add nothing and go first
 
+    @unittest.skipUnless(importlib.util.find_spec('safetensors'), 'Checkpoints need safetensors (the worker has it)')
     def test_saved_and_loaded_model_reads_the_same(self):
         from acan.lm.concept_lm import load, save
         rng = np.random.default_rng(4)
