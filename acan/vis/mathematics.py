@@ -283,7 +283,51 @@ Così ciò che il testo ha già detto si può ripetere, a qualunque distanza: un
 apparso all'inizio, la risposta a una domanda. Nessuna posizione legge sé stessa
 o il futuro.
 
-### Passo 5 · Giudicare i pesi
+### Passo 5 · I concetti dei token
+
+Due token diversi, per esempio «gatto» e «cane», per i passi 2–4 sono
+semplicemente diversi. Per vedere che si somigliano, il modello tratta **i token
+stessi come righe di una tabella** e ne cerca i concetti con la parte A. La riga
+del token $v$ dice con che frequenza ciascuno dei 256 token più frequenti lo
+precede e lo segue:
+
+$$
+r_v=\Big(\sqrt{\tfrac{\#(u\,v)}{\#(\cdot\,v)}}\Big)_{u}\ \oplus\ \Big(\sqrt{\tfrac{\#(v\,u)}{\#(v\,\cdot)}}\Big)_{u},
+$$
+
+ridotta alle sue direzioni principali (decomposizione ai valori singolari, a 16 e
+a 48 dimensioni). La parte A trova i concetti di queste righe e i loro livelli,
+dal più generale al più particolare: per esempio $2\to9\to20\to33\to325$
+concetti su 8.000 token. Sono i **concetti dei token**: $g(v)$ il concetto
+generale di $v$, $f(v)$ quello particolare.
+
+### Passo 6 · I percorsi verso il token
+
+Il token si può prevedere direttamente (passi 3–4) oppure **lungo un percorso**:
+prima il concetto generale, poi quello particolare dentro il generale, poi il
+token dentro il particolare,
+
+$$
+p(y)=p\big(g(y)\mid\text{contesto}\big)\cdot p\big(f(y)\mid g(y),\text{contesto}\big)\cdot p\big(y\mid f(y),\text{contesto}\big).
+$$
+
+Ogni fattore è la lettura del passo 3 e 4, con le sue somme: un concetto conta le
+righe con lo stesso contesto **e lo stesso nodo del percorso** (il concetto già
+scelto), e il suo target è il passo successivo. Il livello sopra del primo
+livello di un nodo è uniforme sui suoi figli. Il risultato è ancora una
+probabilità esatta su tutto il vocabolario: in ogni nodo i figli sommano a 1.
+
+Il vantaggio è la generalizzazione: un contesto seguito da «cane» alza tutto il
+concetto degli animali, quindi anche «gatto». Nel contesto del percorso il token
+a ogni distanza è preceduto dal suo concetto particolare, così anche contesti
+mai visti esattamente ma fatti di token simili si aiutano.
+
+I percorsi (quello diretto e uno per ogni gerarchia di concetti) si **mescolano**:
+$p(y)=\sum_k w_k\,p_k(y)$, con i pesi $w_k$ scelti dal giudizio come quelli che
+leggono meglio il testo non contato (un'iterazione di attesa e massimizzazione).
+I percorsi leggono contesti fino a 2 token; quello diretto fino a 6.
+
+### Passo 7 · Giudicare i pesi
 
 I pesi $\kappa_j$ (e $b_j$) sono scelti dal giudizio, come nella parte A: si
 prendono i valori (fra $2^{-5}$ e $2^{8}$) che leggono meglio pezzi di testo che
@@ -296,7 +340,7 @@ $$
 un peso alla volta, due giri. Metà dei pezzi di validazione sceglie i pesi,
 l'altra metà misura l'errore: i due insiemi non si toccano.
 
-### Passo 6 · Imparare è contare, a blocchi
+### Passo 8 · Imparare è contare, a blocchi
 
 Un pezzo di testo diventa le sue tabelle di somme. Due tabelle si sommano
 concetto per concetto: $C$, $N$ si sommano, $D$ si ricalcola dai $N$. I pezzi si
@@ -306,26 +350,31 @@ posizione viene sommata circa $\log_2(\text{pezzi})$ volte, e alla fine le somme
 sono quelle dell'intero testo. Un testo successivo della coda aggiunge le sue
 somme a quelle del precedente: nulla viene dimenticato.
 
-### Passo 7 · Restare nella memoria: generalizzare dove chi legge perde meno
+### Passo 9 · Restare nella memoria: generalizzare dove chi legge perde meno
 
 Il numero di contesti diversi cresce con il testo. Oltre la memoria disponibile
 si generalizzano nel livello sopra i concetti che costano meno a chi legge. Il
 costo di un concetto $c$ è quanto peggio i suoi membri sarebbero letti dal
-livello sopra $\bar c$:
+livello sopra $\bar c$, ciascun membro letto **senza sé stesso** (come il
+giudizio legge righe mai viste):
 
 $$
-\Delta_c=\sum_yN_c(y)\,\log\frac{N_c(y)/C_c}{p_{\bar c}(y)} .
+\Delta_c=\sum_yN_c(y)\,\log\frac{p^{-}_c(y)}{p_{\bar c}(y)},\qquad
+p^{-}_c(y)=\frac{N_c(y)-1+\kappa D_c\,p_{\bar c}(y)}{C_c-1+\kappa D_c}.
 $$
+
+Un contesto visto una volta sola non dice nulla del suo unico membro: costa zero.
+Senza questa correzione sembrava il concetto più utile da tenere.
 
 È la stessa idea del costo della parte A (letture × perdita), con le letture
 uguali ai membri. Un concetto che dice la stessa cosa del suo livello sopra
 costa zero e va per primo; le sue somme sono già nel livello sopra, quindi non
 si perde nulla oltre la distinzione. Il livello 0 non si generalizza mai.
 
-### Passo 8 · Scrivere
+### Passo 10 · Scrivere
 
 Per scrivere, si calcola $p(\cdot\mid x_{<t})$ su tutto il vocabolario con i
-passi 3 e 4, si sceglie un token (il più probabile, oppure estratto con
+passi 3, 4 e 6, si sceglie un token (il più probabile, oppure estratto con
 temperatura $T$: $p^{1/T}$ rinormalizzata), lo si aggiunge e si ripete. Il
 testo scritto entra subito nei concetti del testo in corso.
 
@@ -348,6 +397,7 @@ testo scritto entra subito nei concetti del testo in corso.
 | giudizio | righe non viste | pezzi di testo non contati |
 | quanti concetti | scelti dal giudizio | tutti quelli visti, fino alla memoria; poi generalizzati |
 | memoria a lungo raggio | — | i concetti del testo in corso |
+| valori simili | — (due categorie diverse sono diverse) | i concetti dei token, trovati con la parte A sulle righe dei token |
 
 ## Parte D · Che cosa è stato misurato
 

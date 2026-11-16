@@ -49,6 +49,31 @@ precedenti del testo che si sta leggendo, letti dopo i globali con la lettura
 globale come riferimento e pesi $b_j$. Permettono di riprendere ciò che il testo
 ha già detto, a qualunque distanza; nessuna posizione legge sé stessa.
 
+**Concetti dei token.** Due token diversi per la lettura sopra sono solo diversi.
+Il modello tratta i token come righe di una tabella e ne cerca i concetti con il
+modello tabulare ([`acan/core/concepts.py`](../acan/core/concepts.py)): la riga
+del token $v$ sono le radici delle frequenze con cui ciascuno dei 256 token più
+frequenti lo precede e lo segue, ridotte alle direzioni principali (SVD, 16 e 48
+dimensioni); la tabella ha gli 8.000 token più frequenti dei primi 20 milioni,
+gli altri token visti almeno 3 volte sono assegnati dal modello al concetto più
+probabile. Ne escono livelli dal generale al particolare (su wikitext-2:
+$2\to9\to20\to33\to325$ e $4\to8\to19\to40\to208$).
+
+**Percorsi.** Un percorso legge il token attraverso i livelli dei concetti:
+
+$$
+p(y)=p(g(y)\mid c)\;p(f(y)\mid g(y),c)\;p(y\mid f(y),c),
+$$
+
+ogni fattore con la lettura sopra e le sue somme: le chiavi comprendono il nodo
+già scelto (il livello 0 di un nodo è uniforme sui suoi figli), e nel contesto il
+token a ogni distanza è preceduto dal suo concetto particolare. Il modello
+mescola il percorso diretto e uno per gerarchia, $p=\sum_kw_kp_k$, con i pesi
+dal giudizio (attesa e massimizzazione sugli stessi pezzi che scelgono i
+$\kappa$). I percorsi attraverso i concetti leggono contesti fino a 2 token, il
+diretto fino a 6: più percorsi o contesti più lunghi leggono un po' meglio con
+memoria libera e peggio dentro il limite, perché tutte le somme lo condividono.
+
 ## 4. Giudizio
 
 $\kappa_j$ e $b_j$ si scelgono fra $2^{-5},\dots,2^{8}$, un peso alla volta, due
@@ -88,9 +113,15 @@ tre volte il limite. Perdita di
 un concetto:
 
 $$
-\Delta_c=\sum_y N_c(y)\log\frac{N_c(y)/C_c}{p_{\bar c}(y)},\qquad
-p_{\bar c}(y)=\frac{N_{\bar c}(y)+1}{C_{\bar c}+V} .
+\Delta_c=\sum_y N_c(y)\log\frac{p^-_c(y)}{p_{\bar c}(y)},\qquad
+p^-_c(y)=\frac{N_c(y)-1+\kappa D_c\,p_{\bar c}(y)}{C_c-1+\kappa D_c},\qquad
+p_{\bar c}(y)=\frac{N_{\bar c}(y)+1}{C_{\bar c}+V} :
 $$
+
+ogni membro letto senza sé stesso, come nel giudizio; un contesto visto una volta
+costa zero (prima sembrava il più utile da tenere: su wikitext-2 con 400 MB di
+limite l'errore del solo percorso diretto passa da 4,615 a 4,602 con 49 MB di
+somme invece di 252).
 
 Dove la chiave è esatta il livello sopra si ritrova dalla chiave stessa
 ($k_{j-1}=\lfloor k_j/(V+1)\rfloor$); oltre, si usa il livello sopra come
@@ -170,13 +201,13 @@ cambiare il modello tabulare: non è stato fatto.
 
 ## 9. Limiti
 
-- **Valori simili.** Né la tabella né il testo considerano simili due valori
-  diversi di una categoria: «gatto» e «cane», come due città in una colonna di
-  una tabella, sono semplicemente diversi. Due contesti diversi si aiutano solo
-  attraverso il livello sopra comune (il contesto più corto). Una rete neurale
-  impara che certi token si somigliano; con molti dati potrebbe tornare in
-  vantaggio (non misurato). Rimediare vorrebbe dire aggiungere al modello concetti
-  di valori, per la tabella e per il testo insieme, e misurarli su entrambi.
+- **Valori simili.** I concetti dei token sono fissati all'inizio e ogni token
+  ne ha uno per livello; una rete dà a ogni token un vettore che continua a
+  cambiare. Nella tabella due valori diversi di una categoria restano diversi: i
+  concetti di valori servirebbero solo a categorie con molti valori, e lì non
+  sono stati misurati.
+- **Scrittura.** Con i percorsi un token costa la lettura di tutti i nodi: circa
+  70 token al secondo invece di circa 790.
 - **Memoria.** I contesti crescono con il testo; oltre il limite si generalizzano
   i meno utili e qualcosa si perde.
 - **Ripetizioni.** Scrivendo il token più probabile il modello ripete la frase

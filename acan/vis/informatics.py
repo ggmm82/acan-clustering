@@ -39,12 +39,31 @@ l'italiano non paga i pezzi in più di un vocabolario fatto per l'inglese, e
 qualunque carattere si può scrivere. I token del testo da imparare vengono
 scritti su disco una volta sola (file `train.bin`, `validation.bin`, `test.bin`).
 
-### Passo 3 · Un passo di apprendimento: contare un pezzo
+### Passo 3 · Trovare i concetti dei token
+
+Prima di contare, il programma legge i primi 20 milioni di token e costruisce
+una piccola tabella: una riga per ognuno degli 8.000 token più frequenti, con
+quanto spesso ciascuno dei 256 token più comuni lo precede e lo segue. La
+riduce alle sue direzioni principali (16 e 48 colonne) e la dà al **modello
+della scheda Modello**, che ne trova i concetti e i loro livelli: token che
+compaiono negli stessi posti finiscono nello stesso concetto. Gli altri token
+vengono assegnati dal modello al concetto più probabile. Ci vogliono alcuni
+minuti; i concetti trovati restano fissi per tutto l'apprendimento e sono
+salvati nel checkpoint.
+
+Con i concetti si costruiscono i **percorsi**: oltre a quello diretto (il token
+dal suo contesto), uno per ogni gerarchia, che sceglie prima il concetto
+generale, poi quello particolare, poi il token. Ogni passo di un percorso ha le
+sue somme, contate come quelle del percorso diretto.
+
+### Passo 4 · Un passo di apprendimento: contare un pezzo
 
 1. Si leggono dal disco i prossimi **1.000.000 di token** del testo da imparare.
 2. Per ogni posizione e per ogni lunghezza di contesto $j$ da 0 a 6 si calcola
-   un numero che identifica il contesto (gli ultimi $j$ token). Sono operazioni
-   su vettori, senza cicli sulle posizioni.
+   un numero che identifica il contesto (gli ultimi $j$ token). Per i passi dei
+   percorsi il numero comprende anche il nodo del percorso e, a ogni distanza,
+   il concetto del token prima del token stesso (fino a 2 token). Sono
+   operazioni su vettori, senza cicli sulle posizioni.
 3. Si ordinano questi numeri e si contano i doppioni (`numpy.unique`): ne escono,
    per ogni contesto, quante volte compare e quante volte è seguito da ciascun
    token. Sono le **somme dei concetti** di quel pezzo.
@@ -56,7 +75,7 @@ scritti su disco una volta sola (file `train.bin`, `validation.bin`, `test.bin`)
 Non ci sono pesi da correggere né gradienti da calcolare: il passo è finito
 quando il pezzo è contato.
 
-### Passo 4 · Restare nella memoria
+### Passo 5 · Restare nella memoria
 
 I contesti diversi crescono con il testo. La **memoria massima dei concetti**
 vale per tutte le somme insieme, quelle già unite e quelle ancora nel contatore
@@ -66,7 +85,8 @@ impostare). Dopo ogni pezzo, se le somme la superano, il programma unisce tutto
 il contatore, calcola per ogni concetto quanto peggio sarebbero letti i suoi
 membri dal contesto più corto, e toglie i concetti che costano meno per byte
 finché le somme scendono al 60% del limite: così i pezzi successivi entrano
-senza potare a ogni passo. Le loro somme restano nel livello sopra: si perde
+senza potare a ogni passo. Ogni membro è letto senza sé stesso, come nel
+giudizio: un contesto visto una volta sola non costa nulla e va per primo. Le loro somme restano nel livello sopra: si perde
 solo la distinzione. Il numero di concetti così tolti è fra le grandezze della
 pagina.
 
@@ -77,14 +97,15 @@ processo usa al massimo circa tre volte il limite: con 794 MB di limite, su
 40 milioni di token di prova, il picco è stato di circa 2,3 GB (prima
 della correzione 4,2 GB al passo 8).
 
-### Passo 5 · Salvare e giudicare
+### Passo 6 · Salvare e giudicare
 
 Ogni 100 passi e ogni 5 minuti:
 
 1. il contatore viene sommato tutto (le somme dell'intero testo letto finora);
-2. il **giudizio** sceglie i pesi della lettura: per ciascun livello prova
-   quattordici valori, da 1/32 a 256, e tiene quello che legge meglio metà dei
-   pezzi di validazione; due giri;
+2. il **giudizio** sceglie i pesi della lettura: per ciascun livello di ogni
+   passo di ogni percorso prova quattordici valori, da 1/32 a 256, e tiene
+   quello che legge meglio metà dei pezzi di validazione; due giri; poi sceglie
+   quanto pesa ogni percorso nella miscela;
 3. l'**errore su testo mai visto** si misura sull'altra metà dei pezzi di
    validazione; l'**errore sul testo che sta per leggere** sui 4.096 token
    successivi, che non sono ancora stati contati;
@@ -98,17 +119,21 @@ Ogni 100 passi e ogni 5 minuti:
 Un testo successivo della coda parte dal checkpoint del precedente e aggiunge le
 sue somme.
 
-### Passo 6 · Come scrive
+### Passo 7 · Come scrive
 
 Per scrivere il token successivo:
 
 1. per ogni lunghezza di contesto, dalla più corta alla più lunga, si cerca il
-   concetto del contesto attuale (ricerca binaria nell'elenco ordinato);
+   concetto del contesto attuale (ricerca binaria nell'elenco ordinato); nei
+   percorsi lo si cerca per tutti i nodi insieme;
 2. si combinano le distribuzioni dei token che seguono, ciascuna con il livello
    sopra come riferimento, con i pesi scelti dal giudizio;
 3. si aggiungono i concetti del testo in corso: gli stessi contesti contati solo
    sul testo scritto finora, così il modello può riprendere ciò che ha già detto;
-4. si sceglie un token: il più probabile (temperatura 0) oppure estratto a caso
+4. le probabilità dei passi di ogni percorso si moltiplicano, e i percorsi si
+   mescolano con i loro pesi: ne esce la probabilità di ogni token del
+   vocabolario, come l'uscita di una rete;
+5. si sceglie un token: il più probabile (temperatura 0) oppure estratto a caso
    secondo le probabilità (temperatura più alta, testo più vario).
 
 Le domande di prova usano temperatura 0,7 con un seme fisso: le risposte sono
@@ -121,6 +146,8 @@ frequente. In una conversazione la domanda è scritta con i segnali
 | Voce | Che cosa dice |
 |---|---|
 | Concetti per livello | Quanti contesti diversi conosce per ogni lunghezza, da 0 a 6 token. |
+| Concetti dei token | Quanti concetti di token ha trovato il modello, dal più generale al più particolare. |
+| Percorsi verso il prossimo token | Il percorso diretto e quelli attraverso i concetti dei token, con il peso scelto dal giudizio. |
 | Concetti generalizzati | Quanti contesti ha tolto per stare nella memoria, lasciandoli al contesto più corto. |
 | Memoria dei concetti | Quanto occupano le somme, e quanto è disponibile. |
 | Pesi scelti dal giudizio | Per ogni livello, quanto si fida del livello sopra (più alto = più prudente). |
@@ -155,11 +182,11 @@ Sul tuo server la velocità reale è quella mostrata dalla pagina.
 
 ### Limiti, in chiaro
 
-- **Valori simili.** Come nella tabella due città diverse sono semplicemente
-  diverse, così nel testo «gatto» e «cane»: due contesti diversi si aiutano solo
-  attraverso il contesto più corto che hanno in comune. Una rete neurale impara
-  che certi token si somigliano; con molti dati potrebbe tornare in vantaggio
-  (non misurato).
+- **Valori simili.** I concetti dei token sono fissati all'inizio, dai primi 20
+  milioni di token, e ogni token appartiene a un solo concetto per livello: una
+  rete neurale dà a ogni token un vettore che continua a cambiare.
+- **Scrittura più lenta.** Con i percorsi ogni token costa la lettura di tutti i
+  nodi: circa 70 token al secondo invece di circa 790 (vocabolario di 8.000).
 - **Memoria.** I contesti diversi crescono con il testo: oltre la memoria
   massima i meno utili vengono generalizzati, e qualcosa si perde.
 - **Contesti lunghi oltre 4 token.** Con 32.000 token di vocabolario un contesto
