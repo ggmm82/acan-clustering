@@ -297,6 +297,7 @@ class ConceptLM:
                 self.readings.append(Reading(node, value, size, symbols))
                 node = np.unique(node*(self.V+1)+value, return_inverse=True)[1]      # the concept reached so far
             self.of_path.append(own)
+        self.path_of = [k for k, own in enumerate(self.of_path) for _ in own]
         # The tables of every reading in one list: level j of reading r is levels[first[r]+j].
         self.first, self.parent, self.level_of, self.reading_of = [], [], [], []
         for r, reading in enumerate(self.readings):
@@ -441,7 +442,9 @@ class ConceptLM:
         weight = self.a[t]*np.maximum(table.D[concept], 1)
         p_concept = (table.counts-1+weight*p_parent)/(table.C[concept]-1+weight)
         per_cell = table.counts*np.log(np.maximum(p_concept, 1e-300)/p_parent)
-        return np.bincount(concept, weights=per_cell, minlength=len(table.keys))
+        # A path reads the token with its weight in the mixture: what one of its concepts adds counts as much.
+        share = self.w[self.path_of[self.reading_of[t]]]*len(self.paths)
+        return share*np.bincount(concept, weights=per_cell, minlength=len(table.keys))
 
     # ---- reading ----------------------------------------------------------------------------
     def _prepared(self, r, ids, positions):
