@@ -242,7 +242,7 @@ class AlgebraicClusterModel:
         return model
 
     def to_json(self):
-        return json.dumps(self.__dict__, cls=ComplexEncoder, indent=4)
+        return json.dumps(self.__dict__, cls=ComplexEncoder, separators=(',', ':'))
 
 
 class GraphClusterModel:
@@ -258,7 +258,7 @@ class GraphClusterModel:
         cd = self.clusterData
         self.clusterData = None
         self.clusterCount = len(self.clusterModel)
-        js = json.dumps(self.__dict__, cls=ComplexEncoder, indent=4)
+        js = json.dumps(self.__dict__, cls=ComplexEncoder, separators=(',', ':'))
         self.clusterData = cd
         return js
 

@@ -32,6 +32,7 @@ from scipy.io import loadmat
 import pyarrow.parquet as pq
 import dash_daq as daq
 from warnings import simplefilter
+from acan.vis.model_cache import keep, load_graph, resolve
 simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP],
@@ -845,7 +846,7 @@ def training_controls_pending(data, labels, selected, options, filters, filter_o
 )
 def download_model(n_clicks, model):
     if model:
-        return dict(content=model, filename="model.json")
+        return dict(content=resolve(model), filename="model.json")
 
 @app.callback([Output('data-store', 'data'), Output('bsId', 'on'), Output('uplColId', 'children')],
               Input('upload-data', 'contents'),
@@ -993,7 +994,7 @@ def evaluate_model(model, benchmark_report, tab_id):
                         barmode='group', title=source)
         figure.update_yaxes(matches=None)
         summary = table.pivot(index=['Target', 'Modello'], columns='Metrica', values='Valore').reset_index()
-        stats = graph_stats(GraphClusterModel.loadModel(model))
+        stats = graph_stats(load_graph(model))
         dataset_info = getattr(context, 'dataset_info', None)
         if dataset_info:
             report['dataset'] = dataset_info
@@ -1134,7 +1135,7 @@ def monitor_learning(n_intervals, tab_id):
         return dash.no_update, dash.no_update, f"❌ {job['error']}", True, True, dash.no_update
     gcm = learner.graph
     stats = graph_stats(gcm)
-    return (gcm.to_json(), dash.no_update,
+    return (keep(gcm.to_json()), dash.no_update,
             f"✅ Completato: {stats['nodes']} nodi concetto | {stats['depth']} livelli | {stats['groups']} gruppi",
             True, True, secrets.randbits(32))
 
@@ -1169,11 +1170,11 @@ def load_model_json(contents, filename, tab_id):
         if not filename or not filename.lower().endswith('.json'):
             raise ValueError('Selezionare un modello JSON.')
         model_json = base64.b64decode(contents.split(',', 1)[1]).decode('utf-8')
-        model = GraphClusterModel.loadModel(model_json)
+        model = load_graph(model_json)
         if model.rootId not in model.clusterModel:
             raise ValueError('Il modello non contiene un nodo radice valido.')
         options = [{'label': label, 'value': label} for label in model.labels]
-        return model_json, options, model.labels, '✅ Modello caricato: pronto per Previsione.'
+        return keep(model_json), options, model.labels, '✅ Modello caricato: pronto per Previsione.'
     except Exception as exc:
         return dash.no_update, dash.no_update, dash.no_update, f'❌ Modello non valido: {exc}'
 
@@ -1228,7 +1229,7 @@ def export_inference(n_clicks, csv_text):
 def update_graph(model, view='full', focus=None, page=1, include_empty=False):
     if not model:
         return []
-    gcm=GraphClusterModel.loadModel(model)
+    gcm=load_graph(model)
     if view != 'hierarchy':
         from .graph_view import elements
         return elements(gcm,focus,page,include_empty)
@@ -1315,7 +1316,7 @@ def graph_info(model, nId):
     - Distribuzione delle classi (se disponibile)
     - Tabella degli attributi più importanti ordinati per errore
     """
-    gcm = GraphClusterModel.loadModel(model)
+    gcm = load_graph(model)
     node = gcm.clusterModel[nId]
     
     # Card intestazione con info generali
@@ -1416,7 +1417,7 @@ def eInfo(model, source, k, depth=None):
     - Grafico con valori NORMALIZZATI (0-1)
     - Tabella con valori DENORMALIZZATI (valori reali)
     """
-    gcm = GraphClusterModel.loadModel(model)
+    gcm = load_graph(model)
     node = gcm.clusterModel[source]
     
     # Ottieni dati del figlio (valori normalizzati dal modello)
@@ -1582,7 +1583,7 @@ def update_layout(layout_value):
 
 @app.callback(Output('benchmark-run', 'disabled'), Input('model-store', 'data'))
 def benchmark_available(model):
-    return not model or not GraphClusterModel.loadModel(model).labels
+    return not model or not load_graph(model).labels
 
 
 @app.callback(Output('benchmark-status', 'children'), Output('benchmark-monitor', 'disabled'),
@@ -1648,7 +1649,7 @@ def edit_hierarchy(request, refine_clicks, remove_clicks, selected, model_json, 
             if context:
                 context.base_model = model_json
                 context.graph = graph
-            return graph.to_json(), 'Ramo rimosso. Valutazione confronta ora prima e dopo la rimozione.', True, True
+            return keep(graph.to_json()), 'Ramo rimosso. Valutazione confronta ora prima e dopo la rimozione.', True, True
         if context is None:
             raise ValueError('Per approfondire servono i dati di training di questa pagina. Un JSON caricato da solo non li contiene: addestra il modello sul tuo CSV.')
         from acan.vis.refinement import parse_group
@@ -1667,7 +1668,7 @@ def edit_hierarchy(request, refine_clicks, remove_clicks, selected, model_json, 
 def list_concepts(model):
     if not model:
         return [], None
-    graph = GraphClusterModel.loadModel(model)
+    graph = load_graph(model)
     return [dict(label=f'Nodo {key} · {node.n} campioni · {node.k()} gruppi', value=key)
             for key, node in graph.clusterModel.items()], graph.rootId
 
@@ -1677,7 +1678,7 @@ def list_concepts(model):
 def inspect_concept(node_id, model):
     if not model or node_id is None:
         return go.Figure(), []
-    graph = GraphClusterModel.loadModel(model)
+    graph = load_graph(model)
     if int(node_id) not in graph.clusterModel:
         return go.Figure(), []
     node = graph.clusterModel[int(node_id)]
@@ -1698,7 +1699,7 @@ def inspect_concept(node_id, model):
 def export_rules(clicks, model):
     if not model:
         return dash.no_update
-    graph = GraphClusterModel.loadModel(model)
+    graph = load_graph(model)
     rules = {str(key): node.extractRules(graph.minMax) for key, node in graph.clusterModel.items()}
     return dict(content=json.dumps(rules, indent=2), filename='acan-concept-rules.json')
 
@@ -1708,7 +1709,7 @@ def export_rules(clicks, model):
 def describe_graph(model, layout, view='full', focus=None):
     if not model:
         return 'Carica un modello o avvia la scoperta dei concetti.', {'name': layout, 'animate': False}
-    graph = GraphClusterModel.loadModel(model)
+    graph = load_graph(model)
     stats = graph_stats(graph)
     root = graph.clusterModel[graph.rootId]
     config = dict(name=layout if view=='hierarchy' else 'preset', animate=False, fit=True, padding=35)
@@ -1732,7 +1733,7 @@ def navigate_graph(model, focus, page, include_empty, root_clicks, up_clicks):
     action = {'graph-root':'root','graph-up':'up'}.get(trigger)
     if trigger in ('model-store','graph-focus','graph-empty','graph-root','graph-up'):
         page = 1
-    return navigation(GraphClusterModel.loadModel(model),focus,page,include_empty,action)
+    return navigation(load_graph(model),focus,page,include_empty,action)
 
 generative.register(app)
 
@@ -1759,7 +1760,7 @@ def inspect_model(model, active):
     if active != 'inspect':
         return dash.no_update
     from .graph_view import model_overview, model_structure
-    return model_overview(model_structure(GraphClusterModel.loadModel(model)))
+    return model_overview(model_structure(load_graph(model)))
 
 
 @app.callback(Output('structure-download', 'data'), Input('structure-download-button', 'n_clicks'),
@@ -1768,7 +1769,7 @@ def download_structure(n_clicks, model):
     if not model:
         return dash.no_update
     from .graph_view import model_structure
-    return dict(content=json.dumps(model_structure(GraphClusterModel.loadModel(model)), indent=2, ensure_ascii=False),
+    return dict(content=json.dumps(model_structure(load_graph(model)), indent=2, ensure_ascii=False),
                 filename='struttura-grafo.json')
 
 
@@ -1780,7 +1781,7 @@ def download_package(n_clicks, model):
         return dash.no_update, 'Carica un modello o avvia la scoperta dei concetti.'
     from acan.core.export import build_package
     try:
-        content = build_package(GraphClusterModel.loadModel(model))
+        content = build_package(load_graph(model))
     except ValueError as error:
         return dash.no_update, str(error)
     return dcc.send_bytes(content, 'modello_concetti.zip'), ''
