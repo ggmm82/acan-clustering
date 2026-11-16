@@ -96,6 +96,11 @@ class Encoder:
         return slice(self.offsets[column], self.offsets[column]+len(self.categories[column]))
 
 
+def _logsumexp(values, axis):
+    top = values.max(axis=axis, keepdims=True)
+    return (np.log(np.exp(values-top).sum(axis=axis, keepdims=True))+top).squeeze(axis)
+
+
 def _softmax(logits):
     top = logits.max(axis=1, keepdims=True)
     e = np.exp(logits-top)
@@ -437,12 +442,11 @@ class ConceptModel:
                 routed, _ = _softmax(prior+terms[..., ~read].sum(-1))
                 scores[part] = np.log(np.maximum((routed*np.exp(terms[..., read].sum(-1))).sum(1), 1e-300))
             else:
+                # Attribute j read from all the others: sum_k softmax(total - terms_j)_k exp(terms_jk)
+                # = exp(LSE_k total - LSE_k(total - terms_j)), for every attribute at once.
                 total = prior+terms.sum(-1)
-                value = np.zeros(len(total))
-                for j in range(terms.shape[-1]):                 # read attribute j from all the others
-                    routed, _ = _softmax(total-terms[..., j])
-                    value += observed[:, j]*np.log(np.maximum((routed*np.exp(terms[..., j])).sum(1), 1e-300))
-                scores[part] = value/np.maximum(observed.sum(1), 1)
+                value = (_logsumexp(total, 1)[:, None]-_logsumexp(total[..., None]-terms, 1))*observed
+                scores[part] = value.sum(1)/np.maximum(observed.sum(1), 1)
         return scores
 
     # ---- training --------------------------------------------------------------
