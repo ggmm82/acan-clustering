@@ -93,7 +93,21 @@ def quantities(model, config):
     return dict(concepts_per_level=levels, concepts_total=sum(levels) if levels else None, statistics_bytes=model.nbytes(),
                 budget_bytes=model.budget_bytes, generalized_concepts=model.generalized, context_depth=model.depth,
                 document_depth=model.document, weights_global=[float(x) for x in model.a],
-                weights_document=[float(x) for x in model.b], memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024)
+                weights_document=[float(x) for x in model.b], memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
+                paths=len(model.paths), path_weights=[float(x) for x in model.w], readings=len(model.readings),
+                token_concepts=[int(m.max())+1 for m in model.maps])
+
+
+CONCEPT_TEXT = 20_000_000                                       # tokens read to find the concepts of the tokens
+
+
+def learn_paths(train, vocabulary, depth, should_pause=lambda: False):
+    """The concepts of the tokens and the paths through them, found on the start of the training text."""
+    from .concept_lm import standard_paths, token_concepts
+    if should_pause():
+        raise PreparationPaused()
+    levels = token_concepts(np.asarray(train[:CONCEPT_TEXT], np.int64), vocabulary)
+    return standard_paths(levels, depth)
 
 
 def run_training(root, identifier, stop_event=None):
@@ -140,16 +154,24 @@ def run_training(root, identifier, stop_event=None):
             with store.db() as db:
                 db.execute('DELETE FROM metrics WHERE job=? AND step>?', (identifier, state['step']))
         else:
-            model = ConceptLM(len(tokenizer), config.get('concept_depth', 6), config.get('concept_document', 4), budget)
+            depth, document = config.get('concept_depth', 6), config.get('concept_document', 4)
+            start = None
+            if config.get('warm_start'):                        # the queue goes on with the concepts of the previous text
+                source = previous_checkpoint(store, job)
+                start, _ = load(source, budget_bytes=budget)
+                maps, paths = start.maps, start.paths
+            elif config.get('concept_paths'):
+                maps, paths = learn_paths(train, len(tokenizer), depth, should_pause)
+            else:
+                maps, paths = [], None
+            model = ConceptLM(len(tokenizer), depth, document, budget, maps, paths)
             state = dict(step=0, tokens_trained=0, device='cpu', identity=identity, model_contract=contract(), profile=PROFILE,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},
                          graft=dict(profile=PROFILE, vocabulary=len(tokenizer), replaced_layers=[], total_layers=0,
                                     slots=0, window=0, fraction=1.))
-            if config.get('warm_start'):
-                source = previous_checkpoint(store, job)
-                start, _ = load(source, budget_bytes=budget)
+            if start is not None:
                 model.merge(start)
-                model.a, model.b = start.a.copy(), start.b.copy()
+                model.a, model.b, model.w = start.a.copy(), start.b.copy(), start.w.copy()
                 state['warm_start'] = dict(checkpoint=source.name, job=source.parent.parent.name,
                                            tokens=start.tokens)
             state['baseline_nll'] = measure(model, judge)       # before reading this text

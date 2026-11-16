@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from acan.lm.concept_lm import ConceptLM, Table, context_keys, document_counts
+from acan.lm.concept_lm import EXACT, ConceptLM, Table, context_keys, document_counts, standard_paths
 
 
 def brute(ids, depth, document, a, b, V):
@@ -146,6 +146,92 @@ class ConceptLMTests(unittest.TestCase):
         self.assertEqual(int(np.argmax(model.distribution(text))), 35)
 
 
+def brute_paths(model, ids):
+    """The mixture of paths written position by position from its definition: every step a reading of its value."""
+    out = []
+    for t in range(1, len(ids)):
+        total = 0.
+        for weight, own in zip(model.w, model.of_path):
+            prob = 1.
+            for r in own:
+                R = model.readings[r]
+                sym = lambda u, kind, d: ids[u-d] if kind == EXACT else model.maps[kind][ids[u-d]]
+                node, value = R.node[ids[t]], R.value[ids[t]]
+                p = 1./R.children[node]
+                for j in range(len(R.symbols)+1):
+                    need = max([d for _, d in R.symbols[:j]] or [0])
+                    if t < need:
+                        continue
+                    same = lambda u: R.node[ids[u]] == node and all(sym(u, k, d) == sym(t, k, d) for k, d in R.symbols[:j])
+                    members = [u for u in range(need, len(ids)) if same(u)]
+                    C = len(members); N = sum(R.value[ids[u]] == value for u in members); D = len({R.value[ids[u]] for u in members})
+                    if C:
+                        w = model.a[model.first[r]+j]*max(D, 1); p = (N+w*p)/(C+w)
+                for j in range(1, model.document+1):
+                    if t < j:
+                        continue
+                    members = [u for u in range(j, t) if tuple(ids[u-j:u]) == tuple(ids[t-j:t]) and R.node[ids[u]] == node]
+                    C = len(members); N = sum(R.value[ids[u]] == value for u in members); D = len({R.value[ids[u]] for u in members})
+                    w = model.b[r*(model.document+1)+j]*max(D, 1); p = (N+w*p)/(C+w)
+                prob *= p
+            total += weight*prob
+        out.append(np.log(total))
+    return np.array(out)
+
+
+class ConceptPathTests(unittest.TestCase):
+    def model(self, seed=0):
+        rng = np.random.default_rng(seed)
+        ids = rng.integers(0, 9, 150)
+        general, particular = np.array([0, 0, 0, 1, 1, 1, 2, 2, 2]), np.array([0, 0, 1, 2, 3, 3, 4, 5, 5])
+        maps, paths = standard_paths([[general, particular]], 2)
+        model = ConceptLM(9, depth=2, document=2, maps=maps, paths=paths)
+        model.add(ids); model.settle()
+        model.a = rng.uniform(.2, 3, len(model.a)); model.b = rng.uniform(.2, 3, len(model.b))
+        model.w = rng.dirichlet(np.ones(len(model.paths)))
+        return model, ids
+
+    def test_paths_read_as_their_definition(self):
+        model, ids = self.model()
+        self.assertGreater(len(model.paths), 1)
+        self.assertEqual(model.paths[0], ((), EXACT))
+        np.testing.assert_allclose(model.logp(ids, np.arange(1, len(ids))), brute_paths(model, ids), atol=1e-10)
+
+    def test_distribution_is_the_reading_of_every_token(self):
+        model, ids = self.model(1)
+        for end in (1, 2, 5, 60, 149):
+            p = model.distribution(ids[:end])
+            self.assertAlmostEqual(float(p.sum()), 1., places=10)
+            for token in range(9):
+                text = np.r_[ids[:end], token]
+                self.assertAlmostEqual(float(np.log(p[token])), float(model.logp(text, [end])[0]), places=10)
+
+    def test_judgment_does_not_read_worse_than_the_direct_path_alone(self):
+        rng = np.random.default_rng(2)
+        ids = [0]
+        for _ in range(6000):                                   # tokens of a concept follow tokens of another
+            ids.append(int(rng.integers(0, 3))+3*((ids[-1]//3+1) % 3))
+        ids = np.array(ids)
+        general = np.arange(9)//3
+        maps, paths = standard_paths([[general, np.arange(9)]], 2)
+        both = ConceptLM(9, depth=2, document=0, maps=maps, paths=paths); both.add(ids[:400]); both.settle()
+        alone = ConceptLM(9, depth=2, document=0); alone.add(ids[:400]); alone.settle()
+        texts = [ids[i:i+200] for i in range(1000, 6000, 200)]
+        self.assertLessEqual(both.judge(texts[::2]), alone.judge(texts[::2])+1e-9)
+
+    @unittest.skipUnless(importlib.util.find_spec('safetensors'), 'Checkpoints need safetensors (the worker has it)')
+    def test_saved_paths_read_the_same_and_old_checkpoints_load(self):
+        from acan.lm.concept_lm import load, save
+        model, ids = self.model(3)
+        with tempfile.TemporaryDirectory() as folder:
+            again, _ = load(save(folder, model, dict(step=1), 'identity'), 'identity')
+        np.testing.assert_allclose(again.logp(ids), model.logp(ids))
+        self.assertEqual(again.paths, model.paths)
+        old = ConceptLM(9, depth=2, document=2); old.add(ids); old.settle()
+        arrays = {k: v for k, v in old.arrays().items() if k not in ('paths', 'w')}   # written before the paths
+        np.testing.assert_allclose(ConceptLM.from_arrays(arrays).logp(ids), old.logp(ids))
+
+
 @unittest.skipUnless(importlib.util.find_spec('transformers') and importlib.util.find_spec('tokenizers'), 'Tokenizer required')
 class ConceptLongLearningTests(unittest.TestCase):
     def test_queue_pause_resume_answers_generation_test_and_export(self):
@@ -189,6 +275,8 @@ class ConceptLongLearningTests(unittest.TestCase):
             self.assertLess(progress['validation_nll'], progress['baseline_nll'])          # it learned
             self.assertEqual(progress['tokens_trained'], progress['dataset']['tokens']['train'])
             self.assertTrue(progress['concepts_per_level'] and progress['concepts_total'] > 0)
+            self.assertGreater(progress['paths'], 1)                                        # through the concepts of the tokens
+            self.assertAlmostEqual(sum(progress['path_weights']), 1.)
             answers = [json.loads(line) for line in (store.directory('jobs', job['id'])/'answers.jsonl').read_text().splitlines()]
             self.assertTrue(answers and answers[-1]['answers'][0]['question'] == 'Ciao!')
             checkpoint = store.directory('jobs', job['id'])/'checkpoints'/done['checkpoint']

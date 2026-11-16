@@ -209,26 +209,120 @@ class Table:
         return sum(array.nbytes for array in (self.keys, self.C, self.D, self.cells, self.counts))
 
 
-class ConceptLM:
-    """Concepts of a text by context, global (the training text) and of the text being read."""
+EXACT = -1                                                      # a context symbol that is the token itself
 
-    def __init__(self, vocabulary, depth=6, document=4, budget_bytes=None):
+
+class Reading:
+    """One factor of a path: the concepts that read one step from the context, for every node of the step.
+
+    ``node[v]`` is the concept of token v reached by the steps before (0 for the first step), ``value[v]``
+    is what this step reads of v (a concept of the next level, or the token itself), ``size`` the values.
+    Its levels are keys: level 0 is the node, every next level adds one symbol of the context, the token at
+    a distance or its concept (``symbols``: (map, distance), map EXACT for the token itself).
+    """
+
+    def __init__(self, node, value, size, symbols):
+        self.node, self.value, self.size, self.symbols = np.asarray(node, np.int64), np.asarray(value, np.int64), int(size), list(symbols)
+        pairs = self.node*(self.size+1)+self.value
+        self.codes, self.token_pair = np.unique(pairs, return_inverse=True)      # (node, value) pairs that exist
+        self.pair_node = self.codes//(self.size+1)
+        self.pair_value = self.codes % (self.size+1)
+        self.children = np.bincount(self.pair_node, minlength=int(self.node.max())+1)  # values each node can take
+
+    def keys(self, ids, maps, vocabulary):
+        """Keys and validity of every level for every position, as a generator (one level held at a time)."""
+        n = len(ids)
+        base = np.uint64(vocabulary+1)
+        key = self.node[ids].astype(np.uint64)
+        valid = np.ones(n, bool)
+        yield key, valid
+        with np.errstate(over='ignore'):
+            for kind, distance in self.symbols:
+                source = ids if kind == EXACT else maps[kind][ids]
+                shifted = np.zeros(n, np.uint64)
+                if distance < n:
+                    shifted[distance:] = (source[:-distance]+1).astype(np.uint64)
+                key = key*base+shifted
+                valid = valid.copy(); valid[:min(distance, n)] = False
+                yield key, valid
+
+
+def standard_paths(levels, depth):
+    """The paths read by the model from levels of token concepts (each a list of maps, general to particular).
+
+    Always the direct path (the token from the exact contexts). For every hierarchy of concepts: the path
+    through its last two levels with the particular concepts in the context, and the path from its first
+    branching level to the particular ones with the level above them in the context. Returns (steps, context)
+    with indices into the list of maps.
+    """
+    maps, paths = [], [((), EXACT)]
+    for hierarchy in levels:
+        start = len(maps)
+        maps.extend(hierarchy)
+        n = len(hierarchy)
+        if n == 0:
+            continue
+        index = lambda i: start+min(max(i, 0), n-1)
+        for steps, context in (((n-2, n-1), n-1), ((1, n-1), n-2)):
+            chosen = tuple(dict.fromkeys(index(s) for s in steps))
+            paths.append((chosen, index(context)))
+    return maps, list(dict.fromkeys(paths))
+
+
+class ConceptLM:
+    """Concepts of a text by context, global (the training text) and of the text being read.
+
+    A path reads the next token through concepts of tokens: p(y) = prod_s p(step_s(y) | steps before, context),
+    every step with the reading of a categorical attribute; the direct path reads the token at once. The
+    probability of a token is the mixture of the paths, with weights from the judgment.
+    """
+
+    def __init__(self, vocabulary, depth=6, document=4, budget_bytes=None, maps=(), paths=None):
         self.V, self.depth, self.document = int(vocabulary), int(depth), int(document)
         self.budget_bytes = budget_bytes
-        self.levels = [Table.empty(self.V) for _ in range(self.depth+1)]
-        self.a = np.ones(self.depth+1)
-        self.b = np.ones(self.document+1)
+        self.maps = [np.asarray(m, np.int64) for m in maps]
+        self.paths = list(paths) if paths is not None else [((), EXACT)]
+        self.readings, self.of_path = [], []
+        identity = np.arange(self.V)
+        for steps, context in self.paths:
+            symbols = [(k, d) for d in range(1, self.depth+1) for k in ((context, EXACT) if context != EXACT else (EXACT,))]
+            chain = [self.maps[s] for s in steps]+[identity]
+            node = np.zeros(self.V, np.int64)
+            own = []
+            for value in chain:
+                size = self.V if value is identity else int(value.max())+1
+                own.append(len(self.readings))
+                self.readings.append(Reading(node, value, size, symbols))
+                node = np.unique(node*(self.V+1)+value, return_inverse=True)[1]      # the concept reached so far
+            self.of_path.append(own)
+        # The tables of every reading in one list: level j of reading r is levels[first[r]+j].
+        self.first, self.parent, self.level_of, self.reading_of = [], [], [], []
+        for r, reading in enumerate(self.readings):
+            self.first.append(len(self.parent))
+            for j in range(len(reading.symbols)+1):
+                self.parent.append(None if j == 0 else len(self.parent)-1)
+                self.level_of.append(j); self.reading_of.append(r)
+        self.levels = [Table.empty(self.readings[r].size) for r in self.reading_of]
+        self.a = np.ones(len(self.levels))
+        self.b = np.ones(len(self.readings)*(self.document+1))
+        self.w = np.full(len(self.paths), 1./len(self.paths))
         self.counter = []                                       # tables of 2^i pieces each, not yet merged into ``levels``
         self.tokens = 0
         self.generalized = 0                                    # concepts generalized into their parent to stay in the budget
+
+    def _tables(self, r):
+        return range(self.first[r], self.first[r]+len(self.readings[r].symbols)+1)
 
     # ---- learning: counting and adding ------------------------------------------------
     def piece(self, ids):
         """The tables of a piece of text (positions after its first token, contexts inside the piece)."""
         ids = np.asarray(ids, np.int64)
-        keys, valid = context_keys(ids, self.depth, self.V)
-        targets = ids
-        return [Table.count(keys[j][valid[j]], targets[valid[j]], self.V) for j in range(self.depth+1)]
+        tables = []
+        for reading in self.readings:
+            targets = reading.value[ids]
+            for key, valid in reading.keys(ids, self.maps, self.V):
+                tables.append(Table.count(key[valid], targets[valid], reading.size))
+        return tables
 
     def add(self, ids):
         """Learn a piece of text: count it and add it to the binary counter of pieces."""
@@ -256,7 +350,7 @@ class ConceptLM:
         return self
 
     def merge(self, other):
-        """Add another model learned on other text (a learning queue): the sums of both."""
+        """Add another model learned on other text with the same concepts (a learning queue): the sums of both."""
         self.settle(); other.settle()
         _add_into(self.levels, other.levels)
         self.levels = self._within_budget(self.levels)
@@ -275,136 +369,210 @@ class ConceptLM:
 
         The loss of a concept is the log-likelihood its members lose when they are read through the
         parent instead of the concept (in nats): sum_y N(y) log(p_concept(y) / p_parent(y)), with
-        p_concept = N/C and p_parent the parent's frequencies (1/V for a token it never saw). Its sums are
-        already in the parent, so nothing is lost but the distinction. Level 0 is never generalized.
+        p_concept = N/C and p_parent the parent's frequencies (uniform for a value it never saw). Its sums
+        are already in the parent, so nothing is lost but the distinction. Level 0 is never generalized.
         """
         if not self.budget_bytes:
             return tables
         total = sum(table.nbytes() for table in tables)
         if total <= self.budget_bytes:
             return tables
-        # Loss per byte of every concept, a level at a time (single precision: only their order matters).
-        ratios, sizes = [np.zeros(0, np.float32)], [np.zeros(0, np.int32)]
-        for j in range(1, len(tables)):
-            size = self._bytes_per_concept(tables[j]).astype(np.int32)
-            ratios.append((self._losses(tables, j)/np.maximum(size, 1)).astype(np.float32))
-            sizes.append(size)
+        # Loss per byte of every concept, a table at a time (single precision: only their order matters).
+        ratios, sizes = [None]*len(tables), [None]*len(tables)
+        for t in range(len(tables)):
+            if self.parent[t] is None:
+                ratios[t], sizes[t] = np.zeros(0, np.float32), np.zeros(0, np.int32)
+                continue
+            size = self._bytes_per_concept(tables[t]).astype(np.int32)
+            ratios[t] = (self._losses(tables, t)/np.maximum(size, 1)).astype(np.float32)
+            sizes[t] = size
         need = total-self.budget_bytes*MARGIN                   # a margin, so the next pieces fit before pruning again
         threshold = _threshold(ratios, sizes, need)             # generalize from the cheapest until under budget
         # Concepts below the threshold go; of those exactly at it (ties), only as many as still needed,
         # the longest contexts first.
         missing = need-sum(int(size[ratio < threshold].sum(dtype=np.int64)) for ratio, size in zip(ratios, sizes))
         alives = [None]*len(tables)
-        for j in range(len(tables)-1, 0, -1):
-            alive = ratios[j] > threshold
-            tied = np.flatnonzero(ratios[j] == threshold)
+        for t in sorted(range(len(tables)), key=lambda t: -self.level_of[t]):
+            if self.parent[t] is None:
+                continue
+            alive = ratios[t] > threshold
+            tied = np.flatnonzero(ratios[t] == threshold)
             if len(tied):
-                taken = int(np.searchsorted(np.cumsum(sizes[j][tied], dtype=np.int64), max(missing, 0)))+1 if missing > 0 else 0
+                taken = int(np.searchsorted(np.cumsum(sizes[t][tied], dtype=np.int64), max(missing, 0)))+1 if missing > 0 else 0
                 alive[tied[taken:]] = True
-                missing -= int(sizes[j][tied[:taken]].sum(dtype=np.int64))
-            alives[j] = alive
-        for j in range(1, len(tables)):
-            alive = alives[j]
-            self.generalized += int(len(alive)-alive.sum())
-            tables[j] = tables[j].keep(alive)
-            ratios[j] = sizes[j] = None
+                missing -= int(sizes[t][tied[:taken]].sum(dtype=np.int64))
+            alives[t] = alive
+        for t in range(len(tables)):
+            if alives[t] is None:
+                continue
+            self.generalized += int(len(alives[t])-alives[t].sum())
+            tables[t] = tables[t].keep(alives[t])
+            ratios[t] = sizes[t] = None
         return tables
 
     def _bytes_per_concept(self, table):
-        cells = np.bincount((table.cells//(self.V+1)).astype(np.int64), minlength=len(table.keys))
+        cells = np.bincount((table.cells//(table.V+1)).astype(np.int64), minlength=len(table.keys))
         return 8*3+cells*16
 
-    def _losses(self, tables, j):
-        """Loss of reading every concept of level j through its parent (level j-1)."""
-        table, parent = tables[j], tables[j-1]
+    def _losses(self, tables, t):
+        """Loss of reading every concept of table t through its parent (the level above in its reading)."""
+        table, parent = tables[t], tables[self.parent[t]]
         if not len(table.keys):
             return np.zeros(0)
-        concept = (table.cells//(self.V+1)).astype(np.int64)
-        token = table.cells % (self.V+1)
-        # The parent key of a concept is not written in it: it is the key of the same positions one token shorter.
+        concept = (table.cells//(table.V+1)).astype(np.int64)
+        token = table.cells % (table.V+1)
+        # The parent key of a concept is not written in it: it is the key of the same positions one symbol shorter.
         # It is recovered from the key where the key is exact, and otherwise the parent is read as the whole level above.
         base = np.uint64(self.V+1)
-        exact = (self.V+1)**j < 2**64
+        reading, j = self.readings[self.reading_of[t]], self.level_of[t]
+        exact = (self.V+1)**(j+(1 if reading.node.max() > 0 else 0)) < 2**64
         if exact:
             parent_keys = table.keys//base
             C_p, N_p, _ = parent.lookup(parent_keys[concept], token)
         else:
             C_p, N_p = np.full(len(concept), parent.C.sum(), float), np.zeros(len(concept))
         p_concept = table.counts/table.C[concept]
-        p_parent = np.where(C_p > 0, (N_p+1.)/(C_p+self.V), 1./self.V)
+        p_parent = np.where(C_p > 0, (N_p+1.)/(C_p+table.V), 1./table.V)
         per_cell = table.counts*np.log(np.maximum(p_concept, 1e-300)/p_parent)
         return np.bincount(concept, weights=per_cell, minlength=len(table.keys))
 
     # ---- reading ----------------------------------------------------------------------------
+    def _prepared(self, r, ids, positions):
+        """The sums every level of reading r gives the positions: global (C, N, D) and of the text in hand."""
+        reading = self.readings[r]
+        y, node = reading.value[ids], reading.node[ids]
+        out = []
+        for t, (key, valid) in zip(self._tables(r), reading.keys(ids, self.maps, self.V)):
+            C, N, D = self.levels[t].lookup(key[positions], y[positions])
+            ok = valid[positions]
+            out.append((C*ok, N*ok, D*ok))
+        document = []
+        if self.document:
+            keys, valid = context_keys(ids, self.document, self.V)
+            with np.errstate(over='ignore'):
+                for j in range(1, self.document+1):
+                    key = keys[j]*np.uint64(self.V+1)+node.astype(np.uint64)      # the context and the node
+                    C, N, D = document_counts(key, valid[j], y)
+                    document.append((C[positions], N[positions], D[positions]))
+        base = 1./reading.children[node[positions]]
+        return out, document, base
+
+    def _factor(self, r, cache, a=None, b=None):
+        """log p of reading r at the prepared positions."""
+        a = self.a if a is None else a
+        b = self.b if b is None else b
+        out, document, p = cache
+        start = self.first[r]
+        for j, (C, N, D) in enumerate(out):
+            p = categorical_reading(N, C, D, p, a[start+j], np)
+        for j, (C, N, D) in enumerate(document, 1):
+            p = categorical_reading(N, C, D, p, b[r*(self.document+1)+j], np)
+        return np.log(p)
+
+    def path_logp(self, ids, positions=None):
+        """log p of every path at every position (paths x positions)."""
+        ids = np.asarray(ids, np.int64)
+        positions = np.arange(len(ids)) if positions is None else np.asarray(positions)
+        return np.stack([sum(self._factor(r, self._prepared(r, ids, positions)) for r in own) for own in self.of_path])
+
     def logp(self, ids, positions=None, a=None, b=None):
         """log p (nats) of the token at every position of a text, read causally.
 
         The global levels read the context of each position; the levels of the text read only the earlier
-        positions of ``ids`` itself.
+        positions of ``ids`` itself. The paths are mixed with their weights.
         """
         ids = np.asarray(ids, np.int64)
         positions = np.arange(len(ids)) if positions is None else np.asarray(positions)
-        a = self.a if a is None else a
-        b = self.b if b is None else b
-        keys, valid = context_keys(ids, max(self.depth, self.document), self.V)
-        y = ids[positions]
-        p = np.full(len(positions), 1./self.V)
-        for j, table in enumerate(self.levels):
-            C, N, D = table.lookup(keys[j][positions], y)
-            ok = valid[j][positions]
-            C, N, D = C*ok, N*ok, D*ok
-            p = categorical_reading(N, C, D, p, a[j], np)
-        for j in range(1, self.document+1):
-            C, N, D = document_counts(keys[j], valid[j], ids)
-            C, N, D = C[positions], N[positions], D[positions]
-            p = categorical_reading(N, C, D, p, b[j], np)
-        return np.log(p)
+        each = np.stack([sum(self._factor(r, self._prepared(r, ids, positions), a, b) for r in own) for own in self.of_path])
+        return _mix(each, self.w)
 
     def judge(self, texts, positions=None):
-        """Choose the weights a_j, b_j: the values that read best the given unseen texts (two rounds per weight)."""
-        positions = positions or [np.arange(1, len(text)) for text in texts]
+        """Choose the weights: a_j, b_j of every reading (two rounds per weight), then the mixture of the paths.
 
-        def score(a, b):
-            return np.mean(np.concatenate([self.logp(text, where, a, b) for text, where in zip(texts, positions)]))
-        for j in list(range(self.depth+1))*2:
-            values = [score(np.r_[self.a[:j], value, self.a[j+1:]], self.b) for value in GRID]
-            self.a[j] = GRID[int(np.argmax(values))]
-        for j in list(range(1, self.document+1))*2:
-            values = [score(self.a, np.r_[self.b[:j], value, self.b[j+1:]]) for value in GRID]
-            self.b[j] = GRID[int(np.argmax(values))]
-        return -score(self.a, self.b)
+        Each reading is a factor of its path, so its weights are chosen on its own log-likelihood; the
+        mixture weights are those that read best the same texts (expectation-maximization).
+        """
+        positions = positions or [np.arange(1, len(text)) for text in texts]
+        texts = [np.asarray(text, np.int64) for text in texts]
+        factors = []
+        for r in range(len(self.readings)):
+            caches = [self._prepared(r, text, where) for text, where in zip(texts, positions)]
+
+            def score(a, b):
+                return np.mean(np.concatenate([self._factor(r, cache, a, b) for cache in caches]))
+            for t in list(self._tables(r))*2:
+                values = [score(np.r_[self.a[:t], value, self.a[t+1:]], self.b) for value in GRID]
+                self.a[t] = GRID[int(np.argmax(values))]
+            for j in list(range(1, self.document+1))*2:
+                i = r*(self.document+1)+j
+                values = [score(self.a, np.r_[self.b[:i], value, self.b[i+1:]]) for value in GRID]
+                self.b[i] = GRID[int(np.argmax(values))]
+            factors.append(np.concatenate([self._factor(r, cache) for cache in caches]))
+        each = np.stack([sum(factors[r] for r in own) for own in self.of_path])
+        w = np.full(len(self.paths), 1./len(self.paths))
+        for _ in range(200 if len(self.paths) > 1 else 0):
+            share = np.log(w)[:, None]+each
+            share = np.exp(share-share.max(0)); share /= share.sum(0)
+            w = np.maximum(share.mean(1), 1e-12); w /= w.sum()
+        self.w = w
+        return -float(_mix(each, w).mean())
+
+    def _step(self, r, ids, tail_keys):
+        """p(value | node, context) of reading r for the next position, for every (node, value) pair."""
+        reading = self.readings[r]
+        q = 1./reading.children[reading.pair_node]
+        nodes = np.arange(len(reading.children))
+        base = np.uint64(self.V+1)
+        key = nodes.astype(np.uint64)
+        n = len(ids)
+        start = self.first[r]
+        with np.errstate(over='ignore'):
+            for j in range(len(reading.symbols)+1):
+                if j:
+                    kind, distance = reading.symbols[j-1]
+                    if distance > n:
+                        break
+                    token = ids[n-distance]
+                    symbol = token if kind == EXACT else self.maps[kind][token]
+                    key = key*base+np.uint64(symbol+1)
+                table = self.levels[start+j]
+                index = table.find(key)
+                found = np.flatnonzero(index >= 0)
+                if not len(found):
+                    continue
+                q = _update(q, reading, found, index[found], table, self.a[start+j])
+        if self.document:
+            for j in range(1, self.document+1):
+                if j > n:
+                    break
+                earlier = np.flatnonzero(tail_keys[j][:n] == tail_keys[j][n])
+                earlier = earlier[earlier >= j]
+                if not len(earlier):
+                    continue
+                y = ids[earlier]
+                pair = np.searchsorted(reading.codes, reading.node[y]*(reading.size+1)+reading.value[y])
+                cells, counts = np.unique(pair, return_counts=True)
+                node = reading.pair_node[cells]
+                C = np.bincount(node, weights=counts, minlength=len(reading.children))
+                D = np.bincount(node, minlength=len(reading.children))
+                weight = self.b[r*(self.document+1)+j]*np.maximum(D, 1)
+                scale = np.where(C > 0, weight/(C+weight), 1.)
+                q = q*scale[reading.pair_node]
+                q[cells] += counts/(C+weight)[node]
+        return q
 
     def distribution(self, ids):
         """Probabilities of the next token after ``ids`` (the whole vocabulary)."""
         ids = np.asarray(ids, np.int64)
-        tail = np.r_[ids[-max(self.depth, self.document):], 0]           # a position after the text
-        keys, valid = context_keys(tail, max(self.depth, self.document), self.V)
-        last = len(tail)-1
-        p = np.full(self.V+1, 1./self.V); p[self.V] = 0.
-        for j, table in enumerate(self.levels):
-            if not valid[j][last]:
-                break
-            index = table.find(keys[j][last:last+1])[0]
-            if index < 0:
-                continue
-            tokens, counts = table.followers(index)
-            weight = self.a[j]*max(table.D[index], 1)
-            p *= weight/(table.C[index]+weight)
-            p[tokens] += counts/(table.C[index]+weight)
-        if self.document:
-            full_keys, full_valid = context_keys(np.r_[ids, 0], self.document, self.V)
-            here = len(ids)
-            for j in range(1, self.document+1):
-                if not full_valid[j][here]:
-                    break
-                earlier = np.flatnonzero(full_valid[j][:here] & (full_keys[j][:here] == full_keys[j][here]))
-                if not len(earlier):
-                    continue
-                tokens, counts = np.unique(ids[earlier], return_counts=True)
-                weight = self.b[j]*len(tokens)
-                p *= weight/(len(earlier)+weight)
-                p[tokens] += counts/(len(earlier)+weight)
-        return p[:self.V]
+        tail = np.r_[ids, 0]                                     # a position after the text
+        keys, _ = context_keys(tail, self.document, self.V) if self.document else ([], None)
+        p = np.zeros(self.V)
+        for weight, own in zip(self.w, self.of_path):
+            path = np.ones(self.V)
+            for r in own:
+                path *= self._step(r, ids, keys)[self.readings[r].token_pair]
+            p += weight*path
+        return p
 
     def generate(self, ids, new_tokens, stop=(), temperature=0., seed=0):
         """Continue a text: the most probable token (temperature 0) or one drawn from the reading."""
@@ -426,7 +594,11 @@ class ConceptLM:
     # ---- saving ---------------------------------------------------------------------------
     def arrays(self):
         self.settle()
-        out = dict(a=self.a, b=self.b, shape=np.array([self.V, self.depth, self.document, self.tokens, self.generalized], np.int64))
+        out = dict(a=self.a, b=self.b, w=self.w, shape=np.array([self.V, self.depth, self.document, self.tokens, self.generalized], np.int64))
+        width = max([len(steps) for steps, _ in self.paths]+[0])
+        out['paths'] = np.array([[context]+list(steps)+[-1]*(width-len(steps)) for steps, context in self.paths], np.int64)
+        if self.maps:
+            out['maps'] = np.stack(self.maps).astype(np.int64)
         for j, table in enumerate(self.levels):
             out.update({f'level{j}.keys': table.keys, f'level{j}.C': table.C, f'level{j}.cells': table.cells,
                         f'level{j}.counts': table.counts})
@@ -435,11 +607,88 @@ class ConceptLM:
     @classmethod
     def from_arrays(cls, arrays, budget_bytes=None):
         V, depth, document, tokens, generalized = (int(x) for x in arrays['shape'])
-        model = cls(V, depth, document, budget_bytes)
+        maps = list(arrays['maps']) if 'maps' in arrays else []
+        paths = None
+        if 'paths' in arrays:                                    # written before the paths: only the direct one
+            paths = [(tuple(int(s) for s in row[1:] if s >= 0), int(row[0])) for row in arrays['paths']]
+        model = cls(V, depth, document, budget_bytes, maps, paths)
         model.a, model.b, model.tokens, model.generalized = np.array(arrays['a']), np.array(arrays['b']), tokens, generalized
+        if 'w' in arrays:
+            model.w = np.array(arrays['w'])
         model.levels = [Table(arrays[f'level{j}.keys'], arrays[f'level{j}.C'], arrays[f'level{j}.cells'],
-                              arrays[f'level{j}.counts'], V) for j in range(depth+1)]
+                              arrays[f'level{j}.counts'], model.levels[j].V) for j in range(len(model.levels))]
         return model
+
+
+def _mix(each, weights):
+    """log sum_k w_k exp(each_k): the mixture of the paths."""
+    top = each.max(0)
+    return np.log((weights[:, None]*np.exp(each-top)).sum(0))+top
+
+
+def _update(q, reading, nodes, index, table, kappa):
+    """The reading of one level for the given nodes: q(pair) <- (N + w q(pair)) / (C + w) on their pairs."""
+    S = reading.size+1
+    C = table.C[index].astype(float)
+    weight = kappa*np.maximum(table.D[index], 1)
+    scale = np.ones(len(reading.children))
+    scale[nodes] = weight/(C+weight)
+    q = q*scale[reading.pair_node]
+    starts = np.searchsorted(table.cells, index*S)
+    ends = np.searchsorted(table.cells, (index+1)*S)
+    lengths = ends-starts
+    if lengths.sum():
+        owner = np.repeat(np.arange(len(index)), lengths)
+        at = np.arange(lengths.sum())-np.repeat(np.cumsum(lengths)-lengths, lengths)+np.repeat(starts, lengths)
+        value = table.cells[at] % S
+        pair = np.searchsorted(reading.codes, nodes[owner]*S+value)
+        q[pair] += table.counts[at]/(C+weight)[owner]
+    return q
+
+
+def token_concepts(ids, vocabulary, resolutions=(16, 48), top=256, rows=8000, seed=0, least=3):
+    """Levels of concepts of the tokens, found by the concept model itself (acan/core/concepts.py).
+
+    A token is a row: how often each of the ``top`` most frequent tokens comes just before it and just
+    after it (square roots of the frequencies, so two rows are compared as two distributions), reduced to
+    its main directions (singular value decomposition) at a few resolutions. The concept model finds the
+    concepts of these rows and their levels, as for any table. The ``rows`` most frequent tokens make the
+    table; every other token seen at least ``least`` times is read by the model (its most likely concept);
+    a token never seen enough has a concept of its own. Returns, for every resolution, the maps from token
+    to concept, from the most general level to the most particular.
+    """
+    import pandas as pd
+    from acan.core.concepts import ConceptModel
+    ids = np.asarray(ids, np.int64)
+    V = int(vocabulary)
+    frequency = np.bincount(ids, minlength=V)
+    common = np.argsort(-frequency, kind='stable')[:top]
+    where = np.full(V, top, np.int64); where[common] = np.arange(len(common))
+    before = np.bincount(ids[1:]*(top+1)+where[ids[:-1]], minlength=V*(top+1)).reshape(V, top+1).astype(float)
+    after = np.bincount(ids[:-1]*(top+1)+where[ids[1:]], minlength=V*(top+1)).reshape(V, top+1).astype(float)
+    profile = np.hstack([np.sqrt(before/np.maximum(before.sum(1, keepdims=True), 1)),
+                         np.sqrt(after/np.maximum(after.sum(1, keepdims=True), 1))])
+    seen = np.flatnonzero(frequency >= least)
+    table = seen[np.argsort(-frequency[seen], kind='stable')[:rows]]
+    center = profile[table].mean(0)
+    _, _, directions = np.linalg.svd(profile[table]-center, full_matrices=False)
+    out = []
+    for d in resolutions:
+        d = min(d, len(directions))
+        project = lambda which: pd.DataFrame((profile[which]-center)@directions[:d].T, columns=[f'd{i}' for i in range(d)])
+        model = ConceptModel(seed=seed, covariance=False).fit(project(table))
+        member = model.assignments(project(seen)).argmax(1)
+        chain = [member]
+        for level in reversed(model.levels[1:]):
+            chain.append(level['parents'].argmax(0)[chain[-1]])
+        maps = []
+        for concept in reversed(chain):
+            full = np.full(V, 0, np.int64)
+            _, full[seen] = np.unique(concept, return_inverse=True)
+            full[np.setdiff1d(np.arange(V), seen)] = full[seen].max()+1 if len(seen) else 0
+            maps.append(full)
+        out.append(maps)
+    return out
 
 
 def document_counts(keys, valid, ids):
