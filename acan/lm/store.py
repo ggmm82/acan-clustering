@@ -229,12 +229,15 @@ class Store:
             self.update(identifier, pause=1, status='pausing')
         return self.job(identifier, owner)
 
-    def record(self, identifier, step, record):
+    def record(self, identifier, step, record, progress=None):
+        """A row of the history; ``progress`` (by default the row itself) is what the job shows now."""
         import resource
         record['process_peak_rss_kib']=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         with self.db() as db:
             db.execute('INSERT OR REPLACE INTO metrics VALUES(?,?,?)', (identifier, step, json.dumps(record, allow_nan=False)))
-        self.update(identifier, progress=record)
+        if progress is not None:
+            progress['process_peak_rss_kib'] = record['process_peak_rss_kib']
+        self.update(identifier, progress=record if progress is None else progress)
 
     def history(self, identifier, owner, start=None, limit=500, overview=False, end=None):
         job=self.job(identifier, owner)

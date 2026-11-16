@@ -961,7 +961,8 @@ def register(app):
         own = 'Controllo denso' if job['config'].get('architecture') == 'dense-control' else 'Concetti'
         for key, label in [('training_nll','training'),('validation_nll','validazione')]:
             rows = [row for row in history if key in row]
-            figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows], mode='lines', name=f'{own} · {label}')
+            figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows],
+                               mode='lines+markers' if job['config'].get('architecture') == 'concepts' else 'lines', name=f'{own} · {label}')
         # The project and its dense control on the same chart: same corpus, seed and budget.
         partner, comparison = paired_job((state or {}).get('jobs', []), job), None
         if partner is not None:
@@ -991,7 +992,7 @@ def register(app):
             figure.add_hline(y=protected['validation_nll'],line_dash='dot',line_color='purple',annotation_text='Migliore conservato')
         baseline = metrics.get('baseline_nll')
         if baseline is not None:
-            figure.add_hline(y=baseline, line_dash='dash', line_color='green', annotation_text='Modello originale sullo stesso corpus')
+            figure.add_hline(y=baseline, line_dash='dash', line_color='green', annotation_text='Prima di leggere il testo' if job['config'].get('architecture') == 'concepts' else 'Modello originale sullo stesso corpus')
         text = f"{job['status']} · passo {metrics.get('step',0)}/{job['config']['total_steps']} · token elaborati {metrics.get('tokens_trained',0):,} · ultimo checkpoint {job['checkpoint'] or 'ancora nessuno'}"
         detail = [dbc.Alert(history_error,color='warning') if history_error else None,html.P(text), html.P(job['error'], className='text-danger') if job['error'] else None]
         if comparison is not None:

@@ -277,6 +277,12 @@ class ConceptLongLearningTests(unittest.TestCase):
             self.assertTrue(progress['concepts_per_level'] and progress['concepts_total'] > 0)
             self.assertGreater(progress['paths'], 1)                                        # through the concepts of the tokens
             self.assertAlmostEqual(sum(progress['path_weights']), 1.)
+            history = store.history(job['id'], owner)
+            measured = [row['step'] for row in history if 'validation_nll' in row]
+            self.assertEqual(measured[0], 0)                                              # the error before reading
+            self.assertEqual(measured[-1], progress['step'])
+            self.assertGreater(len(measured), 2)                                          # measured along the way, not only at saves
+            self.assertLess(len(measured), len(history)+1)
             answers = [json.loads(line) for line in (store.directory('jobs', job['id'])/'answers.jsonl').read_text().splitlines()]
             self.assertTrue(answers and answers[-1]['answers'][0]['question'] == 'Ciao!')
             checkpoint = store.directory('jobs', job['id'])/'checkpoints'/done['checkpoint']

@@ -31,6 +31,14 @@ def contract():
     return hashlib.sha256(b''.join((root/name).read_bytes() for name in ('concept_lm.py', 'concept_trainer.py'))).hexdigest()
 
 
+MEASURES = ('validation_nll', 'validation_perplexity', 'training_nll')
+
+
+def measure_every(total_steps):
+    """Steps between two measures of the error on unseen text: about twenty measures per text."""
+    return max(1, int(total_steps)//20)
+
+
 def piece_tokens(config):
     """Tokens read by one step."""
     return int(config.get('concept_piece', 1_000_000))
@@ -180,6 +188,7 @@ def run_training(root, identifier, stop_event=None):
             state['best_validation_nll'] = state['validation_nll']
             state.update(quantities(model, config))
             previous = save(root_checkpoints, model, state, identity)
+            store.record(identifier, 0, dict(state))           # the chart starts from the error before reading
         store.update(identifier, checkpoint=previous.name, progress=state, status='running')
         started, initial = time.monotonic(), state['tokens_trained']
         last_save = time.monotonic()
@@ -190,7 +199,9 @@ def run_training(root, identifier, stop_event=None):
             state.update(step=state['step']+1, tokens_trained=state['tokens_trained']+len(ids))
             state['tokens_per_second'] = (state['tokens_trained']-initial)/max(time.monotonic()-started, 1e-6)
             due = state['step'] % config['save_steps'] == 0 or time.monotonic()-last_save >= config['save_seconds']
-            if due or should_pause() or state['step'] == config['total_steps']:
+            last = due or should_pause() or state['step'] == config['total_steps']
+            measured = last or state['step'] % measure_every(config['total_steps']) == 0
+            if measured:                                         # the error on unseen text, about twenty times per text
                 model.settle()
                 model.judge(tune)
                 state['validation_nll'] = measure(model, judge)
@@ -200,13 +211,16 @@ def run_training(root, identifier, stop_event=None):
                     state['training_nll'] = float(-model.logp(following, np.arange(1, len(following))).mean())
                 state['best_validation_nll'] = min(state.get('best_validation_nll', state['validation_nll']), state['validation_nll'])
                 state.update(quantities(model, config))
+            if last:
                 previous = save(root_checkpoints, model, state, identity)
                 store.update(identifier, checkpoint=previous.name)
                 retain_with_milestones(root_checkpoints, milestone=config.get('milestone_steps', 0))
                 if config.get('chat_probes'):
                     record_answers(directory, model, tokenizer, state, config.get('probe_prompts') or None)
                 last_save = time.monotonic()
-            store.record(identifier, state['step'], state)
+            # A step without a measure does not repeat the last one: the chart draws only what was measured.
+            row = state if measured else {key: value for key, value in state.items() if key not in MEASURES}
+            store.record(identifier, state['step'], row, progress=state)
         store.update(identifier, status='completed' if state['step'] >= config['total_steps'] else 'paused',
                      pause=0, progress=state, error=None)
     except PreparationPaused:
