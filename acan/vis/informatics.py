@@ -155,7 +155,10 @@ una riga nuova.
 contesto attuale per ogni lunghezza, dalla più corta alla più lunga (ricerca
 binaria nell'elenco ordinato; nei percorsi per tutti i nodi insieme), combina le
 distribuzioni dei token che seguono, ciascuna con il livello sopra come
-riferimento, e aggiunge i concetti del testo scritto finora. Con i percorsi le
+riferimento, e aggiunge i concetti del testo scritto finora, compresa la frequenza
+di ogni token nel testo (la domanda inclusa): così la risposta segue l'argomento
+della domanda e non solo i suoi ultimi token, che in una chat sono sempre i segnali
+del formato. Con i percorsi le
 probabilità dei passi si moltiplicano e i percorsi si mescolano. Ne esce la
 probabilità di ogni token del vocabolario, come l'uscita di una rete; si sceglie
 il più probabile (temperatura 0) o se ne estrae uno (temperatura più alta, testo

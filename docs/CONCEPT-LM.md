@@ -47,7 +47,12 @@ mai visto lascia la lettura com'è.
 **Concetti del testo in corso.** Gli stessi concetti contati solo sulle posizioni
 precedenti del testo che si sta leggendo, letti dopo i globali con la lettura
 globale come riferimento e pesi $b_j$. Permettono di riprendere ciò che il testo
-ha già detto, a qualunque distanza; nessuna posizione legge sé stessa.
+ha già detto, a qualunque distanza; nessuna posizione legge sé stessa. Il livello
+0 sono tutte le posizioni lette finora: alza i token già comparsi nel testo (una
+memoria dell'argomento). Senza di lui una domanda in chat era letta solo dai suoi
+ultimi token, quelli del formato della conversazione, uguali per ogni domanda, e
+domande diverse ricevevano la stessa risposta; con lui la risposta segue
+l'argomento, e su wikitext-2 l'errore scende da 4,589 a 4,533.
 
 **Concetti dei token.** Due token diversi per la lettura sopra sono solo diversi.
 Il modello tratta i token come righe di una tabella e ne cerca i concetti con il

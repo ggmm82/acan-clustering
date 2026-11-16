@@ -460,7 +460,7 @@ class ConceptLM:
         if self.document:
             keys, valid = context_keys(ids, self.document, self.V)
             with np.errstate(over='ignore'):
-                for j in range(1, self.document+1):
+                for j in range(0, self.document+1):             # level 0: every earlier token of the text in hand
                     key = keys[j]*np.uint64(self.V+1)+node.astype(np.uint64)      # the context and the node
                     C, N, D = document_counts(key, valid[j], y)
                     document.append((C[positions], N[positions], D[positions]))
@@ -475,7 +475,7 @@ class ConceptLM:
         start = self.first[r]
         for j, (C, N, D) in enumerate(out):
             p = categorical_reading(N, C, D, p, a[start+j], np)
-        for j, (C, N, D) in enumerate(document, 1):
+        for j, (C, N, D) in enumerate(document):
             p = categorical_reading(N, C, D, p, b[r*(self.document+1)+j], np)
         return np.log(p)
 
@@ -513,7 +513,7 @@ class ConceptLM:
             for t in list(self._tables(r))*2:
                 values = [score(np.r_[self.a[:t], value, self.a[t+1:]], self.b) for value in GRID]
                 self.a[t] = GRID[int(np.argmax(values))]
-            for j in list(range(1, self.document+1))*2:
+            for j in list(range(0, self.document+1))*2:
                 i = r*(self.document+1)+j
                 values = [score(self.a, np.r_[self.b[:i], value, self.b[i+1:]]) for value in GRID]
                 self.b[i] = GRID[int(np.argmax(values))]
@@ -552,7 +552,7 @@ class ConceptLM:
                     continue
                 q = _update(q, reading, found, index[found], table, self.a[start+j])
         if self.document:
-            for j in range(1, self.document+1):
+            for j in range(0, self.document+1):
                 if j > n:
                     break
                 earlier = np.flatnonzero(tail_keys[j][:n] == tail_keys[j][n])
@@ -604,7 +604,7 @@ class ConceptLM:
     # ---- saving ---------------------------------------------------------------------------
     def arrays(self):
         self.settle()
-        out = dict(a=self.a, b=self.b, w=self.w, path_depth=np.array([self.path_depth], np.int64), shape=np.array([self.V, self.depth, self.document, self.tokens, self.generalized], np.int64))
+        out = dict(a=self.a, b=self.b, w=self.w, document_zero=np.array([1], np.int64), path_depth=np.array([self.path_depth], np.int64), shape=np.array([self.V, self.depth, self.document, self.tokens, self.generalized], np.int64))
         width = max([len(steps) for steps, _ in self.paths]+[0])
         out['paths'] = np.array([[context]+list(steps)+[-1]*(width-len(steps)) for steps, context in self.paths], np.int64)
         if self.maps:
@@ -626,6 +626,8 @@ class ConceptLM:
         model.a, model.b, model.tokens, model.generalized = np.array(arrays['a']), np.array(arrays['b']), tokens, generalized
         if 'w' in arrays:
             model.w = np.array(arrays['w'])
+        if 'document_zero' not in arrays:                       # written before level 0 of the text in hand: it reads nothing
+            model.b[::model.document+1] = 1e12
         model.levels = [Table(arrays[f'level{j}.keys'], arrays[f'level{j}.C'], arrays[f'level{j}.cells'],
                               arrays[f'level{j}.counts'], model.levels[j].V) for j in range(len(model.levels))]
         return model

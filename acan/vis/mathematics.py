@@ -82,7 +82,8 @@ sul testo, la ricerca per somiglianza della tabella trova troppi pochi concetti
 e mescolati (3,47 bit per carattere, contro 2,04 contando i contesti).
 
 **Il testo in corso.** Gli stessi concetti si contano anche sul testo che si sta
-leggendo, usando **solo le posizioni precedenti**: $C^{<t}_c$, $N^{<t}_c(y)$,
+leggendo, dal livello 0 (tutte le posizioni lette finora) al 4, usando **solo le
+posizioni precedenti**: $C^{<t}_c$, $N^{<t}_c(y)$,
 $D^{<t}_c$. Così ciò che il testo ha già detto si può ripetere a qualunque
 distanza (un nome apparso all'inizio, la risposta a una domanda). Nessuna
 posizione legge sé stessa o il futuro.
@@ -110,10 +111,15 @@ testo in corso:
 $$
 p_j(y)=\frac{N_{c_j}(y)+\kappa_jD_{c_j}\,p_{j-1}(y)}{C_{c_j}+\kappa_jD_{c_j}},\quad p_{-1}(y)=\frac1V;
 \qquad
-p^{\text{testo}}_j(y)=\frac{N^{<t}_{c_j}(y)+b_jD^{<t}_{c_j}\,p^{\text{testo}}_{j-1}(y)}{C^{<t}_{c_j}+b_jD^{<t}_{c_j}},\quad p^{\text{testo}}_0=p_{6}.
+p^{\text{testo}}_j(y)=\frac{N^{<t}_{c_j}(y)+b_jD^{<t}_{c_j}\,p^{\text{testo}}_{j-1}(y)}{C^{<t}_{c_j}+b_jD^{<t}_{c_j}},\quad p^{\text{testo}}_{-1}=p_{6}.
 $$
 
-La tabella sceglie un $\kappa$; il testo un $\kappa_j$ per livello e un $b_j$ per
+Il livello 0 del testo in corso sono tutte le posizioni lette finora: alza i token
+già comparsi nel testo, come una memoria dell'argomento. Senza di lui una domanda
+in chat sarebbe letta solo dai suoi ultimi token, che sono quelli del formato
+della conversazione, uguali per ogni domanda; con lui la risposta segue
+l'argomento della domanda, e su wikitext-2 l'errore scende da 4,589 a 4,533. La
+tabella sceglie un $\kappa$; il testo un $\kappa_j$ per livello e un $b_j$ per
 livello del testo in corso. Mentre la tabella cerca i suoi concetti $\kappa=1$ e
 $D$ non conta.
 

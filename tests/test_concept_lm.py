@@ -25,7 +25,7 @@ def brute(ids, depth, document, a, b, V):
             C = len(members); N = sum(ids[u] == ids[t] for u in members); D = len({ids[u] for u in members})
             if C:
                 w = a[j]*max(D, 1); p = (N+w*p)/(C+w)
-        for j in range(1, document+1):
+        for j in range(0, document+1):
             if t < j:
                 continue
             context = tuple(ids[t-j:t])
@@ -42,7 +42,7 @@ class ConceptLMTests(unittest.TestCase):
         ids = rng.integers(0, 4, 120)
         model = ConceptLM(5, depth=3, document=2)
         model.add(ids); model.settle()
-        model.a, model.b = np.array([.5, 1., 2., 4.]), np.array([1., .5, 2.])
+        model.a, model.b = np.array([.5, 1., 2., 4.]), np.array([3., .5, 2.])
         np.testing.assert_allclose(model.logp(ids, np.arange(1, len(ids))), brute(ids, 3, 2, model.a, model.b, 5), atol=1e-12)
 
     def test_document_counts_see_only_earlier_positions(self):
@@ -167,7 +167,7 @@ def brute_paths(model, ids):
                     C = len(members); N = sum(R.value[ids[u]] == value for u in members); D = len({R.value[ids[u]] for u in members})
                     if C:
                         w = model.a[model.first[r]+j]*max(D, 1); p = (N+w*p)/(C+w)
-                for j in range(1, model.document+1):
+                for j in range(0, model.document+1):
                     if t < j:
                         continue
                     members = [u for u in range(j, t) if tuple(ids[u-j:u]) == tuple(ids[t-j:t]) and R.node[ids[u]] == node]
