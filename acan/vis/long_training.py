@@ -296,8 +296,8 @@ layout = dbc.Card(dbc.CardBody([
                   start_collapsed=True, className='my-2'),
     html.H5('2 · La coda di apprendimento', className='mt-3'),
     html.P("I testi vengono imparati uno dopo l'altro: ognuno parte dai concetti del precedente e aggiunge i suoi, "
-           "senza dimenticare nulla. Puoi mettere in coda la miscela preparata e i tuoi file (caricati negli strumenti "
-           "avanzati: testo, Markdown, Python, ZIP, EPUB, DOCX, PDF), e aggiungerne altri mentre impara.", className='small'),
+           "senza dimenticare nulla. Puoi mettere in coda la miscela preparata e i tuoi file (testo, Markdown, Python, ZIP, "
+           "EPUB, DOCX, PDF), e aggiungerne altri mentre impara con «Carica e aggiungi alla coda», sotto la coda.", className='small'),
     dbc.Label('Testi da imparare, in ordine'),
     dcc.Dropdown(id='lm-long-corpora', multi=True, placeholder='Scegli uno o più testi', className='mb-2'),
     html.Div(id='lm-long-size-info', className='small text-muted mb-2'),
@@ -328,6 +328,10 @@ layout = dbc.Card(dbc.CardBody([
     html.Div(id='lm-long-queue-view'),
     dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-add-corpus', placeholder='Aggiungi un testo in fondo alla coda'), md=8),
              dbc.Col(dbc.Button('Aggiungi', id='lm-long-add', outline=True, color='primary'), md=4)], className='mb-1'),
+    html.Div([html.Small('Oppure carica un documento dal computer (testo, Markdown, Python, ZIP, EPUB, DOCX, PDF): '
+                         'viene convertito in testo e aggiunto in fondo alla coda scelta sopra.', className='text-muted d-block'),
+              html.Div(id='lm-long-file-upload'), html.Div(id='lm-long-upload-status', role='status', className='small'),
+              dcc.Store(id='lm-long-upload-state')], className='mb-1'),
     html.Div(id='lm-long-queue-status', role='status', className='small'),
     html.H5('Grandezze del modello mentre impara', className='mt-3'),
     html.Div(id='lm-long-footprint'),
@@ -493,6 +497,20 @@ def register(app):
             return 'Ripreso dall\'ultimo salvataggio.', job['id']
         except ValueError as exc:
             return dbc.Alert(str(exc), color='warning'), dash.no_update
+
+    @app.callback(Output('lm-long-queue-status', 'children', allow_duplicate=True), Input('lm-long-upload-state', 'data'),
+                  State('lm-workspace', 'data'), State('lm-long-queue', 'value'), State('lm-state', 'data'), prevent_initial_call=True)
+    def add_uploaded(uploaded, workspace, queue, state):
+        """A document just uploaded from the queue section goes to the end of the chosen queue."""
+        try:
+            if not uploaded or not uploaded.get('id'):
+                raise ValueError('Caricamento non riuscito.')
+            if not queues((state or {}).get('jobs', [])).get(queue):
+                raise ValueError(f"«{uploaded.get('name', 'Il documento')}» è caricato: scegli una coda e aggiungilo dal menu qui sopra.")
+            job = backend(workspace, f'/queues/{queue}/add', 'POST', dict(corpus_id=uploaded['id']))
+            return f"«{uploaded.get('name', 'Documento')}» aggiunto come testo {job['config']['series']['order']+1} della coda."
+        except ValueError as exc:
+            return dbc.Alert(str(exc), color='warning')
 
     @app.callback(Output('lm-job', 'value', allow_duplicate=True), Input('lm-long-chart', 'n_clicks'),
                   State('lm-long-queue', 'value'), State('lm-state', 'data'), prevent_initial_call=True)
