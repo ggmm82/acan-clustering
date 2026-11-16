@@ -253,15 +253,14 @@ class TestPublicExperiments(unittest.TestCase):
                 result = client.post('/public-experiments', headers=headers, json=dict(dataset='fixture', preset='check'))
                 self.assertEqual(result.status_code, 200, result.get_data(as_text=True))
                 data = result.get_json(); job = data['job']
-                self.assertEqual(job['config']['total_steps'], 20)
-                self.assertEqual(job['config']['accumulation'], 1)
-                self.assertEqual((job['config']['architecture'], job['config']['native_size']), ('native', 'micro'))   # born from zero
+                self.assertEqual((job['config']['architecture'], job['config']['routing_profile']), ('concepts', 'concept-lm-v1'))   # the concept model
+                self.assertEqual(job['config']['concept_piece'], 50_000)
                 download.assert_called_once(); launch.assert_called_once()
                 self.assertEqual(client.get('/state', headers=other).get_json()['corpora'], [])
                 self.assertEqual(client.post('/jobs/'+job['id']+'/pause', headers=other).status_code, 404)
                 second = client.post('/public-experiments', headers=headers, json=dict(dataset='fixture', preset='practice')).get_json()
                 self.assertEqual(second['corpus']['id'], data['corpus']['id'])
-                self.assertEqual(second['job']['config']['total_steps'], 200)
+                self.assertEqual(second['job']['config']['concept_piece'], 10_000)
                 self.assertEqual(download.call_count, 1)
                 self.assertEqual(data['source']['source_sha256'], spec['sha256'])
                 metadata = app.store.directory('jobs', job['id'])/'public-source.json'
@@ -384,7 +383,10 @@ class TestProjectManagementAndSeries(unittest.TestCase):
     def test_series_runs_one_project_after_the_other(self):
         from unittest.mock import patch
         from acan.lm.manager import continue_series
-        base = dict(self.job['config'])
+        # Series compare networks of earlier projects; the guided start now creates the concept model.
+        base = dict({key: value for key, value in self.job['config'].items() if not key.startswith('concept_')},
+                    architecture='native', routing_profile='concept-graph-v2', native_size='micro', graft_fraction=1.,
+                    batch_size=1, learning_rate=1e-3, slots=16, window=16, total_steps=20)
         with patch('acan.lm.service.launch') as launch:
             created = self.client.post('/series', headers=self.headers, json=dict(base=base, variants=['chosen', 'fewer_concepts', 'dense']))
         self.assertEqual(created.status_code, 200, created.get_data(as_text=True))

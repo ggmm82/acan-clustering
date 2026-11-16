@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from acan import GraphClusterModel
+from .model_cache import load_graph
 
 
 def infer(model_json, dataset, mode='predict'):
@@ -11,7 +12,7 @@ def infer(model_json, dataset, mode='predict'):
         raise ValueError('Caricare o addestrare un modello nella scheda Modello.')
     if dataset.empty:
         raise ValueError('Il CSV non contiene righe.')
-    model = GraphClusterModel.loadModel(model_json)
+    model = load_graph(model_json)
     root = model.clusterModel[model.rootId]
     data = dataset.copy()
     if mode == 'predict':

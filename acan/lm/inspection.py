@@ -6,6 +6,8 @@ import re
 
 
 def queue(store, job):
+    if job['config'].get('architecture') == 'concepts':
+        raise ValueError('Il modello a concetti non ha layer: le sue grandezze (concetti per livello, pesi, memoria) sono nella pagina mentre impara.')
     if job['config'].get('protocol') != 'controlled-v1':
         raise ValueError('La cattura durante il training richiede un nuovo progetto controllato. Puoi ispezionare un checkpoint legacy in generazione.')
     if job['status'] not in ('preparing', 'running', 'queued'):

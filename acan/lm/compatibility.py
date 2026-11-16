@@ -32,12 +32,16 @@ PRE_NATIVE_INFERENCE = '6ee3c0106aa03e15396eb9b9f9c38869f7b80f03ba1d395d69a57e8d
 # The new layer is chosen by its own profile, so projects of every earlier profile continue.
 PRE_SCAN_TRAINING = '98e8088b3515ea60663323dcf2820e3cc33a103f981fb234fd9f2457cc5f3bab'
 PRE_SCAN_INFERENCE = 'a5d6ce979b49f4936fa371fb4f60f760de18916ccd95453f063fa76fc426b727'
+# Sources of release 8.9.0, before the concept language model (architecture «concepts»). Its options
+# and its checks are added beside the others: every earlier project continues with its equations.
+PRE_CONCEPT_LM_TRAINING = 'e7164bb861fb5fe0571cc7c88dcdf37437b2b23e6be4e8e319b2eab3847c5db2'
+PRE_CONCEPT_LM_INFERENCE = 'c5d534ead5558ffc5e5318bede3329d006797441ff51e4ea8dfdb472205f5340'
 
 
 def training_identity(values, config, checkpoint_root, selected, current):
     from pathlib import Path
     from . import checkpoints
-    candidates = [current, PRE_NATIVE_TRAINING, PRE_ONE_STEP_TRAINING]
+    candidates = [current, PRE_CONCEPT_LM_TRAINING, PRE_NATIVE_TRAINING, PRE_ONE_STEP_TRAINING]
     if config.get('routing_profile') != 'concept-graph-v2':
         candidates.insert(1, PRE_SCAN_TRAINING)
     if config.get('routing_profile') != 'concept-graph-v1':
