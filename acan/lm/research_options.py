@@ -5,7 +5,7 @@ from .trainer import validate_options as legacy_options
 EXTRA=dict(protocol='controlled-v1',routing_profile='shared-algebra-v1',architecture='hybrid',graft_fraction=.5,distillation_weight=0.,distillation_temperature=2.,
            early_stop_patience=3,early_stop_min_delta=.01,validation_batches=8,cp_weight=0.,
            milestone_steps=0,chat_probes=False,probe_prompts=[],auto_resume=False,passes=0,warm_start=False,native_size='micro',vocabulary=32000,native_attention='concepts',
-           concept_depth=6,concept_document=4,concept_memory_mb=0,concept_piece=1_000_000,concept_paths=True)
+           concept_depth=6,concept_document=4,concept_memory_mb=0,concept_piece=1_000_000,concept_paths=False)
 
 
 def validate_options(options):

@@ -74,6 +74,10 @@ $\kappa$). I percorsi attraverso i concetti leggono contesti fino a 2 token, il
 diretto fino a 6: più percorsi o contesti più lunghi leggono un po' meglio con
 memoria libera e peggio dentro il limite, perché tutte le somme lo condividono.
 
+I percorsi sono una scelta del progetto («Concetti dei token e percorsi», spenta
+se non la si accende): aiutano sui testi piccoli e peggiorano su quelli grandi
+quando la memoria è limitata (§7).
+
 ## 4. Giudizio
 
 $\kappa_j$ e $b_j$ si scelgono fra $2^{-5},\dots,2^{8}$, un peso alla volta, due
@@ -175,6 +179,26 @@ Con la memoria dei concetti limitata a 18 MB (79% dei concetti generalizzati):
 |---|---:|---:|
 | nat per token | 5,652 al meglio, poi 5,921 | 5,452 |
 | tempo | 433 s al suo meglio | 20 s |
+
+**Concetti dei token e percorsi** (wikitext-2, BPE da 8.000, gli stessi 64 pezzi
+da 512 token mai visti; wikitext-103 ha lo stesso test):
+
+| | testo per imparare | memoria | errore (nat per token) | tempo |
+|---|---:|---:|---:|---:|
+| Rete Llama a 4 strati, 6,2 milioni di parametri | wikitext-2 | — | 4,403 | 90 min |
+| Concetti, solo percorso diretto | wikitext-2 | libera | 4,589 | 10 s |
+| Concetti con 5 percorsi, contesti fino a 6 | wikitext-2 | libera (10 GB) | 4,419 | 4 min |
+| Concetti con 3 percorsi, contesti fino a 2 | wikitext-2 | libera (0,9 GB) | 4,451 | 1 min |
+| Concetti, solo percorso diretto | wikitext-2 | 400 MB | 4,602 | 10 s |
+| Concetti con 3 percorsi, contesti fino a 2 | wikitext-2 | 400 MB | 4,492 | 30 s |
+| Concetti, solo percorso diretto | 20 M token di wikitext-103 | 512 MB | 4,156 | 90 s |
+| Concetti con 3 percorsi | 20 M token di wikitext-103 | 512 MB | 4,223 | 4 min |
+| Concetti, solo percorso diretto | 69 M token di wikitext-103 | 2 GB | 3,905 | 7 min |
+| Concetti con 3 percorsi | 69 M token di wikitext-103 | 2 GB | 3,958 | 19 min |
+
+Sul testo piccolo i percorsi portano il modello quasi al livello della rete (nei
+primi 32 token e oltre i 256 lo superano); sui testi grandi con la memoria
+limitata il percorso diretto da solo legge meglio.
 
 **Velocità** (un thread, vocabolario 32.000, testo artificiale con frequenze di
 una lingua): circa 414.000 token al secondo per imparare, circa 790 per

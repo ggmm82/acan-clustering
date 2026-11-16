@@ -31,7 +31,7 @@ def profile(cuda, size=None):
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-lm-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='cpu',
                 chat_probes=True, auto_resume=True, sequence_length=256, concept_depth=6, concept_document=4,
-                concept_memory_mb=0, concept_piece=1_000_000)
+                concept_memory_mb=0, concept_piece=1_000_000, concept_paths=False)
 
 
 def queues(jobs):
@@ -307,6 +307,11 @@ layout = dbc.Card(dbc.CardBody([
     dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Memoria massima dei concetti'), dbc.Input(id='lm-long-memory', type='number', value=0, min=0, max=262144, step=256), dbc.InputGroupText('MB')]), md=6),
              dbc.Col(html.Small("0 = automatica: un decimo della memoria del server (o del suo contenitore), al massimo 2 GB; vale per tutte le somme, e mentre somma il processo ne usa al massimo circa il triplo. Oltre questo limite i concetti che costano meno a chi "
                                 "legge vengono generalizzati nel livello sopra.", className='text-muted'), md=6)], className='mb-2'),
+    dbc.Row([dbc.Col(dbc.Checkbox(id='lm-long-paths', value=False, label='Concetti dei token e percorsi'), md=6),
+             dbc.Col(html.Small("Il modello trova da sé i concetti dei token («gatto» e «cane» si somigliano) e legge il prossimo token anche dal "
+                                "concetto generale al particolare. Su wikitext-2 (2 milioni di token) l'errore scende da 4,59 a 4,45; su testi "
+                                "grandi, con il limite di memoria, peggiora (69 milioni di token, 2 GB: da 3,91 a 3,96), perché le somme dei "
+                                "percorsi tolgono memoria ai contesti lunghi.", className='text-muted'), md=6)], className='mb-2'),
     # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
     html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),
               dbc.Input(id='lm-long-passes', type='number', value=1), dbc.Input(id='lm-long-length', type='number', value=256)],
@@ -443,14 +448,15 @@ def register(app):
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
-                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'), prevent_initial_call=True)
-    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0):
+                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'), State('lm-long-paths', 'value'),
+                  prevent_initial_call=True)
+    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0, paths=False):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 100),
-                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0),
+                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0), concept_paths=bool(paths),
                         probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             return result.get('message', 'Coda creata.'), result['queue']
