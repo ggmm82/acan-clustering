@@ -125,7 +125,7 @@ Ogni scelta è giudicata su dati che il modello non ha visto.
 righe non viste (ogni riga letta senza sé stessa); il livello di lavoro è il più
 generale vicino al migliore. Il risultato si salva come modello della scheda.
 
-**Un testo.** Ogni 100 passi e ogni 5 minuti:
+**Un testo.** Ogni 10 passi (impostabile), ogni 5 minuti e alla fine:
 
 1. il contatore viene sommato tutto (le somme dell'intero testo letto finora);
 2. il **giudizio** sceglie i pesi della lettura: per ciascun livello di ogni

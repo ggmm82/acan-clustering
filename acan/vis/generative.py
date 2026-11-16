@@ -1007,11 +1007,11 @@ def register(app):
             table = series_table(members, job, results)
             if table is not None:
                 detail.insert(0, table)
-        elif partner is None and job['config'].get('architecture') != 'dense-control' and job['config'].get('protocol') == 'controlled-v1':
+        elif partner is None and job['config'].get('architecture') not in ('dense-control', 'concepts') and job['config'].get('protocol') == 'controlled-v1':
             detail.insert(0, html.P('Per sapere se i concetti funzionano, avvia il controllo denso (in fondo alla pagina): '
                                     'comparirà su questo grafico, tratteggiato, con il confronto dei due risultati.', className='small text-muted'))
         for key,label in [('training_nll','Errore sul testo di addestramento (NLL)'),('training_objective','Obiettivo di addestramento'),('training_cp_penalty','Penalità CP media'),('cp_weight','Peso CP'),('validation_nll','Errore su testo mai visto (NLL di validazione)'),('validation_perplexity','Perplessità: fra quante parole in media il modello è incerto'),
-                          ('baseline_nll',"Errore al passo 0 (pesi casuali per un modello nativo)"),('tokens_per_second','Velocità (token al secondo)'),('trainable_parameters','Parametri che imparano'),('total_parameters','Parametri totali del modello'),('process_peak_rss_kib','Memoria massima usata (KiB)')]:
+                          ('baseline_nll',"Prima di leggere questo testo (il modello non sa ancora nulla)" if job['config'].get('architecture') == 'concepts' else "Errore al passo 0 (pesi casuali per un modello nativo)"),('tokens_per_second','Velocità (token al secondo)'),('trainable_parameters','Parametri che imparano'),('total_parameters','Parametri totali del modello'),('process_peak_rss_kib','Memoria massima usata (KiB)')]:
             # The CP terms belong to earlier profiles only; the objective then equals the training NLL.
             if key in ('training_objective','training_cp_penalty','cp_weight') and job['config'].get('routing_profile') not in ('cp-routing-v1','cp-joint-v1'):
                 continue
@@ -1026,11 +1026,14 @@ def register(app):
             parts = [f'Validazione ultimo passo {validation:.3f}']
             if best is not None:
                 parts.append(f"migliore conservato {best:.3f}" + (f" al passo {protected['step']}" if protected.get('step') is not None else ''))
-            parts.append(f'modello di partenza non adattato {baseline:.3f}')
+            concepts = job['config'].get('architecture') == 'concepts'
+            parts.append(f'prima di leggere questo testo {baseline:.3f}' if concepts else f'modello di partenza non adattato {baseline:.3f}')
             if validation > baseline:
                 parts.append('ancora peggiore del modello di partenza')
             control = job['config'].get('architecture') == 'dense-control'
             detail.append(dbc.Alert('; '.join(parts)+'. ' + (
+                'Ogni passo conta un milione di token del testo e aggiunge le sue somme; l\'errore è misurato sul testo di validazione, che non viene mai contato. '
+                'Il confronto con una rete neurale sugli stessi dati è nella scheda Matematica e in «Confronto con una rete neurale».' if concepts else
                 'Questo è il controllo denso: è il riferimento con cui confrontare i progetti ACAN dello stesso budget.' if control else
                 'Il modello di partenza non ha visto questo corpus, quindi scendere sotto la sua linea non dimostra che i concetti servano: '
                 + ('il confronto valido è con il progetto ad attenzione normale con lo stesso budget, che compare tratteggiato sul grafico.' if partner is not None else
@@ -1061,13 +1064,16 @@ def register(app):
                                  + ('Il modello è nato da zero: imparano tutti i suoi pesi.' if job['config'].get('architecture')=='native' else
                                     'Progetto precedente: imparano i parametri LoRA di un modello preaddestrato.'),
                                  className='small text-muted'))
-        if metrics.get('graft'):
+        if metrics.get('graft') and job['config'].get('architecture') != 'concepts':
             graft=metrics['graft']
             detail.append(html.P(f"Struttura: {len(graft['replaced_layers'])} layer su {graft['total_layers']} leggono il contesto attraverso i concetti "
                                  f"({graft['slots']} concetti{' per livello' if job['config'].get('routing_profile')=='concept-graph-v2' else ''}, ultimi {graft['window']} token esatti)." if graft['replaced_layers'] else
                                  f"Struttura: tutti i {graft['total_layers']} layer usano l'attenzione normale."))
         last_step = max((s['step'] for s in job['snapshots']), default=0)
-        detail.append(html.P(f'La linea di addestramento oscilla perché ogni passo legge un pezzo di testo diverso. La linea su testo mai visto si aggiorna a ogni salvataggio (ultimo: checkpoint passo {last_step}). I token elaborati possono contare più volte lo stesso testo.', className='small text-muted'))
+        if job['config'].get('architecture') == 'concepts':
+            detail.append(html.P(f'Un passo conta un milione di token: il testo intero si legge una volta sola, contarlo di nuovo non insegnerebbe nulla. La linea su testo mai visto si aggiorna a ogni salvataggio (ultimo: checkpoint passo {last_step}).', className='small text-muted'))
+        else:
+            detail.append(html.P(f'La linea di addestramento oscilla perché ogni passo legge un pezzo di testo diverso. La linea su testo mai visto si aggiorna a ogni salvataggio (ultimo: checkpoint passo {last_step}). I token elaborati possono contare più volte lo stesso testo.', className='small text-muted'))
         available = [dict(label=("Migliore conservato · " if s.get('best') else "")+f"Passo {s['step']}"+(f" · validazione {s['validation_nll']:.3f}" if s.get('validation_nll') is not None else ""), value=s['name']) for s in job['snapshots']]
         selected_snapshot = checkpoint if checkpoint in {s['value'] for s in available} else available[0]['value'] if available else None
         return detail, figure, available, selected_snapshot

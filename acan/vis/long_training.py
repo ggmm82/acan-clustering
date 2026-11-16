@@ -81,7 +81,7 @@ def queue_table(items):
 
 def answers_view(entries):
     if not entries:
-        return html.P('Ancora nessuna risposta: compaiono al primo salvataggio (ogni 100 passi o 5 minuti).', className='small text-muted')
+        return html.P('Ancora nessuna risposta: compaiono al primo salvataggio (ogni 10 passi, ogni 5 minuti e alla fine).', className='small text-muted')
     first, last = entries[0], entries[-1]
     header = (f"Ultimo salvataggio: passo {last['step']:,}"
               + ('' if last.get('validation_nll') is None else f" · errore sul riferimento {last['validation_nll']:.3f}")
@@ -277,7 +277,7 @@ layout = dbc.Card(dbc.CardBody([
            "Il testo è una tabella: ogni posizione è una riga, i token che la precedono sono i suoi attributi, il token "
            "che segue è il target. Imparare è contare: ogni passo legge un pezzo di testo e aggiunge le sue somme ai "
            "concetti. Il tokenizer nasce dai tuoi testi, in italiano e inglese insieme. L'apprendimento salva il lavoro "
-           "ogni 100 passi e ogni 5 minuti, riprende da solo dopo un riavvio del server e a ogni salvataggio risponde "
+           "ogni 10 passi (dieci milioni di token) e ogni 5 minuti, riprende da solo dopo un riavvio del server e a ogni salvataggio risponde "
            "alle domande di prova. Come funziona: schede Matematica e Informatica.",
            className='small'),
     html.H5('1 · I dati: italiano e inglese, più codice, comandi, musica, immagini, suoni e video a scelta', className='mt-3'),
@@ -301,9 +301,12 @@ layout = dbc.Card(dbc.CardBody([
     dbc.Label('Testi da imparare, in ordine'),
     dcc.Dropdown(id='lm-long-corpora', multi=True, placeholder='Scegli uno o più testi', className='mb-2'),
     html.Div(id='lm-long-size-info', className='small text-muted mb-2'),
-    dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Salva ogni'), dbc.Input(id='lm-long-save', type='number', value=100, min=1, max=10000), dbc.InputGroupText('passi')]), md=6),
-             dbc.Col(dbc.InputGroup([dbc.InputGroupText('Tieni per sempre ogni'), dbc.Input(id='lm-long-milestone', type='number', value=1000, min=0, max=10000000), dbc.InputGroupText('passi')]), md=6)],
-            className='mb-2'),
+    dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Salva ogni'), dbc.Input(id='lm-long-save', type='number', value=10, min=1, max=10000), dbc.InputGroupText('passi')]), md=6),
+             dbc.Col(dbc.InputGroup([dbc.InputGroupText('Tieni per sempre ogni'), dbc.Input(id='lm-long-milestone', type='number', value=100, min=0, max=10000000), dbc.InputGroupText('passi')]), md=6)],
+            className='mb-1'),
+    html.Small("Un passo conta un milione di token, quindi i passi sono i milioni di token del testo (un testo di 300 MB ne ha circa 40): "
+               "il testo si legge una volta sola. Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.",
+               className='text-muted d-block mb-2'),
     dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Memoria massima dei concetti'), dbc.Input(id='lm-long-memory', type='number', value=0, min=0, max=262144, step=256), dbc.InputGroupText('MB')]), md=6),
              dbc.Col(html.Small("0 = automatica: un decimo della memoria del server (o del suo contenitore), al massimo 2 GB; vale per tutte le somme, e mentre somma il processo ne usa al massimo circa il triplo. Oltre questo limite i concetti che costano meno a chi "
                                 "legge vengono generalizzati nel livello sopra.", className='text-muted'), md=6)], className='mb-2'),
@@ -459,7 +462,7 @@ def register(app):
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
-            base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 100),
+            base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
                         milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0), concept_paths=bool(paths),
                         probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
