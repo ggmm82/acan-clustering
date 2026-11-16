@@ -148,26 +148,76 @@ def load_export(directory, device='cpu', cache_dir=None):
     return model, tokenizer
 
 
+CONCEPT_README = """Modello linguistico a concetti ACAN: nessuna rete neurale.
+
+concepts.safetensors   le somme dei concetti per contesto e i pesi scelti dal giudizio
+                       (safetensors: un formato standard e sicuro per tabelle di numeri)
+tokenizer/             il tokenizer che trasforma il testo in token e viceversa
+scrivi.py              uno script pronto: carica il modello e scrive
+config.json            le impostazioni dell'apprendimento
+training-summary.json  passi, token letti, errore su testo mai visto, concetti per livello
+export-manifest.json   le impronte SHA-256 di ogni file
+
+Non contiene il testo di addestramento.
+
+Per usarlo serve Python con il pacchetto acan (lo stesso del server), transformers e safetensors:
+    pip install safetensors transformers
+    python scrivi.py "Ciao! Chi sei?"
+    python scrivi.py --testo "C'era una volta"
+
+In Python:
+    from acan.lm.concept_lm import ConceptLM
+    from safetensors.numpy import load_file
+    from transformers import AutoTokenizer
+    model = ConceptLM.from_arrays(load_file("concepts.safetensors"))
+    tokenizer = AutoTokenizer.from_pretrained("tokenizer")
+    ids = tokenizer("C'era una volta")["input_ids"]
+    print(tokenizer.decode(model.generate(ids, 64, temperature=0.7, seed=0)))
+    p = model.distribution(ids)      # la probabilità di ogni token del vocabolario
+"""
+
+CONCEPT_SCRIPT = """\"\"\"Scrive con il modello a concetti di questa cartella: python scrivi.py "domanda" (conversazione) o --testo "inizio".\"\"\"
+import argparse
+from pathlib import Path
+
+from safetensors.numpy import load_file
+from transformers import AutoTokenizer
+
+from acan.lm.concept_lm import ConceptLM
+
+here = Path(__file__).resolve().parent
+parser = argparse.ArgumentParser()
+parser.add_argument('domanda', nargs='?', default='Ciao! Chi sei?')
+parser.add_argument('--testo', help='continua questo testo invece di rispondere a una domanda')
+parser.add_argument('--token', type=int, default=128)
+parser.add_argument('--temperatura', type=float, default=0.7)
+parser.add_argument('--seme', type=int, default=0)
+args = parser.parse_args()
+model = ConceptLM.from_arrays(load_file(str(here/'concepts.safetensors')))
+tokenizer = AutoTokenizer.from_pretrained(str(here/'tokenizer'), local_files_only=True)
+prompt = args.testo if args.testo else f"<|im_start|>user\\n{args.domanda.strip()}<|im_end|>\\n<|im_start|>assistant\\n"
+stop = {tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids('<|im_end|>')} - {None, tokenizer.unk_token_id}
+produced = model.generate(tokenizer(prompt)['input_ids'], args.token, stop=stop, temperature=args.temperatura, seed=args.seme)
+print(tokenizer.decode(produced, skip_special_tokens=True))
+"""
+
+
 def _export_concepts(directory, snapshot, name, receipt, job):
     """The concept language model: its sums, its weights and its tokenizer, readable with numpy alone."""
     exports = directory/'exports'; exports.mkdir(exist_ok=True)
-    destination = exports/(name+'.zip')
+    destination = exports/(name+'-v2.zip')                     # v2: the tokenizer in its folder and a script to use the model
     if destination.exists():
         return destination
     state = json.loads((snapshot/'state.json').read_text())
     payloads = {'concepts.safetensors': (snapshot/'trainables.safetensors').read_bytes(),
                 'config.json': json.dumps(job['config'], indent=2).encode(),
                 'training-summary.json': json.dumps({key: state.get(key) for key in ('step', 'tokens_trained', 'validation_nll', 'baseline_nll',
-                                                     'concepts_per_level', 'generalized_concepts', 'weights_global', 'weights_document')}, indent=2).encode(),
-                'README.txt': ('Modello linguistico a concetti ACAN: nessuna rete neurale. Contiene le somme dei concetti per contesto,\n'
-                               'i pesi scelti dal giudizio e il tokenizer. Non contiene il testo di addestramento.\n'
-                               'Estrai lo ZIP e usa:\n'
-                               'from acan.lm.concept_lm import ConceptLM\nfrom safetensors.numpy import load_file\n'
-                               'model = ConceptLM.from_arrays(load_file("concepts.safetensors"))\n'
-                               'ids = tokenizer("testo")["input_ids"]; model.generate(ids, 64)\n'
-                               'Il tokenizer si carica con transformers.AutoTokenizer dalla cartella dei file tokenizer-*.\n').encode()}
+                                                     'concepts_per_level', 'generalized_concepts', 'weights_global', 'weights_document',
+                                                     'paths', 'path_weights')}, indent=2).encode(),
+                'scrivi.py': CONCEPT_SCRIPT.encode(),
+                'README.txt': CONCEPT_README.encode()}
     for item in sorted((directory/'tokenizer').iterdir()):
-        payloads['tokenizer-'+item.name] = item.read_bytes()
+        payloads['tokenizer/'+item.name] = item.read_bytes()
     manifest = dict(format=1, core_contract=receipt['contract'], model_contract=state.get('model_contract'), checkpoint=name,
                     identity=receipt['identity'], kind='concept-lm-v1',
                     files_sha256={key: hashlib.sha256(value).hexdigest() for key, value in payloads.items()})

@@ -295,8 +295,17 @@ class ConceptLongLearningTests(unittest.TestCase):
             self.assertTrue(all(row['cache']['total'] > 0 and row['decode_tokens_per_second'] > 0 for row in scores['performance']))
             from acan.lm.exporting import export_bundle
             import zipfile
-            names = zipfile.ZipFile(export_bundle(store, done, done['checkpoint'])).namelist()
+            archive = zipfile.ZipFile(export_bundle(store, done, done['checkpoint']))
+            names = archive.namelist()
             self.assertIn('concepts.safetensors', names)
+            self.assertTrue(any(name.startswith('tokenizer/') for name in names))
+            with tempfile.TemporaryDirectory() as unpacked:          # the downloaded model writes on its own
+                archive.extractall(unpacked)
+                import subprocess, sys
+                written = subprocess.run([sys.executable, str(Path(unpacked)/'scrivi.py'), 'Ciao!', '--token', '12'],
+                                         capture_output=True, text=True, timeout=120)
+                self.assertEqual(written.returncode, 0, written.stderr[-2000:])
+                self.assertTrue(written.stdout.strip())
             # The next text of the queue starts from the sums of the first and adds its own.
             config = validate_options(dict(base, corpus_id=second['id'], name='Coda · 2', warm_start=True))
             config['series'] = dict(id='q', order=1, variant='queue', label='due')
