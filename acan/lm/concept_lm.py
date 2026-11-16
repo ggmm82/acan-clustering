@@ -40,8 +40,10 @@ from pathlib import Path
 
 import numpy as np
 
+from acan.concept_algebra import KAPPA_GRID, categorical_reading
+
 MASK = np.uint64(0xFFFFFFFFFFFFFFFF)
-GRID = tuple(2.**k for k in range(-5, 9))                       # weights tried by the judgment
+GRID = KAPPA_GRID                                               # weights tried by the judgment, as for a table
 
 
 def context_keys(ids, depth, vocabulary):
@@ -280,13 +282,11 @@ class ConceptLM:
             C, N, D = table.lookup(keys[j][positions], y)
             ok = valid[j][positions]
             C, N, D = C*ok, N*ok, D*ok
-            weight = a[j]*np.maximum(D, 1)
-            p = (N+weight*p)/(C+weight)
+            p = categorical_reading(N, C, D, p, a[j], np)
         for j in range(1, self.document+1):
             C, N, D = document_counts(keys[j], valid[j], ids)
             C, N, D = C[positions], N[positions], D[positions]
-            weight = b[j]*np.maximum(D, 1)
-            p = (N+weight*p)/(C+weight)
+            p = categorical_reading(N, C, D, p, b[j], np)
         return np.log(p)
 
     def judge(self, texts, positions=None):

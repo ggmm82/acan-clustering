@@ -22,7 +22,7 @@ Every step is linear in the number of attributes.
 import numpy as np
 import pandas as pd
 
-from acan.concept_algebra import LOG_2PI, centre_variance, pair_mass, reader_cost, reader_radius, unbiased
+from acan.concept_algebra import KAPPA_GRID, LOG_2PI, categorical_reading, centre_variance, pair_mass, reader_cost, reader_radius, unbiased
 from acan.core.scan import Scan, scan, scan_part
 
 TIE = .05                                                       # relative difference of pair criteria that counts as a tie
@@ -109,12 +109,14 @@ class ConceptModel:
 
     def __init__(self, max_concepts=1024, rows_per_concept=4, kappa=1., seed=0,
                  judged_rows=2000, merge_fraction=.05, em_steps=3, restarts=1, restart_rows=5000,
-                 covariance=True, covariance_attributes=128, shared_start=128, bins=None, refine_rows=20000, chunk_rows=100000, workers=1):
+                 covariance=True, covariance_attributes=128, shared_start=128, bins=None, refine_rows=20000, chunk_rows=100000, workers=1,
+                 distinct=False):
         self.shared_start = shared_start
         self.bins, self.refine_rows = bins, refine_rows          # concepts of a block of the scan; rows the levels are refined on
         self.chunk_rows = chunk_rows                             # rows read at a time from a large table
         self.workers = workers                                   # processes that read the chunks of a large table
         self.report = None                                       # called with what is happening while learning, if set
+        self.distinct = distinct                                 # the reading weighs the level above by the values a concept has
         self.covariance, self.covariance_attributes = covariance, covariance_attributes
         self.cross, self.cov = None, np.zeros(0, int)            # cross products of the working level, if adopted
         self.max_concepts, self.rows_per_concept = max_concepts, rows_per_concept
@@ -154,9 +156,12 @@ class ConceptModel:
         g, v = centre_variance(s['Cm'], s['U'], s['Q'], prior_v, self.kappa, np)
         v = np.maximum(v, self.resolution)                       # no finer than the attribute is measured
         size = np.zeros_like(s['N'])
+        distinct = np.ones_like(s['N'])
         for block in self._blocks():
             size[..., block] = s['N'][..., block].sum(-1, keepdims=True)
-        log_p = np.log((s['N']+self.kappa*prior_p)/(size+self.kappa))
+            if self.distinct:
+                distinct[..., block] = (s['N'][..., block] > 1e-9).sum(-1, keepdims=True)
+        log_p = np.log(categorical_reading(s['N'], size, distinct, prior_p, self.kappa, np))
         return g, v, log_p
 
     @staticmethod
@@ -748,8 +753,23 @@ class ConceptModel:
                                     table=self._statistics(membership, base)))
         first_edge, second_edge, weight = self._edges(last)
         self.edges = [(int(i), int(j), float(w/n)) for i, j, w in zip(first_edge, second_edge, weight)]
+        self._judge_reading(data, weights, judged)
         self.final_score = float(self._score(self.statistics, data, weights, judged).mean())
         return self
+
+    def _judge_reading(self, data, weights, judged):
+        """The weight of the level above in the reading, chosen by the judgment once the concepts are found.
+
+        The concepts are searched with kappa pseudo-members; then the reading weighs the level above by
+        kappa times the values a concept has (categorical_reading), with the kappa that reads the judged
+        rows best. The same rule, chosen the same way, reads the text (acan/lm/concept_lm.py).
+        """
+        self.distinct = True
+        scores = []
+        for value in KAPPA_GRID:
+            self.kappa = value
+            scores.append(float(self._score(self.statistics, data, weights, judged).mean()))
+        self.kappa = KAPPA_GRID[int(np.argmax(scores))]
 
     # ---- use -------------------------------------------------------------------
     @property
