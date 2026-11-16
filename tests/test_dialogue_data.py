@@ -70,7 +70,7 @@ class BuildTest(unittest.TestCase):
 
     def patched(self):
         from acan.lm import dialogue_data
-        def download(file, target, check=lambda: None, attempts=5):
+        def download(file, target, check=lambda: None, attempts=5, progress=None):
             Path(target).write_bytes(Path(file['url'][7:]).read_bytes())
             return Path(target)
         return [mock.patch.object(dialogue_data, 'SOURCES', self.sources), mock.patch.object(dialogue_data, 'MIXTURES', self.mixtures),

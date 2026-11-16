@@ -92,6 +92,15 @@ def check(url):
     else:
         raise AssertionError('HTTP training did not finish in time')
 
+    # The page keeps a reference to the model, which stays on the server; its JSON is what «Scarica» gives.
+    assert saved.startswith('acan-model:') and len(saved) < 80, saved[:80]
+    download = next(item['output'] for item in dependencies if any(i['id'] == 'btn-download' for i in item['inputs']))
+
+    def model(reference):
+        reply = post(download, dict(id='download-model', property='data'), [field('btn-download', 'n_clicks', 1)],
+                     [field('model-store', 'data', reference)])
+        return json.loads(reply['download-model']['data']['content'])
+
     # This checks installed JS assets as well as real server callbacks.
     with client.open(url.rstrip('/') + '/assets/refinement.js', timeout=10) as response:
         assert 'dbltap' in response.read().decode()
@@ -120,7 +129,7 @@ def check(url):
     else:
         raise AssertionError('HTTP benchmark did not finish')
 
-    original = json.loads(saved)
+    original = model(saved)
     root = original['clusterModel'][str(original['rootId'])]
     group = next(k for k, count in enumerate(root['Counts']) if 2 <= count[0] < root['n'])
     group_id = f"{root['id']}_G{group}"
@@ -135,8 +144,8 @@ def check(url):
                         [field('learning-monitor', 'n_intervals', attempt + 1)], [field('tab-session', 'data', tab_id)])
         if progress['learning-monitor']['disabled']:
             grown = progress['model-store']['data']
-            assert len(json.loads(grown)['clusterModel']) == len(original['clusterModel']) + 1
-            assert json.loads(grown)['rootId'] == original['rootId']
+            assert len(model(grown)['clusterModel']) == len(original['clusterModel']) + 1
+            assert model(grown)['rootId'] == original['rootId']
             break
         time.sleep(.5)
     else:
@@ -146,7 +155,7 @@ def check(url):
                   [field('org-chart', 'selectedNodeData', [dict(id=group_id)]), field('model-store', 'data', grown), field('tab-session', 'data', tab_id)],
                   changed='remove-branch.n_clicks')
     saved = result['model-store']['data']
-    assert len(json.loads(saved)['clusterModel']) == len(original['clusterModel'])
+    assert len(model(saved)['clusterModel']) == len(original['clusterModel'])
 
     loaded = post(load, outputs(('model-store', 'data'), ('dpdnLabel', 'options'),
                                ('dpdnLabel', 'value'), ('learning-status', 'children')),

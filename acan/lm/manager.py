@@ -12,6 +12,25 @@ from . import checkpoints
 from .store import ACTIVE
 
 
+def busy_with(store):
+    """What holds the worker, without names (the server may serve other workspaces): « (un apprendimento al passo 8 di 43)»."""
+    try:
+        with store.db() as db:
+            row = db.execute('SELECT config, progress FROM jobs WHERE status IN (%s) LIMIT 1' % ','.join('?'*len(ACTIVE)),
+                             tuple(ACTIVE)).fetchone()
+            if row is not None:
+                config, progress = json.loads(row['config']), json.loads(row['progress'] or '{}')
+                step, total = progress.get('step'), config.get('total_steps')
+                return f' (un apprendimento al passo {step} di {total})' if step is not None and total else ' (un apprendimento)'
+            if db.execute("SELECT 1 FROM builds WHERE status='running' LIMIT 1").fetchone():
+                return ' (la preparazione dei dati)'
+            if db.execute("SELECT 1 FROM generations WHERE status='running' LIMIT 1").fetchone():
+                return ' (una scrittura di prova)'
+    except Exception:
+        pass
+    return ''
+
+
 def launch(store, job, kind='train', generation_id=None):
     resource = store.resource()
     queued = False
@@ -19,7 +38,8 @@ def launch(store, job, kind='train', generation_id=None):
         try:
             fcntl.flock(resource, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise ValueError('Worker occupato: mettere in pausa il training prima di generare o avviare un altro progetto.') from None
+            raise ValueError('Worker occupato'+busy_with(store)+': il server fa una sola operazione alla volta. '
+                             'Metti in pausa l\'apprendimento («Pausa e salva») o aspetta che finisca, poi riprova.') from None
         if kind == 'train':
             store.update(job['id'], status='queued', pause=0, error=None)
             queued = True
@@ -77,7 +97,7 @@ def request_generation(store, job, owner, options):
     if not isinstance(request.get('prompt'), str) or not 1 <= len(request['prompt']) <= 32000:
         raise ValueError('Prompt non valido.')
     # A native model can draw a picture (about 1,060 tokens) or a sound: it may write up to 4,096 tokens.
-    most = 4096 if job['config'].get('architecture') == 'native' else 256
+    most = 4096 if job['config'].get('architecture') in ('native', 'concepts') else 256
     if not isinstance(request['max_new_tokens'], int) or not 1 <= request['max_new_tokens'] <= most:
         raise ValueError(f'Scegli da 1 a {most:,} nuovi token.')
     if request['inspect_layers'] and request['max_new_tokens'] > 32:
