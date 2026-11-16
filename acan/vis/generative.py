@@ -234,6 +234,37 @@ layout = dbc.Container([
             ], title='Per esperti · dentro il modello, layer per layer')], start_collapsed=True, className='my-3'), style={'display': 'none'}),   # layers exist only in the networks of earlier projects
     ], title='Per esperti: configurazione e registro'),
     dbc.AccordionItem([
+            html.P("Ogni programma scritto per l'API di OpenAI (la libreria «openai», LangChain, Open WebUI, curl) può usare i "
+                   "modelli a concetti di questo spazio di lavoro: basta cambiare indirizzo e chiave. Il modello è l'id del progetto; "
+                   "risponde con l'ultimo salvataggio, anche mentre continua a imparare.", className='small'),
+            dbc.Row([dbc.Col(dbc.Input(id='lm-api-name', placeholder='Nome della chiave (per esempio: Open WebUI)', maxLength=80), md=8),
+                     dbc.Col(dbc.Button('Crea una chiave', id='lm-api-create', color='primary'), md=4)], className='mb-2'),
+            html.Div(id='lm-api-created', role='status'),
+            html.Div(id='lm-api-keys'),
+            dbc.Row([dbc.Col(dcc.Dropdown(id='lm-api-revoke-key', placeholder='Chiave da revocare'), md=8),
+                     dbc.Col(dbc.Button('Revoca', id='lm-api-revoke', outline=True, color='danger'), md=4)], className='my-2'),
+            html.Div(id='lm-api-status', role='status', className='small'),
+            dcc.Markdown('''
+**Indirizzi** (sullo stesso dominio di questa pagina): `GET /v1/models` · `POST /v1/chat/completions` · `POST /v1/completions`
+
+```python
+from openai import OpenAI
+client = OpenAI(base_url="https://<questo sito>/v1", api_key="acan-…")
+print([m.id for m in client.models.list()])
+risposta = client.chat.completions.create(
+    model="<id del progetto>",
+    messages=[{"role": "user", "content": "Ciao! Chi sei?"}],
+    temperature=0.7, max_tokens=128)
+print(risposta.choices[0].message.content)
+```
+
+Parametri: `temperature`, `top_p`, `max_tokens`, `stop`, `seed`, `stream` (le risposte arrivano un pezzo alla volta).
+Un modello è un progetto (`<id>`), oppure un suo salvataggio preciso (`<id>:<nome del checkpoint>`).
+La chiave si vede solo quando la crei: conservala; se la perdi, revocala e creane un'altra.
+''', className='small'),
+            dcc.Store(id='lm-api-refresh'),
+    ], title='API compatibile OpenAI'),
+    dbc.AccordionItem([
             dbc.Button('Salva la chiave di recupero', id='lm-export-key', outline=True, color='secondary', className='my-2'),
             html.Div(id='lm-recovery-input'), dcc.Download(id='lm-key-download'),
             html.P('I tuoi progetti restano legati a questo browser. Per ritrovarli da un altro browser o computer salva la chiave di recupero: chi la possiede può gestirli. Non serve un account.', className='small text-muted'),
@@ -598,8 +629,87 @@ def decision_view(small, pair=None, tests=None):
     return html.Div([listing, verdict])
 
 
+def openai_proxy(path):
+    """The OpenAI-compatible API of the service (acan/lm/openai_api.py) at /v1 of this site.
+
+    The request goes to the service with the client's own key (Authorization: Bearer acan-...); the service
+    token of the installation is never used here. Answers are passed on as they arrive (streaming).
+    """
+    endpoint = os.environ.get('ACAN_LM_URL', '').rstrip('/')
+    if not endpoint:
+        return jsonify(error=dict(message='Il servizio dei modelli linguistici non è collegato a questa installazione.',
+                                  type='server_error', param=None, code=None)), 503
+    if flask_request.content_length and flask_request.content_length > 1024*1024:
+        return jsonify(error=dict(message='Richiesta troppo grande.', type='invalid_request_error', param=None, code=None)), 413
+    headers = {'Authorization': flask_request.headers.get('Authorization', ''), 'Content-Type': 'application/json'}
+    query = ('?'+flask_request.query_string.decode()) if flask_request.query_string else ''
+    body = flask_request.get_data() if flask_request.method == 'POST' else None
+    try:
+        upstream = urlopen(Request(f'{endpoint}/v1/{path}{query}', data=body, headers=headers, method=flask_request.method),
+                           timeout=600)
+    except HTTPError as exc:
+        return Response(exc.read(), status=exc.code, mimetype='application/json')
+    except URLError:
+        return jsonify(error=dict(message='Servizio dei modelli linguistici non raggiungibile.', type='server_error',
+                                  param=None, code=None)), 502
+    kind = upstream.headers.get('Content-Type', 'application/json')
+    if kind.startswith('text/event-stream'):
+        def relay():
+            with upstream:
+                for line in upstream:
+                    yield line
+        response = Response(stream_with_context(relay()), mimetype='text/event-stream')
+        response.headers['Cache-Control'] = 'no-cache'
+        response.headers['X-Accel-Buffering'] = 'no'
+        return response
+    with upstream:
+        return Response(upstream.read(), status=upstream.status, mimetype=kind.split(';')[0])
+
+
 def register(app):
     long_training.register(app)
+    app.server.add_url_rule('/v1/<path:path>', 'openai_proxy', openai_proxy, methods=['GET', 'POST'])
+
+    @app.callback(Output('lm-api-created', 'children'), Output('lm-api-refresh', 'data', allow_duplicate=True),
+                  Input('lm-api-create', 'n_clicks'), State('lm-workspace', 'data'), State('lm-api-name', 'value'),
+                  prevent_initial_call=True)
+    def create_api_key(clicks, workspace, name):
+        try:
+            made = backend(workspace, '/api-keys', 'POST', dict(name=name or ''))
+        except ValueError as exc:
+            return dbc.Alert(str(exc), color='warning'), dash.no_update
+        return dbc.Alert([html.Div(f"Chiave «{made['name']}» creata. Copiala adesso: non verrà più mostrata."),
+                          html.Code(made['key'], className='user-select-all')], color='success'), made['id']
+
+    @app.callback(Output('lm-api-status', 'children'), Output('lm-api-refresh', 'data', allow_duplicate=True),
+                  Input('lm-api-revoke', 'n_clicks'), State('lm-workspace', 'data'), State('lm-api-revoke-key', 'value'),
+                  prevent_initial_call=True)
+    def revoke_api_key(clicks, workspace, key):
+        try:
+            if not key:
+                raise ValueError('Scegli la chiave da revocare.')
+            backend(workspace, f'/api-keys/{key}/revoke', 'POST', {})
+        except ValueError as exc:
+            return dbc.Alert(str(exc), color='warning'), dash.no_update
+        return 'Chiave revocata: i programmi che la usano non hanno più accesso.', key+':revoked'
+
+    @app.callback(Output('lm-api-keys', 'children'), Output('lm-api-revoke-key', 'options'),
+                  Input('lm-api-refresh', 'data'), Input('lm-workspace', 'data'))
+    def show_api_keys(refresh, workspace):
+        import datetime
+        try:
+            keys = backend(workspace, '/api-keys')['keys']
+        except ValueError:
+            return html.Small('Le chiavi compaiono quando il servizio dei modelli è collegato.', className='text-muted'), []
+        if not keys:
+            return html.Small('Nessuna chiave ancora.', className='text-muted'), []
+        when = lambda value: datetime.datetime.fromtimestamp(value).strftime('%d/%m/%Y %H:%M') if value else '—'
+        rows = [html.Tr([html.Td(item['name']), html.Td(when(item['created'])), html.Td(when(item.get('last_used'))),
+                         html.Td('revocata' if item['revoked'] else 'attiva')]) for item in keys]
+        table = dbc.Table([html.Thead(html.Tr([html.Th('Nome'), html.Th('Creata'), html.Th('Ultimo uso'), html.Th('Stato')])),
+                           html.Tbody(rows)], size='sm', bordered=True)
+        options = [dict(label=item['name'], value=item['id']) for item in keys if not item['revoked']]
+        return table, options
     @app.server.post('/generative-upload/<action>')
     def upload_proxy(action):
         try:

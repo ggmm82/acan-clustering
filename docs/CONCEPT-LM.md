@@ -146,6 +146,23 @@ di ogni progetto, quindi pausa, ripresa dopo un riavvio, migliore, permanenti,
 coda (il testo successivo somma le sue tabelle a quelle del precedente) ed
 esportazione funzionano come sempre.
 
+**API compatibile OpenAI** ([`acan/lm/openai_api.py`](../acan/lm/openai_api.py)).
+Il sito risponde a `GET /v1/models`, `POST /v1/chat/completions` e
+`POST /v1/completions` come l'API di OpenAI, quindi la libreria `openai`,
+LangChain, Open WebUI o curl funzionano cambiando indirizzo e chiave. Le chiavi
+(`acan-…`) si creano e si revocano nella scheda Generativo, sezione «API
+compatibile OpenAI»; ognuna vede solo i progetti del suo spazio di lavoro, e si
+conserva solo la sua impronta SHA-256. Un modello è l'id di un progetto a concetti
+(oppure `<id>:<checkpoint>`): risponde con l'ultimo salvataggio letto dal disco,
+anche mentre il progetto continua a imparare, senza GPU e senza un processo per
+richiesta (gli ultimi due modelli letti restano in memoria). Parametri:
+`temperature` (0 = il token più probabile), `top_p`, `max_tokens` (fino a 4.096),
+`stop` (fino a 4 stringhe: la risposta finisce prima), `seed`, `stream` (eventi
+`data: …` fino a `data: [DONE]`, con `stream_options.include_usage`). La chat è
+scritta nel formato dei dati di conversazione (`<|im_start|>ruolo … <|im_end|>`) e
+la risposta finisce al fine turno. Il sito passa le richieste al servizio con la
+chiave del cliente: il token interno del servizio non esce mai.
+
 ## 6. Garanzie verificate dai test
 
 - La lettura è esattamente la formula del §3 calcolata posizione per posizione.
@@ -157,6 +174,10 @@ esportazione funzionano come sempre.
 - Salvare e ricaricare non cambia la lettura né la scrittura.
 - Un apprendimento lungo vero da capo a fondo: tokenizer, pausa, ripresa, coda,
   risposte di prova, scrittura, errore sul test, esportazione.
+- L'API: chiavi per spazio di lavoro e revocabili, la risposta uguale alla scrittura
+  del modello, lo streaming uguale alla risposta intera, le stringhe di stop, gli
+  errori nel formato di OpenAI, la libreria `openai` ufficiale contro un server vero
+  e il passaggio attraverso il sito.
 
 ## 7. Misure
 

@@ -62,8 +62,8 @@ def create_app(root=None, token=None):
 
     @app.before_request
     def authorize():
-        if request.path == '/healthz':
-            return None
+        if request.path == '/healthz' or request.path.startswith('/v1/'):
+            return None                                         # /v1 authorizes with the keys of the workspaces
         supplied = request.headers.get('Authorization', '')
         if not hmac.compare_digest(supplied, 'Bearer ' + token):
             return jsonify(error='Servizio non autorizzato.'), 401
@@ -446,6 +446,22 @@ def create_app(root=None, token=None):
         response.headers['Cache-Control'] = 'no-store'
         return response
 
+    @app.get('/api-keys')
+    def api_keys():
+        from .openai_api import list_keys
+        return jsonify(keys=list_keys(store, request.workspace))
+
+    @app.post('/api-keys')
+    def new_api_key():
+        from .openai_api import create_key
+        return jsonify(create_key(store, request.workspace, (request.get_json() or {}).get('name')))
+
+    @app.post('/api-keys/<identifier>/revoke')
+    def revoke_api_key(identifier):
+        from .openai_api import revoke_key
+        revoke_key(store, request.workspace, identifier)
+        return jsonify(ok=True)
+
     @app.post('/jobs/<identifier>/generate')
     def generation(identifier):
         job = store.job(identifier, request.workspace)
@@ -463,6 +479,8 @@ def create_app(root=None, token=None):
         result.pop('request')
         return jsonify(result)
 
+    from .openai_api import register as openai_routes
+    openai_routes(app, store)
     return app
 
 

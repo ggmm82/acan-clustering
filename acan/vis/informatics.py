@@ -141,6 +141,17 @@ ripetibili, e con temperatura 0 un modello che conta ripete la sua frase più
 frequente. In una conversazione la domanda è scritta con i segnali
 `<|im_start|>user … <|im_end|>` e il modello scrive fino al segnale di fine turno.
 
+### Usarlo da altri programmi: l'API compatibile OpenAI
+
+Nella sezione «API compatibile OpenAI» della scheda Generativo si crea una
+chiave (`acan-…`, mostrata una volta sola). Con quella, ogni programma scritto per
+OpenAI usa il modello cambiando solo indirizzo (`https://<questo sito>/v1`) e
+chiave: `GET /v1/models` elenca i progetti con un salvataggio, `POST
+/v1/chat/completions` risponde a una conversazione (anche un pezzo alla volta,
+con `stream`), `POST /v1/completions` continua un testo. Il servizio legge il
+salvataggio dal disco e tiene in memoria gli ultimi due modelli usati: un
+progetto risponde anche mentre continua a imparare.
+
 ### Come leggere le grandezze della pagina
 
 | Voce | Che cosa dice |

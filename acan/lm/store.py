@@ -69,6 +69,8 @@ class Store:
                     phase TEXT, result TEXT, error TEXT, created REAL);
                 CREATE TABLE IF NOT EXISTS builds (id TEXT PRIMARY KEY, owner TEXT, status TEXT, request TEXT,
                     phase TEXT, result TEXT, error TEXT, created REAL);
+                CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, owner TEXT NOT NULL, digest TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL, created REAL NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, last_used REAL);
             ''')
 
     @contextmanager
