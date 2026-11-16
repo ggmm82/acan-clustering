@@ -320,9 +320,13 @@ def _oasst(rows, test):
 
 # ---- download --------------------------------------------------------------------------------------------------
 
-def download(file, target, check=lambda: None, attempts=5):
-    """Download with resume (HTTP Range) and verify size and SHA-256; returns the path."""
+def download(file, target, check=lambda: None, attempts=5, progress=None):
+    """Download with resume (HTTP Range) and verify size and SHA-256; returns the path.
+
+    ``progress(bytes)`` is told the bytes on disk while the file arrives, at most every few seconds.
+    """
     target = Path(target)
+    told = [0.]
     partial = target.with_suffix(target.suffix+'.part')
     for attempt in range(attempts):
         try:
@@ -338,6 +342,9 @@ def download(file, target, check=lambda: None, attempts=5):
                         if not chunk:
                             break
                         stream.write(chunk)
+                        if progress is not None and time.monotonic()-told[0] >= 3:
+                            told[0] = time.monotonic()
+                            progress(stream.tell())
             if partial.stat().st_size != file['bytes']:
                 raise URLError('download incompleto')
             digest = hashlib.sha256()
@@ -407,7 +414,10 @@ def build(directory, mixture, check=lambda: None, report=lambda phase, state: No
                 raise ValueError(f"Spazio su disco insufficiente per scaricare {file['path']} "
                                  f"({file['bytes']/MB:.0f} MB più 2 GB di riserva).")
             report(f"Scarico {SOURCES[name]['title']} · file {index+1} ({file['bytes']/MB:.0f} MB)", state)
-            local = download(file, directory/('source-'+Path(file['path']).name), check)
+            arrived = lambda size, name=name, index=index, file=file: report(
+                f"Scarico {SOURCES[name]['title']} · file {index+1}: {size/MB:,.0f} di {file['bytes']/MB:,.0f} MB "
+                f"({100*size/max(file['bytes'], 1):.0f}%)", state)
+            local = download(file, directory/('source-'+Path(file['path']).name), check, progress=arrived)
             report(f"Leggo {SOURCES[name]['title']} · file {index+1}", state)
             for row, (language, text, test) in enumerate(records(name, local, file)):
                 if row < state['row']:

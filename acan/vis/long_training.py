@@ -344,7 +344,7 @@ layout = dbc.Card(dbc.CardBody([
            "con la casella «Conversazione», poi Riprendi. Scaricare e ispezionare il modello si fa da «Segui i progetti».",
            className='small'),
     html.Div(id='lm-long-answers'),
-    dcc.Store(id='lm-long-catalog'), dcc.Store(id='lm-long-builds'), dcc.Interval(id='lm-long-poll', interval=15000),
+    dcc.Store(id='lm-long-catalog'), dcc.Store(id='lm-long-builds'), dcc.Interval(id='lm-long-poll', interval=5000),
 ]), className='my-3', color='primary', outline=True)
 
 
