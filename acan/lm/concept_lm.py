@@ -402,13 +402,16 @@ def document_counts(keys, valid, ids):
 
 
 def default_budget():
-    """Bytes for the statistics: a quarter of the memory of the machine, at most 4 GB."""
+    """Bytes for the statistics: a tenth of the memory of the machine, at most 2 GB.
+
+    Adding two tables holds both and their sum: the process peaks at about three times the statistics.
+    """
     try:
         import os
         total = os.sysconf('SC_PAGE_SIZE')*os.sysconf('SC_PHYS_PAGES')
     except (ValueError, OSError, AttributeError):
         total = 4 << 30
-    return int(min(total//4, 4 << 30))
+    return int(min(total//10, 2 << 30))
 
 
 def save(directory, model, state, identity):
