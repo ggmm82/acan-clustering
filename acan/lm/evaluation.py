@@ -75,6 +75,15 @@ def evaluate_checkpoint(root,identifier,stop_event=None):
         check()
         torch.set_num_threads(1)
         snapshot=directory/'checkpoints'/options['checkpoint'];manifest=checkpoints.verify(snapshot)
+        if job['config'].get('architecture')=='concepts':     # the concept language model: the test error, no network
+            from .concept_trainer import evaluate as concept_evaluate
+            scores=concept_evaluate(store,job,dict(test_batches=options['max_batches']),snapshot,check)
+            result=dict(job=job['id'],checkpoint=options['checkpoint'],step=scores['step'],architecture='concepts',device='cpu',
+                        records=dict(selected_checkpoint=dict(quality=scores,performance=[])),comparison=[],
+                        protocol=dict(test='deterministically spread sample of disjoint document test split, never used for checkpoint selection',
+                                      max_batches=options['max_batches'],scope='Bounded diagnostic of the concept language model.'))
+            with store.db() as db:db.execute("UPDATE evaluations SET status='completed',result=? WHERE id=?",(json.dumps(result,allow_nan=False),identifier))
+            return
         state=json.loads((snapshot/'state.json').read_text());device=state['device']
         check_inference_contract(job['config'],state)
         if device=='cuda' and not torch.cuda.is_available():raise ValueError('Checkpoint CUDA: usare il worker originale.')

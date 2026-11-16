@@ -59,11 +59,11 @@ def backend(workspace, path, method='GET', data=None, raw=False, headers=None, t
 
 
 layout = dbc.Container([
-    html.H4('LLM a concetti', className='mt-3'),
-    html.P("Un modello linguistico in cui ogni layer legge il testo attraverso i concetti ACAN invece dell'attenzione "
-           "normale: memoria e costo per token che crescono appena con il testo (con il suo logaritmo). Qui lo prepari, lo addestri a lungo "
-           "in italiano e inglese, lo segui e lo provi; sotto c'è il laboratorio che verifica il meccanismo in piccolo. "
-           "Come funziona, in parole semplici: scheda Informatica."),
+    html.H4('Il modello a concetti che scrive', className='mt-3'),
+    html.P("Un solo modello per le tabelle e per il testo. Qui il testo è la tabella: ogni posizione è una riga, i token "
+           "precedenti sono gli attributi, il token successivo è il target da prevedere. Nessuna rete neurale: il modello "
+           "è fatto di concetti che conservano solo somme. Qui lo prepari, lo fai imparare a lungo in italiano e inglese, "
+           "lo segui e lo provi. Come funziona: schede Matematica e Informatica."),
     dcc.Store(id='lm-workspace', storage_type='local'), dcc.Store(id='lm-state'),
     dcc.Store(id='lm-chart-view',storage_type='session'),
     dcc.Store(id='lm-active-job', storage_type='session'),
@@ -130,7 +130,7 @@ layout = dbc.Container([
                 html.H6('Passo 3 · Decisione', className='mt-3'),
                 html.Div(id='lm-decision'),
             ]), className='my-3'),
-    ], title='Laboratorio di validazione: prova in piccolo, confronto e decisione prima della GPU')], start_collapsed=True, className='my-3'),
+    ], title='Laboratorio storico: lo strato a concetti dentro una rete neurale (versioni precedenti)')], start_collapsed=True, className='my-3'),
     html.Hr(), html.H5('Strumenti avanzati'),
     html.P('Tutto il resto del laboratorio: non serve per il percorso di validazione, ma resta qui con i dati per il debug.', className='small text-muted'),
     dbc.Accordion([
@@ -1145,6 +1145,12 @@ def register(app):
                 return 'Generazione in corso…', [], None
             result = item['result']
             description = f"Copia del passo {result['step']} · {result['generated_tokens']} token scritti · {result['tokens_per_second']:.1f} token al secondo"
+            if result.get('concept_model'):                    # the concept model: concepts per level, no layers
+                levels = result.get('concepts_per_level') or []
+                memory = (f"Concetti letti: {sum(levels):,} in {len(levels)} livelli di contesto ("
+                          + ' · '.join(f'{count:,}' for count in levels) + f"), {result['cache_total_bytes']/1048576:,.1f} MB di somme. "
+                          "Il testo che sta scrivendo è letto come concetti del testo in corso, a qualunque distanza.")
+                return media_view(result['text']), [html.P(description), html.P(memory)], None
             reduction = result['cache_reduction_fraction']
             memory = (f"Memoria per ricordare il testo letto: {result['cache_dense_layers_bytes']/1048576:.2f} MB nei layer normali, "
                       f"{result['cache_acan_layers_bytes']/1048576:.2f} MB nei layer a concetti. ")
