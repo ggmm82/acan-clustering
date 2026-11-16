@@ -210,6 +210,7 @@ class Table:
 
 
 EXACT = -1                                                      # a context symbol that is the token itself
+PATH_DEPTH = 2                                                  # tokens of context read by the paths through concepts
 
 
 class Reading:
@@ -250,10 +251,10 @@ class Reading:
 def standard_paths(levels, depth):
     """The paths read by the model from levels of token concepts (each a list of maps, general to particular).
 
-    Always the direct path (the token from the exact contexts). For every hierarchy of concepts: the path
-    through its last two levels with the particular concepts in the context, and the path from its first
-    branching level to the particular ones with the level above them in the context. Returns (steps, context)
-    with indices into the list of maps.
+    Always the direct path (the token from the exact contexts). For every hierarchy of concepts, the path
+    through its last two levels (general, then particular, then the token) with the particular concepts in
+    the context. More paths read a little better when the memory is free, worse when it is not: the sums
+    of every path share the same budget. Returns (steps, context) with indices into the list of maps.
     """
     maps, paths = [], [((), EXACT)]
     for hierarchy in levels:
@@ -263,9 +264,8 @@ def standard_paths(levels, depth):
         if n == 0:
             continue
         index = lambda i: start+min(max(i, 0), n-1)
-        for steps, context in (((n-2, n-1), n-1), ((1, n-1), n-2)):
-            chosen = tuple(dict.fromkeys(index(s) for s in steps))
-            paths.append((chosen, index(context)))
+        chosen = tuple(dict.fromkeys(index(s) for s in (n-2, n-1)))
+        paths.append((chosen, index(n-1)))
     return maps, list(dict.fromkeys(paths))
 
 

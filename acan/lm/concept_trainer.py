@@ -94,7 +94,7 @@ def quantities(model, config):
                 budget_bytes=model.budget_bytes, generalized_concepts=model.generalized, context_depth=model.depth,
                 document_depth=model.document, weights_global=[float(x) for x in model.a],
                 weights_document=[float(x) for x in model.b], memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
-                paths=len(model.paths), path_weights=[float(x) for x in model.w], readings=len(model.readings),
+                paths=len(model.paths), path_weights=[float(x) for x in model.w], readings=len(model.readings), path_depth=model.path_depth,
                 token_concepts=[int(m.max())+1 for m in model.maps])
 
 
@@ -112,7 +112,7 @@ def learn_paths(train, vocabulary, depth, should_pause=lambda: False):
 
 def run_training(root, identifier, stop_event=None):
     from transformers import AutoTokenizer
-    from .concept_lm import ConceptLM, default_budget, load, save
+    from .concept_lm import PATH_DEPTH, ConceptLM, default_budget, load, save
     from .native import resolve
     from .research_data import Blocks, prepare
     from .retention import retain_with_milestones
@@ -159,12 +159,13 @@ def run_training(root, identifier, stop_event=None):
             if config.get('warm_start'):                        # the queue goes on with the concepts of the previous text
                 source = previous_checkpoint(store, job)
                 start, _ = load(source, budget_bytes=budget)
-                maps, paths = start.maps, start.paths
+                maps, paths, reach = start.maps, start.paths, start.path_depth
             elif config.get('concept_paths'):
                 maps, paths = learn_paths(train, len(tokenizer), depth, should_pause)
+                reach = PATH_DEPTH
             else:
-                maps, paths = [], None
-            model = ConceptLM(len(tokenizer), depth, document, budget, maps, paths)
+                maps, paths, reach = [], None, None
+            model = ConceptLM(len(tokenizer), depth, document, budget, maps, paths, reach)
             state = dict(step=0, tokens_trained=0, device='cpu', identity=identity, model_contract=contract(), profile=PROFILE,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},
                          graft=dict(profile=PROFILE, vocabulary=len(tokenizer), replaced_layers=[], total_layers=0,
