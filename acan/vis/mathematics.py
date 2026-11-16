@@ -322,6 +322,10 @@ concetto degli animali, quindi anche «gatto». Nel contesto del percorso il tok
 a ogni distanza è preceduto dal suo concetto particolare, così anche contesti
 mai visti esattamente ma fatti di token simili si aiutano.
 
+È una scelta del progetto («Concetti dei token e percorsi», spenta se non la si
+accende): aiuta sui testi piccoli e peggiora su quelli grandi quando la memoria è
+limitata, perché le somme dei percorsi tolgono spazio ai contesti lunghi (parte D).
+
 I percorsi (quello diretto e uno per ogni gerarchia di concetti) si **mescolano**:
 $p(y)=\sum_k w_k\,p_k(y)$, con i pesi $w_k$ scelti dal giudizio come quelli che
 leggono meglio il testo non contato (un'iterazione di attesa e massimizzazione).
@@ -406,8 +410,10 @@ target, e per il testo: che la lettura sia esattamente quella del passo 3 e 4
 scritta posizione per posizione, che i concetti del testo in corso usino solo le
 posizioni precedenti, che pezzi sommati in qualunque ordine diano le somme del
 testo intero, che il limite di memoria generalizzi prima i concetti che non
-aggiungono nulla, e che salvare e ricaricare non cambi la lettura. Non dimostrano
-da sole che il modello generalizzi: per quello servono le misure.
+aggiungono nulla, e che salvare e ricaricare non cambi la lettura. Con i percorsi:
+che la lettura sia la formula del passo 6 posizione per posizione, e che la
+probabilità di ogni token del vocabolario sia la sua lettura e sommi a 1. Non
+dimostrano da sole che il modello generalizzi: per quello servono le misure.
 
 **Tabelle** (divisioni dei test di qualità, accuratezza su righe non viste):
 
@@ -454,15 +460,39 @@ token per imparare, 64 pezzi di 256 token mai visti:
 La rete legge il testo più volte e dopo circa cinque letture comincia a impararlo
 a memoria; il modello a concetti lo conta una volta.
 
+**Testo, token, contro una rete vera.** Tokenizer BPE da 8.000 token, gli stessi
+64 pezzi di 512 token mai visti (wikitext-2 e wikitext-103 hanno lo stesso
+testo di verifica), stesso processore; la rete è una Llama a 4 strati con 6,2
+milioni di pesi e posizione relativa (RoPE), addestrata 90 minuti:
+
+| | Testo per imparare | Memoria | Errore | 0–32 token | 256–512 token | Tempo |
+|---|---|---:|---:|---:|---:|---:|
+| Rete | wikitext-2 (2 M token) | — | **4,403** | 4,903 | 4,359 | 90 min |
+| Concetti | wikitext-2 | libera | 4,589 | 5,078 | 4,486 | 10 s |
+| Concetti con percorsi | wikitext-2 | libera | 4,451 | 4,897 | 4,357 | 1 min |
+| Rete (legge 16 M token) | wikitext-103 | — | 4,011 | 4,521 | 3,964 | 90 min |
+| Concetti | 69 M token di wikitext-103 | 2 GB | **3,905** | **4,195** | **3,834** | 7 min |
+| Concetti con percorsi | 69 M token di wikitext-103 | 2 GB | 3,958 | 4,275 | 3,891 | 19 min |
+
+Sul testo grande il modello a concetti è avanti a ogni distanza, a parità di
+processore; la rete migliorava ancora e aveva letto un quarto del testo. Sul
+testo piccolo i percorsi lo portano vicino alla rete. Provati e non adottati
+(guadagno nullo o piccolo): contesti esatti oltre 4 token (4,591 con 4 token,
+4,589 con 6, 8 o 12), conteggi di Kneser-Ney, lettura per somiglianza sulle
+posizioni passate, il token da prevedere come vettore di numeri, righe di
+vettori lette dalla parte A, contesti fatti solo di concetti.
+
 **Limiti noti.**
 
-- **Valori simili.** Due valori diversi di una categoria sono semplicemente
-  diversi, nella tabella come nel testo: «gatto» e «cane» come due città in una
-  colonna. «Il gatto dorme» e «il cane dorme» si aiutano solo attraverso il
-  contesto più corto comune («dorme»). Una rete neurale impara che certi token si
-  somigliano; con molti dati potrebbe tornare in vantaggio (non misurato).
-- Le misure sul testo sono su testi di pochi MB: dicono che il modello funziona
-  e come si confronta con una rete della stessa misura, non che conversi bene.
+- **Valori simili.** Nella tabella due valori diversi di una categoria restano
+  diversi. Nel testo i concetti dei token (passo 5) rendono simili «gatto» e
+  «cane», ma sono fissati all'inizio e, con la memoria limitata, su testi grandi
+  non convengono; una rete continua a migliorare i suoi vettori.
+- **Contesto esatto** fino a 6 token; oltre, il testo in corso è ricordato a
+  qualunque distanza ma senza sapere a quale.
+- Le misure sul testo sono su wikitext (inglese) e su un processore di sviluppo:
+  dicono come il modello si confronta con una rete, non che conversi bene, e non
+  sono state ripetute sul server né sulla miscela italiano-inglese.
 - Leggere tutte le righe di una tabella grande, invece delle sole 20.000
   estratte, non ha aumentato l'accuratezza nella prova sintetica: garantisce
   che le somme siano sull'intera tabella.

@@ -39,9 +39,12 @@ l'italiano non paga i pezzi in più di un vocabolario fatto per l'inglese, e
 qualunque carattere si può scrivere. I token del testo da imparare vengono
 scritti su disco una volta sola (file `train.bin`, `validation.bin`, `test.bin`).
 
-### Passo 3 · Trovare i concetti dei token
+### Passo 3 · Trovare i concetti dei token (facoltativo)
 
-Prima di contare, il programma legge i primi 20 milioni di token e costruisce
+Solo se nel progetto è accesa l'opzione «Concetti dei token e percorsi» (spenta
+se non la si accende: aiuta sui testi piccoli, peggiora su quelli grandi con la
+memoria limitata). Prima di contare, il programma legge i primi 20 milioni di
+token e costruisce
 una piccola tabella: una riga per ognuno degli 8.000 token più frequenti, con
 quanto spesso ciascuno dei 256 token più comuni lo precede e lo segue. La
 riduce alle sue direzioni principali (16 e 48 colonne) e la dà al **modello
@@ -117,7 +120,9 @@ Ogni 100 passi e ogni 5 minuti:
 5. il modello risponde alle **domande di prova**.
 
 Un testo successivo della coda parte dal checkpoint del precedente e aggiunge le
-sue somme.
+sue somme. Un documento (testo, Markdown, Python, ZIP, EPUB, DOCX, PDF) si
+aggiunge in fondo alla coda scelta con «Carica e aggiungi alla coda», sotto la
+coda: viene caricato a pezzi, convertito in testo e imparato dopo gli altri.
 
 ### Passo 7 · Come scrive
 
