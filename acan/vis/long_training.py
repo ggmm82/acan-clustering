@@ -109,6 +109,17 @@ def _bytes(value):
         value /= 1024
 
 
+def _direct(weights, progress):
+    """The weights of the direct path (the first reading): one per context level."""
+    depth = progress.get('context_depth')
+    return weights[:depth+1] if isinstance(depth, int) else weights
+
+
+def _document(progress):
+    depth = progress.get('document_depth')
+    return depth if isinstance(depth, int) else len(progress.get('weights_document', []))-1
+
+
 def concept_footprint_view(item):
     """The quantities of the concept language model while it learns."""
     progress, config = item['progress'] or {}, item['config']
@@ -130,8 +141,14 @@ def concept_footprint_view(item):
             ('Concetti generalizzati nel livello sopra', f"{progress.get('generalized_concepts', 0):,} (per stare nella memoria)"),
             ('Memoria dei concetti', (_bytes(progress['statistics_bytes']) if progress.get('statistics_bytes') else '—')
              + (f' di {_bytes(budget)} disponibili' if budget else '')),
-            ('Pesi scelti dal giudizio', ('contesto ' + ', '.join(f'{value:g}' for value in progress['weights_global'])
-                                          + ' · testo in corso ' + ', '.join(f'{value:g}' for value in progress.get('weights_document', [])[1:]))
+            ('Concetti dei token', ' · '.join(f'{count:,}' for count in progress['token_concepts'])
+             + ' (trovati dal modello stesso, dal generale al particolare)' if progress.get('token_concepts') else '—'),
+            ('Percorsi verso il prossimo token', (f"{progress['paths']}: diretto"
+             + (f" e {progress['paths']-1} attraverso i concetti dei token (contesti fino a {progress.get('path_depth')} token)" if progress['paths'] > 1 else '')
+             + ' · pesi ' + ', '.join(f'{value:.2f}' for value in progress.get('path_weights', [])))
+             if progress.get('paths') else '1: diretto'),
+            ('Pesi scelti dal giudizio', ('contesto ' + ', '.join(f'{value:g}' for value in _direct(progress['weights_global'], progress))
+                                          + ' · testo in corso ' + ', '.join(f'{value:g}' for value in progress.get('weights_document', [])[1:_document(progress)+1]))
              if progress.get('weights_global') else '—')]),
         ('Avanzamento e velocità', [
             ('Passo', f'{step:,} di {total:,}'),
