@@ -14,6 +14,10 @@ strato di attenzione [`acan/lm/graph_scan.py`](../acan/lm/graph_scan.py) e
 [`acan/lm/graph_attention.py`](../acan/lm/graph_attention.py) (v2),
 [`acan/lm/concept_attention.py`](../acan/lm/concept_attention.py) (v1).
 La struttura fissa del linguaggio, con le misure: [ALGEBRAIC-CONCEPTS.md](ALGEBRAIC-CONCEPTS.md).
+
+**Dalla 9.0.0 il testo è una tabella di questo stesso modello, senza rete neurale**:
+[CONCEPT-LM.md](CONCEPT-LM.md). Gli strati a concetti dentro una rete (v1, v2)
+restano per i progetti creati prima.
 Misure: [MODEL-RESULTS.md](MODEL-RESULTS.md).
 
 ## 1. Oggetti
