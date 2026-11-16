@@ -24,6 +24,12 @@ def generate(root, request_id):
     try:
         directory = store.directory('jobs', job['id']) / 'checkpoints' / request['checkpoint']
         manifest = checkpoints.verify(directory)
+        if job['config'].get('architecture') == 'concepts':  # the concept language model: no network to load
+            from .concept_trainer import generate as concept_generate
+            result = concept_generate(store, job, request, directory)
+            with store.db() as db:
+                db.execute("UPDATE generations SET status='completed',result=? WHERE id=?", (json.dumps(result), request_id))
+            return
         options = job['config']
         path, base = resolve_base(store, job, options)
         from transformers import AutoTokenizer

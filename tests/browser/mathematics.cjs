@@ -12,12 +12,13 @@ const assert=require('node:assert/strict');
       await page.getByRole('heading',{name:'Parte D · Che cosa è stato misurato'}).waitFor();
       await page.waitForFunction(()=>document.querySelectorAll('#page-mathematics mjx-container').length>=15);
       assert.equal(await page.locator('#page-mathematics [data-mjx-error]').count(),0);
-      // Step by step: a table (9 steps and two notes), then a text (7 steps).
-      assert.equal(await page.locator('#page-mathematics h3').count(),18);
+      // Step by step: a table (9 steps and two notes), then a text as a table of the same model (8 steps).
+      assert.equal(await page.locator('#page-mathematics h3').count(),19);
       for(const name of ['Parte A · Una tabella','Parte B · Un testo','Parte C · Tabella e testo a confronto'])
         assert(await page.getByRole('heading',{name}).isVisible());
       const text=await page.locator('#page-mathematics').innerText();
-      assert(text.includes('Passo 4 · Una passata a blocchi')&&text.includes('Passo 5 · Che cosa legge un token'));
+      assert(text.includes('Passo 4 · Una passata a blocchi')&&text.includes('Passo 6 · Imparare è contare, a blocchi'));
+      assert(text.includes('Il testo è una tabella'));
       assert(text.includes('Senza target')&&text.includes('Una tabella più grande della memoria'));
       for(const gone of ['cp-v9','SmolLM2','acan/algebra.py','revisione precedente'])
         assert(!text.includes(gone),gone);

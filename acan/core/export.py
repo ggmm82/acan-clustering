@@ -15,7 +15,7 @@ import numpy as np
 PACKAGE = 'modello_concetti'
 TEMPLATE = Path(__file__).resolve().parent.parent/'export_template'
 OPTIONS = ('max_concepts', 'rows_per_concept', 'kappa', 'seed', 'judged_rows', 'merge_fraction', 'em_steps',
-           'restarts', 'restart_rows', 'covariance', 'covariance_attributes', 'shared_start', 'bins', 'refine_rows', 'chunk_rows', 'workers')
+           'restarts', 'restart_rows', 'covariance', 'covariance_attributes', 'shared_start', 'bins', 'refine_rows', 'chunk_rows', 'workers', 'distinct')
 
 
 def _lists(value):

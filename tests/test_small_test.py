@@ -1,4 +1,4 @@
-"""The small test of the generative laboratory: three tiny models trained from scratch."""
+"""The small test of the generative laboratory: the concept model against two tiny networks trained from scratch."""
 import importlib.util
 import json
 import tempfile
@@ -25,18 +25,21 @@ class SmallTestTest(unittest.TestCase):
             self.assertEqual(len(result['text'][kind]['sample']), 300)
             memory = result['memory'][kind]                                   # data kept for debugging
             self.assertAlmostEqual(memory['accuracy']+memory['wrong_but_from_the_sequence']+memory['wrong_not_in_the_sequence'], 1, places=5)
-            self.assertEqual(memory['training_curve'][-1]['step'], 3)
-            self.assertGreater(result['text'][kind]['parameters'], 0)
+            if kind == 'concepts':                                            # the concept model counts: no weights, no curve
+                self.assertEqual((result['text'][kind]['parameters'], memory['training_curve']), (0, []))
+                self.assertGreater(result['text'][kind]['concepts'], 0)
+            else:
+                self.assertEqual(memory['training_curve'][-1]['step'], 3)
+                self.assertGreater(result['text'][kind]['parameters'], 0)
         self.assertEqual(len(phases), 7)                                   # the far memory is in the full budget only
         self.assertEqual(result['memory_cases'], {})
         far = run(text, 'full', settings=dict(memory_steps=3, text_steps=3, dim=16, block=32, cost_lengths=(64,), far_filler=40))
         case = far['memory_cases']['distance']
         self.assertEqual((case['nearest_answer_distance'], case['layers']), (41, 3))
         self.assertTrue(0 <= case['concepts']['accuracy'] <= 1)
-        self.assertEqual(set(result['efficiency']), {'text', 'memory'})
-        rows = result['cost']['rows']                                     # concepts: the window and 16 per level, not the length
-        for row in rows:
-            self.assertLessEqual(row['concepts']['kept_vectors'], 16+16*row['length'].bit_length())
+        self.assertTrue(result['efficiency']['counted_once'])               # the concept model reads every character once
+        rows = result['cost']['rows']                                     # concepts: one per level, whatever the length
+        self.assertEqual({row['concepts']['kept_vectors'] for row in rows}, {4+1+2})
         from acan.lm.small_test import kept
         self.assertEqual([kept(length, 16, 16) for length in (16, 40, 4096)], [16, 16+8+16, 16+16*8])
         self.assertEqual([row['dense']['kept_vectors'] for row in rows], [row['length'] for row in rows])

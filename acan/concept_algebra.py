@@ -108,3 +108,20 @@ def reader_cost(reads_first, radius_first, reads_second, radius_second, radius_t
     negative and is zero only for two copies of one concept.
     """
     return (reads_first+reads_second)*radius_together-reads_first*radius_first-reads_second*radius_second
+
+
+KAPPA_GRID = tuple(2.**k for k in range(-5, 9))                  # weights of the level above tried by the judgment
+
+
+def categorical_reading(counts, members, distinct, prior, kappa, xp):
+    """Frequencies of a categorical attribute in a concept, read with its level above as reference.
+
+    p(v) = (N(v) + w p_above(v)) / (C + w),   w = kappa * max(D, 1),
+
+    with N the members of the concept with value v, C its members, D the values it has. A concept with
+    few members leans on its level above; one whose members take many different values leans on it more.
+    The same rule reads a category of a table and the token that follows a context of a text. With D = 1
+    it is the rule with kappa pseudo-members (the reading while the concepts are searched).
+    """
+    weight = kappa*xp.maximum(distinct, 1)
+    return (counts+weight*prior)/(members+weight)
