@@ -555,8 +555,19 @@ def register(app):
         learned = [job for job in items if job['status'] != 'created']
         if not learned:
             return answers_view([])
-        job = current_item(learned)
+        current = current_item(learned)
+        # The text learning now first, then the earlier ones: the answers are those of the last save that has them.
+        candidates = [current]+[job for job in reversed(learned) if job is not current and job['checkpoint']]
         try:
-            return answers_view(backend(workspace, f"/jobs/{job['id']}/answers"))
+            for job in candidates:
+                found = backend(workspace, f"/jobs/{job['id']}/answers")
+                if found:
+                    if job is not current:
+                        order = lambda item: (item['config'].get('series') or {}).get('order', 0)+1
+                        return html.Div([dbc.Alert(f"Il testo {order(current)} non ha ancora salvato: qui sotto le risposte del modello "
+                                                   f"appreso fino al testo {order(job)}.", color='info', className='small py-2'),
+                                         answers_view(found)])
+                    return answers_view(found)
+            return answers_view([])
         except ValueError as exc:
             return html.P(str(exc), className='small text-muted')
