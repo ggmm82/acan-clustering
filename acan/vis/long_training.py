@@ -133,7 +133,9 @@ def concept_footprint_view(item):
     rows = [
         ('Modello', [
             ('Tipo', 'modello a concetti: nessuna rete neurale, nessun peso addestrato'),
-            ('Vocabolario', f"{(progress.get('graft') or {}).get('vocabulary', 0):,} token" if progress.get('graft') else '—'),
+            ('Vocabolario', f"{(progress.get('graft') or {}).get('vocabulary', 0):,} token" if progress.get('graft') else
+             (f"{config.get('vocabulary', 32000):,} token, lo stesso del testo precedente della coda (si stanno preparando i token di questo testo)"
+              if config.get('warm_start') else f"{config.get('vocabulary', 32000):,} token (si sta imparando dai testi della coda)")),
             ('Livelli di contesto', f"da 0 a {progress.get('context_depth', config.get('concept_depth'))} token precedenti"),
             ('Livelli del testo in corso', f"da 1 a {progress.get('document_depth', config.get('concept_document'))} token precedenti, a qualunque distanza"),
             ('Concetti per livello', ' · '.join(f'{count:,}' for count in levels) if levels else '—'),
@@ -151,7 +153,7 @@ def concept_footprint_view(item):
                                           + ' · testo in corso ' + ', '.join(f'{value:g}' for value in progress.get('weights_document', [])[1:_document(progress)+1]))
              if progress.get('weights_global') else '—')]),
         ('Avanzamento e velocità', [
-            ('Passo', f'{step:,} di {total:,}'),
+            ('Passo', f'{step:,} di {total:,}' if progress.get('graft') else '— (il totale si conosce quando i token del testo sono pronti)'),
             ('Token letti', f"{progress.get('tokens_trained', 0):,}"),
             ('Velocità', f'{speed:,.0f} token al secondo' if speed else '—'),
             ('Tempo che manca, stima', '—' if remaining is None else f'{remaining/3600:,.1f} ore' if remaining > 3600 else f'{remaining/60:,.0f} minuti'),
