@@ -120,6 +120,40 @@ def _document(progress):
     return depth if isinstance(depth, int) else len(progress.get('weights_document', []))-1
 
 
+def _tile(title, value, note=None):
+    return dbc.Col(dbc.Card(dbc.CardBody([html.Div(title, className='small text-muted'), html.Div(value, className='fs-5 fw-semibold'),
+                                          html.Div(note, className='small text-muted') if note else None], className='py-2')),
+                   xs=6, md=4, className='mb-2')
+
+
+def concept_summary(progress, config, checkpoint_bytes=None, status=None):
+    """The few numbers that say how the concept model is doing, as tiles: progress, time, speed, error, size, concepts."""
+    step, total = progress.get('step', 0), config.get('total_steps') or 0
+    ready = bool(progress.get('graft'))
+    speed = progress.get('tokens_per_second')
+    piece = config.get('concept_piece', 1_000_000)
+    remaining = (total-step)*piece/speed if speed and ready and status not in ('completed',) else None
+    share = 100*step/max(total, 1) if ready else 0
+    error, before = progress.get('validation_nll'), progress.get('baseline_nll')
+    perplexity = progress.get('validation_perplexity')
+    size, budget = progress.get('statistics_bytes'), progress.get('budget_bytes')
+    when = lambda seconds: '—' if seconds is None else f'{seconds/3600:,.1f} ore' if seconds > 3600 else f'{max(seconds, 0)/60:,.0f} minuti'
+    tiles = [
+        _tile('Avanzamento', f'{share:.0f}%' if ready else 'prepara i token',
+              f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' if ready else 'il totale si conosce quando i token sono pronti'),
+        _tile('Tempo che manca', 'finito' if status == 'completed' else when(remaining), 'stima dalla velocità finora'),
+        _tile('Velocità', f'{speed:,.0f} token/s' if speed else '—', 'un passo è un milione di token'),
+        _tile('Errore su testo mai visto', '—' if error is None else f'{error:.3f}',
+              (f'esita fra circa {perplexity:,.0f} token' if perplexity else '') + (f' · prima di leggere {before:.3f}' if before is not None else '')),
+        _tile('Dimensione del modello', _bytes(size) if size else '—',
+              (f'di {_bytes(budget)} di memoria per i concetti' if budget else '') + (f' · file scaricabile {_bytes(checkpoint_bytes)}' if checkpoint_bytes else '')),
+        _tile('Concetti', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—',
+              f"{progress.get('generalized_concepts', 0):,} generalizzati per stare nella memoria" if progress.get('concepts_total') else None),
+    ]
+    bar = dbc.Progress(value=share, className='mb-2', style={'height': '8px'}) if ready else None
+    return html.Div([bar, dbc.Row(tiles)])
+
+
 def concept_footprint_view(item):
     """The quantities of the concept language model while it learns."""
     progress, config = item['progress'] or {}, item['config']
@@ -177,7 +211,10 @@ def concept_footprint_view(item):
               for title, values in rows]
     note = html.P("Gli errori sono in nat per token: e elevato all'errore è fra quanti token, in media, il modello è incerto. "
                   "Si misurano solo su testo che il modello non ha contato.", className='small text-muted')
-    return html.Div([dbc.Row([dbc.Col(table, md=6) for table in tables]), note])
+    details = dbc.Accordion([dbc.AccordionItem([dbc.Row([dbc.Col(table, md=6) for table in tables]), note],
+                                               title='Tutti i dettagli: vocabolario, livelli, pesi, memoria e disco')],
+                            start_collapsed=True, className='mt-2')
+    return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')), details])
 
 
 def footprint_view(item):

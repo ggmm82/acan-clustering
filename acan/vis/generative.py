@@ -1082,6 +1082,16 @@ def register(app):
             detail.append(html.P(f'La linea di addestramento oscilla perché ogni passo legge un pezzo di testo diverso. La linea su testo mai visto si aggiorna a ogni salvataggio (ultimo: checkpoint passo {last_step}). I token elaborati possono contare più volte lo stesso testo.', className='small text-muted'))
         available = [dict(label=("Migliore conservato · " if s.get('best') else "")+f"Passo {s['step']}"+(f" · validazione {s['validation_nll']:.3f}" if s.get('validation_nll') is not None else ""), value=s['name']) for s in job['snapshots']]
         selected_snapshot = checkpoint if checkpoint in {s['value'] for s in available} else available[0]['value'] if available else None
+        if job['config'].get('architecture') == 'concepts':
+            # The concept model: the main numbers as tiles, everything else folded.
+            status = {'completed': 'ha finito', 'running': 'sta imparando', 'preparing': 'prepara i token', 'paused': 'in pausa',
+                      'queued': 'in partenza', 'failed': 'errore', 'created': 'in attesa'}.get(job['status'], job['status'])
+            head = [html.P([html.B(job['config'].get('name', 'Progetto')), f' · {status}'], className='mb-1'),
+                    html.P(job['error'], className='text-danger') if job['error'] else None,
+                    long_training.concept_summary(metrics, job['config'], status=job['status'])]
+            folded = dbc.Accordion([dbc.AccordionItem([item for item in detail if item is not None],
+                                                      title='Tutti i dettagli del progetto')], start_collapsed=True, className='mb-2')
+            return head+[folded], figure, available, selected_snapshot
         return detail, figure, available, selected_snapshot
 
     @app.callback(Output('lm-manage-status','children'),Output('lm-refresh','n_clicks',allow_duplicate=True),
