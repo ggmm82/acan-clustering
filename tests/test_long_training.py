@@ -411,13 +411,20 @@ class NativeSeriesTest(unittest.TestCase):
         from acan.lm.research_options import validate_options
         from acan.lm.resources import check_profile
         from acan.vis.long_training import profile
-        base = dict(profile(False), corpus_id='a'*32, name='Validazione')
+        native = dict(protocol='controlled-v1', routing_profile='concept-graph-v2', architecture='native', native_size='micro',
+                      graft_fraction=1., vocabulary=32000, distillation_weight=0., sequence_length=256, batch_size=1,
+                      accumulation=8, slots=16, window=16, learning_rate=1e-3, device='cpu')
+        base = dict(native, corpus_id='a'*32, name='Validazione')
         (_, _, concepts), (_, _, dense) = series_configs(base, ['chosen', 'dense'])
         self.assertEqual((concepts.get('native_attention', 'concepts'), dense['native_attention'], dense['architecture']), ('concepts', 'dense', 'native'))
-        for cuda in (False, True):                                          # both page profiles are accepted
-            config = validate_options(dict(profile(cuda, 'micro'), corpus_id='a'*32))
+        check_profile(validate_options(dict(native, corpus_id='a'*32, sequence_length=1088)), False)   # a whole image
+        for cuda in (False, True):                                          # the page learns the concept model, with or without GPU
+            config = validate_options(dict(profile(cuda), corpus_id='a'*32))
             check_profile(config, cuda)
-        check_profile(validate_options(dict(profile(False), corpus_id='a'*32, sequence_length=1088)), False)   # a whole image
+            self.assertEqual((config['architecture'], config['routing_profile']), ('concepts', 'concept-lm-v1'))
+        with self.assertRaisesRegex(ValueError, 'concept-lm-v1'):
+            validate_options(dict(profile(False), corpus_id='a'*32, routing_profile='concept-graph-v2'))
+
 
 
 @unittest.skipUnless(importlib.util.find_spec('PIL') and importlib.util.find_spec('numpy'), 'Requires Pillow')
