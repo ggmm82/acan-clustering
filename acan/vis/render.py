@@ -4,14 +4,14 @@ import json
 import re
 from flask import session
 from acan import __version__
-from acan.vis.jobs import TrainingJobs
+from acan.vis.jobs import FullTables, TrainingJobs
 from acan.vis import generative, informatics, mathematics
-from acan.vis.training import NativeTraining, graph_stats
+from acan.vis.training import NativeTraining, graph_stats, progress_view
 from acan.vis.evaluation import evaluate
 from acan.vis.benchmark_job import BenchmarkJob, signature as benchmark_signature
 from acan.vis.refinement import root_signature, remove_branch
 from acan.vis.inference import infer
-from acan.vis.datasets import clean_frame, target_and_filters, split_for_training, check_budget, read_arff
+from acan.vis.datasets import clean_frame, target_and_filters, split_for_training, check_budget, read_arff, SAMPLE_ROWS, FULL_ROWS
 
 import dash  # pip install dash
 import dash_cytoscape as cyto  # pip install dash-cytoscape==0.2.0 or higher
@@ -46,6 +46,7 @@ app.server.secret_key = os.environ.get('ACAN_SESSION_SECRET') or secrets.token_h
 app.server.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax',
                          SESSION_COOKIE_SECURE=os.environ.get('ACAN_COOKIE_SECURE', '').lower() == 'true')
 training_jobs = TrainingJobs()
+full_tables = FullTables()                                      # uploaded tables larger than the page's sample
 benchmark_jobs = TrainingJobs(max_running=1)
 
 @app.server.get('/healthz')
@@ -851,8 +852,9 @@ def download_model(n_clicks, model):
               State('upload-data', 'filename'),
               State('upload-data', 'last_modified'),
               State('label-store', 'data'),
+              State('tab-session', 'data'),
               prevent_initial_call=True)
-def update_data(contents, filename, last_modified, labels):
+def update_data(contents, filename, last_modified, labels, tab_id=None):
     balanced=False
     if filename != None:
         content_type, content_string = contents.split(',')
@@ -892,12 +894,25 @@ def update_data(contents, filename, last_modified, labels):
 
             df = clean_frame(df)
             original_rows = len(df)
-            if original_rows > 10000:
-                df = df.sample(10000, random_state=42)
+            kept = None
+            try:
+                key = tab_job_key(tab_id)
+            except (ValueError, RuntimeError, KeyError):
+                key = None                                       # no tab to keep the whole table for
+            if key is not None:
+                full_tables.drop(key)
+            if original_rows > SAMPLE_ROWS:
+                if key is not None:                              # the whole table stays on the server, for training
+                    kept = df if original_rows <= FULL_ROWS else df.sample(FULL_ROWS, random_state=42)
+                    full_tables.put(key, kept.reset_index(drop=True), filename)
+                df = df.sample(SAMPLE_ROWS, random_state=42)
             detected, excluded = target_and_filters(df)
             message = f'{filename}: {original_rows} righe, {len(df.columns)} colonne. Target suggerito: {", ".join(detected)}. Colonne escluse modificabili: {", ".join(excluded) or "nessuna"}.'
-            if original_rows > 10000:
-                message += ' Campione interattivo di 10.000 righe (seed 42).'
+            if original_rows > SAMPLE_ROWS:
+                message += ' La pagina mostra un campione di 10.000 righe (seed 42).'
+                if kept is not None:
+                    message += (f" L'addestramento legge tutte le {len(kept):,} righe".replace(',', '.')
+                                + ('.' if len(kept) == original_rows else ' (il massimo: estratte a caso dal file).'))
             return df.to_dict(orient='list'), balanced, html.Div([uplData, dbc.Alert(message, color='info')])
         except Exception as e:
             print(e)
@@ -1055,8 +1070,13 @@ def update_model(n_clicks, data, labels, filters, categories, max_batch, lr, dep
         existing = training_jobs.get(key)
         if existing and not existing['done'].is_set():
             return dash.no_update, dash.no_update, "Training già in corso.", False, False
-        train, test, dataset_info = split_for_training(data, labels or [], filters, categories, task)
-        check_budget(train)
+        whole = full_tables.get(key)
+        if whole is not None and set(pd.DataFrame(data).columns) != set(whole.columns):
+            whole = None                                         # the page now holds another table
+        train, test, dataset_info = split_for_training(whole if whole is not None else data, labels or [], filters, categories, task)
+        check_budget(train, whole=whole is not None)
+        if len(test) > SAMPLE_ROWS:                              # the page keeps a sample of the validation rows
+            test = test.sample(SAMPLE_ROWS, random_state=42)
         if routing_profile not in ('legacy-v8','paper-routing-v1','cp-routing-v1','cp-joint-v1','cp-v9','concept-graph-v1'):
             raise ValueError('Seleziona un profilo di routing ACAN valido.')
         options = dict(routing_profile=routing_profile,max_depth=depth, max_epochs=epochs, min_samples_split=min_samples,
@@ -1100,8 +1120,16 @@ def monitor_learning(n_intervals, tab_id):
     learner = job['learner']
     if not job['done'].is_set():
         # Do not run forward_pass/setModel on parameters being updated by training.
-        return (dash.no_update, dash.no_update,
-                f"🟡 Iterazione: {learner.iteration}", False, False, dash.no_update)
+        if not hasattr(learner, 'rows'):                          # earlier kinds of training say only that they run
+            return (dash.no_update, dash.no_update, f"🟡 Iterazione: {learner.iteration}", False, False, dash.no_update)
+        view = progress_view(learner.status, learner.rows)
+        percent = round(100*view['share'])
+        status = html.Div([
+            html.Div(f"🟡 {view['title']} · {percent}%", className='mb-1'),
+            dbc.Progress(value=percent, striped=True, animated=True, style={'height': '10px'}, className='mb-2'),
+            html.Table([html.Tbody([html.Tr([html.Td(name, className='pe-3 text-muted'), html.Td(value)]) for name, value in view['facts']])],
+                       className='small mb-0')])
+        return (dash.no_update, dash.no_update, status, False, False, dash.no_update)
     if job['error']:
         return dash.no_update, dash.no_update, f"❌ {job['error']}", True, True, dash.no_update
     gcm = learner.graph

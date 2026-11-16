@@ -55,3 +55,37 @@ class TrainingJobs:
             job['learner'].request_stop()
             return True
         return False
+
+
+class FullTables:
+    """Uploaded tables too large for the page, kept on the server for training (one per browser tab).
+
+    The page works on a sample; training reads the whole table from here. Tables expire after
+    ``ttl`` seconds without use and only the most recent ``capacity`` are kept.
+    """
+
+    def __init__(self, capacity=4, ttl=6*3600):
+        self._tables, self._lock = {}, threading.Lock()
+        self.capacity, self.ttl = capacity, ttl
+
+    def put(self, key, frame, name):
+        with self._lock:
+            now = time.monotonic()
+            for other, item in list(self._tables.items()):
+                if now-item['used'] > self.ttl:
+                    del self._tables[other]
+            self._tables[key] = dict(frame=frame, name=name, used=now)
+            while len(self._tables) > self.capacity:
+                del self._tables[min(self._tables, key=lambda other: self._tables[other]['used'])]
+
+    def drop(self, key):
+        with self._lock:
+            self._tables.pop(key, None)
+
+    def get(self, key):
+        with self._lock:
+            item = self._tables.get(key)
+            if item is None:
+                return None
+            item['used'] = time.monotonic()
+            return item['frame']
