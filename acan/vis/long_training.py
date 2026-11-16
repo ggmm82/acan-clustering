@@ -288,7 +288,7 @@ layout = dbc.Card(dbc.CardBody([
              dbc.Col(dbc.InputGroup([dbc.InputGroupText('Tieni per sempre ogni'), dbc.Input(id='lm-long-milestone', type='number', value=1000, min=0, max=10000000), dbc.InputGroupText('passi')]), md=6)],
             className='mb-2'),
     dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Memoria massima dei concetti'), dbc.Input(id='lm-long-memory', type='number', value=0, min=0, max=262144, step=256), dbc.InputGroupText('MB')]), md=6),
-             dbc.Col(html.Small("0 = automatica: un decimo della memoria del server, al massimo 2 GB (mentre somma, il processo ne usa circa il triplo). Oltre questo limite i concetti che costano meno a chi "
+             dbc.Col(html.Small("0 = automatica: un decimo della memoria del server (o del suo contenitore), al massimo 2 GB; vale per tutte le somme, e mentre somma il processo ne usa al massimo circa il triplo. Oltre questo limite i concetti che costano meno a chi "
                                 "legge vengono generalizzati nel livello sopra.", className='text-muted'), md=6)], className='mb-2'),
     # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
     html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),

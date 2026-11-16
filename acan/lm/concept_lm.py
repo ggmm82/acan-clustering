@@ -43,6 +43,7 @@ import numpy as np
 from acan.concept_algebra import KAPPA_GRID, categorical_reading
 
 MASK = np.uint64(0xFFFFFFFFFFFFFFFF)
+MARGIN = .6                                                    # pruning leaves the sums at this fraction of the budget
 GRID = KAPPA_GRID                                               # weights tried by the judgment, as for a table
 
 
@@ -62,6 +63,50 @@ def context_keys(ids, depth, vocabulary):
             ok = np.zeros(len(ids), bool); ok[j:] = True
             valid.append(ok)
     return keys, valid
+
+
+def _union(a, b):
+    """The values of two sorted arrays without repeats, sorted."""
+    both = np.concatenate((a, b))
+    both.sort(kind='stable')                                    # two sorted runs: a merge
+    keep = np.empty(len(both), bool)
+    keep[0] = True
+    np.not_equal(both[1:], both[:-1], out=keep[1:])
+    return both[keep]
+
+
+def _add_into(tables, others):
+    """tables[j] += others[j], a level at a time, so the old sums of a level are freed before the next."""
+    for j in range(len(tables)):
+        tables[j] = tables[j]+others[j]
+        others[j] = None
+
+
+def _threshold(ratios, sizes, need):
+    """The smallest loss per byte t such that the concepts with ratio <= t hold at least ``need`` bytes.
+
+    Found by halving the interval (60 times), so no ordering of all concepts is held in memory.
+    """
+    low = min((float(r.min()) for r in ratios if len(r)), default=0.)
+    high = max((float(r.max()) for r in ratios if len(r)), default=0.)
+    if sum(int(s.sum(dtype=np.int64)) for s in sizes) <= need:
+        return high
+
+    def freed(t):
+        return sum(int(s[r <= t].sum(dtype=np.int64)) for r, s in zip(ratios, sizes))
+    if freed(low) >= need:
+        return low
+    for _ in range(60):
+        middle = (low+high)/2
+        if middle in (low, high):
+            break
+        low, high = (low, middle) if freed(middle) >= need else (middle, high)
+    return high
+
+
+def _scatter_add(total, where, values):
+    """total[where] += values for indices that do not repeat (each list holds every key once)."""
+    total[where] += values
 
 
 class Table:
@@ -89,20 +134,37 @@ class Table:
         return self.keys[concept], self.cells % (self.V+1), self.counts
 
     def __add__(self, other):
-        """Two tables of the same level added together: sums are additive."""
+        """Two tables of the same level added together: sums are additive.
+
+        Both lists are sorted, so the sum is a merge of sorted lists: the keys of both, each once, and the
+        cells (concept, token) of both renumbered on the merged keys, each once. Every array is built in
+        place where possible: the process holds the two tables, their sum and about one more copy of the
+        cells.
+        """
         if not len(other.keys):
             return self
         if not len(self.keys):
             return other
-        keys = np.concatenate((self.keys, other.keys))
-        concepts, which = np.unique(keys, return_inverse=True)
-        C = np.bincount(which, weights=np.concatenate((self.C, other.C)), minlength=len(concepts)).astype(np.int64)
-        k1, y1, n1 = self.pairs()
-        k2, y2, n2 = other.pairs()
-        index = np.searchsorted(concepts, np.concatenate((k1, k2))).astype(np.int64)
-        cells, where = np.unique(index*(self.V+1)+np.concatenate((y1, y2)), return_inverse=True)
-        counts = np.bincount(where, weights=np.concatenate((n1, n2)), minlength=len(cells)).astype(np.int64)
-        return Table(concepts, C, cells, counts, self.V)
+        base = self.V+1
+        keys = _union(self.keys, other.keys)
+        renumbered = []
+        for table in (self, other):
+            at = np.searchsorted(keys, table.keys)
+            C_part = table.C
+            cells = table.cells//base
+            np.take(at, cells, out=cells)
+            cells *= base
+            cells += table.cells % base
+            renumbered.append((at, C_part, cells, table.counts))
+            del at
+        C = np.zeros(len(keys), np.int64)
+        for at, C_part, _, _ in renumbered:
+            _scatter_add(C, at, C_part)
+        cells = _union(renumbered[0][2], renumbered[1][2])
+        counts = np.zeros(len(cells), np.int64)
+        for _, _, part, n in renumbered:
+            _scatter_add(counts, np.searchsorted(cells, part), n)
+        return Table(keys, C, cells, counts, self.V)
 
     def keep(self, alive):
         """Only the concepts marked alive, with their cells."""
@@ -174,27 +236,30 @@ class ConceptLM:
         self.tokens += len(ids)
         level = 0
         while level < len(self.counter) and self.counter[level] is not None:
-            tables = [x+y for x, y in zip(self.counter[level], tables)]
+            _add_into(tables, self.counter[level])
             self.counter[level] = None
             level += 1
             tables = self._within_budget(tables)
         if level == len(self.counter):
             self.counter.append(None)
         self.counter[level] = tables
+        if self.budget_bytes and self.nbytes() > self.budget_bytes:
+            self.settle()                                       # the budget holds for all the sums, not for one table
 
     def settle(self):
         """Add every table of the counter into the levels (before reading or saving)."""
-        for tables in self.counter:
-            if tables is not None:
-                self.levels = [x+y for x, y in zip(self.levels, tables)]
-        self.counter = []
+        pending, self.counter = [tables for tables in self.counter if tables is not None], []
+        for tables in pending:
+            _add_into(self.levels, tables)
+        del pending
         self.levels = self._within_budget(self.levels)
         return self
 
     def merge(self, other):
         """Add another model learned on other text (a learning queue): the sums of both."""
         self.settle(); other.settle()
-        self.levels = self._within_budget([x+y for x, y in zip(self.levels, other.levels)])
+        _add_into(self.levels, other.levels)
+        self.levels = self._within_budget(self.levels)
         self.tokens += other.tokens
         return self
 
@@ -218,26 +283,32 @@ class ConceptLM:
         total = sum(table.nbytes() for table in tables)
         if total <= self.budget_bytes:
             return tables
-        losses = []
+        # Loss per byte of every concept, a level at a time (single precision: only their order matters).
+        ratios, sizes = [np.zeros(0, np.float32)], [np.zeros(0, np.int32)]
         for j in range(1, len(tables)):
-            losses.append(self._losses(tables, j))
-        every = np.concatenate([loss for loss in losses if len(loss)])
-        if not len(every):
-            return tables
-        # Bytes per concept: its key, C, D and its cells. Generalize from the cheapest until under budget.
-        sizes = np.concatenate([self._bytes_per_concept(tables[j]) for j in range(1, len(tables)) if len(losses[j-1])])
-        order = np.argsort(every/np.maximum(sizes, 1), kind='stable')            # least loss per byte first
-        freed = np.cumsum(sizes[order])
-        cut = int(np.searchsorted(freed, total-self.budget_bytes*.9))+1         # a margin, so merges do not prune at every step
-        drop = np.zeros(len(every), bool); drop[order[:cut]] = True
-        start, out = 0, [tables[0]]
+            size = self._bytes_per_concept(tables[j]).astype(np.int32)
+            ratios.append((self._losses(tables, j)/np.maximum(size, 1)).astype(np.float32))
+            sizes.append(size)
+        need = total-self.budget_bytes*MARGIN                   # a margin, so the next pieces fit before pruning again
+        threshold = _threshold(ratios, sizes, need)             # generalize from the cheapest until under budget
+        # Concepts below the threshold go; of those exactly at it (ties), only as many as still needed,
+        # the longest contexts first.
+        missing = need-sum(int(size[ratio < threshold].sum(dtype=np.int64)) for ratio, size in zip(ratios, sizes))
+        alives = [None]*len(tables)
+        for j in range(len(tables)-1, 0, -1):
+            alive = ratios[j] > threshold
+            tied = np.flatnonzero(ratios[j] == threshold)
+            if len(tied):
+                taken = int(np.searchsorted(np.cumsum(sizes[j][tied], dtype=np.int64), max(missing, 0)))+1 if missing > 0 else 0
+                alive[tied[taken:]] = True
+                missing -= int(sizes[j][tied[:taken]].sum(dtype=np.int64))
+            alives[j] = alive
         for j in range(1, len(tables)):
-            n = len(tables[j].keys)
-            alive = ~drop[start:start+n]
-            start += n
-            self.generalized += int((~alive).sum())
-            out.append(tables[j].keep(alive))
-        return out
+            alive = alives[j]
+            self.generalized += int(len(alive)-alive.sum())
+            tables[j] = tables[j].keep(alive)
+            ratios[j] = sizes[j] = None
+        return tables
 
     def _bytes_per_concept(self, table):
         cells = np.bincount((table.cells//(self.V+1)).astype(np.int64), minlength=len(table.keys))
@@ -401,17 +472,30 @@ def document_counts(keys, valid, ids):
     return out
 
 
-def default_budget():
-    """Bytes for the statistics: a tenth of the memory of the machine, at most 2 GB.
-
-    Adding two tables holds both and their sum: the process peaks at about three times the statistics.
-    """
+def memory_limit():
+    """Bytes the process may use: the memory of the machine, or the limit of its container if lower."""
+    import os
     try:
-        import os
         total = os.sysconf('SC_PAGE_SIZE')*os.sysconf('SC_PHYS_PAGES')
     except (ValueError, OSError, AttributeError):
         total = 4 << 30
-    return int(min(total//10, 2 << 30))
+    for name in ('/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes'):
+        try:
+            value = Path(name).read_text().strip()
+        except OSError:
+            continue
+        if value.isdigit():
+            total = min(total, int(value))
+    return total
+
+
+def default_budget():
+    """Bytes for the statistics: a tenth of the memory the process may use, at most 2 GB.
+
+    Adding two tables holds both, their sum and the sorting of their keys: while it adds, the process
+    peaks at about three and a half times the statistics, plus what it holds anyway.
+    """
+    return int(min(memory_limit()//10, 2 << 30))
 
 
 def save(directory, model, state, identity):

@@ -91,6 +91,37 @@ class ConceptLMTests(unittest.TestCase):
         self.assertEqual(tight.concepts()[1], free.concepts()[1])      # the contexts that carry the information stay
         self.assertLess(sum(tight.concepts()[2:]), sum(free.concepts()[2:]))    # longer ones add nothing and go first
 
+    def test_budget_holds_for_all_the_sums_while_learning(self):
+        rng = np.random.default_rng(6)
+        ids = rng.integers(0, 50, 40000)
+        free = ConceptLM(51, depth=5, document=0)
+        for start in range(0, 40000, 2000):
+            free.add(ids[start:start+2000])
+        budget = free.nbytes()//3
+        model = ConceptLM(51, depth=5, document=0, budget_bytes=budget)
+        for start in range(0, 40000, 2000):                     # every piece, not only at the end
+            model.add(ids[start:start+2000])
+            self.assertLessEqual(model.nbytes(), budget)
+        model.settle()
+        self.assertEqual(int(model.levels[0].C.sum()), 40000)   # the sums of level 0 are all there
+        self.assertGreater(model.generalized, 0)
+
+    def test_sum_of_tables_is_the_sum_of_their_cells(self):
+        rng = np.random.default_rng(7)
+        for _ in range(5):
+            x = Table.count(rng.integers(0, 40, 500).astype(np.uint64), rng.integers(0, 6, 500), 6)
+            y = Table.count(rng.integers(20, 60, 300).astype(np.uint64), rng.integers(0, 6, 300), 6)
+            z = x+y
+            expected = {}
+            for t in (x, y):
+                for k, v, n in zip(*t.pairs()):
+                    expected[(int(k), int(v))] = expected.get((int(k), int(v)), 0)+int(n)
+            self.assertEqual({(int(k), int(v)): int(n) for k, v, n in zip(*z.pairs())}, expected)
+            self.assertEqual(dict(zip(z.keys.tolist(), z.C.tolist())),
+                             {k: dict(zip(x.keys.tolist(), x.C.tolist())).get(k, 0)+dict(zip(y.keys.tolist(), y.C.tolist())).get(k, 0)
+                              for k in set(x.keys.tolist()) | set(y.keys.tolist())})
+            np.testing.assert_array_equal(z.D, np.bincount(z.cells//7, minlength=len(z.keys)))
+
     @unittest.skipUnless(importlib.util.find_spec('safetensors'), 'Checkpoints need safetensors (the worker has it)')
     def test_saved_and_loaded_model_reads_the_same(self):
         from acan.lm.concept_lm import load, save

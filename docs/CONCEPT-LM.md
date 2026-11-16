@@ -77,9 +77,14 @@ i blocchi del modello tabulare). Ogni posizione è sommata circa
 $\log_2(\text{pezzi})$ volte. Prima di leggere o salvare, il contatore si somma
 tutto.
 
-**Memoria.** Oltre il limite (automatico: un decimo della memoria della
-macchina, al massimo 2 GB) si generalizzano nel livello sopra i concetti con la
-minore perdita per byte, finché le somme scendono al 90% del limite. Perdita di
+**Memoria.** Il limite vale per tutte le somme, quelle unite e quelle del
+contatore (automatico: un decimo della memoria che il processo può usare, cioè
+della macchina o del limite del suo contenitore, al massimo 2 GB). Dopo ogni
+pezzo, se lo supera, il contatore si unisce tutto e si generalizzano nel livello
+sopra i concetti con la minore perdita per byte, finché le somme scendono al 60%
+del limite. Le somme si uniscono un livello alla volta come unione di elenchi
+ordinati, e la soglia si trova per dimezzamento: il processo resta sotto circa
+tre volte il limite. Perdita di
 un concetto:
 
 $$

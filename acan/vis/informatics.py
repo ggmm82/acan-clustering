@@ -58,14 +58,24 @@ quando il pezzo è contato.
 
 ### Passo 4 · Restare nella memoria
 
-I contesti diversi crescono con il testo. Se le somme superano la **memoria
-massima dei concetti** (automatica: un decimo della memoria del server, al
-massimo 2 GB, perché mentre somma due tabelle il processo ne usa circa il
-triplo; si può impostare), il programma calcola per ogni concetto quanto
-peggio sarebbero letti i suoi membri dal contesto più corto, e toglie i concetti
-che costano meno finché le somme rientrano con un margine del 10%. Le loro somme
-restano nel livello sopra: si perde solo la distinzione. Il numero di concetti
-così tolti è fra le grandezze della pagina.
+I contesti diversi crescono con il testo. La **memoria massima dei concetti**
+vale per tutte le somme insieme, quelle già unite e quelle ancora nel contatore
+(automatica: un decimo della memoria che il processo può usare, cioè quella del
+server o il limite del suo contenitore se è più basso, al massimo 2 GB; si può
+impostare). Dopo ogni pezzo, se le somme la superano, il programma unisce tutto
+il contatore, calcola per ogni concetto quanto peggio sarebbero letti i suoi
+membri dal contesto più corto, e toglie i concetti che costano meno per byte
+finché le somme scendono al 60% del limite: così i pezzi successivi entrano
+senza potare a ogni passo. Le loro somme restano nel livello sopra: si perde
+solo la distinzione. Il numero di concetti così tolti è fra le grandezze della
+pagina.
+
+Sommare due tabelle è un'unione di elenchi ordinati, fatta un livello alla
+volta e liberando subito le somme vecchie; la soglia di potatura si trova
+dimezzando l'intervallo, senza ordinare tutti i concetti. Così mentre somma il
+processo usa al massimo circa tre volte il limite: con 794 MB di limite, su
+40 milioni di token di prova, il picco è stato di circa 2,3 GB (prima
+della correzione 4,2 GB al passo 8).
 
 ### Passo 5 · Salvare e giudicare
 
