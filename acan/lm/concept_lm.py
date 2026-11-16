@@ -370,9 +370,11 @@ class ConceptLM:
         """Generalize into their parent the concepts the reader loses least on, until the tables fit the budget.
 
         The loss of a concept is the log-likelihood its members lose when they are read through the
-        parent instead of the concept (in nats): sum_y N(y) log(p_concept(y) / p_parent(y)), with
-        p_concept = N/C and p_parent the parent's frequencies (uniform for a value it never saw). Its sums
-        are already in the parent, so nothing is lost but the distinction. Level 0 is never generalized.
+        parent instead of the concept (in nats), every member read without itself:
+        sum_y N(y) log(p_concept(y) / p_parent(y)), with p_concept = (N - 1 + w p_parent) / (C - 1 + w),
+        w = a D (the reading), and p_parent the parent's frequencies (uniform for a value it never saw). A
+        concept seen once loses nothing. Its sums are already in the parent, so nothing is lost but the
+        distinction. Level 0 is never generalized.
         """
         if not self.budget_bytes:
             return tables
@@ -433,8 +435,11 @@ class ConceptLM:
             C_p, N_p, _ = parent.lookup(parent_keys[concept], token)
         else:
             C_p, N_p = np.full(len(concept), parent.C.sum(), float), np.zeros(len(concept))
-        p_concept = table.counts/table.C[concept]
         p_parent = np.where(C_p > 0, (N_p+1.)/(C_p+table.V), 1./table.V)
+        # Every member read without itself (as the judgment reads rows it never saw): a concept seen once
+        # tells nothing about its member, and a concept is worth what it adds to the parent for the others.
+        weight = self.a[t]*np.maximum(table.D[concept], 1)
+        p_concept = (table.counts-1+weight*p_parent)/(table.C[concept]-1+weight)
         per_cell = table.counts*np.log(np.maximum(p_concept, 1e-300)/p_parent)
         return np.bincount(concept, weights=per_cell, minlength=len(table.keys))
 
