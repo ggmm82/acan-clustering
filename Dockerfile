@@ -12,10 +12,11 @@ COPY pyproject.toml README.md LICENSE ./
 COPY acan ./acan
 RUN python -m pip install --no-cache-dir --no-deps --no-build-isolation . \
     && rm -rf /app/acan /app/build /app/*.egg-info \
-    && useradd --uid 10001 --create-home acan
+    && useradd --uid 10001 --create-home acan \
+    && mkdir -p /var/lib/acan/models && chown -R 10001:10001 /var/lib/acan
 USER 10001
 ARG ACAN_BUILD_REVISION=development
-ENV ACAN_BUILD_REVISION=$ACAN_BUILD_REVISION
+ENV ACAN_BUILD_REVISION=$ACAN_BUILD_REVISION ACAN_MODEL_CACHE=/var/lib/acan/models
 EXPOSE 4000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/healthz', timeout=3)"

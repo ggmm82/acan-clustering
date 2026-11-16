@@ -11,6 +11,7 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from acan import GraphClusterModel
 from .inference import infer
+from .model_cache import load_graph
 
 
 def encode(train, test):
@@ -32,7 +33,7 @@ def encode(train, test):
 
 
 def evaluate(model_json, test, train=None, before_json=None, baselines=True):
-    graph = GraphClusterModel.loadModel(model_json)
+    graph = load_graph(model_json)
     if test.empty:
         raise ValueError('Il set di valutazione è vuoto.')
     if not graph.labels:
@@ -159,7 +160,7 @@ def evaluate(model_json, test, train=None, before_json=None, baselines=True):
 
 def masked_evaluate(model_json, test):
     """Seeded masking on at most 100 held-out rows, with at least one known cell."""
-    graph = GraphClusterModel.loadModel(model_json)
+    graph = load_graph(model_json)
     root = graph.clusterModel[graph.rootId]
     cols = [col for col in test if root.fullLabels([col])]
     truth = test[cols].head(100).reset_index(drop=True)

@@ -1,10 +1,11 @@
 """Requested tree edits built from the native split and single-node learner APIs."""
 import hashlib
 from acan import AlgebraicClusterLearner, GraphClusterModel
+from .model_cache import load_graph
 
 
 def root_signature(model_json):
-    graph = GraphClusterModel.loadModel(model_json)
+    graph = load_graph(model_json)
     return hashlib.sha256(graph.clusterModel[graph.rootId].to_json().encode()).hexdigest()
 
 
@@ -35,7 +36,7 @@ def training_subset(graph, training, node_id):
 
 
 def refine(model_json, training, node_id, options):
-    graph = GraphClusterModel.loadModel(model_json)
+    graph = load_graph(model_json)
     parent_id, group = parse_group(node_id)
     parent = graph.clusterModel[parent_id]
     if (getattr(parent,'routing_profile','legacy-v8')=='cp-joint-v1' and
@@ -62,7 +63,7 @@ def refine(model_json, training, node_id, options):
 
 
 def remove_branch(model_json, selected_id):
-    graph = GraphClusterModel.loadModel(model_json)
+    graph = load_graph(model_json)
     if '_G' in str(selected_id):
         node_id, group = parse_group(selected_id)
         parent = graph.clusterModel[node_id]
