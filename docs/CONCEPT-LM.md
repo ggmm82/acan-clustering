@@ -31,11 +31,17 @@ suo livello sopra.
 ## 3. Lettura
 
 $$
-p_j(y)=\frac{N_{c_j}(y)+a_jD_{c_j}\,p_{j-1}(y)}{C_{c_j}+a_jD_{c_j}},\qquad p_{-1}=1/V .
+p_j(y)=\frac{N_{c_j}(y)+\kappa_jD_{c_j}\,p_{j-1}(y)}{C_{c_j}+\kappa_jD_{c_j}},\qquad p_{-1}=1/V .
 $$
 
-È la regola del modello tabulare per un concetto con pochi membri (avvicinato al
-livello sopra), applicata alla distribuzione del token che segue. Un contesto
+È **la stessa funzione** con cui il modello tabulare legge una categoria
+(`acan/concept_algebra.py`, `categorical_reading`), scelta allo stesso modo: il
+peso del livello sopra è $\kappa$ volte i valori diversi del concetto, con
+$\kappa$ dal giudizio. Sulla tabella questa regola tiene tutte le soglie dei test
+di qualità (credit-g da 0,706 a 0,731, breast cancer da 0,952 a 0,947, Titanic
+da 0,812 a 0,807, gli altri uguali o meglio); sul testo, con $\kappa=1$ fisso
+come prima nella tabella, l'errore sarebbe 4,445 bit per carattere invece di
+2,039. Un contesto
 mai visto lascia la lettura com'è.
 
 **Concetti del testo in corso.** Gli stessi concetti contati solo sulle posizioni
@@ -45,7 +51,7 @@ ha già detto, a qualunque distanza; nessuna posizione legge sé stessa.
 
 ## 4. Giudizio
 
-$a_j$ e $b_j$ si scelgono fra $2^{-5},\dots,2^{8}$, un peso alla volta, due
+$\kappa_j$ e $b_j$ si scelgono fra $2^{-5},\dots,2^{8}$, un peso alla volta, due
 giri, massimizzando la log-verosimiglianza di metà dei pezzi di validazione;
 l'altra metà misura l'errore. Il testo di validazione non viene mai contato.
 
@@ -139,20 +145,40 @@ una lingua): circa 414.000 token al secondo per imparare, circa 790 per
 scrivere. Dopo 8 milioni di token: 21,5 milioni di concetti, 920 MB di somme,
 3 GB di picco del processo durante le somme.
 
-## 8. Limiti
+## 8. Un modello, due tipi di righe
 
-- **Contesti simili.** Due contesti diversi non si aiutano, se non attraverso il
-  livello sopra comune. Una rete neurale impara che «gatto» e «cane» si
-  somigliano; questo modello no. Con molti dati la rete può tornare in vantaggio:
-  non è stato misurato su testi grandi. Il prossimo passo è unire i token (e i
-  contesti) seguiti da token simili, con lo stesso costo per chi legge.
+Le definizioni, la lettura, il giudizio, la somma a blocchi e il salvataggio sono
+gli stessi della tabella, e le funzioni comuni sono in `acan/concept_algebra.py`.
+Cambia come una riga trova i suoi concetti, perché cambiano gli attributi:
+
+- in una tabella ci sono numeri: due righe sono più o meno vicine, una riga
+  appartiene un po' a più concetti (massa × somiglianza) e i concetti si cercano
+  unendo quelli vicini;
+- nel testo ci sono solo token: due contesti o sono uguali o no, quindi una
+  posizione appartiene a esattamente un concetto per livello, quello del suo
+  contesto, e i concetti si trovano contando.
+
+Provato: la ricerca della tabella usata sul testo dà 3,47 bit per carattere
+(troppi pochi concetti e mescolati); il conteggio dei contesti dà 2,04. Il
+conteggio sulla tabella richiederebbe di rendere uguali numeri vicini, cioè di
+cambiare il modello tabulare: non è stato fatto.
+
+## 9. Limiti
+
+- **Valori simili.** Né la tabella né il testo considerano simili due valori
+  diversi di una categoria: «gatto» e «cane», come due città in una colonna di
+  una tabella, sono semplicemente diversi. Due contesti diversi si aiutano solo
+  attraverso il livello sopra comune (il contesto più corto). Una rete neurale
+  impara che certi token si somigliano; con molti dati potrebbe tornare in
+  vantaggio (non misurato). Rimediare vorrebbe dire aggiungere al modello concetti
+  di valori, per la tabella e per il testo insieme, e misurarli su entrambi.
 - **Memoria.** I contesti crescono con il testo; oltre il limite si generalizzano
   i meno utili e qualcosa si perde.
 - **Ripetizioni.** Scrivendo il token più probabile il modello ripete la frase
   più frequente: le domande di prova usano temperatura 0,7 con un seme fisso.
 - **Chiavi oltre quattro token** con 32.000 token di vocabolario: hash a 64 bit.
 
-## 9. Compatibilità
+## 10. Compatibilità
 
 È l'architettura `concepts` con il profilo `concept-lm-v1`. I progetti creati
 prima (reti con o senza concetti) continuano con il loro modello e i loro

@@ -98,8 +98,20 @@ T_i(o)=\frac{C_i\,\mathbb E_i[\kappa]}{\sum_lC_l\,\mathbb E_l[\kappa]} ,
 $$
 
 con $O$ gli attributi osservati. Un concetto con pochi membri non può essere
-molto preciso: la sua dispersione è avvicinata a quella del livello sopra con il
-peso di un'osservazione, $v_{ij}=(C_i\,s_{ij}^2+1)/(C_i+1)$.
+molto preciso: la sua dispersione e le sue frequenze sono avvicinate a quelle del
+livello sopra con il peso di $\kappa$ osservazioni,
+
+$$
+v_{ij}=\frac{C_i\,s_{ij}^2+\kappa\,\sigma_j^2}{C_i+\kappa},\qquad
+p_{i}(v)=\frac{N_i(v)+\kappa D_i\,p_{\text{sopra}}(v)}{C_i+\kappa D_i},
+$$
+
+con $D_i$ il numero di valori diversi che l'attributo ha nel concetto: un concetto
+i cui membri hanno molti valori diversi si appoggia di più al livello sopra.
+Mentre si cercano i concetti $\kappa=1$ e $D$ non conta; trovati i concetti,
+$\kappa$ è scelto dal giudizio (passo 7) fra $2^{-5}$ e $2^{8}$. **È la stessa
+regola, scelta nello stesso modo, con cui il testo legge il token che segue**
+(parte B, passo 3): una sola funzione nel codice, `categorical_reading`.
 
 ### Passo 6 · Dai concetti specifici a uno solo
 
@@ -239,17 +251,21 @@ già comprese in quelle del livello sopra.
 
 ### Passo 3 · Leggere: il livello sopra come riferimento
 
-Nella parte A un concetto con pochi membri non può essere molto preciso e viene
-avvicinato al livello sopra (passo 5). Qui è la stessa regola, sulla
-distribuzione del token che segue:
+È la regola della parte A, passo 5, per un attributo categorico: il token che
+segue è il target categorico della riga, e il suo livello sopra è il contesto più
+corto:
 
 $$
-p_j(y)=\frac{N_{c_j}(y)+w_j\,p_{j-1}(y)}{C_{c_j}+w_j},\qquad w_j=a_j\,D_{c_j},
+p_j(y)=\frac{N_{c_j}(y)+\kappa_jD_{c_j}\,p_{j-1}(y)}{C_{c_j}+\kappa_jD_{c_j}},
 \qquad p_{-1}(y)=\frac1V .
 $$
 
+La tabella legge un solo livello e sceglie un $\kappa$; il testo legge un livello
+per lunghezza di contesto e sceglie un $\kappa_j$ per ciascuno, con lo stesso
+giudizio.
+
 Si parte dal livello 0 e si scende finché il contesto è stato visto; un contesto
-mai visto lascia la lettura com'è. Il peso $w_j$ cresce con $D$: un concetto
+mai visto lascia la lettura com'è. Il peso cresce con $D$: un concetto
 seguito da molti token diversi è un concetto largo, e si fida di più del livello
 sopra; uno seguito sempre dallo stesso token è stretto, e si fida di sé.
 
@@ -269,12 +285,12 @@ o il futuro.
 
 ### Passo 5 · Giudicare i pesi
 
-I pesi $a_j$ e $b_j$ sono scelti dal giudizio, come i livelli della parte A: si
+I pesi $\kappa_j$ (e $b_j$) sono scelti dal giudizio, come nella parte A: si
 prendono i valori (fra $2^{-5}$ e $2^{8}$) che leggono meglio pezzi di testo che
 il modello **non ha contato**,
 
 $$
-(a,b)=\arg\max\ \frac1n\sum_t\log p(x_t\mid x_{<t}),
+(\kappa,b)=\arg\max\ \frac1n\sum_t\log p(x_t\mid x_{<t}),
 $$
 
 un peso alla volta, due giri. Metà dei pezzi di validazione sceglie i pesi,
@@ -320,11 +336,13 @@ testo scritto entra subito nei concetti del testo in corso.
 | | Tabella | Testo |
 |---|---|---|
 | riga | una riga della tabella | una posizione del testo |
-| attributi | le colonne note | i token precedenti |
+| attributi | numeri e categorie | solo categorie (token): due valori o sono uguali o no |
+| colonne note | le colonne note | i token precedenti |
 | target | la colonna da prevedere | il token in quella posizione |
 | concetto | somme dei membri | somme dei membri |
 | livello sopra | il concetto più generale | il contesto più corto |
-| lettura | massa × somiglianza, dispersione avvicinata al livello sopra | conteggi avvicinati al livello sopra |
+| lettura di una categoria | $(N+\kappa D\,p_{\text{sopra}})/(C+\kappa D)$, $\kappa$ dal giudizio | la stessa funzione, un $\kappa$ per livello |
+| a quale concetto appartiene | massa × somiglianza: più concetti insieme | il concetto del suo contesto, uno per livello |
 | costo di un'unione | letture × raggio | letture × perdita di log-verosimiglianza |
 | concetti specifici | blocchi di righe uniti a due a due | pezzi di testo uniti a due a due |
 | giudizio | righe non viste | pezzi di testo non contati |
@@ -388,10 +406,11 @@ a memoria; il modello a concetti lo conta una volta.
 
 **Limiti noti.**
 
-- **Contesti simili.** Due contesti diversi non si aiutano: «il gatto dorme» e
-  «il cane dorme» non condividono nulla oltre il livello sopra comune. Una rete
-  neurale impara che gatto e cane si somigliano; il modello a concetti, per ora,
-  no. Unire i token che sono seguiti da token simili è il prossimo passo.
+- **Valori simili.** Due valori diversi di una categoria sono semplicemente
+  diversi, nella tabella come nel testo: «gatto» e «cane» come due città in una
+  colonna. «Il gatto dorme» e «il cane dorme» si aiutano solo attraverso il
+  contesto più corto comune («dorme»). Una rete neurale impara che certi token si
+  somigliano; con molti dati potrebbe tornare in vantaggio (non misurato).
 - Le misure sul testo sono su testi di pochi MB: dicono che il modello funziona
   e come si confronta con una rete della stessa misura, non che conversi bene.
 - Leggere tutte le righe di una tabella grande, invece delle sole 20.000

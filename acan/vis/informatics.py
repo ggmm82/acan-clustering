@@ -145,10 +145,11 @@ Sul tuo server la velocità reale è quella mostrata dalla pagina.
 
 ### Limiti, in chiaro
 
-- **Contesti simili.** Il modello non sa ancora che «gatto» e «cane» si
-  somigliano: due contesti diversi non si aiutano, se non attraverso il contesto
-  più corto che hanno in comune. È il passo che manca per generalizzare come una
-  rete neurale.
+- **Valori simili.** Come nella tabella due città diverse sono semplicemente
+  diverse, così nel testo «gatto» e «cane»: due contesti diversi si aiutano solo
+  attraverso il contesto più corto che hanno in comune. Una rete neurale impara
+  che certi token si somigliano; con molti dati potrebbe tornare in vantaggio
+  (non misurato).
 - **Memoria.** I contesti diversi crescono con il testo: oltre la memoria
   massima i meno utili vengono generalizzati, e qualcosa si perde.
 - **Contesti lunghi oltre 4 token.** Con 32.000 token di vocabolario un contesto
