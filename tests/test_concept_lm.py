@@ -164,8 +164,10 @@ class ConceptLongLearningTests(unittest.TestCase):
             result = generate(store, done, dict(prompt='Ciao!', chat=True, max_new_tokens=20, temperature=0., seed=0,
                                                 checkpoint=done['checkpoint']), checkpoint)
             self.assertTrue(result['concept_model'] and result['generated_tokens'] <= 20)
-            scores = evaluate(store, done, dict(test_batches=4), checkpoint, lambda: None)
+            scores = evaluate(store, done, dict(test_batches=4, context_lengths=[32, 400], new_tokens=8), checkpoint, lambda: None)
             self.assertTrue(np.isfinite(scores['nll']) and scores['tokens'] > 0)
+            self.assertEqual([row['prompt_tokens'] for row in scores['performance']], [32, 400])
+            self.assertTrue(all(row['cache']['total'] > 0 and row['decode_tokens_per_second'] > 0 for row in scores['performance']))
             from acan.lm.exporting import export_bundle
             import zipfile
             names = zipfile.ZipFile(export_bundle(store, done, done['checkpoint'])).namelist()

@@ -234,5 +234,24 @@ def evaluate(store, job, request, directory, check):
         values.append(model.logp(piece, np.arange(1, len(piece))))
     every = np.concatenate(values)
     nll = float(-every.mean())
-    return dict(nll=nll, perplexity=math.exp(nll) if nll < 700 else None, tokens=len(every), batches=len(values),
-                block_indices=blocks.evaluation_indices('test', limit), step=state['step'], concept_model=True)
+    quality = dict(nll=nll, perplexity=math.exp(nll) if nll < 700 else None, tokens=len(every), batches=len(values),
+                   block_indices=blocks.evaluation_indices('test', limit), step=state['step'], concept_model=True)
+    performance = []
+    tokens = np.asarray(blocks.tokens['test'], np.int64)
+    for length in request.get('context_lengths', ()):
+        check()
+        prompt = np.resize(tokens, length) if length > len(tokens) else tokens[:length]   # longer than the test text: repeated
+        started = time.perf_counter()
+        model.logp(prompt)                                       # reading the prompt: every position at once
+        reading = time.perf_counter()-started
+        new_tokens = int(request.get('new_tokens', 16))
+        started = time.perf_counter()
+        model.generate(prompt, new_tokens, temperature=0.)
+        writing = time.perf_counter()-started
+        memory = model.nbytes()
+        performance.append(dict(prompt_tokens=length, new_tokens=new_tokens, prefill_seconds=reading,
+                                prefill_tokens_per_second=length/max(reading, 1e-9), decode_seconds=writing,
+                                decode_tokens_per_second=new_tokens/max(writing, 1e-9),
+                                cache=dict(dense_layers=0, acan_layers=memory, total=memory)))
+    quality['performance'] = performance
+    return quality

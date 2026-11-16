@@ -77,9 +77,11 @@ def evaluate_checkpoint(root,identifier,stop_event=None):
         snapshot=directory/'checkpoints'/options['checkpoint'];manifest=checkpoints.verify(snapshot)
         if job['config'].get('architecture')=='concepts':     # the concept language model: the test error, no network
             from .concept_trainer import evaluate as concept_evaluate
-            scores=concept_evaluate(store,job,dict(test_batches=options['max_batches']),snapshot,check)
+            scores=concept_evaluate(store,job,dict(test_batches=options['max_batches'],context_lengths=options['context_lengths'],
+                                                   new_tokens=options['new_tokens']),snapshot,check)
+            performance=scores.pop('performance')
             result=dict(job=job['id'],checkpoint=options['checkpoint'],step=scores['step'],architecture='concepts',device='cpu',
-                        records=dict(selected_checkpoint=dict(quality=scores,performance=[])),comparison=[],
+                        records=dict(selected_checkpoint=dict(quality=scores,performance=performance)),comparison=[],
                         protocol=dict(test='deterministically spread sample of disjoint document test split, never used for checkpoint selection',
                                       max_batches=options['max_batches'],scope='Bounded diagnostic of the concept language model.'))
             with store.db() as db:db.execute("UPDATE evaluations SET status='completed',result=? WHERE id=?",(json.dumps(result,allow_nan=False),identifier))
