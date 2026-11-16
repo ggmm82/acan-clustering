@@ -277,15 +277,17 @@ class ConceptLM:
     probability of a token is the mixture of the paths, with weights from the judgment.
     """
 
-    def __init__(self, vocabulary, depth=6, document=4, budget_bytes=None, maps=(), paths=None):
+    def __init__(self, vocabulary, depth=6, document=4, budget_bytes=None, maps=(), paths=None, path_depth=None):
         self.V, self.depth, self.document = int(vocabulary), int(depth), int(document)
+        self.path_depth = self.depth if path_depth is None else min(int(path_depth), self.depth)
         self.budget_bytes = budget_bytes
         self.maps = [np.asarray(m, np.int64) for m in maps]
         self.paths = list(paths) if paths is not None else [((), EXACT)]
         self.readings, self.of_path = [], []
         identity = np.arange(self.V)
         for steps, context in self.paths:
-            symbols = [(k, d) for d in range(1, self.depth+1) for k in ((context, EXACT) if context != EXACT else (EXACT,))]
+            reach = self.depth if not steps else self.path_depth     # contexts of the paths through concepts: up to path_depth
+            symbols = [(k, d) for d in range(1, reach+1) for k in ((context, EXACT) if context != EXACT else (EXACT,))]
             chain = [self.maps[s] for s in steps]+[identity]
             node = np.zeros(self.V, np.int64)
             own = []
@@ -594,7 +596,7 @@ class ConceptLM:
     # ---- saving ---------------------------------------------------------------------------
     def arrays(self):
         self.settle()
-        out = dict(a=self.a, b=self.b, w=self.w, shape=np.array([self.V, self.depth, self.document, self.tokens, self.generalized], np.int64))
+        out = dict(a=self.a, b=self.b, w=self.w, path_depth=np.array([self.path_depth], np.int64), shape=np.array([self.V, self.depth, self.document, self.tokens, self.generalized], np.int64))
         width = max([len(steps) for steps, _ in self.paths]+[0])
         out['paths'] = np.array([[context]+list(steps)+[-1]*(width-len(steps)) for steps, context in self.paths], np.int64)
         if self.maps:
@@ -611,7 +613,8 @@ class ConceptLM:
         paths = None
         if 'paths' in arrays:                                    # written before the paths: only the direct one
             paths = [(tuple(int(s) for s in row[1:] if s >= 0), int(row[0])) for row in arrays['paths']]
-        model = cls(V, depth, document, budget_bytes, maps, paths)
+        path_depth = int(arrays['path_depth'][0]) if 'path_depth' in arrays else None
+        model = cls(V, depth, document, budget_bytes, maps, paths, path_depth)
         model.a, model.b, model.tokens, model.generalized = np.array(arrays['a']), np.array(arrays['b']), tokens, generalized
         if 'w' in arrays:
             model.w = np.array(arrays['w'])
