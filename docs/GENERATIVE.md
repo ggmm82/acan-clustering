@@ -6,6 +6,10 @@ This implementation starts from the newly supplied
 It is separate from the withdrawn character-language experiment and does not
 change the tabular ACAN objective. See [LM audit](LM-AUDIT.md) for differences.
 
+> **From 9.0.0 new projects learn the concept model itself, with no neural network**:
+> the training text is a table of concepts by context ([CONCEPT-LM.md](CONCEPT-LM.md)).
+> Earlier projects keep their network.
+>
 > New projects use the `concept-graph-v2` attention layer: the concepts, the reading and
 > the cost of the tabular core ([MODEL.md](MODEL.md)) on a fixed dyadic structure, so that
 > a whole block is read at once ([ALGEBRAIC-CONCEPTS.md](ALGEBRAIC-CONCEPTS.md)). Earlier

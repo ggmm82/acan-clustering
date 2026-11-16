@@ -4,9 +4,8 @@ Three tiny transformers, identical except for attention, are trained from scratc
 
 * ``dense``: ordinary attention over every previous token (the best one can do);
 * ``window``: only the last ``window`` tokens (the same memory as concepts, no concepts);
-* ``concepts``: the last ``window`` tokens exact, older ones summarized in at most ``slots``
-  concepts for every level of the concept graph (the layer of new projects, acan/lm/graph_scan.py;
-  ``concepts-v1`` is the earlier layer, acan/lm/concept_attention.py).
+* ``concepts``: the concept model itself (acan/lm/concept_lm.py), no network: the training sequences
+  and text are counted, the weights of its levels are chosen by the judgment.
 
 Two tasks with a plain measure each:
 
@@ -176,11 +175,61 @@ def read_corpus(path, jsonl, limit=3*1024*1024):
     return '\n\n'.join(texts)
 
 
+def concept_memory(pairs, filler, values, settings, seed, check, varied=False):
+    """The memory task with the concept model (acan/lm/concept_lm.py): the training sequences are counted.
+
+    The same sequences a network would read in its training steps; the weights of the levels are chosen
+    by the judgment on other training sequences; the measure is the same as for the networks.
+    """
+    import numpy as np
+    from .concept_lm import ConceptLM
+    keys, questions = max(values, 2*pairs), 4
+    vocabulary = keys+values+1+8
+    generator = torch.Generator().manual_seed(seed)
+
+    def sequences(count, gap_generator, fixed):
+        rows, targets = [], []
+        for _ in range(count):
+            gap = fixed if fixed is not None else int(torch.randint(0, filler+1, (1,), generator=gap_generator))
+            ids, target = recall_batch(1, pairs, keys, values, gap, questions, gap_generator)
+            rows.append(ids[0].numpy()); targets.append(target[0].numpy())
+        return rows, targets
+    started = time.monotonic()
+    count = settings['memory_steps']*32                           # the sequences of a network's training
+    rows, _ = sequences(count, generator, None if varied else filler)
+    check()
+    model = ConceptLM(vocabulary, depth=4, document=2)
+    model.add(np.concatenate([np.r_[row, vocabulary-1] for row in rows]))
+    model.settle()
+    tune_rows, tune_targets = sequences(200, torch.Generator().manual_seed(1000+seed), None if varied else filler)
+    texts, places = [], []
+    for row, target in zip(tune_rows, tune_targets):
+        for at in np.flatnonzero(target != -100):
+            texts.append(np.r_[row[:at+1], target[at]]); places.append(np.array([at+1]))
+    model.judge(texts, places)
+    check()
+    ids, targets = recall_batch(512, pairs, keys, values, filler, questions, torch.Generator().manual_seed(10_000+seed))
+    ids, targets = ids.numpy(), targets.numpy()
+    right, from_sequence = [], []
+    for row, target in zip(ids, targets):
+        stored = set(row[1:2*pairs:2].tolist())
+        for at in np.flatnonzero(target != -100):
+            guess = keys+int(np.argmax(model.distribution(row[:at+1])[keys:keys+values]))
+            right.append(guess == target[at]); from_sequence.append(guess != target[at] and guess in stored)
+    right, from_sequence = np.array(right), np.array(from_sequence)
+    by_question = right.reshape(len(ids), -1).mean(0)
+    return dict(accuracy=float(right.mean()), seconds=time.monotonic()-started, parameters=0, concepts=sum(model.concepts()),
+                wrong_but_from_the_sequence=float(from_sequence.mean()), wrong_not_in_the_sequence=float((~right & ~from_sequence).mean()),
+                accuracy_by_question=[float(value) for value in by_question], training_curve=[])
+
+
 def memory(kind, pairs, filler, values, settings, shape, seed, check, varied=False):
     """Train one model on the memory task; what it recalls and how it fails.
 
     ``varied``: training batches have fillers from 0 to ``filler`` tokens; the measure is at ``filler``.
     """
+    if kind == 'concepts':
+        return concept_memory(pairs, filler, values, settings, seed, check, varied)
     keys, questions = max(values, 2*pairs), 4
     length = 2*pairs+filler+questions
     torch.manual_seed(seed)
@@ -217,27 +266,32 @@ def kept(length, window, slots):
 
 @torch.no_grad()
 def cost(shape, lengths, check):
-    """Time per token of one pass over contexts of growing length, and the vectors each layer keeps.
+    """Time per token of reading contexts of growing length, and what each model keeps.
 
-    Ordinary attention compares every token with all the previous ones: its time per token grows
-    with the context and its memory (the cache) holds every token. Concepts keep ``window`` exact
-    tokens and at most ``slots`` concepts for every level: the levels grow with the logarithm of the length. The models are untrained: only the cost is measured.
+    Ordinary attention compares every token with all the previous ones: its time per token grows with
+    the context and its memory holds every token. The concept model reads, for every token, one concept
+    per level of context and the concepts of the text in hand: its time per token does not depend on how
+    long the text is. The network is untrained, the concept model counts random text: only the cost is measured.
     """
+    import numpy as np
+    from .concept_lm import ConceptLM
     rows = []
-    for kind in ('dense', 'concepts'):
-        TinyLM(64, kind, length=64, **shape).eval()(torch.zeros(1, 64, dtype=torch.long))   # warm-up
+    TinyLM(64, 'dense', length=64, **shape).eval()(torch.zeros(1, 64, dtype=torch.long))   # warm-up
+    concept = ConceptLM(64, depth=4, document=2)
+    concept.add(np.random.default_rng(0).integers(0, 64, 100_000)); concept.settle()
     for length in lengths:
         check()
         row = dict(length=length)
-        for kind in ('dense', 'concepts'):
-            model = TinyLM(64, kind, length=length, **shape).eval()
-            ids = torch.randint(0, 64, (1, length), generator=torch.Generator().manual_seed(0))
-            started = time.perf_counter()
-            model(ids)
-            row[kind] = dict(milliseconds_per_token=1000*(time.perf_counter()-started)/length,
-                             kept_vectors=length if kind == 'dense' else kept(length, shape['window'], shape['slots']))
+        model = TinyLM(64, 'dense', length=length, **shape).eval()
+        ids = torch.randint(0, 64, (1, length), generator=torch.Generator().manual_seed(0))
+        started = time.perf_counter()
+        model(ids)
+        row['dense'] = dict(milliseconds_per_token=1000*(time.perf_counter()-started)/length, kept_vectors=length)
+        started = time.perf_counter()
+        concept.logp(ids[0].numpy())
+        row['concepts'] = dict(milliseconds_per_token=1000*(time.perf_counter()-started)/length,
+                               kept_vectors=concept.depth+1+concept.document)
         rows.append(row)
-    # Ordinary attention: time per token = a + b*length; concepts: about constant. Where they cross:
     x = torch.tensor([row['length'] for row in rows], dtype=torch.float64)
     y = torch.tensor([row['dense']['milliseconds_per_token'] for row in rows], dtype=torch.float64)
     slope = float(((x-x.mean())*(y-y.mean())).sum()/((x-x.mean())**2).sum())
@@ -290,6 +344,9 @@ def run(text, budget='quick', check=lambda: None, report=lambda message: None, s
     train_data, held = data[:split], data[split:]
     for kind in KINDS:
         report(f'Scrittura · {kind}')
+        if kind == 'concepts':
+            result['text'][kind] = concept_text(train_data, held, alphabet, block, check)
+            continue
         torch.manual_seed(seed)
         generator = torch.Generator().manual_seed(seed)
         model = TinyLM(len(alphabet), kind, length=block, **shape)
@@ -312,6 +369,33 @@ def run(text, budget='quick', check=lambda: None, report=lambda message: None, s
     return result
 
 
+def concept_text(train_data, held, alphabet, block, check):
+    """The text with the concept model: the training text is counted once, measured as the networks are."""
+    import numpy as np
+    from .concept_lm import ConceptLM
+    started = time.monotonic()
+    data, held = train_data.numpy(), held.numpy()
+    counted, tune = data[:-len(data)//10], data[-len(data)//10:]       # the weights are judged on text never counted
+    model = ConceptLM(len(alphabet), depth=8, document=4)
+    for start in range(0, len(counted), 100_000):
+        check()
+        model.add(counted[start:start+100_000])
+    model.settle()
+    pieces = [tune[start:start+block] for start in range(0, len(tune)-block, block)][:200]
+    model.judge(pieces, [np.arange(block//2, block)]*len(pieces))
+    evaluation = torch.Generator().manual_seed(20_000)
+    values = []
+    for _ in range(8):
+        ids, targets = text_batch(torch.from_numpy(held), 16, block, evaluation)
+        for row, target in zip(ids.numpy(), targets.numpy()):
+            values.append(model.logp(np.r_[row, target[-1:]], np.arange(block//2+1, block+1)))
+    prompt = held[:block]
+    produced = model.generate(prompt, 300, temperature=.8, seed=1)
+    return dict(bits_per_character=float(-np.concatenate(values).mean()/math.log(2)), seconds=time.monotonic()-started,
+                prompt=''.join(alphabet[i] for i in prompt[-80:].tolist()), sample=''.join(alphabet[i] for i in produced),
+                parameters=0, concepts=sum(model.concepts()), training_curve=[])
+
+
 def reached(curve, target):
     """The first step at which the training loss is at or below ``target``; None if never."""
     return next((point['step'] for point in curve if point['loss'] <= target), None)
@@ -326,6 +410,10 @@ def efficiency(result, characters_per_step):
     is the training steps. The training loss is measured on batches not seen before, averaged over
     a fortieth of the training, so differences under a few percent are noise.
     """
+    if not result['text']['concepts']['training_curve']:          # the concept model counts the text once
+        level = result['text']['dense']['training_curve'][-1]['loss'] if result['text']['dense']['training_curve'] else None
+        return dict(text=dict(level=level, characters=dict(dense=None, concepts=None)), memory=dict(level=.5, steps={}, ratio=None),
+                    counted_once=True)
     text = {kind: result['text'][kind]['training_curve'] for kind in ('dense', 'concepts')}
     level = max(curve[-1]['loss'] for curve in text.values())
     steps = {kind: reached(curve, level) for kind, curve in text.items()}

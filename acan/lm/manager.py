@@ -77,7 +77,7 @@ def request_generation(store, job, owner, options):
     if not isinstance(request.get('prompt'), str) or not 1 <= len(request['prompt']) <= 32000:
         raise ValueError('Prompt non valido.')
     # A native model can draw a picture (about 1,060 tokens) or a sound: it may write up to 4,096 tokens.
-    most = 4096 if job['config'].get('architecture') == 'native' else 256
+    most = 4096 if job['config'].get('architecture') in ('native', 'concepts') else 256
     if not isinstance(request['max_new_tokens'], int) or not 1 <= request['max_new_tokens'] <= most:
         raise ValueError(f'Scegli da 1 a {most:,} nuovi token.')
     if request['inspect_layers'] and request['max_new_tokens'] > 32:
