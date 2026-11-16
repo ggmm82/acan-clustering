@@ -401,6 +401,12 @@ def create_app(root=None, token=None):
             raise ValueError('Metti in pausa il progetto attivo prima di avviare il controllo.')
         from .research_options import validate_options as controlled_options
         source={key:value for key,value in job['config'].items() if key not in ('series','warm_start','control_of')}
+        if source.get('architecture')=='concepts':
+            # The concept model is compared with a network born from zero on the same text, tokenizer and pieces.
+            if not job['checkpoint']:
+                raise ValueError('Avvia prima il progetto: il controllo usa il suo tokenizer.')
+            source.update(architecture='native',routing_profile='concept-graph-v2',native_size='micro',passes=1)
+            source['total_steps']=1000
         if source.get('architecture')=='native':
             # A native model is controlled by the same model born from zero with ordinary attention,
             # on the same text with the same tokenizer, steps and seed.

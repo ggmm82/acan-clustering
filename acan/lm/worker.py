@@ -20,7 +20,9 @@ def main():
         if args.kind == 'train':
             from .store import Store
             options=Store(args.root).job(args.job)['config']
-            if options.get('protocol')=='controlled-v1':
+            if options.get('architecture')=='concepts':     # the concept language model: no network to check
+                from .concept_trainer import run_training
+            elif options.get('protocol')=='controlled-v1':
                 from .resources import check_profile
                 import torch
                 try:

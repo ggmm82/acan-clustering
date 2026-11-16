@@ -4,16 +4,17 @@ from .trainer import validate_options as legacy_options
 
 EXTRA=dict(protocol='controlled-v1',routing_profile='shared-algebra-v1',architecture='hybrid',graft_fraction=.5,distillation_weight=0.,distillation_temperature=2.,
            early_stop_patience=3,early_stop_min_delta=.01,validation_batches=8,cp_weight=0.,
-           milestone_steps=0,chat_probes=False,probe_prompts=[],auto_resume=False,passes=0,warm_start=False,native_size='micro',vocabulary=32000,native_attention='concepts')
+           milestone_steps=0,chat_probes=False,probe_prompts=[],auto_resume=False,passes=0,warm_start=False,native_size='micro',vocabulary=32000,native_attention='concepts',
+           concept_depth=6,concept_document=4,concept_memory_mb=0,concept_piece=1_000_000)
 
 
 def validate_options(options):
     extra={key:options.get(key,value) for key,value in EXTRA.items()}
     if isinstance(extra['graft_fraction'],bool) or extra['graft_fraction'] not in (.5,1.):
         raise ValueError('Frazione ACAN ammessa: 0.5 oppure 1.0.')
-    if extra['routing_profile'] not in ('legacy-causal-v1','shared-algebra-v1','cp-routing-v1','cp-joint-v1','cp-v9','concept-graph-v1','concept-graph-v2'):
+    if extra['routing_profile'] not in ('legacy-causal-v1','shared-algebra-v1','cp-routing-v1','cp-joint-v1','cp-v9','concept-graph-v1','concept-graph-v2','concept-lm-v1'):
         raise ValueError('Profilo algebrico non valido.')
-    if extra['architecture'] not in ('hybrid','dense-control','native'):
+    if extra['architecture'] not in ('hybrid','dense-control','native','concepts'):
         raise ValueError('Architettura non supportata.')
     if extra['protocol']!='controlled-v1':
         raise ValueError('Protocollo di training non supportato.')
@@ -36,6 +37,12 @@ def validate_options(options):
         raise ValueError('Attenzione del modello nativo: concepts oppure dense (il controllo).')
     if extra['architecture']=='native' and extra['routing_profile'] not in ('concept-graph-v1','concept-graph-v2'):
         raise ValueError('Il modello nativo usa il grafo dei concetti (concept-graph-v1).')
+    if (extra['architecture']=='concepts')!=(extra['routing_profile']=='concept-lm-v1'):
+        raise ValueError('Il modello a concetti (architettura «concepts») usa il profilo concept-lm-v1, e solo lui.')
+    for key,lo,hi in [('concept_depth',1,12),('concept_document',0,8),('concept_memory_mb',0,262144),('concept_piece',10_000,50_000_000)]:
+        value=extra[key]
+        if isinstance(value,bool) or not isinstance(value,int) or not lo<=value<=hi:
+            raise ValueError('Parametro non valido: '+key)
     if any(not isinstance(extra[key],bool) for key in ('chat_probes','auto_resume','warm_start')):
         raise ValueError('Parametro non valido: chat_probes, auto_resume o warm_start')
     if isinstance(extra['passes'],bool) or not isinstance(extra['passes'],(int,float)) or not 0<=extra['passes']<=1000:

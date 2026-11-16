@@ -7,8 +7,9 @@ opzionale. Richiede Python 3.9 o successivo.
 
 ## Il modello
 
-Tabella e linguaggio usano **un solo modello**, il grafo dei concetti (profili
-`concept-graph-v1` e, per i nuovi progetti di linguaggio, `concept-graph-v2`): un concetto è un nodo che riassume con somme le
+Tabella e linguaggio usano **un solo modello**, il grafo dei concetti. Dalla 9.0.0
+il testo è una tabella di questo modello, senza rete neurale (`concept-lm-v1`,
+`docs/CONCEPT-LM.md`): un concetto è un nodo che riassume con somme le
 osservazioni che gli appartengono; riconoscere è massa per somiglianza attesa;
 generalizzare unisce i due concetti la cui unione costa meno a chi legge;
 giudicare usa solo osservazioni che il concetto non contiene. La ricerca dei

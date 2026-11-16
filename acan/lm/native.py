@@ -95,7 +95,7 @@ def resolve_base(store, job, options):
 
     trainer.resolve_base is part of the checkpoint contract and stays unchanged; callers use this.
     """
-    if options.get('architecture') == 'native':
+    if options.get('architecture') in ('native', 'concepts'):          # both learn their tokenizer from the texts
         return resolve(store, job, options)
     from .trainer import resolve_base as pretrained
     return pretrained(store, job, options)
