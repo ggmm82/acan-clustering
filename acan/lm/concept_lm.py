@@ -752,12 +752,13 @@ def memory_limit():
 
 
 def default_budget():
-    """Bytes for the statistics: a tenth of the memory the process may use, at most 2 GB.
+    """Bytes for the statistics: a quarter of the memory the process may use, at most 2 GB.
 
-    Adding two tables holds both, their sum and the sorting of their keys: while it adds, the process
-    peaks at about three and a half times the statistics, plus what it holds anyway.
+    Adding two tables holds both, their sum and the sorting of their keys: measured, the process peaks at
+    2.5 to 3 times the statistics (2.3 GB with 794 MB, 5.1 GB with 2 GB), plus what it holds anyway, so a
+    quarter stays inside the limit.
     """
-    return int(min(memory_limit()//10, 2 << 30))
+    return int(min(memory_limit()//4, 2 << 30))
 
 
 def save(directory, model, state, identity):

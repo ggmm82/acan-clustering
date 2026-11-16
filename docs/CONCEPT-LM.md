@@ -112,7 +112,7 @@ $\log_2(\text{pezzi})$ volte. Prima di leggere o salvare, il contatore si somma
 tutto.
 
 **Memoria.** Il limite vale per tutte le somme, quelle unite e quelle del
-contatore (automatico: un decimo della memoria che il processo può usare, cioè
+contatore (automatico: un quarto della memoria che il processo può usare, cioè
 della macchina o del limite del suo contenitore, al massimo 2 GB). Dopo ogni
 pezzo, se lo supera, il contatore si unisce tutto e si generalizzano nel livello
 sopra i concetti con la minore perdita per byte, finché le somme scendono al 60%

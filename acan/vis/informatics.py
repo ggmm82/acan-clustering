@@ -104,7 +104,7 @@ blocchi; su due milioni di righe il processo è rimasto intorno a 1 GB.
 
 **Un testo** fa crescere i contesti diversi con la sua lunghezza. La **memoria
 massima dei concetti** vale per tutte le somme insieme, quelle già unite e quelle
-ancora nel contatore (automatica: un decimo della memoria che il processo può
+ancora nel contatore (automatica: un quarto della memoria che il processo può
 usare, del server o del suo contenitore, al massimo 2 GB; si può impostare). Dopo
 ogni pezzo, se le somme la superano, il programma unisce tutto il contatore,
 calcola per ogni concetto quanto peggio sarebbero letti i suoi membri dal

@@ -310,7 +310,7 @@ layout = dbc.Card(dbc.CardBody([
                "il testo si legge una volta sola. Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.",
                className='text-muted d-block mb-2'),
     dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Memoria massima dei concetti'), dbc.Input(id='lm-long-memory', type='number', value=0, min=0, max=262144, step=256), dbc.InputGroupText('MB')]), md=6),
-             dbc.Col(html.Small("0 = automatica: un decimo della memoria del server (o del suo contenitore), al massimo 2 GB; vale per tutte le somme, e mentre somma il processo ne usa al massimo circa il triplo. Oltre questo limite i concetti che costano meno a chi "
+             dbc.Col(html.Small("0 = automatica: un quarto della memoria del server (o del suo contenitore), al massimo 2 GB; con il contenitore da 4 GB sono 1.024 MB. Vale per tutte le somme, e mentre somma il processo ne usa al massimo circa il triplo: non superare un quarto della memoria del contenitore. Oltre questo limite i concetti che costano meno a chi "
                                 "legge vengono generalizzati nel livello sopra.", className='text-muted'), md=6)], className='mb-2'),
     dbc.Row([dbc.Col(dbc.Checkbox(id='lm-long-paths', value=False, label='Concetti dei token e percorsi'), md=6),
              dbc.Col(html.Small("Il modello trova da sé i concetti dei token («gatto» e «cane» si somigliano) e legge il prossimo token anche dal "
