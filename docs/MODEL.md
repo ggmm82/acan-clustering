@@ -7,6 +7,13 @@ precedenti (MATHEMATICAL-FOUNDATION, CONCEPT-GRAPH, CP-V9-RESULTS,
 CP-GRAPH-RESULTS) restano come storia di come ci si è arrivati; dove
 differiscono da questa pagina, vale questa pagina.
 
+**Stato dell'unificazione con il testo.** Il generativo di produzione conta
+contesti esatti: condivide questa algebra, ma non la ricerca di `ConceptModel`.
+L'esperimento [testo come tabella](../experiments/text_table/README.md) applica
+invece il nucleo tabulare a200000 righe di vettori, senza cambiarlo. La qualità
+testuale risulta peggiore del contatore: non è integrato né presentato come
+un'architettura completa di vettori, memoria lunga e layer.
+
 Profilo: `concept-graph-v1` nella tabella; nel linguaggio `concept-graph-v2` per i
 progetti nuovi (`concept-graph-v1` per quelli già creati).
 Codice: nucleo tabulare [`acan/core/concepts.py`](../acan/core/concepts.py),

@@ -1,11 +1,20 @@
 # Il modello a concetti che scrive (`concept-lm-v1`)
 
-Un solo modello per tabelle e testo: il testo è una tabella, il modello è quello
-di [MODEL.md](MODEL.md). Nessuna rete neurale, nessun peso addestrato, nessun
-gradiente. Codice: [`acan/lm/concept_lm.py`](../acan/lm/concept_lm.py) (il
-modello), [`acan/lm/concept_trainer.py`](../acan/lm/concept_trainer.py)
-(apprendimento lungo, generazione, verifica sul test, esportazione). Test:
-[`tests/test_concept_lm.py`](../tests/test_concept_lm.py).
+Questa pagina descrive il **contatore di contesti esatti attualmente nel prodotto**.
+Condivide somme e lettura categorica con il modello tabulare, ma **non usa la
+ricerca per somiglianza di ConceptModel**. Non è quindi l'unificazione richiesta
+fra tabella e testo vettoriale. Non impiega reti o gradienti.
+
+Il primo prototipo che usa effettivamente `ConceptModel.fit_chunks` sul testo è
+separato dal prodotto: [esperimento su200000 righe](../experiments/text_table/README.md).
+Trova83 concetti su tre livelli, ma misura6,9207 nat/token contro5,4075 del
+contatore con200008 token e4,5199 del contatore sul train completo, sugli stessi
+blocchi di questa prova. Non viene integrato: vanno affrontati il bilanciamento
+del target vettoriale e il giudizio sul token esatto. Memoria del documento,
+affinamento dei vettori e layer successivi restano da verificare.
+
+Codice del prodotto: `acan/lm/concept_lm.py` e `acan/lm/concept_trainer.py`;
+la coda, i checkpoint, l'API e i progetti esistenti conservano il loro contratto.
 
 ## 1. Il testo come tabella
 
@@ -238,10 +247,11 @@ una lingua): circa 414.000 token al secondo per imparare, circa 790 per
 scrivere. Dopo 8 milioni di token: 21,5 milioni di concetti, 920 MB di somme,
 3 GB di picco del processo durante le somme.
 
-## 8. Un modello, due tipi di righe
+## 8. Algebra comune, costruzione dei concetti ancora diversa
 
-Le definizioni, la lettura, il giudizio, la somma a blocchi e il salvataggio sono
-gli stessi della tabella, e le funzioni comuni sono in `acan/concept_algebra.py`.
+Le somme e la lettura condividono funzioni in `acan/concept_algebra.py`.
+Questo non rende identici ricerca, giudizio e costruzione dei concetti: il testo
+attuale conta chiavi, mentre ConceptModel generalizza righe per somiglianza.
 Cambia come una riga trova i suoi concetti, perché cambiano gli attributi:
 
 - in una tabella ci sono numeri: due righe sono più o meno vicine, una riga
