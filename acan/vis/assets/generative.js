@@ -9,16 +9,24 @@
     if (!response.ok) throw Error(result.error || 'Caricamento fallito');
     return result;
   }
+  const ZONES = [
+    {zone: 'lm-file-upload', status: 'lm-upload-status', store: 'lm-upload-state', label: 'Carica il tuo testo'},
+    {zone: 'lm-long-file-upload', status: 'lm-long-upload-status', store: 'lm-long-upload-state', label: 'Carica e aggiungi alla coda'},
+  ];
   function bind() {
-    const zone = document.getElementById('lm-file-upload');
+    ZONES.forEach(bindZone);
+    bindRecovery();
+  }
+  function bindZone(names) {
+    const zone = document.getElementById(names.zone);
     if (zone && !zone.dataset.bound) {
       zone.dataset.bound = 'true';
       const input = document.createElement('input'); input.type='file'; input.accept='.txt,.jsonl,.md,.markdown,.py,.zip,.epub,.docx,.pdf,.png,.jpg,.jpeg,.bmp,.webp,.gif,.wav,.mp3,.ogg,.flac,.m4a,.aac,.opus,.mp4,.webm,.mov,.avi,.mkv';
       input.setAttribute('aria-label','Corpus di training TXT o JSONL');
-      const button = document.createElement('button'); button.textContent='Carica il tuo testo'; button.className='btn btn-outline-primary my-2';
+      const button = document.createElement('button'); button.textContent=names.label; button.className='btn btn-outline-primary my-2';
       zone.append(input, button);
       button.onclick = async function () {
-        const status = document.getElementById('lm-upload-status');
+        const status = document.getElementById(names.status);
         try {
           if (!input.files.length || !window.acanLmWorkspace) throw Error('Seleziona un corpus e attendi il workspace.');
           button.disabled = true;
@@ -31,11 +39,13 @@
           }
           const ready = await call('finish',null,{'X-Corpus-ID':corpus.id});
           status.textContent='Corpus salvato sul volume persistente: '+file.name;
-          window.dash_clientside.set_props('lm-upload-state',{data:ready});
+          window.dash_clientside.set_props(names.store,{data:ready});
         } catch(error) { status.textContent=error.message; }
         finally { button.disabled=false; }
       };
     }
+  }
+  function bindRecovery() {
     const recovery = document.getElementById('lm-recovery-input');
     if (recovery && !recovery.dataset.bound) {
       recovery.dataset.bound='true';
