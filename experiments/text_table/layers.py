@@ -24,15 +24,10 @@ def prepare(table, tokens):
 def evaluate(reading, pieces, document):
     losses = []
     for ids, membership in pieces:
-        heads = reading.probability(ids)
         if document:
-            state = reading.document()
-            state.observe(membership[0], ids[0])
-            probability = []
-            for position in range(1, len(ids)):
-                probability.append(state.probability(membership[position], [ids[position]])[0])
-                state.observe(membership[position], ids[position])
+            probability = reading.sequence_probability(membership, ids)[1:]
         else:
+            heads = reading.probability(ids)
             probability = (membership[1:]*heads[:, 1:].T).sum(1)
         losses.append(-np.log(np.maximum(probability, 1e-300)))
     loss = np.stack(losses)

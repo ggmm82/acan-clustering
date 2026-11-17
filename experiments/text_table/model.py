@@ -57,9 +57,14 @@ class VectorTable:
         self.model=ConceptModel(**options)
         self.kappa=1.
 
-    def fit(self, ids, rows=200000, chunk=2048):
+    def fit(self, ids, rows=200000, chunk=2048, progress=None):
         read=lambda:self.rows.chunks(ids,rows,chunk)
-        self.model.fit_chunks(read,labels=self.rows.targets)
+        self.model.fit_chunks(read,labels=self.rows.targets,progress=progress)
+        return self.read_training(ids,rows,chunk)
+
+    def read_training(self, ids, rows=200000, chunk=2048):
+        """Recount the training rows after a choice along the same learned path."""
+        read=lambda:self.rows.chunks(ids,rows,chunk)
         k=self.model.concepts;v=len(self.rows.vectors);d=self.rows.vectors.shape[1]
         self.counts=sparse.csr_matrix((k,v),dtype=float)
         c=np.zeros((k,1));u=np.zeros((k,d));q=np.zeros((k,d))

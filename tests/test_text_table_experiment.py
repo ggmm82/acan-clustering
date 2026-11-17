@@ -55,3 +55,14 @@ class TextTableExperimentTests(unittest.TestCase):
         second,_=semantic_vectors(self.ids,7,dimensions=3,top=4,seed=0)
         np.testing.assert_array_equal(first,second)
         self.assertEqual(first.shape,(7,3));self.assertTrue(np.isfinite(s).all())
+
+    def test_observing_the_merge_path_does_not_change_learning(self):
+        observed=[]
+        again=VectorTable(self.vectors,context=2,max_concepts=8,judged_rows=24,
+            refine_rows=32,chunk_rows=16,covariance=False).fit(self.ids,rows=96,chunk=16,
+                progress=lambda step: observed.append((step['k'],step['score'])))
+        self.assertTrue(observed)
+        self.assertTrue(all(k>=1 and np.isfinite(score) for k,score in observed))
+        np.testing.assert_allclose(again.counts.toarray(),self.model.counts.toarray(),atol=1e-10)
+        np.testing.assert_allclose(again.model.assignments(again.rows.frame(self.ids,[5])),
+            self.model.model.assignments(self.model.rows.frame(self.ids,[5])),atol=1e-12)

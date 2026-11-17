@@ -46,6 +46,54 @@ class LevelReading:
                 self.distinct[i][:, None], prior, self.kappa, np)
         return prior
 
+    def prefix_statistics(self, membership, tokens):
+        """Batch sufficient statistics, written before each revealed token is added."""
+        tokens = np.asarray(tokens, dtype=int)
+        membership = np.asarray(membership, dtype=float)
+        if tokens.ndim != 1 or np.any(tokens < 0) or np.any(tokens >= self.vocabulary):
+            raise ValueError('Token fuori dal vocabolario.')
+        if membership.shape != (len(tokens),len(self.mass[-1])) or not np.isfinite(membership).all() or np.any(membership < 0) or not np.allclose(membership.sum(1),1.):
+            raise ValueError('Appartenenze non valide.')
+        levels = [membership]
+        for parent in reversed(self.parents):
+            levels.insert(0, levels[0] @ parent.T)
+        statistics = []
+        root_distinct = np.zeros(len(tokens))
+        for level, weights in enumerate(levels):
+            counts = np.zeros_like(weights)
+            distinct = np.zeros_like(weights)
+            mass = np.zeros_like(weights)
+            seen = {}
+            live = np.zeros(weights.shape[1])
+            total = np.zeros_like(live)
+            for pos, token in enumerate(tokens):
+                previous = seen.get(int(token))
+                if previous is None:
+                    previous = np.zeros_like(live)
+                counts[pos], distinct[pos], mass[pos] = previous, live, total
+                if level == len(levels)-1:
+                    root_distinct[pos] = len(seen)
+                live += (previous == 0) & (weights[pos] > 0)
+                total += weights[pos]
+                seen[int(token)] = previous + weights[pos]
+            statistics.append((counts.T,mass.T,distinct.T))
+        return statistics, root_distinct
+
+    def sequence_probability(self, membership, tokens, prefix=None):
+        """Exactly the sequential document reading over a fixed batch; a cached prefix must describe these same inputs."""
+        tokens = np.asarray(tokens, dtype=int)
+        statistics, root_distinct = self.prefix_statistics(membership,tokens) if prefix is None else prefix
+        root = categorical_reading(self.root[tokens],self.root.sum(),np.count_nonzero(self.root),
+            np.full(len(tokens),1/self.vocabulary),self.kappa,np)
+        prior = categorical_reading(statistics[-1][0].sum(0),np.arange(len(tokens)),root_distinct,root,self.kappa,np)[None]
+        for i, (counts,mass,distinct) in enumerate(statistics):
+            if i:
+                prior = self.parents[i-1].T @ prior
+            global_head = categorical_reading(self.columns[i][:,tokens].toarray(),self.mass[i][:,None],
+                self.distinct[i][:,None],prior,self.kappa,np)
+            prior = categorical_reading(counts,mass,distinct,global_head,self.kappa,np)
+        return (np.asarray(membership)*prior.T).sum(1)
+
     def document(self):
         return DocumentReading(self)
 

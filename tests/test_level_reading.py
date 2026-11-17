@@ -89,3 +89,18 @@ class LevelReadingTests(unittest.TestCase):
             prior=read(doc,global_head)
         np.testing.assert_allclose(state.probability(w,vocabulary),w@prior,atol=1e-12)
         for mass in state.level_mass:np.testing.assert_allclose(mass.sum(),1.)
+
+    def test_batched_document_reading_is_exactly_causal_streaming(self):
+        ids=np.array([0,2,1,2,3,0,0,2])
+        weights=np.random.default_rng(8).dirichlet(np.ones(3),size=len(ids))
+        weights[2]=[1.,0.,0.]
+        prefix=self.reader.prefix_statistics(weights,ids)
+        for kappa in (.03125,.5,8.):
+            self.reader.kappa=kappa
+            state=self.reader.document();expected=[]
+            for t,y in zip(weights,ids):
+                expected.append(state.probability(t,[y])[0]);state.observe(t,y)
+            actual=self.reader.sequence_probability(weights,ids,prefix)
+            np.testing.assert_allclose(actual,expected,atol=1e-12)
+            changed=ids.copy();changed[5:]=3
+            np.testing.assert_allclose(self.reader.sequence_probability(weights,changed)[:5],actual[:5],atol=1e-12)
