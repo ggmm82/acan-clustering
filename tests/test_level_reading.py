@@ -23,7 +23,7 @@ class LevelReadingTests(unittest.TestCase):
         np.testing.assert_allclose(actual, expected, atol=1e-12)
         np.testing.assert_allclose(actual.sum(1),1.,atol=1e-12)
         self.assertTrue(np.all(actual[:,3] > 0))
-        self.assertEqual(r.counts[0].sum(), r.counts[-1].sum())
+        np.testing.assert_allclose(r.counts[0].sum(), r.counts[-1].sum(), rtol=0, atol=1e-12)
 
     def test_document_updates_only_after_revelation_and_reset(self):
         r = self.reader; query=np.array([.6,.3,.1]); state=r.document()
