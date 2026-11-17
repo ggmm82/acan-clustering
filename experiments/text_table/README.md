@@ -1,103 +1,104 @@
-# Prima verifica: testo come righe vettoriali di ConceptModel
+# Il testo letto dai livelli del modello tabulare
 
-Esperimento separato dal prodotto. Usa **lo stesso ConceptModel tabulare**:
-scansione, generalizzazione, livelli, appartenenze parziali e statistiche additive.
-Non usa le chiavi di contesti esatti per riconoscere le righe. Il contatore viene
-rieseguito soltanto come controllo, sullo stesso tokenizer e sugli stessi token.
+Prova fuori dal prodotto: una sola istanza del **ConceptModel tabulare invariato**
+impara le righe di contesto. Non vengono introdotti un altro algoritmo di
+clustering, una rete o un contatore di contesti esatti. La PR resta in bozza:
+il risultato migliora la prima prova, ma la qualità non raggiunge ancora il
+contatore dell'app. Le spiegazioni di riferimento dell'app restano invariate
+finché il percorso non è pronto per l'integrazione.
 
-## Che cosa è stato realizzato
+## Percorso verificato
 
-- Tokenizer BPE8000 imparato solo sul train ufficiale di WikiText-2.
-- Vettori32 ottenuti dalle radici delle frequenze dei token precedenti/successivi
-  sul train, rispetto ai512 token più frequenti più una casella per gli altri,
-  e SVD con seme fissato. Nessun gradiente o peso di rete.
-- Ogni posizione ha256 colonne note: otto vettori in ordine di distanza. Le32
-  colonne target contengono il vettore del token da prevedere. Non partecipano
-  al riconoscimento; non si legge la posizione corrente o il futuro.
-- `fit_chunks`:200000 righe generate a blocchi di2048; livelli rifiniti su20000
-  righe e giudizio su512. Parametri dichiarati prima del test, nessuna scelta
-  di questi parametri sul test. Il budget configurato256 non impone il K.
-- Seconda passata sulle stesse righe: somme del vettore target e conteggi sparsi
-  delle coppie concetto/token, pesati dalle appartenenze. Non si creano8000
-  colonne target nella tabella. La lettura usa letteralmente
-  `categorical_reading`, con un prior normalizzato dalla distanza del vettore.
-- La varianza del target è avvicinata alla varianza della radice con la stessa
-  `centre_variance` del nucleo, con peso della radice1. Il kappa della lettura
-  categorica è distinto e scelto sulla validation. La lettura assoluta del target viene riaggregata
-  sulle appartenenze finali anche quando i livelli lavorano su residui.
+1. BPE8000 e vettori32 da radici delle co-occorrenze e SVD, imparati sul solo
+   train ufficiale di WikiText-2. Il tokenizer e i vettori vedono tutto il train.
+2. Una posizione diventa una riga: gli otto vettori precedenti, in ordine, sono
+   le256 colonne note; il vettore del token successivo è il target numerico.
+   `fit_chunks` impara200000 righe, a blocchi2048; i livelli vengono rifiniti
+   su20000 righe e giudicati su512, come nella prima prova.
+3. Il riconoscimento senza target assegna ogni riga ai concetti appresi. Le sue
+   appartenenze pesano i conteggi sparsi concetto/token. Le matrici dei genitori
+   del modello propagano questi conteggi verso i livelli generali.
+4. La lettura scende dagli stessi concetti generali a quelli particolari. A ogni
+   livello usa `categorical_reading`: i conteggi del concetto sono sostenuti
+   dalla distribuzione dei genitori. La radice ha un prior uniforme proprio,
+   quindi anche un token mai contato ha probabilità positiva.
+5. Il documento conserva altre somme negli **stessi** concetti. A ogni livello,
+   i conteggi globali leggono usando il genitore del documento come prior; i
+   conteggi del documento leggono usando quella previsione globale come prior.
+   Sono due applicazioni della stessa formula, non due modelli appresi.
+6. `TextCursor` riconosce il contesto, restituisce le probabilità e solo quando
+   riceve il token aggiorna le somme. Conserva una finestra ordinata di8 token;
+   tutto il passato più lontano rimane nelle statistiche dei livelli.
 
-La densità delle coppie memorizzate è87,35%: il formato sparso non rende rare
-le appartenenze morbide. Il prior vettoriale è una matrice concetti×vocabolario;
-non viene materializzato un tensore posizioni×concetti×vocabolario.
+Questa estensione usa i livelli già appresi. Non aggiunge una seconda rete o un
+secondo modello addestrato sulle uscite del primo. La ricerca dei concetti resta
+quella numerica corrente: il token esatto non giudica ancora il percorso delle
+fusioni. Non sono dimostrati recupero di informazioni lontane o induction.
 
-## Risultato misurato
+## Misure
 
-64 blocchi disgiunti da512 token, seme42. Il token iniziale è dato, quindi si
-misurano32704 predizioni. Validation: primi32 blocchi per scegliere kappa,
-altri32 per controllo; tutti i64 blocchi test rimangono separati.
+Stesso tokenizer e stessi64 blocchi test disgiunti da512 token della prima
+ricevuta:32704 predizioni. I primi32 blocchi validation scelgono il peso del
+prior, gli altri32 controllano; il test non sceglie pesi. Tutte le letture sotto
+usano la medesima tabella di appartenenze e le stesse righe di apprendimento.
 
-| Lettura | Test, nat/token | Tempo di apprendimento e scelta pesi |
-|---|---:|---:|
-| Contatore,200008 token | 5,4075 | 1,13s |
-| Contatore, tutto il train (2729601 token) | 4,5199 | 8,51s |
-| ConceptModel,200000 righe di vettori | **6,9207** | **335,26s**, esclusa la successiva scelta di kappa |
+| Lettura | Errore test, nat/token (meno è meglio) |
+|---|---:|
+| Prima prova: prior dal vettore target | 6,9207 |
+| Livelli appresi, senza memoria del documento | 6,5794 |
+| Livelli appresi e documento causale | **6,1896** |
+| Controllo: soli conteggi della radice e documento | 6,8499 |
+| Contatore dell'app, primi200008 token | 5,4075 |
+| Contatore dell'app, train completo | 4,5199 |
 
-Per il prototipo: **83 concetti, livelli2→14→83**. Non si ripete il collasso a
-uno solo, ma la lettura del testo peggiora. Kappa scelto sulla validation=0,03125,
-il minimo della griglia; la validation di controllo misura7,0138. Vettori e
-tokenizer hanno visto tutto il train: il primo controllo non ha quindi la stessa
-esposizione complessiva al testo. Il controllo su tutto il train è incluso per
-rendere visibile questa differenza.
+Il controllo della sola radice accorpa i conteggi dei concetti: serve a verificare
+che il vantaggio non venga soltanto dalle frequenze del documento. Con il modello
+invariato rimangono **83 concetti**, nei livelli **2→14→83**. Il peso della lettura
+è0,5, scelto sulla validation; validation di controllo6,2411. La prima prova e i
+contatori sono registrati in [wikitext2-200k.json](results/wikitext2-200k.json),
+questa prova in [wikitext2-layers-200k.json](results/wikitext2-layers-200k.json).
+I vecchi numeri delle reti non sono confronti rieseguiti con questo tokenizer.
 
-Bande del test del prototipo: 0–32:6,9836;32–128:6,9509;128–256:6,9636;
-256–512:6,8804. Il picco dell'intero processo è2751592KiB, circa2,62GiB:
-comprende anche il contatore completo conservato in memoria e non è una misura
-isolata del prototipo. I tempi sono di questa macchina, non del server finale.
+Una diagnosi isolata ha diviso per32 il peso del target durante l'apprendimento:
+l'errore è peggiorato a8,1157. La modifica è stata scartata e non è nel nucleo.
 
-Le vecchie misure4,403 e4,011 della rete non sono state rieseguite. Mancano il
-tokenizer e gli indici dei blocchi di quelle esecuzioni: non si presenta questa
-prova come un confronto identico con quei numeri. Gli hash e gli indici di
-questa esecuzione sono invece conservati nella [ricevuta](results/wikitext2-200k.json).
+## Costo e garanzie
 
-## Diagnosi e limite che impedisce l'integrazione
+A modello fissato, il numero delle posizioni passate non è una dimensione delle
+matrici di lettura. Con K concetti complessivi e V token, i conteggi del documento
+occupano al massimo K×V valori, più masse e cardinalità. La probabilità di un token
+legge una colonna dei conteggi; quella di tutto il vocabolario legge V colonne.
+Le matrici dei genitori dipendono dai concetti, non dalla lunghezza del documento.
+Questo esclude un confronto quadratico fra posizioni; non dimostra che ogni
+informazione del passato rimanga recuperabile.
 
-Il nucleo corrente tratta le32 dimensioni target come32 risposte numeriche.
-Ogni risposta riceve peso pari alle256 colonne note: il peso totale del target
-è8192 contro256 della parte nota. Non è il peso di un solo vettore target.
-Inoltre il giudizio riguarda la densità gaussiana del vettore, non la NLL del
-token esatto; quest'ultima sceglie qui solo kappa, dopo la ricerca. Il costo
-usato per unire concetti considera la parte riconosciuta, non il target.
+Misurati riconoscimento a blocchi, probabilità del token vero e aggiornamento:
+0,317ms/token fino a1000;0,353 fra1000 e10000;0,318 fra10000 e100000;
+0,364 fra100000 e300000. Questi tempi **non sono velocità di generazione**
+sull'intero vocabolario. A300000 token gli array dei conteggi del documento
+occupano5711904 byte: sono esclusi dizionari, modello globale e blocchi di query.
 
-Questi scarti sono verificabili nel codice invariato. Non costituiscono una
-prova che correggerne uno basti a migliorare: serve un'ablazione. Il numero di
-righe maggiore e la scala standardizzata non bastano a ottenere una lettura
-utile del testo. Non è stato necessario sostituire ConceptModel per misurarlo.
-
-**Esito: fermarsi prima dell'integrazione**, come richiesto. Vettori affinati,
-memoria del documento,300000 token, più teste e secondo layer non sono stati
-implementati o dichiarati verificati. Il prossimo passo da concordare è il
-trattamento del vettore come un unico blocco target e il giudizio sul token
-esatto dentro la ricerca condivisa, preservando i controlli tabulari.
+Verificati: conservazione della massa fra livelli, formula letterale per la
+lettura globale e per quella del documento, normalizzazione, probabilità dei
+token non osservati, causalità, reset e finestra limitata. La suite completa
+prima dell'ultima rifinitura della lettura del documento ha passato282 test
+senza skip; tutti gli11 test mirati passano sulla versione finale. Il nucleo
+resta identico a main. Il test Docker monta anche gli esperimenti, continuando
+a importare il pacchetto installato.
 
 ## Riprodurre
 
-Occorrono le dipendenze scientifiche e il tokenizer degli extra `ui,llm`.
-Preparare fuori dal repository i tre parquet ufficiali di WikiText-2-raw-v1
-alla revisione `b08601e04326c79dfdd32d625aee71d232d685c3`, nominandoli
-train.parquet,validation.parquet,test.parquet. URL e hash sono nel catalogo
-`acan/lm/public_corpus.py`; la ricevuta registra gli hash effettivamente usati.
+Preparare fuori dal repository i parquet train/validation/test di
+WikiText-2-raw-v1, revisione `b08601e04326c79dfdd32d625aee71d232d685c3`.
+Gli hash della prima ricevuta identificano i file. Occorrono le dipendenze
+scientifiche e il tokenizer degli extra `ui,llm`.
 
 ```sh
+# Prima prova e tokenizer train-only (una volta).
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=2 python -m experiments.text_table.run \
   --data /percorso/parquet --output reports/text-table-200k.json
-python -m pytest tests/test_text_table_experiment.py -q
+# Gli stessi concetti, lettura gerarchica e misura del costo fino a300000 token.
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=2 python -m experiments.text_table.layers \
+  --data /percorso/parquet --output reports/text-layers.json --measure-cost
+python -m pytest tests/test_text_table_experiment.py tests/test_level_reading.py -q
 ```
-
-La directory dati conserva il tokenizer e la sua identità train. Il prodotto,
-i suoi checkpoint e i file di contratto non vengono modificati dall'esperimento.
-
-Verifica completata:277 test,13 subtest,nessuno skip; cinque nuovi controlli
-passano anche in un ambiente senza Torch. Tutti i test browser del repository
-sono passati. I dataset per i controlli opzionali Titanic e credit-g sono stati
-forniti tramite ACAN_DATA, e sono stati installati i client opzionali mancanti: i
-cinque skip iniziali non sono stati lasciati come sostituto delle verifiche.
