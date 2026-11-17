@@ -4,24 +4,11 @@ from dash import dcc, html
 TEXT = r"""
 ## Il modello, passo per passo
 
-L'obiettivo è un unico modello sulle **righe**, sia di una tabella sia di un
-testo. Le due applicazioni condividono le somme e la formula di lettura.
-Nel prodotto attuale, però, il testo raggruppa contesti identici: non usa ancora
-la stessa ricerca per somiglianza che trova i concetti tabulari. Questa pagina
-spiega le operazioni comuni e dice dove il comportamento è diverso.
-
-**La prima verifica del testo vettoriale.** Una riga contiene i vettori degli
-otto token precedenti, in ordine di distanza; il target è il token successivo.
-Le appartenenze si calcolano soltanto sulle colonne note. Per concetto si sommano
-i vettori target e si contano i token osservati; la lettura combina le frequenze
-con la vicinanza dei vettori, usando la stessa formula categorica dei concetti.
-
-Su200000 righe, il nucleo tabulare invariato trova83 concetti su tre livelli
-(2→14→83), ma il test misura6,921 nat/token contro5,408 del contatore con la stessa
-quantità di righe. Non basta quindi ottenere più concetti per prevedere meglio.
-Il vettore target viene ancora giudicato come32 risposte distinte, e non come
-probabilità del token esatto. È una prova fuori dal prodotto: non dimostra ancora
-la capacità di leggere300000 token o di comporre più layer.
+C'è un solo modello. Le sue osservazioni sono **righe**: una riga di una tabella,
+oppure una posizione di un testo. Questa pagina le segue dall'ingresso alla
+previsione e dà la formula di ogni passo. Ogni passo vale per entrambe; dove una
+riga di tabella e una posizione di testo si comportano diversamente, il passo
+dice come e perché.
 
 **L'idea in tre righe.** Un *concetto* è un riassunto di più righe fatto solo di
 somme. *Riconoscere* una riga vuol dire pesare i concetti per quanto le

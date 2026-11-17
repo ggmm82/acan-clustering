@@ -4,23 +4,12 @@ from dash import dcc, html
 TEXT = r"""
 ## Che cosa fa il programma, passo per passo
 
-Questa pagina segue ciò che succede dal file caricato al modello che risponde.
-La tabella usa la ricerca dei concetti per somiglianza. Il testo di produzione
-usa ancora un contatore di contesti esatti: condivide somme e lettura, ma non la
-stessa ricerca. Il testo come tabella vettoriale è l'obiettivo, non una capacità
-completa già realizzata.
-
-**Esperimento separato dal prodotto.** Un programma genera a blocchi200000 righe,
-ogni volta con otto vettori precedenti e il target successivo. Lo stesso modello
-tabulare sceglie83 concetti e tre livelli; un secondo passaggio somma vettori e
-conteggi sparsi dei token secondo le appartenenze. Non si prepara una colonna
-per ogni parola del vocabolario nella tabella di training.
-
-La lettura testuale è però peggiore del contatore sul test. Per questo non viene
-sostituito il modello dei progetti salvati. Prima di aggiungere memoria lunga o
-altri layer servono un giudizio sul token esatto e il corretto trattamento del
-vettore come un solo target. I risultati e il comando per ripetere la prova sono
-nella documentazione dell'esperimento. Le formule sono nella scheda Matematica.
+Questa pagina segue ciò che succede quando premi i pulsanti, dal file caricato al
+modello che risponde. Il modello è uno solo: nella scheda Modello impara una
+tabella, nella scheda Generativo impara un testo, che per lui è una tabella in
+cui ogni posizione è una riga e il token in quella posizione è la colonna da
+prevedere. Ogni passo qui sotto vale per entrambe; dove il programma fa cose
+diverse lo dice. Le formule sono nella scheda Matematica; qui c'è il meccanismo.
 
 Imparare non vuol dire correggere pesi con un gradiente: vuol dire **sommare**.
 Un concetto è fatto di somme sui suoi membri, e due concetti si uniscono
