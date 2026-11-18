@@ -151,7 +151,8 @@ def resolve(store, job, options):
             ids = list(dict.fromkeys(other['config']['corpus_id'] for other in members)) or ids
         corpora = [store.corpus(identifier, job['owner'], ready=True) for identifier in ids]
         paths = [store.directory('corpora', item['id'])/'corpus' for item in corpora]
-        names = [item['name'] for item in corpora] if options.get('routing_profile') == 'concept-table-v1' else None
+        training_only = options.get('routing_profile') == 'concept-table-v1' or options.get('context_refinement')
+        names = [item['name'] for item in corpora] if training_only else None
         train_tokenizer(paths, folder, options.get('vocabulary', 32000), training_names=names)
     hashes = _hashes(folder)
     base = dict(repo='acan-native', revision='tokenizer-'+hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()[:16],

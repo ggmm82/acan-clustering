@@ -7,11 +7,13 @@ opzionale. Richiede Python 3.9 o successivo.
 
 ## Il modello
 
-Il modello tabulare e la prova sperimentale sul testo usano lo stesso
-`ConceptModel`. Il testo diventa una tabella di prefissi e seguiti.
-Il grafo appreso riconosce il prefisso e legge il token successivo attraverso
-i suoi livelli. La [guida unica del modello](acan/MODEL.md) è anche il testo
-delle schede Matematica e Informatica nell'app.
+La coda lunga può usare il modello tabulare per raggruppare i token in base
+ai loro vicini. Legge i gruppi insieme ai suffissi ordinati per stimare il
+token successivo. La validazione sceglie il taglio sulla NLL del token.
+In **Generativo → Addestramento lungo → Impostazioni** la lettura CP è
+sperimentale e il contatore di suffissi resta il valore predefinito.
+La guida descrive anche come si aggiornano i concetti leggendo nuovi dati.
+[Matematica, apprendimento, generazione e misure](acan/MODEL.md).
 
 I concetti sono disposti in **livelli**: sotto la radice i concetti generali,
 poi i comportamenti particolari. Ogni livello toglie alle osservazioni il

@@ -9,6 +9,10 @@ EXTRA=dict(protocol='controlled-v1',routing_profile='shared-algebra-v1',architec
 
 
 def validate_options(options):
+    options = dict(options)
+    refine = options.pop('context_refinement', False)
+    if not isinstance(refine,bool) or (refine and (options.get('routing_profile') != 'concept-lm-v1' or options.get('concept_paths'))):
+        raise ValueError('La lettura sperimentale richiede i contesti diretti del modello a conteggi.')
     extra={key:options.get(key,value) for key,value in EXTRA.items()}
     if isinstance(extra['graft_fraction'],bool) or extra['graft_fraction'] not in (.5,1.):
         raise ValueError('Frazione ACAN ammessa: 0.5 oppure 1.0.')
@@ -57,4 +61,6 @@ def validate_options(options):
     result.update(extra)
     if extra['cp_weight'] and (extra['routing_profile'] not in ('cp-routing-v1','cp-joint-v1') or extra['architecture']!='hybrid'):
         raise ValueError('Il peso CP richiede il routing CP diretta e l’architettura ibrida.')
+    if refine:
+        result['context_refinement'] = True
     return result

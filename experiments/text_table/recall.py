@@ -18,14 +18,9 @@ def reveal(table, state, prefix, start, stop, observed_context, chunk=512):
         state.observe_many(membership, prefix[positions])
 
 
-def probe(table, filler, seed=42, trials=16, gaps=(1000, 10000, 100000, 300000), kappa=.5, observed_context=1):
-    """Each query sees the shared prefix and its cue. Query branches never share answers."""
+def recall_inputs(pool, filler, width, seed, trials, gaps):
     rng = np.random.default_rng(seed)
-    reading = LevelReading(table.counts, [level['parents'] for level in table.model.levels[1:]], kappa)
-    state = reading.document()
-    width = table.rows.context
     # Draw ordinary observed tokens; reserve disjoint identifiers for cues and answers.
-    pool = np.flatnonzero(reading.root > 0)
     pool = pool[pool >= 2]
     draw = rng.choice(pool, size=trials*(width+3)+width-1, replace=False)
     answers = draw[:2*trials]
@@ -39,6 +34,15 @@ def probe(table, filler, seed=42, trials=16, gaps=(1000, 10000, 100000, 300000),
     if len(filler) < max(gaps):
         raise ValueError('Testo insufficiente dopo aver escluso chiavi e risposte.')
     prefix = np.r_[facts, filler[:max(gaps)]]
+    return cues, answers, facts, prefix
+
+
+def probe(table, filler, seed=42, trials=16, gaps=(1000, 10000, 100000, 300000), kappa=.5, observed_context=1):
+    """Each query sees the shared prefix and its cue. Query branches never share answers."""
+    reading = LevelReading(table.counts, [level['parents'] for level in table.model.levels[1:]], kappa)
+    state = reading.document()
+    width = table.rows.context
+    cues, answers, facts, prefix = recall_inputs(np.flatnonzero(reading.root > 0), filler, width, seed, trials, gaps)
     start = 0
     rows = []
     for gap in gaps:

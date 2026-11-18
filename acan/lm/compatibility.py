@@ -45,7 +45,9 @@ PRE_TABLE_INFERENCE = '79db1582e18a1c2242308d5ba41269c7d2d650f2fe32b9e70c4d0b3c9
 def training_identity(values, config, checkpoint_root, selected, current):
     from pathlib import Path
     from . import checkpoints
-    candidates = [current, PRE_TABLE_TRAINING, PRE_CONCEPT_LM_TRAINING, PRE_NATIVE_TRAINING, PRE_ONE_STEP_TRAINING]
+    # Addition of the optional suffix reading only changed the option validator.
+    pre_refinement = '2f22b59b9ecb27e243851894d83114ce36d1a7fcf4e0e800a5262b89e8f3f4b9'
+    candidates = [current, pre_refinement, PRE_TABLE_TRAINING, PRE_CONCEPT_LM_TRAINING, PRE_NATIVE_TRAINING, PRE_ONE_STEP_TRAINING]
     if config.get('routing_profile') != 'concept-graph-v2':
         candidates.insert(1, PRE_SCAN_TRAINING)
     if config.get('routing_profile') != 'concept-graph-v1':

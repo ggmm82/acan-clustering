@@ -20,11 +20,18 @@ PROFILE = 'concept-lm-v1'
 
 def contract(profile=PROFILE):
     """The sources that define what a checkpoint of this model means."""
-    root = Path(__file__).parent
     if profile == PROFILE:
         # Identity used by the previous release for persisted exact-context jobs.
         return '5e751934b49d4184d0021e518f40988f8781380714518a330d5577837913f2cd'
-    paths = ['text_graph.py', 'text_rows.py', 'text_reading.py', 'concept_trainer.py',
+    # Numerical identity of the original causal-row graph. Its equations are unchanged.
+    return '08e7cc96bbeab2e6d8ef2d9f6f3c59e25837072235786faef1809d670147980d'
+
+
+def training_contract(config):
+    if not config.get('context_refinement'):
+        return contract(config['routing_profile'])
+    root = Path(__file__).parent
+    paths = ['concept_lm.py', 'context_refinement.py', 'concept_trainer.py', 'native.py',
              '../core/concepts.py', '../core/scan.py', '../concept_algebra.py']
     return hashlib.sha256(b''.join((root/name).read_bytes() for name in paths)).hexdigest()
 
@@ -58,10 +65,13 @@ def previous_checkpoint(store, job):
     return path
 
 
-def judged_pieces(blocks, limit):
+def judged_pieces(blocks, limit, disjoint=False):
     """Validation pieces: the even ones choose the weights, the odd ones measure the error (never the same)."""
     indices = blocks.evaluation_indices('validation', 2*limit)
     pieces = [np.asarray(blocks._block('validation', index), np.int64) for index in indices]
+    if disjoint and len(pieces) == 1:
+        middle = len(pieces[0]) // 2
+        return [pieces[0][:middle]], [pieces[0][middle:]]
     return pieces[0::2], pieces[1::2] or pieces[0::2]
 
 
@@ -100,7 +110,12 @@ def quantities(model, config):
         return dict(concepts_per_level=levels, concepts_total=sum(levels), statistics_bytes=model.nbytes(),
                     memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024)
     levels = model.concepts() if not model.counter else None
-    return dict(concepts_per_level=levels, concepts_total=sum(levels) if levels else None, statistics_bytes=model.nbytes(),
+    refined = {}
+    if config.get('context_refinement'):
+        chosen = model.refinement
+        refined = dict(context_fit_tokens=model.context_trained_at, context_classes=len(np.unique(chosen.mapping)) if chosen else 0,
+                       pooled_contexts={j: len(table.keys) for j, table in chosen.tables.items()} if chosen else {})
+    return dict(**refined, concepts_per_level=levels, concepts_total=sum(levels) if levels else None, statistics_bytes=model.nbytes(),
                 budget_bytes=model.budget_bytes, generalized_concepts=model.generalized, context_depth=model.depth,
                 document_depth=model.document, weights_global=[float(x) for x in model.a],
                 weights_document=[float(x) for x in model.b], memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
@@ -156,12 +171,12 @@ def run_training(root, identifier, stop_event=None):
             config['total_steps'] = steps
             store.set_config(identifier, config)
         identity = checkpoints.fingerprint(dict(config={key: value for key, value in config.items() if key != 'total_steps'},
-                                                base=base, corpus=corpus['sha256'], tokens=tokens['sha256'], contract=contract(profile)))
+                                                base=base, corpus=corpus['sha256'], tokens=tokens['sha256'], contract=training_contract(config)))
         root_checkpoints = directory/'checkpoints'
         root_checkpoints.mkdir(exist_ok=True)
         previous = checkpoints.for_resume(root_checkpoints, identity, job['checkpoint'], job['progress'].get('step', 0))
         budget = int(config.get('concept_memory_mb') or 0)*(1 << 20) or default_budget()
-        tune, judge = judged_pieces(blocks, config['validation_batches'])
+        tune, judge = judged_pieces(blocks, config['validation_batches'], disjoint=config.get('context_refinement', False))
         if previous:
             model, state = load(previous, identity, budget)
             with store.db() as db:
@@ -194,6 +209,10 @@ def run_training(root, identifier, stop_event=None):
                 if not graph:
                     model.merge(start)
                     model.a, model.b, model.w = start.a.copy(), start.b.copy(), start.w.copy()
+                    if config.get('context_refinement'):
+                        model.context_trained_at = start.context_trained_at
+                        if start.refinement is not None:
+                            model.refinement = start.refinement.build(model)
                 state['warm_start'] = dict(checkpoint=source.name, job=source.parent.parent.name,
                                            tokens=start.tokens)
             state['baseline_nll'] = measure(model, judge)       # before reading this text
@@ -208,7 +227,7 @@ def run_training(root, identifier, stop_event=None):
         saved_step = state['step']
         while state['step'] < config['total_steps'] and not should_pause():
             begin = state['step']*piece
-            end = min(begin+piece, math.ceil(len(train)*share)) if graph else begin+piece
+            end = min(begin+piece, math.ceil(len(train)*share)) if graph or config.get('context_refinement') else begin+piece
             ids = np.asarray(train[begin:end], np.int64)
             if graph:
                 from threadpoolctl import threadpool_limits
@@ -227,6 +246,8 @@ def run_training(root, identifier, stop_event=None):
                 except PreparationPaused:
                     break
                 model = updated
+            elif config.get('context_refinement'):
+                model.add_context_piece(ids)
             else:
                 model.add(ids)
             state.update(step=state['step']+1, tokens_trained=state['tokens_trained']+len(ids))
@@ -236,8 +257,13 @@ def run_training(root, identifier, stop_event=None):
             measured = last or state['step'] % measure_every(config['total_steps']) == 0
             if measured:                                         # the error on unseen text, about twenty times per text
                 if not graph:
-                    model.settle()
-                    model.judge(tune)
+                    if config.get('context_refinement'):
+                        from threadpoolctl import threadpool_limits
+                        with threadpool_limits(limits=2):
+                            model.judge_contexts(tune, final=state['step'] == config['total_steps'])
+                    else:
+                        model.settle()
+                        model.judge(tune)
                 state['validation_nll'] = measure(model, judge)
                 state['validation_perplexity'] = math.exp(state['validation_nll']) if state['validation_nll'] < 700 else None
                 following = np.asarray(train[state['step']*piece:state['step']*piece+4096], np.int64)
@@ -256,7 +282,11 @@ def run_training(root, identifier, stop_event=None):
             # A step without a measure does not repeat the last one: the chart draws only what was measured.
             row = state if measured else {key: value for key, value in state.items() if key not in MEASURES}
             store.record(identifier, state['step'], row, progress=state)
-        if graph and state['step'] != saved_step:
+        if (graph or config.get('context_refinement')) and state['step'] != saved_step:
+            if not graph:
+                from threadpoolctl import threadpool_limits
+                with threadpool_limits(limits=2):
+                    model.judge_contexts(tune)
             state.update(quantities(model, config))
             state['validation_nll'] = measure(model, judge)
             state['validation_perplexity'] = math.exp(state['validation_nll'])

@@ -2,17 +2,20 @@
 
 ## Matematica
 
-La coda **Addestramento lungo** usa per impostazione predefinita il contatore
-di contesti. Apprende i conteggi delle continuazioni per suffissi ordinati
-e legge dal suffisso generale al più specifico. Il grafo tabulare sul testo
-qui descritto resta sperimentale. Le sue misure sono nella sezione Informatica.
+Una tabella e una sequenza di testo pongono la stessa domanda: quali osservazioni
+si possono riunire senza perdere informazione utile alla previsione? ACAN usa
+il modello tabulare per proporre gruppi di osservazioni simili. Nel testo
+la coda lunga permette di provare quei gruppi dentro il predittore di suffissi
+ordinati. Il contatore di suffissi resta la scelta predefinita.
 
 ### Dalle osservazioni ai concetti
 
-Una riga di tabella contiene attributi osservabili e, se prevista, una colonna da leggere.
-Anche il testo diventa una tabella. Per esempio nella frase «il cane corre» la riga che
-deve prevedere «corre» contiene i vettori delle parole o parti di parola già lette.
-Lo stesso `ConceptModel` costruisce il grafo in entrambi i casi.
+In una tabella una riga descrive un caso attraverso i suoi attributi. Nel testo
+si costruisce una riga per **tipo di token**. I suoi attributi descrivono quali
+token lo precedono e lo seguono nei documenti di training. Due token che occupano
+posizioni simili possono condividere evidenza anche se le loro grafie sono diverse.
+Il modello tabulare trova i concetti in queste righe. Per prevedere in un punto
+preciso del testo serve poi l'ordine dei token del prefisso.
 
 Il concetto $i$ conserva la massa $C_i=\sum_t T_{ti}$ e, per ciascuna colonna
 numerica osservata, la massa presente, la somma pesata dei valori e dei loro
@@ -63,104 +66,131 @@ quindi gruppi insieme numerosi e coerenti. Il modello cerca anche strutture
 residue dopo aver tolto il centro spiegato dal livello superiore. Un concetto
 specifico può avere più genitori.
 
-Per scegliere il livello di lavoro interviene anche la previsione: si sottrae
-il contributo di una riga dalle statistiche e si misura la probabilità di ciò
-che si deve leggere. Tra livelli con giudizio entro un errore standard dal
-migliore si preferisce quello con meno nodi. Senza target si giudica ogni
-attributo dagli altri. Nel testo il seguito fornisce il bersaglio direttamente
-dal corpus. Il numero di concetti dipende dagli attributi osservati e dalla
-struttura dei dati. La CP da sola non garantisce un numero universale di gruppi.
+Nel tabulare il giudizio predittivo sottrae la riga in esame dalle statistiche
+e misura la probabilità degli attributi da leggere. Tra livelli entro un errore
+standard dal migliore preferisce quello con meno nodi. Senza target cerca di
+prevedere ogni attributo dagli altri. Nel testo la CP propone i tagli della
+tabella dei token. Il giudizio finale confronta quei tagli usando la probabilità
+del **vero token successivo** su documenti di validazione separati.
 
 ### Dal concetto alla probabilità del token
 
-Per ogni concetto si contano le continuazioni. Se $N_i(y)$ è il conteggio del
-token $y$, $M_i$ la somma dei conteggi, $D_i$ il numero di token distinti e
-$q_i^{\rm sopra}(y)$ la previsione dei genitori, la lettura categorica vale
+Supponiamo di aver letto «ho visto il». L'ordine più corto registra cosa segue
+«il». Un livello intermedio registra cosa segue un token del gruppo di «visto»
+seguito esattamente da «il». Il livello più preciso registra cosa segue proprio
+«visto il». Anche quando la frase precisa compare poche volte, i suoi esempi
+contribuiscono alla stima del gruppo. Se la frase è frequente, la sua
+distribuzione specifica acquista più peso. Il passaggio si ripete mantenendo
+esatti i token più vicini alla posizione da prevedere.
+
+Sia $N_s(y)$ il numero di volte che il token $y$ è comparso dopo il contesto $s$,
+$M_s$ il totale delle continuazioni e $D_s$ il numero di continuazioni distinte.
+La radice parte da una distribuzione uniforme sul vocabolario. A ogni livello
+si aggiorna la distribuzione del livello precedente con la stessa lettura categorica:
 
 $$
-q_i(y)=\frac{N_i(y)+a_i q_i^{\rm sopra}(y)}{M_i+a_i},
-\qquad a_i=\kappa\max(1,D_i).
+q_s(y)=\frac{N_s(y)+a_s q_{\mathrm{prec}}(y)}{M_s+a_s},
+\qquad a_s=\kappa_s\max(1,D_s).
 $$
 
-Con poche osservazioni pesa di più il genitore. I conteggi risalgono dai figli
-tramite le loro appartenenze ai genitori; la previsione scende dalla radice,
-che parte da un prior uniforme. Prima di osservare il seguito si ottiene una
-miscela $p(y\mid z)=\sum_i T_i(z)q_i(y)$. Durante l'apprendimento il seguito è
-noto: la frazione di un conteggio assegnata al concetto vale
+La somma su tutti i token vale uno. Un contesto mai osservato restituisce la
+distribuzione precedente. Il rapporto $M_s/(M_s+a_s)$ dice quanto incidono le
+osservazioni locali. Per un taglio CP il lettore somma i conteggi degli stessi
+suffissi che condividono il gruppo del token più lontano. La validazione decide
+a quali profondità inserire questo passaggio e con quale peso. Prova anche a
+saltarlo. Il criterio è la perdita logaritmica per token
 
 $$
-r_i(z,y)=\frac{T_i(z)q_i(y)}{\sum_j T_j(z)q_j(y)}.
+\mathcal L=-\frac{1}{N}\sum_t\log q(w_{t+1} \mid w_{\le t}).
 $$
 
-Le quote sommano a uno. Un concetto riceve più credito se spiega sia il
-prefisso sia la continuazione osservata. Durante la generazione si applica
-la stessa lettura categorica anche alle statistiche temporanee del documento.
-A ogni livello il genitore dà il prior ai conteggi globali; il risultato dà
-il prior ai conteggi del documento. Dopo aver rivelato il token il documento
-aggiunge il suo conteggio con i pesi del prefisso. Il checkpoint globale
-rimane disponibile per il documento successivo.
+La CP entra nella struttura che si confronta, la NLL decide quale struttura
+legge meglio. L'apprendimento usa conteggi e confronto fra tagli. I livelli
+successivi affinano una distribuzione con evidenza progressivamente più specifica.
 
 ## Informatica
 
 ### Dal corpus al checkpoint
 
-1. Per una prova esplicita con il profilo sperimentale `concept-table-v1` si prepara il corpus e si avvia la
-   coda. Il programma separa i documenti, elimina i duplicati nel corpus e
-   costruisce il tokenizer BPE sui documenti di addestramento campionati. I
-   testi successivi della stessa coda usano lo stesso vocabolario.
-2. Il primo passo usa fino a 200.008 token del train. Per ogni tipo di token conta
-   i vicini immediati a sinistra e a destra. Normalizza le due distribuzioni,
-   ne prende la radice e le riduce con SVD a 32 coordinate. Così due token con
-   vicini simili entrano nella tabella con vettori vicini.
-3. Il programma scorre il testo creando blocchi di righe. Le 256 colonne note
-   sono gli otto vettori precedenti. Le 32 colonne bersaglio sono il vettore
-   del token successivo. Il modello tabulare impara il grafo e i collegamenti
-   tra livelli. I primi otto token formano la prima finestra completa.
-4. Le appartenenze ai concetti danno i conteggi iniziali. Una rilettura dello
-   stesso tratto distribuisce i conteggi secondo la formula $r_i$.
-   Per questa lettura il riconoscimento osserva l'ultimo token e usa
-   $\kappa=0{,}5$, scelte misurate su WikiText-2. A ogni passo successivo si
-   aggiungono le nuove osservazioni agli stessi concetti, usando le probabilità
-   globali all'inizio del passo. Vettori e struttura sono fissati dal primo
-   tratto: su un dominio nuovo possono diventare poco rappresentativi.
-5. Il worker misura l'errore su documenti separati. Salva atomicamente le
-   statistiche di riconoscimento, i collegamenti, i vettori, i conteggi e il
-   contesto al confine del passo. Una ripresa riparte dall'ultimo checkpoint.
-   Un nuovo testo in coda eredita ciò che il grafo ha imparato e inizia un
-   nuovo contesto. I checkpoint storici conservano la semantica con cui furono scritti.
+1. La coda suddivide i documenti, rimuove duplicati e prepara il tokenizer BPE
+   su un campione del training. Ogni file successivo usa lo stesso vocabolario.
+2. Nella lettura sperimentale il worker scorre **tutto il train richiesto**.
+   Per ogni token registra il seguito dei suffissi ordinati disponibili
+   (profondità predefinita 6). Conserva la coda necessaria attraverso i blocchi
+   di I/O. Un nuovo file eredita le statistiche e inizia un nuovo contesto.
+3. Dai bigrammi conservati ricava due distribuzioni di vicini per tipo di token.
+   Su ciascun lato distingue fino a 512 vicini frequenti più una categoria
+   residua. Prende la radice delle frequenze relative e usa una SVD centrata
+   fino a 32 dimensioni. Il modello tabulare scopre i concetti sui profili di
+   fino a 8.000 tipi frequenti (almeno tre osservazioni in uscita). Assegna anche
+   gli altri tipi con sufficiente evidenza. I rari condividono una classe residua.
+   Il limite di ricerca è 256 concetti, il numero scelto può essere inferiore.
+4. Nelle valutazioni intermedie il worker ristima la struttura quando il numero
+   di token letti è almeno raddoppiato dall'ultima stima e la rivaluta alla fine
+   del file. Dopo ogni cambio di partizione rigenera le statistiche raggruppate
+   proiettando le tabelle esatte conservate. Non occorre rileggere il corpus.
+   Il limite alle statistiche può eliminare distinzioni rare. Ogni osservazione
+   contribuisce al momento della lettura, la sua chiave precisa può essere persa.
+5. Il worker verifica sulla validazione i pesi, il taglio e l'opzione di usare
+   i soli suffissi esatti. Alle profondità da 1 a 3 può inserire il gruppo del
+   token più lontano. Un secondo insieme di blocchi misura la NLL mostrata nel
+   pannello. Se è disponibile un solo blocco, le due metà servono ai due giudizi.
+   Il checkpoint salva conteggi, partizione, pesi e ultimi token per la ripresa.
 
 ### Dal prompt al prossimo token
 
-Il tokenizer del progetto trasforma il prompt in identificatori. Per ogni
-posizione il grafo riconosce il prefisso, poi registra il token letto nella
-memoria temporanea del documento. Una volta arrivato alla fine del prompt,
-il worker valuta la distribuzione sull'intero vocabolario. A temperatura zero
-sceglie il massimo; a temperatura positiva campiona. Aggiunge il token al
-documento e ripete il passo. Generazione, validazione ed esportazione leggono
-le stesse statistiche.
+Il tokenizer converte il prompt negli identificatori usati dal training. Un
+cursore percorre il prompt in ordine e aggiorna le statistiche del documento.
+Alla fine legge prima i livelli del corpus, dal generale al particolare. Aggiorna
+poi la stessa distribuzione con le continuazioni già viste nel documento, dal
+conteggio senza contesto ai suffissi di lunghezza 4 per impostazione predefinita.
+Un'associazione vista una volta può così riemergere se il suo indizio ricorre.
+A temperatura zero sceglie il token più probabile, altrimenti campiona. Solo dopo
+aver scelto il token lo registra nel documento e procede alla posizione successiva.
 
-Con il grafo e il vocabolario fissati, ogni nuovo token aggiorna somme nei
-livelli. Il costo per passo dipende da concetti, collegamenti e vocabolario.
-La memoria temporanea può arrivare a un conteggio per coppia concetto/token.
-Non serve una matrice tra tutte le posizioni. Questa compressione perde
-l'ordine del passato lontano: avere memoria limitata e predire bene in media
-non garantisce di recuperare un fatto isolato.
+Con profondità, budget e vocabolario fissati, il primo passaggio sul prompt
+ha costo lineare nella sua lunghezza. Ogni nuovo token aggiorna un numero
+limitato di indici. La distribuzione completa dipende anche dalla dimensione
+del vocabolario. Quando il numero di celle di un livello del documento supera
+la quota, viene dimenticato il suffisso inserito da più tempo a quel livello.
+Non occorre conservare una matrice fra tutte le posizioni. Il ricordo a distanza
+dipende dall'indizio che si ripete e dalle statistiche ancora presenti.
 
 ### Come leggere la qualità
 
-La NLL è la media di $-\log p(y\mid z)$ sul vero token successivo. Più è
-bassa, più probabilità il modello assegna ai seguiti osservati. Nella prova
-di sviluppo su 32.704 predizioni, il grafo a 83 concetti ha ottenuto
-6,085 nat/token; il precedente contatore ha ottenuto 5,452 sugli stessi
-blocchi. In quella prova i vettori erano stimati sull'intero train. Nel worker
-i vettori vengono stimati sul tratto iniziale per poter continuare in streaming.
-La metrica del singolo progetto è quella misurata sul suo corpus.
+Su WikiText-2 inglese, vocabolario BPE 8.000, entrambe le letture hanno visto
+2.729.601 token. I tagli e i pesi sono stati scelti su 32 blocchi di validazione.
+La tabella riporta la NLL su 64 ulteriori blocchi di test, 32.704 predizioni.
+Ogni coppia usa le stesse posizioni e lo stesso limite alle statistiche.
 
-Una prova con il percorso di apprendimento del worker ha letto tutti i
-2.729.601 token di training di WikiText-2 con vocabolario BPE 8.000 e passi
-da 200.008 token. Il grafo ha trovato livelli da 26 e 42 concetti. Sugli
-stessi 64 blocchi da 512 token (32.704 previsioni, primo token dato) la NLL
-è scesa da 6,1674 dopo il primo passo a 5,9701 dopo l'intero train. Il
-contatore storico, sul train completo con questi stessi blocchi, misurava
-4,5199. Sono misure di previsione sul testo inglese; la qualità di dialogo
-richiede una verifica sul corpus che si intende usare.
+| Budget delle statistiche | Suffissi esatti | Suffissi con gruppi CP | Gruppi rimescolati | Classi nel taglio scelto |
+|---|---:|---:|---:|---:|
+| 256 MiB | 4,5403 | 4,4963 | 4,5401 | 193 |
+| 1.024 MiB | 4,5023 | 4,4588 | 4,5017 | 208 |
+
+Rimescolare le identità dei token mantenendo le dimensioni dei gruppi quasi
+annulla il vantaggio. Con 256 MiB il taglio genera anche oltre 600.000 suffissi
+distinti al terzo livello raggruppato: il numero di contesti ordinati e il
+numero di classi di token misurano cose diverse. Il limite della tabella
+riguarda le statistiche residenti. Raggruppamento, ordinamento e selezione
+hanno richiesto fino a circa 1,4 GiB di memoria del processo nella prova da
+256 MiB. Ripetendo il confronto a 256 MiB con il contesto mantenuto tra i
+blocchi di training come nel worker, la NLL passa da 4,5403 a **4,4946**
+(errore standard della differenza 0,0021 nat/token).
+
+Con gli stessi indizi casuali dell'esperimento precedente, a distanza di
+300.000 token le due letture recuperano entrambe 16 associazioni su 16 e
+completano 16 sequenze su 16 al primo posto sull'intero vocabolario. Il merito
+di questo risultato è della memoria per suffissi esatti del documento. A 1.000
+token la lettura con CP completa 15 sequenze su 16 contro 16 del contatore.
+L'indizio viene ripetuto esattamente e il riempimento esclude le chiavi e le
+risposte. Questa prova non misura il recupero da una parafrasi.
+
+Nella precedente prova in cui una riga conteneva otto vettori e si prevedeva
+il vettore del seguito, il grafo del worker aveva livelli da 26 e 42 concetti.
+La NLL sul test storico era 5,9701 contro 4,5199 del contatore. Il nuovo
+lettore con 1.024 MiB raggiunge 4,4779 su quegli stessi blocchi. La prova
+di sviluppo con 83 concetti e NLL 6,085 era un esperimento distinto.
+Le misure riguardano previsione su testo inglese e indizi esatti. Qualità del
+dialogo, astrazione semantica a grande distanza e trasferimento ad altri
+corpora richiedono misure dedicate.

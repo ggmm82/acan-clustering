@@ -217,6 +217,8 @@ def write(model, tokenizer, prompt, settings):
     hold = max([len(item) for item in settings['stop']]+[1])-1
     produced, sent, reason, text = [], 0, 'length', ''
     cursor = model.cursor(ids) if hasattr(model, 'cursor') and model.model is not None else None
+    if hasattr(model, 'prediction_cursor'):
+        cursor = model.prediction_cursor(ids)
     for _ in range(settings['max_tokens']):
         probabilities = cursor.distribution() if cursor is not None else model.distribution(np.asarray(ids+produced, np.int64))
         token = draw(probabilities, settings['temperature'], settings['top_p'], rng)

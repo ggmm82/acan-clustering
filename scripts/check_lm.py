@@ -28,6 +28,9 @@ def main():
     suite.addTests(unittest.defaultTestLoader.discover(str(ROOT/'tests'),pattern='test_history_navigation.py'))
     suite.addTests(unittest.defaultTestLoader.loadTestsFromName(
         'test_concept_lm.ConceptLongLearningTests.test_tabular_graph_queue_resume_generation_and_export'))
+    suite.addTests(unittest.defaultTestLoader.loadTestsFromName(
+        'test_concept_lm.ConceptLongLearningTests.test_refined_queue_resume_generation_and_export'))
+    suite.addTests(unittest.defaultTestLoader.discover(str(ROOT/'tests'),pattern='test_context_refinement.py'))
     from acan.lm.audit_contract import REQUIRED_TESTS,MIN_TESTS,PROTOCOL
     def cases(suite):
         for item in suite:
