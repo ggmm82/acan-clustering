@@ -7,13 +7,26 @@ opzionale. Richiede Python 3.9 o successivo.
 
 ## Il modello
 
-Tabella e linguaggio usano **un solo modello**, il grafo dei concetti. Dalla 9.0.0
-il testo è una tabella di questo modello, senza rete neurale (`concept-lm-v1`,
-`docs/CONCEPT-LM.md`): un concetto è un nodo che riassume con somme le
-osservazioni che gli appartengono; riconoscere è massa per somiglianza attesa;
-generalizzare unisce i due concetti la cui unione costa meno a chi legge;
-giudicare usa solo osservazioni che il concetto non contiene. La ricerca dei
-concetti è lineare nel numero di attributi.
+Nel tabulare, ACAN scopre i concetti a partire dalle colonne osservate. Per
+prevedere il prossimo token abbiamo dato allo stesso `ConceptModel` una riga per
+posizione. Le colonne riassumono il prefisso a distanze crescenti. Ogni concetto
+accumula le frequenze dei token che lo seguono e contribuisce alla previsione
+in proporzione al grado di appartenenza della riga.
+
+Su WikiText-2, a parità di righe, il riconoscitore nativo ottiene una NLL di
+6,868 contro 6,950 dell’albero CP sulla validazione di controllo. Nel test di
+generazione il contatore resta migliore sia con memoria del documento sia senza.
+I dieci risultati tabulari sono stati riprodotti. La coda lunga del sito usa il
+contatore. [Protocollo e ricevuta della verifica](experiments/text_table/README.md#verifica-del-riconoscitore-nativo).
+
+Aggiungendo l’identità esatta del token precedente, la NLL del modello nativo
+senza memoria del documento scende da 6,8272 a 5,3158. Il contatore a un token
+ottiene 5,3004 sugli stessi blocchi. La soglia di 4,82 resta mancata.
+[Prova dell’identità esatta](experiments/text_table/README.md#identità-esatta-del-token-precedente).
+
+Il precedente risultato di 4,4794 nat/token derivava da un esperimento che usava
+un albero per riconoscere il contesto e affinamenti condizionali per prevedere.
+[Misure di quell’esperimento](experiments/text_table/README.md#lettura-condizionale-delle-regioni-cp).
 
 I concetti sono disposti in **livelli**: sotto la radice i concetti generali,
 poi i comportamenti particolari. Ogni livello toglie alle osservazioni il
@@ -97,10 +110,7 @@ Guida dettagliata della scheda Modello e della valutazione: [docs/GUI.md](docs/G
 
 ## Laboratorio generativo
 
-La scheda **Generativo** mette in primo piano l'**apprendimento lungo dell'LLM
-a concetti nativo**: un modello che nasce da zero (pesi casuali, tutti i pesi
-che imparano, tokenizer imparato dai testi) in cui ogni layer legge il testo
-attraverso i concetti ACAN. Prepara una miscela di dati italiani e inglesi per conversare da dataset
+La scheda **Generativo** usa il contatore di contesti per l’addestramento lungo. Prepara una miscela di dati italiani e inglesi per conversare da dataset
 pubblici con licenze aperte (verificati e scaricati dal worker, con pausa e
 ripresa), impara una coda di testi uno dopo l'altro (anche file propri:
 Markdown, Python, ZIP, EPUB, DOCX, PDF), salva in modo permanente, riprende da

@@ -53,7 +53,25 @@ def _texts(path, limit=SAMPLE_BYTES):
                 yield text
 
 
-def train_tokenizer(corpora, directory, vocabulary=32000):
+def _training_texts(path, name, limit):
+    """Use the same document boundaries, deduplication and split as the token files."""
+    from .research_data import document
+    seen = set()
+    with open(path, 'rb') as stream:
+        while stream.tell() < limit:
+            item = document(stream, name.lower().endswith('.jsonl'))
+            if item is None:
+                return
+            text, role = item
+            digest = hashlib.sha256(' '.join(text.split()).encode()).hexdigest()
+            if digest in seen:
+                continue
+            seen.add(digest)
+            if role == 'train' or (role is None and int(digest[:8], 16)%100 < 80):
+                yield text
+
+
+def train_tokenizer(corpora, directory, vocabulary=32000, training_names=None):
     """Byte-level BPE learned on an equal share of every corpus; saved so that ``AutoTokenizer`` loads it.
 
     ``corpora`` is a path or a list of paths: with Italian, English and code in the first texts of a
@@ -67,8 +85,8 @@ def train_tokenizer(corpora, directory, vocabulary=32000):
     share = SAMPLE_BYTES//max(len(paths), 1)
 
     def texts():
-        for path in paths:
-            yield from _texts(path, share)
+        for i, path in enumerate(paths):
+            yield from (_training_texts(path, training_names[i], share) if training_names else _texts(path, share))
     tokenizer = Tokenizer(models.BPE())
     tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
     tokenizer.decoder = decoders.ByteLevel()
@@ -131,8 +149,11 @@ def resolve(store, job, options):
             members = sorted((other for other in store.jobs(job['owner']) if (other['config'].get('series') or {}).get('id') == series['id']),
                              key=lambda other: other['config']['series']['order'])
             ids = list(dict.fromkeys(other['config']['corpus_id'] for other in members)) or ids
-        paths = [store.directory('corpora', store.corpus(identifier, job['owner'], ready=True)['id'])/'corpus' for identifier in ids]
-        train_tokenizer(paths, folder, options.get('vocabulary', 32000))
+        corpora = [store.corpus(identifier, job['owner'], ready=True) for identifier in ids]
+        paths = [store.directory('corpora', item['id'])/'corpus' for item in corpora]
+        training_only = options.get('routing_profile') == 'concept-table-v1' or options.get('context_refinement')
+        names = [item['name'] for item in corpora] if training_only else None
+        train_tokenizer(paths, folder, options.get('vocabulary', 32000), training_names=names)
     hashes = _hashes(folder)
     base = dict(repo='acan-native', revision='tokenizer-'+hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()[:16],
                 native=True, size=options['native_size'], files_sha256=hashes)
