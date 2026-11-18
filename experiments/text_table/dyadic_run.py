@@ -11,7 +11,7 @@ import tempfile
 import pyarrow.parquet as pq
 from threadpoolctl import threadpool_limits
 from tokenizers import Tokenizer
-from .dyadic import Dyadic, embeddings
+from .dyadic import Dyadic, embeddings, frame, TARGET
 from .refinement import sources
 from .run import blocks
 from .recall import recall_inputs
@@ -208,6 +208,19 @@ def recall(model, train, test, tokenizer):
     return dict(facts_sha256=hashlib.sha256(facts.astype("<i8").tobytes()).hexdigest(), tasks=rows)
 
 
+def native_parity(model, tokens):
+    levels, age = model.levels(np.r_[tokens, 0])
+    x, c = model.context(levels, np.arange(len(tokens) + 1), age)
+    native, _ = model.graph.predict_proba(frame(x, c, model.columns), TARGET)
+    cursor = model.cursor()
+    maximum = 0.0
+    for i in range(len(tokens) + 1):
+        maximum = max(maximum, float(np.max(np.abs(cursor.distribution() - native[i]))))
+        if i < len(tokens):
+            cursor.observe(tokens[i])
+    return maximum
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--data", type=Path, required=True)
@@ -284,6 +297,10 @@ def main():
             model = pickle.load(stream)
         np.testing.assert_allclose(probe, model.cursor().prefill(test[:37]).distribution(), atol=1e-12)
         report["checkpoint_bytes"] = args.checkpoint_output.stat().st_size
+    report["max_difference_from_predict_proba"] = native_parity(model, test[:32])
+    report["effective_max_width"] = 1 << len(model.pairs)
+    report["max_requested_width"] = 1 << (model.scales - 1)
+    report["working_level_selection"] = model.graph.selection
     report["validation_control"] = evaluate(model, validation, vstarts, valid_offsets[32:])
     report["test"] = evaluate(model, test, tstarts, test_offsets, True)
     report["test_with_article_prefix"] = article_context(model, test, tstarts, test_offsets)

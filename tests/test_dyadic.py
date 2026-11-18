@@ -59,6 +59,12 @@ class DyadicTests(unittest.TestCase):
         for a, b in zip(vectorized.buffers, cursor.buffers):
             np.testing.assert_array_equal(a, b)
         self.assertAlmostEqual(cursor.distribution().sum(), 1.0)
+        completion = []
+        for _ in range(5):
+            token = int(vectorized.distribution().argmax())
+            completion.append(token)
+            vectorized.observe(token)
+        self.assertEqual(model.generate(ids, 5), completion)
 
     def test_full_pass_matches_the_model_sufficient_statistics(self):
         ids = self.ids
@@ -95,6 +101,7 @@ class JudgmentTests(unittest.TestCase):
         m.encoder = Encoder().fit(df)
         m.labels = ["read"]
         data = m.encoder.transform(df)
+        data[2][0, :2] = [0.3, 0.7]  # A custom encoder can provide a weighted feature block.
         m._roots(data)
         s = m._statistics(rng.dirichlet(np.ones(4), len(df)), data)
         m.statistics = s

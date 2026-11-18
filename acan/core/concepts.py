@@ -419,10 +419,11 @@ class ConceptModel:
         categorical = []
         for block in blocks:
             observed = onehot[:, block]
-            present = observed.any(axis=1)
+            present = observed.sum(1) > 0
+            binary = ((observed == 0) | (observed == 1)).all() and np.all(observed.sum(1) <= 1)
             codes = observed.argmax(1) if observed.shape[1] else np.zeros(len(x), int)
             counts = s['N'][:, block]
-            categorical.append((present, codes, counts, counts.sum(1), (counts > 1e-9).sum(1)))
+            categorical.append((present, codes, counts, counts.sum(1), (counts > 1e-9).sum(1), binary))
         size = max(int(4e6//(k*max(x.shape[1]+len(blocks), 1))), 1)
         for start in range(0, len(x), size):
             part = slice(start, start+size)
@@ -440,8 +441,20 @@ class ConceptModel:
                 terms.append(-.5*((xs[..., j]-g[..., j])**2/v[..., j]+np.log(v[..., j])+LOG_2PI)*ms[..., j])
                 read.append(name in self.labels)
             for name, block, info in zip(encoder.categorical, blocks, categorical):
-                present, codes, counts, totals, distinct = info
-                if counts.shape[1]:
+                present, codes, counts, totals, distinct, binary = info
+                if not binary:
+                    # Custom matrix encoders may supply several values or weights for an attribute.
+                    # Preserve the original weighted log-density, one observation at a time.
+                    terms_block = np.empty_like(mass)
+                    for i, obs in enumerate(onehot[part, block]):
+                        left = np.maximum(counts-r[i]*obs, 0)
+                        d = (left > 1e-9).sum(1, keepdims=True) if self.distinct else 1.
+                        prob = categorical_reading(left, left.sum(1, keepdims=True), d,
+                                                   above[1][:, block], self.kappa, np)
+                        prior = np.maximum(frequency[start+i, block], 1e-12)
+                        terms_block[i] = np.log(np.where(alone[i, :, None], prior, prob))@obs
+                    terms.append(terms_block)
+                elif counts.shape[1]:
                     code = codes[part]
                     before = counts[:, code].T
                     after = np.maximum(before-t[part], 0.)

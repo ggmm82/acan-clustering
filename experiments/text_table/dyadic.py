@@ -98,10 +98,15 @@ class Reader:
         return [level["concepts"] for level in self.graph.levels]
 
 
-def embeddings(ids, starts, vocabulary, method, top=24, dimensions=12):
-    frequency = np.zeros(vocabulary, np.int64)
+def frequencies(ids, vocabulary):
+    counts = np.zeros(vocabulary, np.int64)
     for begin in range(0, len(ids), 65536):
-        frequency += np.bincount(ids[begin : begin + 65536], minlength=vocabulary)
+        counts += np.bincount(ids[begin : begin + 65536], minlength=vocabulary)
+    return counts
+
+
+def embeddings(ids, starts, vocabulary, method, top=24, dimensions=12):
+    frequency = frequencies(ids, vocabulary)
     common = np.argsort(-frequency, kind="stable")[:top]
     bucket = np.full(vocabulary, len(common))
     bucket[common] = np.arange(len(common))
@@ -335,7 +340,7 @@ class Dyadic:
 
         graph.root_p = extend(graph.root_p)
         # The complete dictionary has the same empirical training prior as a tabular categorical column.
-        root = np.bincount(ids, minlength=vocab) / len(ids)
+        root = frequencies(ids, vocab) / len(ids)
         graph.root_p[start:] = np.maximum(root, 1e-12)
         graph.root_g[-1] = 1 - root @ root
         expanded = set()
@@ -359,6 +364,16 @@ class Dyadic:
 
     def cursor(self):
         return Cursor(self)
+
+    def generate(self, tokens, count):
+        """Completamento deterministico della colonna target, una posizione alla volta."""
+        cursor = self.cursor().prefill(tokens)
+        result = []
+        for _ in range(count):
+            token = int(cursor.distribution().argmax())
+            result.append(token)
+            cursor.observe(token)
+        return result
 
 
 class Cursor:

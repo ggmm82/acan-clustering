@@ -1,9 +1,8 @@
 # Addestramento lungo
 
-In **Generativo → Addestramento lungo**, carica i testi e crea una coda. Per
-provare il lettore con raggruppamenti CP attiva la casella **Sperimentale**
-nelle impostazioni prima di creare la coda. Il valore predefinito usa i
-suffissi esatti. Il pannello riporta la NLL di validazione, i contesti esatti,
-le classi scelte e il numero di token all'ultima stima della struttura.
+In **Generativo → Addestramento lungo** carica i testi e crea una coda. La coda
+apprende le statistiche dei suffissi e può riprendere dai checkpoint.
+La tabella con contesto diadico viene valutata negli esperimenti di ricerca.
+I risultati delle due procedure sono indicati nella guida del modello.
 
 [Dal corpus al checkpoint e dal prompt al prossimo token](../acan/MODEL.md#informatica).

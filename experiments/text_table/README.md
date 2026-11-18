@@ -60,3 +60,40 @@ preparazione dei documenti, il worker e il caricamento del checkpoint, eseguire
 `python -m experiments.text_table.worker_queue --data DIR --output worker.json`.
 I dati hanno split espliciti e i duplicati vengono rimossi dal worker.
 Le NLL con vocabolari diversi sono espresse in unità di token diverse.
+
+## Contesto a scale diadiche
+
+L'esperimento usa 20 scale sovrapposte, una tabella di composizione per ciascuna
+scala con esempi disponibili e un `ConceptModel` con il token come target
+categorico. Il contatore con identità esatte e la precedente lettura dei suffissi
+con gruppi CP sono i controlli. Le prove di associazione, copia e riformulazione
+usano soltanto la tabella diadica.
+
+```sh
+OPENBLAS_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false python -m experiments.text_table.dyadic_run \
+  --data DIR --output diadico.json --checkpoint-output selezionato.pkl
+python -m experiments.text_table.dyadic_control --data DIR --output controlli.json
+python -m experiments.text_table.dyadic_tabular DIR_ALLEGATI tabelle.json
+OPENBLAS_NUM_THREADS=1 python -m experiments.text_table.dyadic_judgment > giudizio.json
+```
+
+Il tokenizer e i parquet in DIR sono quelli del protocollo WikiText-2 descritto
+sopra. Le co-occorrenze e le finestre rispettano gli inizi di articolo. Il test
+usa gli stessi 64 offset del confronto con i suffissi. La ricevuta dà sia il
+risultato partendo dal blocco vuoto, sia quello con il prefisso dell'articolo.
+La prova lessicale cambia «doctor» in «physician» e così via per sedici chiavi
+inglesi con risposte assegnate a caso. Gli ID delle risposte sono esclusi dal
+riempimento. Il file pickle opzionale serve alla ripetizione locale della prova.
+
+Per completare un prompt con il checkpoint locale appena prodotto:
+
+```python
+import pickle
+from tokenizers import Tokenizer
+
+tokenizer = Tokenizer.from_file("DIR/bpe-8000.json")
+with open("selezionato.pkl", "rb") as file:
+    modello = pickle.load(file)
+prefisso = tokenizer.encode("The dog ran across the").ids
+print(tokenizer.decode(modello.generate(prefisso, 8)))
+```

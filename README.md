@@ -7,13 +7,16 @@ opzionale. Richiede Python 3.9 o successivo.
 
 ## Il modello
 
-La coda lunga può usare il modello tabulare per raggruppare i token in base
-ai loro vicini. Legge i gruppi insieme ai suffissi ordinati per stimare il
-token successivo. La validazione sceglie il taglio sulla NLL del token.
-In **Generativo → Addestramento lungo → Impostazioni** la lettura CP è
-sperimentale e il contatore di suffissi resta il valore predefinito.
-La guida descrive anche come si aggiornano i concetti leggendo nuovi dati.
-[Matematica, apprendimento, generazione e misure](acan/MODEL.md).
+Nella ricerca sul testo ogni posizione diventa una riga. Le colonne note descrivono
+finestre di 1, 2, 4 e via via più token del prefisso. Il modello tabulare completa
+la colonna categorica del token successivo. La prova diadica si esegue in
+`experiments/text_table`. La coda lunga del sito continua a usare il contatore.
+[Matematica, apprendimento e risultati](acan/MODEL.md).
+
+Nella prova diadica WikiText-2 la NLL sul test è 7,1808, contro 4,5000 del
+contatore sugli stessi blocchi e confini di articolo. Il lettore finale ha
+scelto un solo concetto con entrambi gli embedding. La guida riporta anche
+le prove di causalità, richiamo, velocità e conservazione dei risultati tabulari.
 
 I concetti sono disposti in **livelli**: sotto la radice i concetti generali,
 poi i comportamenti particolari. Ogni livello toglie alle osservazioni il
