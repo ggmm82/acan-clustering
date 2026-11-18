@@ -288,3 +288,18 @@ un'approssimazione, non coperta da M3.
   chiavi di un modello preaddestrato, leggono peggio: M9 richiede una struttura
   che quelle chiavi non hanno. Archi fra teste e layer non sono realizzati.
 - Con compressione, e senza addestramento, non eguaglia l'attenzione densa.
+
+
+### Previsione del token con i concetti appresi
+
+Nella prova sperimentale su WikiText-2 il testo viene riconosciuto dallo stesso
+grafo tabulare. La CP a coppie interviene nella scelta dei livelli. La
+probabilità del prossimo token si ottiene leggendo una categoria attraverso
+quei livelli. Se $T_i(z)$ è la probabilità del concetto dato il prefisso e
+$q_i(y)$ è la probabilità del token nel concetto, la loro miscela vale
+$p(y\mid z)=\sum_i T_i(z)q_i(y)$. Quando il token di addestramento è noto,
+la quota del suo conteggio attribuita al concetto vale
+$T_i(z)q_i(y)/p(y\mid z)$. In predizione le appartenenze dipendono dal solo
+prefisso. I conteggi del documento si aggiornano dopo l'osservazione e il
+livello superiore fornisce alle categorie rare un riferimento più generale.
+Il percorso e le misure sono nella [guida sperimentale](../experiments/text_table/README.md).

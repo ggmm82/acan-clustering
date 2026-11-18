@@ -234,3 +234,21 @@ class TextCursor:
         self.window.append(int(token))
         self._membership = None
         return self
+
+
+def posterior_counts(table, reading, train, width, chunk=512):
+    """One pass over the original rows with the observed training token."""
+    # Store K x V learned counts, independent of training sequence length.
+    totals = np.zeros((reading.vocabulary, table.model.concepts))
+    head = reading.probability(np.arange(reading.vocabulary))
+    stop = table.rows.context + table.model.rows
+    if len(train) < stop:
+        raise ValueError("Il train non copre le righe del modello.")
+    for start in range(table.rows.context, stop, chunk):
+        pos = np.arange(start, min(start+chunk, stop))
+        weights = table.model.assignments(table.rows.frame(train, pos, observed_context=width))
+        targets = train[pos]
+        posterior = weights * head[:, targets].T
+        posterior /= posterior.sum(axis=1, keepdims=True)
+        np.add.at(totals, targets, posterior)
+    return sparse.csr_matrix(totals.T)

@@ -5,11 +5,33 @@ TEXT = r"""
 ## Che cosa fa il programma, passo per passo
 
 Questa pagina segue ciò che succede quando premi i pulsanti, dal file caricato al
-modello che risponde. Il modello è uno solo: nella scheda Modello impara una
-tabella, nella scheda Generativo impara un testo, che per lui è una tabella in
-cui ogni posizione è una riga e il token in quella posizione è la colonna da
-prevedere. Ogni passo qui sotto vale per entrambe; dove il programma fa cose
-diverse lo dice. Le formule sono nella scheda Matematica; qui c'è il meccanismo.
+modello che risponde. La scheda Modello costruisce i concetti da una tabella.
+La scheda Generativo usa conteggi di contesti esatti per completare il testo.
+Entrambe leggono categorie attraverso conteggi a livelli.
+
+### Dal testo ai concetti tabulari nel prototipo sperimentale
+
+**Apprendimento.** Il tokenizer divide il testo di addestramento in 8.000 tipi
+di token. Per ogni tipo si contano i vicini a sinistra e a destra. Da questi
+profili si ricavano 32 coordinate. Scorrendo il testo, il programma presenta al
+modello tabulare otto vettori precedenti e il vettore successivo come bersaglio.
+Su 200.000 righe il modello impara i concetti e i collegamenti tra livelli. Una
+seconda lettura delle righe conta quali token seguono ciascun concetto. La
+validazione sceglie quante posizioni osservare durante il riconoscimento e
+quante volte affinare questi conteggi usando il seguito noto.
+
+**Completamento.** Il programma carica dal checkpoint un solo grafo e usa il
+tokenizer dell'addestramento. Legge il prompt in ordine e aggiorna i conteggi
+del documento negli stessi concetti. Per la nuova posizione, la configurazione
+scelta riconosce il concetto osservando l'ultimo token. Combina quindi i
+conteggi globali e quelli dell'intero prefisso attraversando i livelli.
+Il comando di completamento sceglie il token più probabile, lo aggiunge al
+prefisso e ripete il passo. La memoria conserva somme per concetto e token.
+
+Su 32.704 predizioni di test il prototipo ottiene un errore medio di 6,085
+nat per token. Il contatore della scheda Generativo ottiene 5,452 sugli
+stessi blocchi con i primi 200.008 token di addestramento. I vettori del
+prototipo sono stati stimati sull'intero train.
 
 Imparare non vuol dire correggere pesi con un gradiente: vuol dire **sommare**.
 Un concetto è fatto di somme sui suoi membri, e due concetti si uniscono

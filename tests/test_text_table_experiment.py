@@ -66,3 +66,18 @@ class TextTableExperimentTests(unittest.TestCase):
         np.testing.assert_allclose(again.counts.toarray(),self.model.counts.toarray(),atol=1e-10)
         np.testing.assert_allclose(again.model.assignments(again.rows.frame(self.ids,[5])),
             self.model.model.assignments(self.model.rows.frame(self.ids,[5])),atol=1e-12)
+
+    def test_training_token_distributes_one_count_by_bayes_rule(self):
+        from experiments.text_table.reading import LevelReading, posterior_counts
+        table = self.model
+        reading = LevelReading(table.counts, [l['parents'] for l in table.model.levels[1:]], .5)
+        p = np.arange(table.rows.context, table.rows.context + table.model.rows)
+        t = table.model.assignments(table.rows.frame(self.ids, p, observed_context=1))
+        head = reading.probability(np.arange(len(self.vectors)))
+        expected = np.zeros_like(head)
+        for weights, y in zip(t, self.ids[p]):
+            joint = weights * head[:, y]
+            expected[:, y] += joint / joint.sum()
+        actual = posterior_counts(table, reading, self.ids, width=1, chunk=11).toarray()
+        np.testing.assert_allclose(actual, expected)
+        np.testing.assert_allclose(actual.sum(0), np.bincount(self.ids[p], minlength=len(self.vectors)))

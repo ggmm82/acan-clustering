@@ -24,8 +24,8 @@ def main():
         parser.error('Serve il tokenizer associato al checkpoint salvato da layers --save-table.')
     tokenizer = Tokenizer.from_file(str(args.tokenizer))
     # Fixed on validation for the published experiment.
-    reader = LevelReading(table.counts, [level['parents'] for level in table.model.levels[1:]], kappa=.5)
-    cursor = TextCursor(table, reader, observed_context=1)
+    reader = LevelReading(table.counts, [level['parents'] for level in table.model.levels[1:]], kappa=getattr(table, 'kappa_reading', .5))
+    cursor = TextCursor(table, reader, observed_context=getattr(table, 'observed_context', 1))
     ids = tokenizer.encode(args.prompt).ids
     cursor.prefill(ids)
     for _ in range(args.tokens):

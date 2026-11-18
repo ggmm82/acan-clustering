@@ -4,8 +4,7 @@ Prova fuori dal prodotto: una sola istanza del **ConceptModel tabulare invariato
 impara le righe di contesto. Non vengono introdotti un altro algoritmo di
 clustering, una rete o un contatore di contesti esatti. La PR resta in bozza:
 il risultato migliora la prima prova, ma la qualità non raggiunge ancora il
-contatore dell'app. Le spiegazioni di riferimento dell'app restano invariate
-finché il percorso non è pronto per l'integrazione.
+contatore dell'app. Le schede Matematica e Informatica distinguono il prototipo dal generatore disponibile sul sito.
 
 ## Percorso verificato
 
@@ -153,15 +152,25 @@ prova a scelta limitata. Risultati per distanza con
 [otto posizioni](results/wikitext2-recall.json) e con
 [una posizione](results/wikitext2-recall-selected.json).
 
+La lettura finale affina i conteggi con il token noto di ciascuna riga di
+addestramento. Se il prefisso riconosce il concetto con peso $T_i$ e il concetto
+assegna probabilità $q_i(y)$ al token osservato, la sua quota di conteggio è
+$T_i q_i(y)/\sum_j T_j q_j(y)$. Una passata offre il miglior risultato in
+validazione. Su altri 64 blocchi disgiunti la NLL vale **6,0852**. Sugli stessi
+blocchi vale 6,1247 prima dell'affinamento, 6,2324 con le otto posizioni iniziali
+e 5,4516 per il contatore. Dopo 300.000 token il checkpoint finale recupera 5
+associazioni e 2 sequenze su 16 con risposta a scelta chiusa, zero sul
+vocabolario intero. [Prova sul checkpoint finale](results/wikitext2-recall-fitted.json).
+
 Per provare il completamento, aggiungere `--save-table /tmp/concetti.pkl` al
-comando `layers` sopra. Il checkpoint registra l'identità del tokenizer.
-Il comando stampa il testo completato scegliendo il token più probabile a ogni passo.
+comando `layers` sopra. Il checkpoint registra l'identità del tokenizer. Il
+comando `context` seleziona la lettura e salva il grafo con i conteggi finali.
 
 ```sh
-python -m experiments.text_table.complete --table /tmp/concetti.pkl \
-  --tokenizer /percorso/parquet/bpe-8000.json --tokens 4 'The history of'
 python -m experiments.text_table.context --table /tmp/concetti.pkl \
-  --data /percorso/parquet --output /tmp/contesto.json
-python -m experiments.text_table.recall --table /tmp/concetti.pkl \
+  --data /percorso/parquet --output /tmp/contesto.json --save-completion /tmp/lettura.pkl
+python -m experiments.text_table.complete --table /tmp/lettura.pkl \
+  --tokenizer /percorso/parquet/bpe-8000.json --tokens 4 'The history of'
+python -m experiments.text_table.recall --table /tmp/lettura.pkl \
   --data /percorso/parquet --output /tmp/ricordo.json
 ```
