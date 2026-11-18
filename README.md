@@ -7,13 +7,19 @@ opzionale. Richiede Python 3.9 o successivo.
 
 ## Il modello
 
-Tabella e linguaggio usano **un solo modello**, il grafo dei concetti. Dalla 9.0.0
-il testo è una tabella di questo modello, senza rete neurale (`concept-lm-v1`,
-`docs/CONCEPT-LM.md`): un concetto è un nodo che riassume con somme le
-osservazioni che gli appartengono; riconoscere è massa per somiglianza attesa;
-generalizzare unisce i due concetti la cui unione costa meno a chi legge;
-giudicare usa solo osservazioni che il concetto non contiene. La ricerca dei
-concetti è lineare nel numero di attributi.
+Il modello tabulare impara un grafo di concetti. Ogni nodo conserva somme
+sulle osservazioni che gli appartengono. Il riconoscimento pesa la massa del
+nodo per la somiglianza con i dati osservati. La generalizzazione sceglie
+le fusioni che costano meno a chi legge, e la CP a coppie contribuisce alla
+scelta dei livelli. Il generatore a conteggi dell'app usa la stessa lettura
+categorica su contesti esatti.
+
+Nel prototipo di completamento anche le righe di testo entrano nel modello
+tabulare. Un solo grafo riconosce il prefisso e legge la distribuzione del
+prossimo token attraverso i suoi livelli. Sul test di WikiText-2 descritto
+nella prova, il prototipo ottiene 6,085 nat/token e il contatore 5,452.
+I comandi per provare un prompt sono nella
+[guida sperimentale](experiments/text_table/README.md).
 
 I concetti sono disposti in **livelli**: sotto la radice i concetti generali,
 poi i comportamenti particolari. Ogni livello toglie alle osservazioni il
@@ -97,10 +103,9 @@ Guida dettagliata della scheda Modello e della valutazione: [docs/GUI.md](docs/G
 
 ## Laboratorio generativo
 
-La scheda **Generativo** mette in primo piano l'**apprendimento lungo dell'LLM
-a concetti nativo**: un modello che nasce da zero (pesi casuali, tutti i pesi
-che imparano, tokenizer imparato dai testi) in cui ogni layer legge il testo
-attraverso i concetti ACAN. Prepara una miscela di dati italiani e inglesi per conversare da dataset
+La scheda **Generativo** permette di addestrare il generatore a conteggi
+del prodotto. Impara il tokenizer dai testi e aggiorna le frequenze delle
+continuazioni osservate a più lunghezze di contesto. Prepara una miscela di dati italiani e inglesi per conversare da dataset
 pubblici con licenze aperte (verificati e scaricati dal worker, con pausa e
 ripresa), impara una coda di testi uno dopo l'altro (anche file propri:
 Markdown, Python, ZIP, EPUB, DOCX, PDF), salva in modo permanente, riprende da
