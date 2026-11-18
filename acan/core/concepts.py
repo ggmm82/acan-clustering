@@ -591,6 +591,7 @@ class ConceptModel:
 
     def fit(self, frame, labels=(), encoder=None, progress=None):
         self.category_regions = {}
+        self.observed_targets = {}
         if len(frame) > self.refine_rows:                        # a large table is read a chunk at a time
             step = self.chunk_rows
             self._total = len(frame)
@@ -612,6 +613,7 @@ class ConceptModel:
            the whole table.
         """
         self.category_regions = {}
+        self.observed_targets = {}
         self.labels = list(labels)
         rng = np.random.default_rng(self.seed)
         self.encoder = encoder or Encoder().fit_chunks(read())
@@ -831,6 +833,61 @@ class ConceptModel:
         weights = self._weights(0.) if observed_only else self.train_weights
         return self._route(self.statistics, data, weights)[0]
 
+    def fit_observed_target(self, label, categories, chunks, validation):
+        """Fit a new categorical column after fitting the geometry on its observed predictors.
+
+        Batches give predictor rows and integer indices into categories. The same memberships read
+        and update the target. Validation chooses its smoothing without changing the geometry.
+        """
+        if label in self.encoder.numeric or label in self.encoder.categorical:
+            raise ValueError("La colonna da aggiungere deve essere esterna ai predittori addestrati.")
+        categories = list(categories)
+        if not categories or len(set(categories)) != len(categories):
+            raise ValueError("Serve un dizionario di categorie distinte.")
+        counts = np.zeros((self.concepts, len(categories)))
+
+        def encode(rows, targets):
+            targets = np.asarray(targets)
+            if targets.ndim != 1 or len(targets) != len(rows) or not np.issubdtype(targets.dtype, np.integer):
+                raise ValueError("Serve una categoria codificata per ogni riga.")
+            if np.any((targets < 0) | (targets >= len(categories))):
+                raise ValueError("Categoria fuori dal dizionario.")
+            return self.assignments(rows), targets
+
+        for rows, targets in chunks:
+            if not len(rows):
+                continue
+            shares, targets = encode(rows, targets)
+            order = np.argsort(targets, kind='stable')
+            values, starts = np.unique(targets[order], return_index=True)
+            counts[:, values] += np.add.reduceat(shares[order], starts, axis=0).T
+        if counts.sum() == 0:
+            raise ValueError("Servono righe di training per il target.")
+        mass = counts.sum(1, keepdims=True)
+        distinct = (counts > 1e-9).sum(1, keepdims=True)
+        frequency = counts.sum(0) + 1
+        prior = frequency / frequency.sum()
+        scores = np.zeros(len(KAPPA_GRID))
+        n = 0
+        for rows, targets in validation:
+            shares, targets = encode(rows, targets)
+            n += len(targets)
+            for j, kappa in enumerate(KAPPA_GRID):
+                q = categorical_reading(counts[:, targets], mass, distinct, prior[targets], kappa, np)
+                p = np.einsum('ij,ji->i', shares, q)
+                scores[j] -= np.log(np.maximum(p, 1e-300)).sum()
+        if not n:
+            raise ValueError("Servono righe di validazione per il giudizio.")
+        kappa = KAPPA_GRID[int(scores.argmin())]
+        if not hasattr(self, 'observed_targets'):
+            self.observed_targets = {}
+        self.observed_targets[label] = dict(
+            categories=categories,
+            kappa=kappa,
+            probability=categorical_reading(counts, mass, distinct, prior, kappa, np),
+        )
+        return self
+
     def refine_category(self, label):
         """Extend a categorical target with CP regions observed in additional table columns.
 
@@ -851,6 +908,9 @@ class ConceptModel:
         return reading
 
     def predict_proba(self, frame, label):
+        head = getattr(self, 'observed_targets', {}).get(label)
+        if head is not None:
+            return self.assignments(frame) @ head['probability'], head['categories']
         observed = frame.drop(columns=[c for c in self.labels if c in frame])
         t = self.assignments(observed)
         _, _, log_p = self._parameters(self.statistics)

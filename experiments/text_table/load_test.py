@@ -19,7 +19,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--input-mib", type=int, default=1024)
     args = parser.parse_args()
-    from .layers import encoded_splits
+    from .run import encoded_splits
 
     data = encoded_splits(args.data, ("train", "validation"))
     source = data["train"]

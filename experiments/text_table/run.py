@@ -26,6 +26,22 @@ def blocks(ids,count=64,length=512,seed=42):
     return [ids[start:start+length] for start in starts],starts
 
 
+def encoded_splits(data, splits):
+    import pandas as pd
+    from tokenizers import Tokenizer
+    source = hashlib.sha256((data/'train.parquet').read_bytes()).hexdigest()
+    if (data/'bpe-source.sha256').read_text() != source:
+        raise ValueError('Il tokenizer non corrisponde al train: eseguire prima text_table.run.')
+    tokenizer = Tokenizer.from_file(str(data/'bpe-8000.json'))
+    arrays = {}
+    for name in splits:
+        lines = [str(t) for t in pd.read_parquet(data/(name+'.parquet'))['text'] if str(t).strip()]
+        arrays[name] = np.concatenate([np.asarray(piece.ids+[tokenizer.token_to_id('[EOS]')],np.int32)
+            for piece in tokenizer.encode_batch(lines)])
+    return arrays
+
+
+
 def evaluate(model,pieces,vector=False):
     losses=[]
     for ids in pieces:

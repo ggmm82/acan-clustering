@@ -68,7 +68,7 @@ class TextTableExperimentTests(unittest.TestCase):
             self.model.model.assignments(self.model.rows.frame(self.ids,[5])),atol=1e-12)
 
     def test_training_token_distributes_one_count_by_bayes_rule(self):
-        from experiments.text_table.reading import LevelReading, posterior_counts
+        from acan.lm.text_reading import LevelReading, posterior_counts
         table = self.model
         reading = LevelReading(table.counts, [l['parents'] for l in table.model.levels[1:]], .5)
         p = np.arange(table.rows.context, table.rows.context + table.model.rows)

@@ -112,7 +112,7 @@ def main():
         "--continuous", action="store_true", help="Carry the suffix across I/O boundaries in both readings"
     )
     args = parser.parse_args()
-    from .layers import encoded_splits
+    from .run import encoded_splits
 
     arrays = encoded_splits(args.data, ("train", "validation", "test"))
     with threadpool_limits(1):

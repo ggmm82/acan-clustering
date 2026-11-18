@@ -7,17 +7,21 @@ opzionale. Richiede Python 3.9 o successivo.
 
 ## Il modello
 
-Nella ricerca sul testo ogni posizione diventa una riga. Le colonne note descrivono
-finestre di 1, 2, 4 e via via più token del prefisso. Il modello tabulare completa
-la colonna categorica del token successivo. La prova diadica si esegue in
-`experiments/text_table`. La coda lunga del sito continua a usare il contatore.
-[Matematica, apprendimento e risultati](acan/MODEL.md).
+Nel tabulare, ACAN scopre i concetti a partire dalle colonne osservate. Per
+prevedere il prossimo token abbiamo dato allo stesso `ConceptModel` una riga per
+posizione. Le colonne riassumono il prefisso a distanze crescenti. Ogni concetto
+accumula le frequenze dei token che lo seguono e contribuisce alla previsione
+in proporzione al grado di appartenenza della riga.
 
-Su 32.704 previsioni di test WikiText-2 la tabella con affinamenti CP ottiene
-**4,4794 nat/token**, contro 4,5000 del contatore e 7,1808 della prima tabella.
-Il vantaggio compare in 51 blocchi su 64. A distanza di 300.000 token recupera
-16 associazioni su 16, 16 copie su 16 e 8 risposte su 16 quando la richiesta usa un sinonimo.
-[Addestramento, generazione e riproduzione delle misure](experiments/text_table/README.md#lettura-condizionale-delle-regioni-cp).
+Su WikiText-2, a parità di righe, il riconoscitore nativo ottiene una NLL di
+6,868 contro 6,950 dell’albero CP sulla validazione di controllo. Nel test di
+generazione il contatore resta migliore sia con memoria del documento sia senza.
+I dieci risultati tabulari sono stati riprodotti. La coda lunga del sito usa il
+contatore. [Protocollo e ricevuta della verifica](experiments/text_table/README.md#verifica-del-riconoscitore-nativo).
+
+Il precedente risultato di 4,4794 nat/token derivava da un esperimento che usava
+un albero per riconoscere il contesto e affinamenti condizionali per prevedere.
+[Misure di quell’esperimento](experiments/text_table/README.md#lettura-condizionale-delle-regioni-cp).
 
 I concetti sono disposti in **livelli**: sotto la radice i concetti generali,
 poi i comportamenti particolari. Ogni livello toglie alle osservazioni il

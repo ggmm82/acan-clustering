@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 from scipy import sparse
-from experiments.text_table.reading import LevelReading
+from acan.lm.text_reading import LevelReading
 
 
 class LevelReadingTests(unittest.TestCase):
@@ -55,7 +55,7 @@ class LevelReadingTests(unittest.TestCase):
 
     def test_cursor_has_bounded_ordered_context_and_causal_memberships(self):
         from experiments.text_table.model import VectorTable
-        from experiments.text_table.reading import TextCursor
+        from acan.lm.text_reading import TextCursor
         rng=np.random.default_rng(3)
         table=VectorTable(rng.normal(size=(4,2)),context=2,max_concepts=4,judged_rows=16,
             refine_rows=64,covariance=False).fit(np.tile([0,1,2,3],20),rows=64)

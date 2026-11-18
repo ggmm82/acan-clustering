@@ -11,7 +11,7 @@ from threadpoolctl import threadpool_limits
 
 from acan.lm.concept_lm import ConceptLM
 from acan.lm.context_refinement import SuffixCursor
-from .layers import encoded_splits
+from .run import encoded_splits
 from .recall import recall_inputs
 from .run import blocks
 from .refinement import sources

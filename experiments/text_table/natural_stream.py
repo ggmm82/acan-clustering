@@ -13,7 +13,7 @@ from tokenizers import Tokenizer
 
 from acan.lm.concept_lm import ConceptLM
 from acan.lm.store import digest_file
-from .layers import encoded_splits
+from .run import encoded_splits
 from .refinement import losses, sources
 from .run import blocks
 

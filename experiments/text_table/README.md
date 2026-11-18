@@ -5,22 +5,68 @@ tabulare. L'implementazione usata dall'app risiede in `acan/lm`: la scoperta
 dei concetti è affidata a `acan/core/concepts.py`. La spiegazione di
 apprendimento e previsione si trova nella [guida unica](../../acan/MODEL.md).
 
+## Verifica del riconoscitore nativo
+
+WikiText-2 fornisce 2.729.601 posizioni di training. In ogni riga, il vettore
+dell’ultimo token e le medie su fasce successive del prefisso descrivono il
+contesto. Le fasce si fermano al confine dell’articolo. I vettori a 8 dimensioni
+derivano dalle co-occorrenze del train tramite SVD. Una proiezione comune a 16
+dimensioni riassume le fasce e i loro indicatori di disponibilità. Entrambi i
+riconoscitori ricevono le stesse 24 colonne, lo stesso limite di 256 concetti
+e la stessa regola per leggere le frequenze dei token.
+
+Il giudizio sceglie lo smoothing sui primi 32 blocchi di validazione, poi confronta
+i riconoscitori sugli altri 32. Il modello nativo trova 114 concetti e ottiene
+6,868 nat/token. L’albero ne usa 256 e ottiene 6,950. Per la verifica finale si
+usa quindi `ConceptModel.fit_chunks`. Dopo aver appreso la geometria, ogni riga
+contribuisce al conteggio del token osservato in ciascun concetto con il proprio
+grado di appartenenza. In previsione `predict_proba` combina le distribuzioni
+categoriche dei concetti con gli stessi pesi. Con la memoria attiva si aggiornano
+anche i conteggi locali dopo aver osservato ciascun token.
+
+Sul test il contatore ottiene una NLL inferiore in entrambe le condizioni,
+anche ripetendo il confronto sul 10% degli articoli di train. Per la ripetizione
+si riapprende anche il tokenizer. Le NLL vanno confrontate entro ciascun budget.
+Il risultato arresta la prova prima di WikiText-103 e dell’integrazione nel sito.
+[Misure, impronte e confronto tabulare](results/native-recognition-gate.json).
+
+| Train WikiText-2 | Memoria del documento | Modello nativo | Contatore |
+|---|---|---:|---:|
+| Completo | Attiva | 6,4696 | 4,5000 |
+| Completo | Spenta | 6,8272 | 4,9141 |
+| 63 articoli su 629 | Attiva | 6,7193 | 5,2915 |
+| 63 articoli su 629 | Spenta | 7,0989 | 5,9034 |
+
+Per riprodurre, usare i parquet descritti sotto e il BPE 8.000 del protocollo.
+`RIGHE` è una directory di lavoro per le matrici su disco.
+
+```sh
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false
+for stage in prepare native tree; do
+  python -m experiments.text_table.recognition_comparison --data DIR --workdir RIGHE --stage "$stage" --output "$stage.json"
+done
+python -m experiments.text_table.native_gate --workdir RIGHE --output nativo.json
+python -m experiments.text_table.memory_control --data DIR --output contatore.json
+python -m experiments.text_table.train_fraction --data DIR --destination DIR_10
+python -m experiments.text_table.recognition_comparison --stage prepare --data DIR_10 --workdir RIGHE_10 --output righe_10.json
+python -m experiments.text_table.native_gate --workdir RIGHE_10 --output nativo_10.json
+python -m experiments.text_table.memory_control --data DIR_10 --output contatore_10.json
+python -m experiments.text_table.dyadic_tabular DIR_ALLEGATI tabelle.json
+```
+
+Il lettore `text_graph` e le sue dipendenze servono ancora a caricare e
+riprendere i checkpoint salvati con il profilo `concept-table-v1`.
+
+## Protocolli precedenti
+
 Le ricevute in `results/` distinguono i blocchi di test e gli abbinamenti usati
 per le singole prove. Nei confronti di sviluppo i vettori erano ricavati dal
 train completo. Il precedente grafo a righe causali li ricavava dal primo tratto. La lettura CP nei suffissi ricalcola i profili dai bigrammi conservati.
 
 Per riprodurre le misure storiche, preparare i parquet train, validation e test
 di WikiText-2-raw-v1, revisione `b08601e04326c79dfdd32d625aee71d232d685c3`.
-Eseguire `python -m experiments.text_table.run --data DIR --output prima.json`,
-poi `python -m experiments.text_table.layers --data DIR --output livelli.json
---save-table tabella.pkl` e `python -m experiments.text_table.context --table
-tabella.pkl --data DIR --output confronto.json`. I file pickle sono checkpoint
-locali delle prove storiche. L'app salva le matrici con safetensors.
-
-Per ripetere la misura dell'intero train con il codice del worker,
-eseguire `python -m experiments.text_table.stream --data DIR --output stream.json`
-dopo la preparazione del tokenizer. La [ricevuta](results/wikitext2-worker-stream.json)
-riporta il primo e l'ultimo passo sugli stessi blocchi.
+Il comando `python -m experiments.text_table.run --data DIR --output prima.json`
+prepara il BPE sul train. Le ricevute storiche rimangono in `results/`.
 
 Per confrontare i gruppi CP nei suffissi ordinati usare i medesimi parquet e
 tokenizer del protocollo precedente. Il giudizio sceglie i pesi sui primi 32
