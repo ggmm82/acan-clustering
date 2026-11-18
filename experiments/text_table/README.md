@@ -145,7 +145,13 @@ Con il riconoscimento a otto posizioni, dopo 300.000 token la risposta è prima
 tra 16 candidati in 6 associazioni e 7 completamenti. Sul vocabolario intero
 nessuna delle 32 risposte arriva prima, anche alla distanza più breve di 1.000
 token. È una prova sintetica su un solo insieme di chiavi.
-[Risultati per distanza](results/wikitext2-recall.json).
+Con la singola posizione scelta dalla validazione, dopo 300.000 token i successi
+tra 16 candidati sono 6 per le associazioni e 3 per i completamenti. Anche con
+questa lettura nessuna risposta arriva prima sul vocabolario intero. Il minor
+errore medio sul testo coesiste con un peggior recupero delle sequenze nella
+prova a scelta limitata. Risultati per distanza con
+[otto posizioni](results/wikitext2-recall.json) e con
+[una posizione](results/wikitext2-recall-selected.json).
 
 Per provare il completamento, aggiungere `--save-table /tmp/concetti.pkl` al
 comando `layers` sopra. Il checkpoint registra l'identità del tokenizer.

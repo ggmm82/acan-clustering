@@ -2,6 +2,7 @@
   "seed": 42,
   "trials_per_task": 16,
   "vocabulary": 8000,
+  "observed_context": 8,
   "kappa": 0.5,
   "concepts": 83,
   "levels": [
