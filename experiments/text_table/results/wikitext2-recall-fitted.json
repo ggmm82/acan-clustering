@@ -1,0 +1,80 @@
+{
+  "seed": 42,
+  "trials_per_task": 16,
+  "vocabulary": 8000,
+  "observed_context": 1,
+  "kappa": 0.5,
+  "concepts": 83,
+  "levels": [
+    2,
+    14,
+    83
+  ],
+  "facts_sha256": "4d2aae2cc763dec862e837a82c84d12cb505dc72636f0d6da6fd7ca1817e0026",
+  "runs": [
+    {
+      "task": "associazione",
+      "filler_tokens": 1000,
+      "trials": 16,
+      "full_top1": 0,
+      "candidate_top1": 12,
+      "median_rank": 117.0
+    },
+    {
+      "task": "copia",
+      "filler_tokens": 1000,
+      "trials": 16,
+      "full_top1": 0,
+      "candidate_top1": 9,
+      "median_rank": 63.5
+    },
+    {
+      "task": "associazione",
+      "filler_tokens": 10000,
+      "trials": 16,
+      "full_top1": 0,
+      "candidate_top1": 8,
+      "median_rank": 640.0
+    },
+    {
+      "task": "copia",
+      "filler_tokens": 10000,
+      "trials": 16,
+      "full_top1": 0,
+      "candidate_top1": 6,
+      "median_rank": 454.5
+    },
+    {
+      "task": "associazione",
+      "filler_tokens": 100000,
+      "trials": 16,
+      "full_top1": 0,
+      "candidate_top1": 5,
+      "median_rank": 2077.0
+    },
+    {
+      "task": "copia",
+      "filler_tokens": 100000,
+      "trials": 16,
+      "full_top1": 0,
+      "candidate_top1": 5,
+      "median_rank": 1453.5
+    },
+    {
+      "task": "associazione",
+      "filler_tokens": 300000,
+      "trials": 16,
+      "full_top1": 0,
+      "candidate_top1": 5,
+      "median_rank": 3114.0
+    },
+    {
+      "task": "copia",
+      "filler_tokens": 300000,
+      "trials": 16,
+      "full_top1": 0,
+      "candidate_top1": 2,
+      "median_rank": 2304.0
+    }
+  ]
+}

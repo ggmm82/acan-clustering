@@ -13,8 +13,8 @@ const assert=require('node:assert/strict');
       await page.waitForFunction(()=>document.querySelectorAll('#page-mathematics mjx-container').length>=15);
       assert.equal(await page.locator('#page-mathematics [data-mjx-error]').count(),0);
       // One story of one model: ten steps for table rows and text positions together, the graph, the guarantees.
-      assert.equal(await page.locator('#page-mathematics h3').count(),12);
-      for(const name of ['Il modello, passo per passo','Passo 1 · I dati diventano righe','Passo 9 · Valori che si somigliano: i concetti dei token e i percorsi'])
+      assert.equal(await page.locator('#page-mathematics h3').count(),13);
+      for(const name of ['Il modello, passo per passo','Come i concetti tabulari prevedono un token nella prova su WikiText-2','Passo 1 · I dati diventano righe','Passo 9 · Valori che si somigliano: i concetti dei token e i percorsi'])
         assert(await page.getByRole('heading',{name}).isVisible());
       const text=await page.locator('#page-mathematics').innerText();
       assert(text.includes('Passo 6 · Contare a blocchi')&&text.includes('Passo 7 · Generalizzare dove chi legge perde meno'));

@@ -4,11 +4,10 @@ from dash import dcc, html
 TEXT = r"""
 ## Il modello, passo per passo
 
-C'è un solo modello. Le sue osservazioni sono **righe**: una riga di una tabella,
-oppure una posizione di un testo. Questa pagina le segue dall'ingresso alla
-previsione e dà la formula di ogni passo. Ogni passo vale per entrambe; dove una
-riga di tabella e una posizione di testo si comportano diversamente, il passo
-dice come e perché.
+Le tabelle e il generatore dell'app condividono le regole di somma e di lettura.
+Il modello tabulare cerca i concetti nei dati. Il generatore attuale raggruppa
+le posizioni secondo i token precedenti uguali. Nel prototipo sperimentale anche
+il testo passa attraverso la ricerca tabulare descritta in questa pagina.
 
 **L'idea in tre righe.** Un *concetto* è un riassunto di più righe fatto solo di
 somme. *Riconoscere* una riga vuol dire pesare i concetti per quanto le
@@ -17,6 +16,31 @@ suo livello sopra, dove chi poi legge perde meno. Un insieme di concetti è buon
 quanto permette di leggere ciò che serve da righe che non ha visto.
 
 ---
+
+### Come i concetti tabulari prevedono un token nella prova su WikiText-2
+
+Una posizione del testo è una riga. Il modello osserva i vettori dei token
+precedenti e impara a leggere il vettore del token successivo. Durante le fusioni,
+la CP a coppie premia i gruppi abbastanza grandi i cui membri si somigliano più
+della media. Il giudizio su righe a cui viene sottratto il proprio contributo
+aiuta a scegliere il livello capace di prevedere. Il numero di gruppi è un
+risultato di questi due criteri. La prova ha trovato livelli da 2, 14 e 83 concetti.
+
+Sia $T_i(z)$ l'appartenenza del contesto $z$ al concetto $i$ e $q_i(y)$ la
+probabilità del token $y$ letta dai conteggi del concetto e dei suoi genitori.
+La previsione globale è $p(y\mid z)=\sum_i T_i(z)q_i(y)$. Quando il token di
+addestramento è noto, il concetto riceve una frazione del suo conteggio pari a
+
+$$
+r_i(z,y)=\frac{T_i(z)q_i(y)}{\sum_j T_j(z)q_j(y)}.
+$$
+
+Un concetto che riconosce bene il prefisso e predice il seguito riceve più
+credito. Le frazioni sommano a uno. Con questi nuovi conteggi si ricalcola la
+stessa lettura dai genitori ai figli. Una passata è risultata preferibile in
+validazione. Durante il completamento la memoria del documento aggiunge ai
+livelli le frequenze osservate nel prefisso. La previsione viene emessa prima
+di aggiornare la memoria con il token appena rivelato.
 
 ### Passo 1 · I dati diventano righe
 

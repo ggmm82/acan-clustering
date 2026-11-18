@@ -1,8 +1,15 @@
 # Il modello a concetti che scrive (`concept-lm-v1`)
 
-Un solo modello per tabelle e testo: il testo è una tabella, il modello è quello
-di [MODEL.md](MODEL.md). Nessuna rete neurale, nessun peso addestrato, nessun
-gradiente. Codice: [`acan/lm/concept_lm.py`](../acan/lm/concept_lm.py) (il
+Il generatore dell'app raccoglie le posizioni con contesti esatti uguali.
+Condivide con le tabelle la formula di lettura delle categorie. Il prototipo
+della PR21 applica anche la ricerca dei concetti tabulari alle righe di testo.
+Un solo grafo appreso riconosce il prefisso e pesa le distribuzioni dei token.
+Su 64 nuovi blocchi di WikiText-2 ottiene 6,085 nat/token contro 5,452 del
+contatore a parità di blocchi. I comandi per addestrare il grafo, salvare il
+checkpoint e completare un prompt sono nella
+[guida della prova](../experiments/text_table/README.md).
+
+Codice: [`acan/lm/concept_lm.py`](../acan/lm/concept_lm.py) (il
 modello), [`acan/lm/concept_trainer.py`](../acan/lm/concept_trainer.py)
 (apprendimento lungo, generazione, verifica sul test, esportazione). Test:
 [`tests/test_concept_lm.py`](../tests/test_concept_lm.py).
