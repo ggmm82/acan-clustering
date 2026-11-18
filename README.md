@@ -7,13 +7,17 @@ opzionale. Richiede Python 3.9 o successivo.
 
 ## Il modello
 
-Tabella e linguaggio usano **un solo modello**, il grafo dei concetti. Dalla 9.0.0
-il testo è una tabella di questo modello, senza rete neurale (`concept-lm-v1`,
-`docs/CONCEPT-LM.md`): un concetto è un nodo che riassume con somme le
-osservazioni che gli appartengono; riconoscere è massa per somiglianza attesa;
-generalizzare unisce i due concetti la cui unione costa meno a chi legge;
-giudicare usa solo osservazioni che il concetto non contiene. La ricerca dei
-concetti è lineare nel numero di attributi.
+Nella ricerca sul testo ogni posizione diventa una riga. Le colonne note descrivono
+finestre di 1, 2, 4 e via via più token del prefisso. Il modello tabulare completa
+la colonna categorica del token successivo. La prova diadica si esegue in
+`experiments/text_table`. La coda lunga del sito continua a usare il contatore.
+[Matematica, apprendimento e risultati](acan/MODEL.md).
+
+Su 32.704 previsioni di test WikiText-2 la tabella con affinamenti CP ottiene
+**4,4794 nat/token**, contro 4,5000 del contatore e 7,1808 della prima tabella.
+Il vantaggio compare in 51 blocchi su 64. A distanza di 300.000 token recupera
+16 associazioni su 16, 16 copie su 16 e 8 risposte su 16 quando la richiesta usa un sinonimo.
+[Addestramento, generazione e riproduzione delle misure](experiments/text_table/README.md#lettura-condizionale-delle-regioni-cp).
 
 I concetti sono disposti in **livelli**: sotto la radice i concetti generali,
 poi i comportamenti particolari. Ogni livello toglie alle osservazioni il
@@ -97,10 +101,7 @@ Guida dettagliata della scheda Modello e della valutazione: [docs/GUI.md](docs/G
 
 ## Laboratorio generativo
 
-La scheda **Generativo** mette in primo piano l'**apprendimento lungo dell'LLM
-a concetti nativo**: un modello che nasce da zero (pesi casuali, tutti i pesi
-che imparano, tokenizer imparato dai testi) in cui ogni layer legge il testo
-attraverso i concetti ACAN. Prepara una miscela di dati italiani e inglesi per conversare da dataset
+La scheda **Generativo** usa il contatore di contesti per l’addestramento lungo. Prepara una miscela di dati italiani e inglesi per conversare da dataset
 pubblici con licenze aperte (verificati e scaricati dal worker, con pausa e
 ripresa), impara una coda di testi uno dopo l'altro (anche file propri:
 Markdown, Python, ZIP, EPUB, DOCX, PDF), salva in modo permanente, riprende da
