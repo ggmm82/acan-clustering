@@ -19,6 +19,11 @@ generazione il contatore resta migliore sia con memoria del documento sia senza.
 I dieci risultati tabulari sono stati riprodotti. La coda lunga del sito usa il
 contatore. [Protocollo e ricevuta della verifica](experiments/text_table/README.md#verifica-del-riconoscitore-nativo).
 
+Aggiungendo l’identità esatta del token precedente, la NLL del modello nativo
+senza memoria del documento scende da 6,8272 a 5,3158. Il contatore a un token
+ottiene 5,3004 sugli stessi blocchi. La soglia di 4,82 resta mancata.
+[Prova dell’identità esatta](experiments/text_table/README.md#identità-esatta-del-token-precedente).
+
 Il precedente risultato di 4,4794 nat/token derivava da un esperimento che usava
 un albero per riconoscere il contesto e affinamenti condizionali per prevedere.
 [Misure di quell’esperimento](experiments/text_table/README.md#lettura-condizionale-delle-regioni-cp).

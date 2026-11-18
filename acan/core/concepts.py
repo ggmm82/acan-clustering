@@ -886,6 +886,7 @@ class ConceptModel:
             kappa=kappa,
             probability=categorical_reading(counts, mass, distinct, prior, kappa, np),
         )
+        getattr(self, 'category_regions', {}).pop(label, None)
         return self
 
     def refine_category(self, label):
@@ -896,7 +897,8 @@ class ConceptModel:
         """
         from acan.core.conditional import ConditionalReading
 
-        if label not in self.labels or label not in self.encoder.categorical:
+        fitted_head = label in getattr(self, 'observed_targets', {})
+        if not fitted_head and (label not in self.labels or label not in self.encoder.categorical):
             raise ValueError("Il raffinamento richiede un target categorico addestrato.")
         if not hasattr(self, 'category_regions'):
             self.category_regions = {}
@@ -909,16 +911,19 @@ class ConceptModel:
 
     def predict_proba(self, frame, label):
         head = getattr(self, 'observed_targets', {}).get(label)
-        if head is not None:
-            return self.assignments(frame) @ head['probability'], head['categories']
-        observed = frame.drop(columns=[c for c in self.labels if c in frame])
+        observed = frame.drop(columns=[*self.labels, label], errors='ignore')
         t = self.assignments(observed)
-        _, _, log_p = self._parameters(self.statistics)
-        probability = t@np.exp(log_p[:, self.encoder.block(label)])
+        if head is None:
+            _, _, log_p = self._parameters(self.statistics)
+            probability = t @ np.exp(log_p[:, self.encoder.block(label)])
+            categories = self.encoder.categories[label]
+        else:
+            probability = t @ head['probability']
+            categories = head['categories']
         reading = getattr(self, 'category_regions', {}).get(label)
         if reading is not None:
             probability = reading.apply(observed, probability)
-        return probability, self.encoder.categories[label]
+        return probability, categories
 
     def predict(self, frame, label):
         if label in self.encoder.numeric:

@@ -5,6 +5,46 @@ tabulare. L'implementazione usata dall'app risiede in `acan/lm`: la scoperta
 dei concetti è affidata a `acan/core/concepts.py`. La spiegazione di
 apprendimento e previsione si trova nella [guida unica](../../acan/MODEL.md).
 
+## Identità esatta del token precedente
+
+Il punto 1 mantiene il prefisso numerico della prova nativa e aggiunge una
+codifica univoca del token immediatamente precedente. Tredici bit distinguono
+gli 8.000 token del vocabolario e il valore mancante al confine di articolo
+o blocco. Il riconoscitore tabulare apprende su tutte le 2.729.601 posizioni.
+Con il limite precedente di 256 concetti, il livello finale ne usa 99.
+Nella lettura categorica, ACAN può anche consultare le frequenze del token
+successivo per il valore esatto della colonna. Il peso con cui queste frequenze
+si combinano con la previsione dei concetti viene scelto su 16.352 posizioni di
+validazione. Il test usa 32.704 token e la memoria del documento è spenta.
+
+| Lettura | NLL sul test |
+|---|---:|
+| Modello nativo con la precedente codifica del contesto | 6,8272 |
+| Modello nativo con i 13 bit aggiunti ai predittori | 6,6677 |
+| Modello nativo con i 13 bit e la lettura della categoria esatta | 5,3158 |
+| Sola categoria esatta, con le frequenze globali come riferimento | 5,3052 |
+| Contatore a un token | 5,3004 |
+| Contatore a sei token | 4,9141 |
+
+La lettura della categoria esatta recupera gran parte del divario. Su questo
+test la previsione dei concetti aggiunta alle frequenze delle coppie porta la
+NLL da 5,3052 a 5,3158. Nella lettura della sola categoria, le 27.752 coppie
+già viste hanno NLL 4,4231. Le altre 4.952 posizioni, compresi cinque inizi
+d’articolo, hanno NLL 10,2490. L’identità indica quali conteggi consultare;
+quando manca la coppia, la probabilità dipende dalla distribuzione di riferimento.
+
+Il valore storico di 4,8204 nella prova di troncamento conservava i conteggi
+locali del documento. Per il confronto attuale il contatore viene addestrato
+con profondità uno e memoria zero. La soglia richiesta di 4,82 resta mancata,
+quindi la prova si ferma prima di aumentare il numero di concetti o comporre
+coppie su più scale. [Ricevuta](results/exact-identity-gate.json).
+
+Il comando usa le matrici prodotte dallo stadio `prepare` descritto sotto.
+
+```sh
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false python -m experiments.text_table.exact_identity --data DIR --workdir RIGHE --output identita.json
+```
+
 ## Verifica del riconoscitore nativo
 
 WikiText-2 fornisce 2.729.601 posizioni di training. In ogni riga, il vettore

@@ -36,3 +36,24 @@ class ObservedTargetTests(unittest.TestCase):
         np.testing.assert_array_equal(graph.predict_proba(x, "esito")[0], p)
         graph.fit(x)
         self.assertFalse(graph.observed_targets)
+
+    def test_exact_category_refines_the_streamed_head_and_refitting_discards_old_counts(self):
+        from acan.core.category_table import Table
+
+        frame = pd.DataFrame({"x": np.tile([0.0, 0.2, 1.0], 16)})
+        keys = np.tile([1, 2], 24)
+        y = keys - 1
+        graph = ConceptModel(max_concepts=8, covariance=False).fit(frame)
+        graph.fit_observed_target("target", ["a", "b"], [(frame, y)], [(frame, y)])
+        prior, _ = graph.predict_proba(frame, "target")
+        table = Table.count(keys, y, 2)
+        reading = graph.refine_category("target")
+        _, (counts, smoothing, expected) = reading.propose(table, keys, y, prior[np.arange(len(y)), y])
+        reading.levels.append(("key", counts, smoothing))
+        posterior, categories = graph.predict_proba(frame.assign(key=keys), "target")
+        self.assertEqual(categories, ["a", "b"])
+        np.testing.assert_allclose(posterior[np.arange(len(y)), y], expected)
+        np.testing.assert_allclose(posterior.sum(1), 1)
+        np.testing.assert_allclose(graph.predict_proba(frame.assign(key=99), "target")[0], prior)
+        graph.fit_observed_target("target", categories, [(frame, y)], [(frame, y)])
+        np.testing.assert_allclose(graph.predict_proba(frame.assign(key=keys), "target")[0], prior)
