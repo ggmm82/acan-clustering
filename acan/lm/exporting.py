@@ -166,10 +166,10 @@ Per usarlo serve Python con il pacchetto acan (lo stesso del server), transforme
     python scrivi.py --testo "C'era una volta"
 
 In Python:
-    from acan.lm.concept_lm import ConceptLM
+    from acan.lm.concept_lm import from_checkpoint_arrays
     from safetensors.numpy import load_file
     from transformers import AutoTokenizer
-    model = ConceptLM.from_arrays(load_file("concepts.safetensors"))
+    model = from_checkpoint_arrays(load_file("concepts.safetensors"))
     tokenizer = AutoTokenizer.from_pretrained("tokenizer")
     ids = tokenizer("C'era una volta")["input_ids"]
     print(tokenizer.decode(model.generate(ids, 64, temperature=0.7, seed=0)))
@@ -183,7 +183,7 @@ from pathlib import Path
 from safetensors.numpy import load_file
 from transformers import AutoTokenizer
 
-from acan.lm.concept_lm import ConceptLM
+from acan.lm.concept_lm import from_checkpoint_arrays
 
 here = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser()
@@ -193,7 +193,10 @@ parser.add_argument('--token', type=int, default=128)
 parser.add_argument('--temperatura', type=float, default=0.7)
 parser.add_argument('--seme', type=int, default=0)
 args = parser.parse_args()
-model = ConceptLM.from_arrays(load_file(str(here/'concepts.safetensors')))
+arrays = load_file(str(here/'concepts.safetensors'))
+model = from_checkpoint_arrays(arrays)
+if 'context_fit_tokens' in arrays and getattr(model, 'context_trained_at', None) != int(arrays['context_fit_tokens'][0]):
+    raise SystemExit('Il checkpoint usa la lettura CP dei suffissi. Installa la versione ACAN usata dal worker.')
 tokenizer = AutoTokenizer.from_pretrained(str(here/'tokenizer'), local_files_only=True)
 prompt = args.testo if args.testo else f"<|im_start|>user\\n{args.domanda.strip()}<|im_end|>\\n<|im_start|>assistant\\n"
 stop = {tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids('<|im_end|>')} - {None, tokenizer.unk_token_id}
@@ -213,13 +216,14 @@ def _export_concepts(directory, snapshot, name, receipt, job):
                 'config.json': json.dumps(job['config'], indent=2).encode(),
                 'training-summary.json': json.dumps({key: state.get(key) for key in ('step', 'tokens_trained', 'validation_nll', 'baseline_nll',
                                                      'concepts_per_level', 'generalized_concepts', 'weights_global', 'weights_document',
-                                                     'paths', 'path_weights')}, indent=2).encode(),
+                                                     'paths', 'path_weights', 'context_classes', 'pooled_contexts',
+                                                     'context_fit_tokens')}, indent=2).encode(),
                 'scrivi.py': CONCEPT_SCRIPT.encode(),
                 'README.txt': CONCEPT_README.encode()}
     for item in sorted((directory/'tokenizer').iterdir()):
         payloads['tokenizer/'+item.name] = item.read_bytes()
     manifest = dict(format=1, core_contract=receipt['contract'], model_contract=state.get('model_contract'), checkpoint=name,
-                    identity=receipt['identity'], kind='concept-lm-v1',
+                    identity=receipt['identity'], kind=job['config']['routing_profile'],
                     files_sha256={key: hashlib.sha256(value).hexdigest() for key, value in payloads.items()})
     temporary = exports/(uuid.uuid4().hex+'.tmp')
     try:

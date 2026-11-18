@@ -356,8 +356,10 @@ class ConceptModel:
         """Add together the disjoint pairs that cost the reader least. Every pair is a candidate."""
         k = len(s['C'])
         first, second = np.triu_indices(k, 1)
-        cost = np.concatenate([self._pair_costs(s, first[start:start+100000], second[start:start+100000])
-                               for start in range(0, len(first), 100000)])
+        # Adding a pair materializes its sufficient statistics, including categorical counts.
+        batch = min(100000, max(1, 1000000//max(self.encoder.width+len(self.encoder.numeric), 1)))
+        cost = np.concatenate([self._pair_costs(s, first[start:start+batch], second[start:start+batch])
+                               for start in range(0, len(first), batch)])
         used, pairs = np.zeros(k, bool), []
         for place in np.argsort(cost):
             i, j = first[place], second[place]
@@ -410,34 +412,69 @@ class ConceptModel:
         k, encoder = len(s['C']), self.encoder
         above = self._prior(s)
         scores = np.empty(len(x))
-        size = max(int(4e6//(k*max(x.shape[1]+onehot.shape[1], 1))), 1)
+        # Each categorical observation contributes to exactly one bin in its attribute.
+        # Leave it out of that bin, keeping totals and distinct counts for the entire block.
+        # This avoids materializing a rows x concepts x categories tensor for a wide target.
+        blocks = self._blocks()
+        categorical = []
+        for block in blocks:
+            observed = onehot[:, block]
+            present = observed.sum(1) > 0
+            binary = ((observed == 0) | (observed == 1)).all() and np.all(observed.sum(1) <= 1)
+            codes = observed.argmax(1) if observed.shape[1] else np.zeros(len(x), int)
+            counts = s['N'][:, block]
+            categorical.append((present, codes, counts, counts.sum(1), (counts > 1e-9).sum(1), binary))
+        size = max(int(4e6//(k*max(x.shape[1]+len(blocks), 1))), 1)
         for start in range(0, len(x), size):
             part = slice(start, start+size)
             r = t[part][:, :, None]
-            xs, ms, hs = x[part][:, None], mask[part][:, None], onehot[part][:, None]
-            rest = {key: s[key][None]-r*value for key, value in (('Cm', ms), ('U', xs), ('Q', xs*xs), ('N', hs))}
-            rest = {key: np.maximum(value, 0) if key != 'U' else value for key, value in rest.items()}
-            rest['C'] = np.maximum(s['C'][None]-t[part], 0)
-            alone = rest['C'] < 1e-9                             # nobody else: the row's own level above
-            # The level above is context, not something the row says about itself: it stays as it is.
-            g, v, log_p = self._parameters(rest, above)
-            v = np.where(rest['Cm'] > 1e-9, v, scale[part][:, None])
-            terms, read = [], []                                 # one log-density per attribute: rows x k
+            xs, ms = x[part][:, None], mask[part][:, None]
+            cm = np.maximum(s['Cm'][None]-r*ms, 0)
+            u = s['U'][None]-r*xs
+            q = np.maximum(s['Q'][None]-r*(xs*xs), 0)
+            mass = np.maximum(s['C'][None]-t[part], 0)
+            alone = mass < 1e-9
+            g, v = centre_variance(cm, u, q, above[0], self.kappa, np)
+            v = np.where(cm > 1e-9, np.maximum(v, self.resolution), scale[part][:, None])
+            terms, read = [], []
             for j, name in enumerate(encoder.numeric):
                 terms.append(-.5*((xs[..., j]-g[..., j])**2/v[..., j]+np.log(v[..., j])+LOG_2PI)*ms[..., j])
                 read.append(name in self.labels)
-            for name, block in zip(encoder.categorical, self._blocks()):
-                fallback = np.log(np.maximum(frequency[part][:, None, block], 1e-12))
-                value = np.where(alone[..., None], fallback, log_p[..., block])
-                terms.append((value*hs[..., block]).sum(-1))
+            for name, block, info in zip(encoder.categorical, blocks, categorical):
+                present, codes, counts, totals, distinct, binary = info
+                if not binary:
+                    # Custom matrix encoders may supply several values or weights for an attribute.
+                    # Preserve the original weighted log-density, one observation at a time.
+                    terms_block = np.empty_like(mass)
+                    for i, obs in enumerate(onehot[part, block]):
+                        left = np.maximum(counts-r[i]*obs, 0)
+                        d = (left > 1e-9).sum(1, keepdims=True) if self.distinct else 1.
+                        prob = categorical_reading(left, left.sum(1, keepdims=True), d,
+                                                   above[1][:, block], self.kappa, np)
+                        prior = np.maximum(frequency[start+i, block], 1e-12)
+                        terms_block[i] = np.log(np.where(alone[i, :, None], prior, prob))@obs
+                    terms.append(terms_block)
+                elif counts.shape[1]:
+                    code = codes[part]
+                    before = counts[:, code].T
+                    after = np.maximum(before-t[part], 0.)
+                    total = np.maximum(totals-before, 0.)+after
+                    d = distinct-(before > 1e-9).astype(int)+(after > 1e-9) if self.distinct else 1.
+                    prior = above[1][:, block.start+code].T
+                    probability = categorical_reading(after, total, d, prior, self.kappa, np)
+                    fallback = frequency[np.arange(start, start+len(code)), block.start+code][:, None]
+                    term = np.where(alone, np.log(np.maximum(fallback, 1e-12)), np.log(probability))
+                    terms.append(term*present[part,None])
+                else:
+                    terms.append(np.zeros_like(mass))
                 read.append(name in self.labels)
             terms = np.stack(terms, -1)
             if self.cross is not None and s is self.statistics:  # the features are read together
                 terms[..., self.cov] = 0
                 terms[..., self.cov[0]] = self._block_unseen(x[part], mask[part], t[part])
-            observed = np.concatenate((ms[:, 0], *[hs[:, 0, block].sum(-1, keepdims=True) for block in self._blocks()]), -1) > 0
+            observed = np.column_stack((mask[part], *[item[0][part] for item in categorical])) > 0
             read = np.asarray(read, bool)
-            prior = np.log(np.maximum(rest['C'], 1e-300))
+            prior = np.log(np.maximum(mass, 1e-300))
             if self.labels and not structure:
                 routed, _ = _softmax(prior+terms[..., ~read].sum(-1))
                 scores[part] = np.log(np.maximum((routed*np.exp(terms[..., read].sum(-1))).sum(1), 1e-300))

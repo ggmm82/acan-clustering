@@ -2,6 +2,10 @@
 PROTOCOL='controlled-v1'
 MIN_TESTS=52
 REQUIRED_TESTS={
+    'test_refined_queue_resume_generation_and_export',
+    'test_distribution_is_causal_normalized_and_agrees_with_scoring',
+    'test_stream_counts_are_independent_of_io_boundaries',
+    'test_tabular_graph_queue_resume_generation_and_export',
     'test_project_selection_loads_only_selected_plot_data',
     'test_overview_cache_is_invalidated_by_updates_and_rollback',
     'test_overview_and_exact_pages_reach_all_steps_and_enforce_ownership',
