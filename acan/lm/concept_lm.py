@@ -803,4 +803,11 @@ def load(directory, expected=None, budget_bytes=None):
     checkpoints.verify(directory, expected)
     arrays = load_file(str(Path(directory)/'trainables.safetensors'))
     state = json.loads((Path(directory)/'state.json').read_text())
-    return ConceptLM.from_arrays(arrays, budget_bytes), state
+    return from_checkpoint_arrays(arrays, budget_bytes), state
+
+
+def from_checkpoint_arrays(arrays, budget_bytes=None):
+    if 'text_graph' in arrays:
+        from .text_graph import TextGraph
+        return TextGraph.from_arrays(arrays)
+    return ConceptLM.from_arrays(arrays, budget_bytes)

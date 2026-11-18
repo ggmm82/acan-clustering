@@ -38,10 +38,14 @@ PRE_CONCEPT_LM_TRAINING = 'e7164bb861fb5fe0571cc7c88dcdf37437b2b23e6be4e8e319b2e
 PRE_CONCEPT_LM_INFERENCE = 'c5d534ead5558ffc5e5318bede3329d006797441ff51e4ea8dfdb472205f5340'
 
 
+PRE_TABLE_TRAINING = 'b4926dbb291cf0cf491618d8c77da9b34cff9fcda8c759d4c04929a3d598c7d5'
+PRE_TABLE_INFERENCE = '79db1582e18a1c2242308d5ba41269c7d2d650f2fe32b9e70c4d0b3c90458e3b'
+
+
 def training_identity(values, config, checkpoint_root, selected, current):
     from pathlib import Path
     from . import checkpoints
-    candidates = [current, PRE_CONCEPT_LM_TRAINING, PRE_NATIVE_TRAINING, PRE_ONE_STEP_TRAINING]
+    candidates = [current, PRE_TABLE_TRAINING, PRE_CONCEPT_LM_TRAINING, PRE_NATIVE_TRAINING, PRE_ONE_STEP_TRAINING]
     if config.get('routing_profile') != 'concept-graph-v2':
         candidates.insert(1, PRE_SCAN_TRAINING)
     if config.get('routing_profile') != 'concept-graph-v1':

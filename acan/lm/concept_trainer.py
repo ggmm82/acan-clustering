@@ -1,13 +1,6 @@
-"""Long learning of the concept language model (acan/lm/concept_lm.py): reading the text is counting it.
+"""Train, validate and checkpoint the tabular graph on causal text rows.
 
-A step reads one piece of the training text and adds its sums to the model. Every ``save_steps`` steps
-(or ``save_seconds`` seconds) the model is settled, its weights are chosen by the judgment on half of the
-validation pieces, its error is measured on the other half, and a checkpoint is saved in the format every
-project uses: pause, resume after a restart, best checkpoint, milestones and the queue work as for any
-project. A queue item starts from the sums of the previous text (they are added, nothing is forgotten).
-
-The tokenizer is learned from the texts as for the native model (acan/lm/native.py), the text is split in
-training, validation and test documents as for every controlled project (acan/lm/research_data.py).
+Existing exact-context jobs retain their original state format and training path.
 """
 import hashlib
 import json
@@ -25,10 +18,15 @@ from .store import Store
 PROFILE = 'concept-lm-v1'
 
 
-def contract():
+def contract(profile=PROFILE):
     """The sources that define what a checkpoint of this model means."""
     root = Path(__file__).parent
-    return hashlib.sha256(b''.join((root/name).read_bytes() for name in ('concept_lm.py', 'concept_trainer.py'))).hexdigest()
+    if profile == PROFILE:
+        # Identity used by the previous release for persisted exact-context jobs.
+        return '5e751934b49d4184d0021e518f40988f8781380714518a330d5577837913f2cd'
+    paths = ['text_graph.py', 'text_rows.py', 'text_reading.py', 'concept_trainer.py',
+             '../core/concepts.py', '../core/scan.py', '../concept_algebra.py']
+    return hashlib.sha256(b''.join((root/name).read_bytes() for name in paths)).hexdigest()
 
 
 MEASURES = ('validation_nll', 'validation_perplexity', 'training_nll')
@@ -97,6 +95,10 @@ def record_answers(directory, model, tokenizer, state, questions=None, new_token
 
 def quantities(model, config):
     """What the page shows about the model while it learns."""
+    if config['routing_profile'] == 'concept-table-v1':
+        levels = model.concepts()
+        return dict(concepts_per_level=levels, concepts_total=sum(levels), statistics_bytes=model.nbytes(),
+                    memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024)
     levels = model.concepts() if not model.counter else None
     return dict(concepts_per_level=levels, concepts_total=sum(levels) if levels else None, statistics_bytes=model.nbytes(),
                 budget_bytes=model.budget_bytes, generalized_concepts=model.generalized, context_depth=model.depth,
@@ -121,12 +123,15 @@ def learn_paths(train, vocabulary, depth, should_pause=lambda: False):
 def run_training(root, identifier, stop_event=None):
     from transformers import AutoTokenizer
     from .concept_lm import PATH_DEPTH, ConceptLM, default_budget, load, save
+    from .text_graph import TextGraph, PROFILE as graph_profile
     from .native import resolve
     from .research_data import Blocks, prepare
     from .retention import retain_with_milestones
     store = Store(root)
     job = store.job(identifier)
     config = job['config']
+    profile = config['routing_profile']
+    graph = profile == graph_profile
     directory = store.directory('jobs', identifier)
     should_pause = lambda: bool((stop_event and stop_event.is_set()) or store.job(identifier)['pause'])
     try:
@@ -151,7 +156,7 @@ def run_training(root, identifier, stop_event=None):
             config['total_steps'] = steps
             store.set_config(identifier, config)
         identity = checkpoints.fingerprint(dict(config={key: value for key, value in config.items() if key != 'total_steps'},
-                                                base=base, corpus=corpus['sha256'], tokens=tokens['sha256'], contract=contract()))
+                                                base=base, corpus=corpus['sha256'], tokens=tokens['sha256'], contract=contract(profile)))
         root_checkpoints = directory/'checkpoints'
         root_checkpoints.mkdir(exist_ok=True)
         previous = checkpoints.for_resume(root_checkpoints, identity, job['checkpoint'], job['progress'].get('step', 0))
@@ -167,20 +172,28 @@ def run_training(root, identifier, stop_event=None):
             if config.get('warm_start'):                        # the queue goes on with the concepts of the previous text
                 source = previous_checkpoint(store, job)
                 start, _ = load(source, budget_bytes=budget)
-                maps, paths, reach = start.maps, start.paths, start.path_depth
-            elif config.get('concept_paths'):
-                maps, paths = learn_paths(train, len(tokenizer), depth, should_pause)
-                reach = PATH_DEPTH
+                if isinstance(start, TextGraph) != graph:
+                    raise ValueError('La coda contiene un checkpoint con una diversa struttura dei concetti.')
+            if graph:
+                model = start if start is not None else TextGraph(len(tokenizer))
+                model.tail = np.empty(0, np.int64)
             else:
-                maps, paths, reach = [], None, None
-            model = ConceptLM(len(tokenizer), depth, document, budget, maps, paths, reach)
-            state = dict(step=0, tokens_trained=0, device='cpu', identity=identity, model_contract=contract(), profile=PROFILE,
+                if start is not None:
+                    maps, paths, reach = start.maps, start.paths, start.path_depth
+                elif config.get('concept_paths'):
+                    maps, paths = learn_paths(train, len(tokenizer), depth, should_pause)
+                    reach = PATH_DEPTH
+                else:
+                    maps, paths, reach = [], None, None
+                model = ConceptLM(len(tokenizer), depth, document, budget, maps, paths, reach)
+            state = dict(step=0, tokens_trained=0, device='cpu', identity=identity, model_contract=contract(profile), profile=profile,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},
-                         graft=dict(profile=PROFILE, vocabulary=len(tokenizer), replaced_layers=[], total_layers=0,
+                         graft=dict(profile=profile, vocabulary=len(tokenizer), replaced_layers=[], total_layers=0,
                                     slots=0, window=0, fraction=1.))
             if start is not None:
-                model.merge(start)
-                model.a, model.b, model.w = start.a.copy(), start.b.copy(), start.w.copy()
+                if not graph:
+                    model.merge(start)
+                    model.a, model.b, model.w = start.a.copy(), start.b.copy(), start.w.copy()
                 state['warm_start'] = dict(checkpoint=source.name, job=source.parent.parent.name,
                                            tokens=start.tokens)
             state['baseline_nll'] = measure(model, judge)       # before reading this text
@@ -192,18 +205,39 @@ def run_training(root, identifier, stop_event=None):
         store.update(identifier, checkpoint=previous.name, progress=state, status='running')
         started, initial = time.monotonic(), state['tokens_trained']
         last_save = time.monotonic()
+        saved_step = state['step']
         while state['step'] < config['total_steps'] and not should_pause():
             begin = state['step']*piece
-            ids = np.asarray(train[begin:begin+piece], np.int64)
-            model.add(ids)
+            end = min(begin+piece, math.ceil(len(train)*share)) if graph else begin+piece
+            ids = np.asarray(train[begin:end], np.int64)
+            if graph:
+                from threadpoolctl import threadpool_limits
+                def check():
+                    if should_pause():
+                        raise PreparationPaused()
+                # Commit a whole piece or keep the previous sums intact on pause.
+                from copy import copy
+                updated = copy(model)
+                if model.model is not None:
+                    updated.counts = model.counts.copy()
+                    updated.reading = None
+                try:
+                    with threadpool_limits(limits=2):
+                        updated.add(ids, check)
+                except PreparationPaused:
+                    break
+                model = updated
+            else:
+                model.add(ids)
             state.update(step=state['step']+1, tokens_trained=state['tokens_trained']+len(ids))
             state['tokens_per_second'] = (state['tokens_trained']-initial)/max(time.monotonic()-started, 1e-6)
             due = state['step'] % config['save_steps'] == 0 or time.monotonic()-last_save >= config['save_seconds']
             last = due or should_pause() or state['step'] == config['total_steps']
             measured = last or state['step'] % measure_every(config['total_steps']) == 0
             if measured:                                         # the error on unseen text, about twenty times per text
-                model.settle()
-                model.judge(tune)
+                if not graph:
+                    model.settle()
+                    model.judge(tune)
                 state['validation_nll'] = measure(model, judge)
                 state['validation_perplexity'] = math.exp(state['validation_nll']) if state['validation_nll'] < 700 else None
                 following = np.asarray(train[state['step']*piece:state['step']*piece+4096], np.int64)
@@ -213,6 +247,7 @@ def run_training(root, identifier, stop_event=None):
                 state.update(quantities(model, config))
             if last:
                 previous = save(root_checkpoints, model, state, identity)
+                saved_step = state['step']
                 store.update(identifier, checkpoint=previous.name)
                 retain_with_milestones(root_checkpoints, milestone=config.get('milestone_steps', 0))
                 if config.get('chat_probes'):
@@ -221,6 +256,15 @@ def run_training(root, identifier, stop_event=None):
             # A step without a measure does not repeat the last one: the chart draws only what was measured.
             row = state if measured else {key: value for key, value in state.items() if key not in MEASURES}
             store.record(identifier, state['step'], row, progress=state)
+        if graph and state['step'] != saved_step:
+            state.update(quantities(model, config))
+            state['validation_nll'] = measure(model, judge)
+            state['validation_perplexity'] = math.exp(state['validation_nll'])
+            state['best_validation_nll'] = min(state['best_validation_nll'], state['validation_nll'])
+            previous = save(root_checkpoints, model, state, identity)
+            store.update(identifier, checkpoint=previous.name)
+            store.record(identifier, state['step'], dict(state), progress=state)
+            retain_with_milestones(root_checkpoints, milestone=config.get('milestone_steps', 0))
         store.update(identifier, status='completed' if state['step'] >= config['total_steps'] else 'paused',
                      pause=0, progress=state, error=None)
     except PreparationPaused:
