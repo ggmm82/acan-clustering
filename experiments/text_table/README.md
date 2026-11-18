@@ -102,3 +102,60 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=2 python -m experiments.text_table.layers
   --data /percorso/parquet --output reports/text-layers.json --measure-cost
 python -m pytest tests/test_text_table_experiment.py tests/test_level_reading.py -q
 ```
+
+## Dal testo alla previsione con il modello addestrato
+
+Ogni posizione del testo di addestramento produce una riga. Le otto colonne
+vettoriali contengono i token già letti, dal più recente al più lontano.
+Il vettore del token successivo è il bersaglio. Il modello tabulare impara
+quali righe possono condividere un concetto e come i concetti si collegano
+fra livelli. Per ogni riga si distribuisce un conteggio del token successivo
+tra i concetti in proporzione alle appartenenze. Per esempio, una riga con
+appartenenze 0,8 e 0,2 aggiunge quei pesi alla colonna del suo token.
+
+In predizione il riconoscimento può osservare anche solo alcune colonne. Per
+ciascun concetto si parte dalla sua massa e si valuta quanto le colonne visibili
+somiglino alle sue osservazioni. Normalizzando questi valori si ottengono le
+appartenenze del prefisso. La posizione del prossimo token resta sconosciuta.
+Se il concetto ha visto spesso una certa continuazione, il suo conteggio aumenta
+la probabilità di quel token. Quando le osservazioni sono poche, il concetto
+riceve più informazione dal livello superiore. Con conteggio $n_i(y)$, massa
+$C_i$, numero di valori distinti $D_i$ e previsione superiore $q_i(y)$, la
+lettura vale $(n_i(y)+a_i q_i(y))/(C_i+a_i)$ con
+$a_i=\kappa\max(1,D_i)$. All'inizio il prior della radice è uniforme.
+La stessa operazione combina i conteggi di addestramento con quelli già letti
+nel documento. La media delle previsioni dei concetti, pesata con le appartenenze,
+dà la distribuzione del prossimo token. Dopo la scelta si aggiorna il documento
+e la nuova posizione diventa prevedibile. Non servono confronti fra coppie di
+posizioni del testo.
+
+Abbiamo confrontato 1, 2, 4 e 8 posizioni visibili durante il riconoscimento,
+lasciando al documento tutte le osservazioni precedenti. La prima metà della
+validazione sceglie una posizione. A parità di concetti e memoria, su altri 64
+blocchi di test da 512 token la NLL passa da 6,1916 a 6,0876 (differenza media
+−0,1040, errore standard tra differenze appaiate per blocco 0,0078).
+Il contatore sui primi 200.008 token ottiene 5,4117 sugli stessi blocchi.
+Gli offset e i risultati sono in [wikitext2-context.json](results/wikitext2-context.json).
+
+Per verificare il ricordo di singoli fatti abbiamo presentato una sola volta
+16 associazioni con una frase comune e una chiave diversa, e 16 sequenze casuali
+da completare. Ogni domanda ripete il suo indizio in una copia dello stesso
+prefisso. Le risposte e le chiavi finali sono escluse dal testo di riempimento.
+Con il riconoscimento a otto posizioni, dopo 300.000 token la risposta è prima
+tra 16 candidati in 6 associazioni e 7 completamenti. Sul vocabolario intero
+nessuna delle 32 risposte arriva prima, anche alla distanza più breve di 1.000
+token. È una prova sintetica su un solo insieme di chiavi.
+[Risultati per distanza](results/wikitext2-recall.json).
+
+Per provare il completamento, aggiungere `--save-table /tmp/concetti.pkl` al
+comando `layers` sopra. Il checkpoint registra l'identità del tokenizer.
+Il comando stampa il testo completato scegliendo il token più probabile a ogni passo.
+
+```sh
+python -m experiments.text_table.complete --table /tmp/concetti.pkl \
+  --tokenizer /percorso/parquet/bpe-8000.json --tokens 4 'The history of'
+python -m experiments.text_table.context --table /tmp/concetti.pkl \
+  --data /percorso/parquet --output /tmp/contesto.json
+python -m experiments.text_table.recall --table /tmp/concetti.pkl \
+  --data /percorso/parquet --output /tmp/ricordo.json
+```

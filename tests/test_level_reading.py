@@ -71,6 +71,18 @@ class LevelReadingTests(unittest.TestCase):
             cursor.observe(token)
         self.assertEqual(len(cursor.window),2)
         self.assertEqual(cursor.state.observations,len(ids))
+        recent = TextCursor(table, reading, observed_context=1)
+        for pos, token in enumerate(ids):
+            frame = table.rows.frame(ids,[pos]).iloc[:,:table.rows.vectors.shape[1]]
+            np.testing.assert_allclose(recent.membership(), table.model.assignments(frame)[0])
+            recent.observe(token)
+        self.assertEqual(recent.state.observations,len(ids))
+        self.assertEqual(len(recent.window),1)
+        for width, reference in ((1, recent), (None, cursor)):
+            fast = TextCursor(table, reading, observed_context=width)
+            fast.prefill(ids[:3], chunk=2).prefill(ids[3:], chunk=2)
+            np.testing.assert_allclose(fast.distribution(), reference.distribution())
+            self.assertEqual(list(fast.window),list(reference.window))
 
     def test_document_formula_uses_all_levels_of_the_same_graph(self):
         r=self.reader; state=r.document(); w=np.array([.2,.3,.5]);state.observe(w,2)
@@ -104,3 +116,18 @@ class LevelReadingTests(unittest.TestCase):
             np.testing.assert_allclose(actual,expected,atol=1e-12)
             changed=ids.copy();changed[5:]=3
             np.testing.assert_allclose(self.reader.sequence_probability(weights,changed)[:5],actual[:5],atol=1e-12)
+
+    def test_block_prefill_matches_observation_across_overlapping_blocks(self):
+        tokens = np.array([2, 0, 2, 2, 1, 0])
+        weights = np.array([[1,0,0],[0,.5,.5],[0,1,0],[0,1,0],[.5,0,.5],[1,0,0]])
+        sequential = self.reader.document()
+        bulk = self.reader.document()
+        for i in (0, 3):
+            bulk.observe_many(weights[i:i+3], tokens[i:i+3])
+            for w, token in zip(weights[i:i+3], tokens[i:i+3]):
+                sequential.observe(w, token)
+            self.assertEqual(bulk.observations, sequential.observations)
+            for a,b in zip(bulk.level_distinct,sequential.level_distinct):
+                np.testing.assert_array_equal(a,b)
+            np.testing.assert_allclose(bulk.probability(weights[0],np.arange(4)),
+                                       sequential.probability(weights[0],np.arange(4)))

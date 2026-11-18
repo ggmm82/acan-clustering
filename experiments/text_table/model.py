@@ -33,14 +33,18 @@ class TextRows:
         self.features=[f'past_{lag}_{j}' for lag in range(1,context+1) for j in range(d)]
         self.targets=[f'next_{j}' for j in range(d)]
 
-    def frame(self, ids, positions, targets=False):
+    def frame(self, ids, positions, targets=False, observed_context=None):
         ids=np.asarray(ids,dtype=np.int64);positions=np.asarray(positions,dtype=int)
         d=self.vectors.shape[1]
-        values=np.full((len(positions),len(self.features)),np.nan)
-        for lag in range(1,self.context+1):
+        width = self.context if observed_context is None else observed_context
+        if not 1 <= width <= self.context:
+            raise ValueError('Finestra osservata fuori dai limiti della riga.')
+        columns = self.features[:width*d]
+        values=np.full((len(positions),len(columns)),np.nan)
+        for lag in range(1,width+1):
             valid=positions>=lag
             values[valid,(lag-1)*d:lag*d]=self.vectors[ids[positions[valid]-lag]]
-        result=pd.DataFrame(values,columns=self.features)
+        result=pd.DataFrame(values,columns=columns)
         if targets:result[self.targets]=self.vectors[ids[positions]]
         return result
 

@@ -150,21 +150,77 @@ class DocumentReading:
         self.observations += 1
 
 
+    def observe_many(self, memberships, tokens):
+        """Accumulate an already revealed block before the next query.
+
+        Recognition uses only local prefix features. Once memberships are known,
+        summing by token gives exactly the sufficient statistics of repeated observe.
+        """
+        tokens = np.asarray(tokens)
+        memberships = np.asarray(memberships, dtype=float)
+        if tokens.ndim != 1 or not np.issubdtype(tokens.dtype, np.integer):
+            raise ValueError('Il blocco deve contenere identificatori interi.')
+        if np.any(tokens < 0) or np.any(tokens >= self.reading.vocabulary):
+            raise ValueError('Token fuori dal vocabolario.')
+        if (memberships.shape != (len(tokens), len(self.mass)) or
+                not np.isfinite(memberships).all() or np.any(memberships < 0) or
+                not np.allclose(memberships.sum(axis=1), 1.)):
+            raise ValueError('Appartenenze non valide.')
+        unique, group = np.unique(tokens, return_inverse=True)
+        counts = np.zeros((len(unique), len(self.mass)))
+        np.add.at(counts, group, memberships)
+        for level in reversed(range(len(self.level_counts))):
+            stored = self.level_counts[level]
+            self.level_mass[level] += counts.sum(axis=0)
+            for token, addition in zip(unique, counts):
+                previous = stored.get(int(token))
+                if previous is None:
+                    self.level_distinct[level] += addition > 0
+                    stored[int(token)] = addition.copy()
+                else:
+                    self.level_distinct[level] += (previous == 0) & (addition > 0)
+                    previous += addition
+            if level:
+                counts = counts @ self.reading.parents[level - 1].T
+        self.observations += len(tokens)
+
+
 class TextCursor:
     """One running prefix: a short ordered window and the learned concepts' sums."""
-    def __init__(self, table, reading):
+    def __init__(self, table, reading, observed_context=None):
         from collections import deque
         self.table = table
         self.reading = reading
         self.state = reading.document()
-        self.window = deque(maxlen=table.rows.context)
+        self.observed_context = observed_context
+        self.window = deque(maxlen=table.rows.context if observed_context is None else observed_context)
         self._membership = None
 
     def membership(self):
         if self._membership is None:
-            frame = self.table.rows.frame(np.asarray(self.window, dtype=int), [len(self.window)])
+            frame = self.table.rows.frame(np.asarray(self.window, dtype=int), [len(self.window)],
+                                          observed_context=self.observed_context)
             self._membership = self.table.model.assignments(frame)[0]
         return self._membership
+
+    def prefill(self, tokens, chunk=512):
+        """Read known tokens in bounded batches, including across separate calls."""
+        if chunk < 1:
+            raise ValueError('La dimensione del blocco deve essere positiva.')
+        tokens = np.asarray(tokens)
+        if tokens.ndim != 1 or (tokens.size and (not np.issubdtype(tokens.dtype, np.integer)
+                or np.any(tokens < 0) or np.any(tokens >= self.reading.vocabulary))):
+            raise ValueError('Token fuori dal vocabolario.')
+        for start in range(0, len(tokens), chunk):
+            block = tokens[start:start+chunk]
+            previous = len(self.window)
+            ids = np.concatenate((np.asarray(self.window, dtype=int), block))
+            frame = self.table.rows.frame(ids, np.arange(previous, len(ids)),
+                                          observed_context=self.observed_context)
+            self.state.observe_many(self.table.model.assignments(frame), block)
+            self.window.extend(block)
+            self._membership = None
+        return self
 
     def distribution(self):
         return self.probability(np.arange(self.reading.vocabulary))

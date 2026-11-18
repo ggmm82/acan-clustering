@@ -69,29 +69,40 @@ def measure(table, validation, test):
         validation_offsets=validation_offsets.tolist(), test_offsets=test_offsets.tolist())
 
 
+def encoded_splits(data, splits):
+    import pandas as pd
+    from tokenizers import Tokenizer
+    source = hashlib.sha256((data/'train.parquet').read_bytes()).hexdigest()
+    if (data/'bpe-source.sha256').read_text() != source:
+        raise ValueError('Il tokenizer non corrisponde al train: eseguire prima text_table.run.')
+    tokenizer = Tokenizer.from_file(str(data/'bpe-8000.json'))
+    arrays = {}
+    for name in splits:
+        lines = [str(t) for t in pd.read_parquet(data/(name+'.parquet'))['text'] if str(t).strip()]
+        arrays[name] = np.concatenate([np.asarray(piece.ids+[tokenizer.token_to_id('[EOS]')],np.int32)
+            for piece in tokenizer.encode_batch(lines)])
+    return arrays
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--measure-cost', action='store_true')
+    parser.add_argument('--save-table', type=Path, help='Salva il modello locale per le prove successive')
     args = parser.parse_args()
-    import pandas as pd
-    from tokenizers import Tokenizer
-    source = hashlib.sha256((args.data/'train.parquet').read_bytes()).hexdigest()
-    if (args.data/'bpe-source.sha256').read_text() != source:
-        raise ValueError('Il tokenizer non corrisponde al train: eseguire prima text_table.run.')
-    tokenizer = Tokenizer.from_file(str(args.data/'bpe-8000.json'))
-    arrays = {}
-    for name in ('train','validation','test'):
-        lines = [str(t) for t in pd.read_parquet(args.data/(name+'.parquet'))['text'] if str(t).strip()]
-        arrays[name] = np.concatenate([np.asarray(piece.ids+[tokenizer.token_to_id('[EOS]')],np.int32)
-            for piece in tokenizer.encode_batch(lines)])
+    arrays = encoded_splits(args.data, ('train','validation','test'))
     with threadpool_limits(limits=2):
         start = time.monotonic()
         vectors, _ = semantic_vectors(arrays['train'],8000)
         table = VectorTable(vectors,8,max_concepts=256,judged_rows=512,refine_rows=20000,
             chunk_rows=2048,covariance=False,workers=1).fit(arrays['train'],rows=200000)
         seconds = time.monotonic()-start
+        if args.save_table:
+            import pickle
+            table.tokenizer_sha256 = hashlib.sha256((args.data/'bpe-8000.json').read_bytes()).hexdigest()
+            with args.save_table.open('wb') as handle:
+                pickle.dump(table, handle)
         result = measure(table, arrays['validation'], arrays['test'])
         if args.measure_cost:
             result['cost'] = measure_prefix_cost(table, arrays['test'], result['runs'][1]['kappa'])
