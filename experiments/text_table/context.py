@@ -3,7 +3,6 @@ import argparse
 import json
 import pickle
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 from threadpoolctl import threadpool_limits
@@ -65,7 +64,6 @@ def main():
     parser.add_argument('--table', type=Path, required=True, help='Checkpoint sperimentale locale fidato')
     parser.add_argument('--data', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--save-completion', type=Path, help='Salva solo lo stato necessario per completare il testo')
     args = parser.parse_args()
     with args.table.open('rb') as handle:
         table = pickle.load(handle)
@@ -99,11 +97,6 @@ def main():
             eight_position_nll=float(losses(table, initial, pieces, table.rows.context).mean()),
             paired_block_se=float(delta.std(ddof=1)/np.sqrt(len(delta))),
             counter=evaluate(control, pieces))
-        if args.save_completion:
-            checkpoint = SimpleNamespace(rows=table.rows, model=table.model, counts=fitted.counts[-1],
-                observed_context=width, kappa_reading=fitted.kappa, tokenizer_sha256=table.tokenizer_sha256)
-            with args.save_completion.open('wb') as handle:
-                pickle.dump(checkpoint, handle)
     args.output.write_text(json.dumps(result, indent=2)+'\n')
 
 

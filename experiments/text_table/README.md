@@ -16,3 +16,8 @@ poi `python -m experiments.text_table.layers --data DIR --output livelli.json
 --save-table tabella.pkl` e `python -m experiments.text_table.context --table
 tabella.pkl --data DIR --output confronto.json`. I file pickle sono checkpoint
 locali delle prove storiche. L'app salva le matrici con safetensors.
+
+Per ripetere la misura dell'intero train con il codice del worker,
+eseguire `python -m experiments.text_table.stream --data DIR --output stream.json`
+dopo la preparazione del tokenizer. La [ricevuta](results/wikitext2-worker-stream.json)
+riporta il primo e l'ultimo passo sugli stessi blocchi.
