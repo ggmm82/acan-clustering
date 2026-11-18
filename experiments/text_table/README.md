@@ -109,9 +109,10 @@ oggetti Python e i comandi caricano il checkpoint prodotto localmente.
 python -m experiments.text_table.dyadic_run --data DIR --output base.json --checkpoint-output base.pkl
 python -m experiments.text_table.conditional_run --data DIR --base base.pkl --mode svd --neighbors 96 --output svd.json --checkpoint svd.pkl
 python -m experiments.text_table.conditional_run --data DIR --base base.pkl --mode cp_log --neighbors 96 --output cp.json --checkpoint cp.pkl
-python -m experiments.text_table.conditional_eval --data DIR --candidates svd.json cp.json --output test.json
-python -m experiments.text_table.conditional_generate --checkpoint svd.pkl --tokenizer DIR/bpe-8000.json --tokens 16 'The first train'
-python -m experiments.text_table.conditional_control --data DIR --checkpoint svd.pkl --output confronto.json
+python -m experiments.text_table.word_refinement --data DIR --base svd.json --output parole.json
+python -m experiments.text_table.conditional_eval --data DIR --candidates parole.json svd.json cp.json --output test.json
+python -m experiments.text_table.conditional_generate --checkpoint parole.pkl --tokenizer DIR/bpe-8000.json --tokens 16 'The first train'
+python -m experiments.text_table.conditional_control --data DIR --checkpoint parole.pkl --output confronto.json
 python -m experiments.text_table.conditional_load --data DIR --checkpoint svd.pkl --output carico.json
 ```
 
@@ -119,6 +120,6 @@ La NLL sui primi 32 blocchi di validazione sceglie il checkpoint. Gli altri 32
 servono da controllo. Il test usa gli offset pubblicati, compresi i confini di
 articolo dentro ogni blocco. La prova di carico verifica i totali di ciascuna
 categoria dopo aver sommato un GiB di righe ripetute in un livello del modello.
-[Qualità, ablazioni e richiamo](results/wikitext2-conditional.json) ·
-[Confronto appaiato](results/conditional-paired.json) ·
+[Qualità, ablazioni e richiamo lessicale](results/wikitext2-word-regions.json) ·
+[Confronto appaiato](results/word-regions-paired.json) ·
 [Somme in streaming](results/conditional-load.json).

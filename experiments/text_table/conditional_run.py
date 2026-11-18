@@ -9,15 +9,11 @@ import time
 import tempfile
 
 import numpy as np
-from tokenizers import Tokenizer
 
 from acan.core.category_table import SharedProfiles, Table
 from .conditional import SpanGeometry, proposals, region
 from .conditional_memory import calibrate, judge, probabilities
 from .dyadic import Dyadic, TARGET, ages, embeddings
-from .dyadic_run import corpus
-from .refinement import sources
-from .run import blocks
 
 
 class Rows:
@@ -92,6 +88,11 @@ class TrainingRows:
 
 
 def main():
+    from tokenizers import Tokenizer
+    from .dyadic_run import corpus
+    from .refinement import sources
+    from .run import blocks
+
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--data", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
@@ -142,6 +143,7 @@ def main():
         },
         refinements=[],
     )
+    geometry.tokenizer_sha256 = report["source_sha256"]["bpe-8000.json"]
     for stage in proposals(geometry.depths):
         best = -np.log(p).mean()
         winner = None

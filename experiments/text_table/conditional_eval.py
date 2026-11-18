@@ -27,12 +27,23 @@ def losses(model, rows):
     global_stats = [(f, k, t.lookup(rows.keys(f), rows.y)) for f, t, k in model.reading.levels]
     local_stats = [(f, k, document_stats(rows, f)) for f, k in model.memory]
 
-    def read(global_filter=lambda f: True, local_filter=lambda f: True):
+    from .word_regions import observed_stats
+
+    words = model.words
+    word_stats = (
+        observed_stats(words, model.reading.prior, rows, [s for s, k, b in words.weights]) if words else {}
+    )
+
+    def read(global_filter=lambda f: True, local_filter=lambda f: True, with_words=True):
         p = model.reading.prior[rows.y].copy() if rows.initial is None else rows.initial.copy()
         for levels, include in ((global_stats, global_filter), (local_stats, local_filter)):
             for f, k, (m, n, d) in levels:
                 if include(f):
                     p = categorical_reading(n, m, d, p, k, np)
+        if words and with_words:
+            for slot, k, beta in words.weights:
+                m, n, d, ratio = word_stats[slot]
+                p = categorical_reading(n, m, d, p, 1 + k * ratio**beta, np)
         return -np.log(p)
 
     return read
@@ -88,6 +99,7 @@ def main():
     report["candidates"] = [
         dict(
             embedding=r["embedding"],
+            word_coordinate="word_coordinate" in r,
             dimensions=r["dimensions"],
             neighbors=r["neighbors"],
             tuning=r["tuning"],
@@ -106,13 +118,14 @@ def main():
     rows = heldout(model.geometry, test, ts, offsets)
     read = losses(model, rows)
     full = read()
-    local = read(lambda f: extent(f) <= 1, lambda f: extent(f) <= 1)
-    static = read(local_filter=lambda f: False)
+    local = read(lambda f: extent(f) <= 1, lambda f: extent(f) <= 1, with_words=False)
+    static = read(local_filter=lambda f: False, with_words=False)
     report["test"] = dict(
         offsets=offsets.tolist(),
         tokens=len(full),
         nll=float(full.mean()),
         without_document=float(static.mean()),
+        without_word_coordinate=float(read(with_words=False).mean()),
         last_token_and_document_unigram=float(local.mean()),
         bands={
             f"{a}-{b-1}": float(full.reshape(-1, 511)[:, a - 1 : b - 1].mean())
@@ -142,7 +155,20 @@ def main():
         permutation = np.arange(2 ** (model.geometry.depths[j] + 1), dtype=np.uint32)
         permutation[codes] = rng.permutation(codes)
         rows.columns[j] = permutation[col]
+    if model.words:
+        original = model.words.codes
+        model.words.codes = original[rng.permutation(len(original))]
     report["shuffled_concepts_nll"] = float(losses(model, rows)().mean())
+    if model.words:
+        model.words.codes = original
+    unused = np.setdiff1d(np.arange(len(test) // 512) * 512, offsets)
+    fresh = np.sort(np.random.default_rng(8071).choice(unused, 64, replace=False))
+    confirmation = losses(model, heldout(model.geometry, test, ts, fresh))
+    report["additional_test"] = dict(
+        offsets=fresh.tolist(),
+        nll=float(confirmation().mean()),
+        without_word_coordinate=float(confirmation(with_words=False).mean()),
+    )
     report["max_difference_native_static"] = native_parity(model, test[:48])
     np.testing.assert_allclose(report["max_difference_native_static"], 0, atol=1e-10)
     report["checkpoint_bytes"] = args.candidates[selected].with_suffix(".pkl").stat().st_size

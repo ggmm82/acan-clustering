@@ -16,7 +16,7 @@ la colonna categorica del token successivo. La prova diadica si esegue in
 Su 32.704 previsioni di test WikiText-2 la tabella con affinamenti CP ottiene
 **4,4794 nat/token**, contro 4,5000 del contatore e 7,1808 della prima tabella.
 Il vantaggio compare in 51 blocchi su 64. A distanza di 300.000 token recupera
-16 associazioni su 16 e 16 copie su 16, con 0 su 16 nella prova dei sinonimi.
+16 associazioni su 16, 16 copie su 16 e 8 risposte su 16 quando la richiesta usa un sinonimo.
 [Addestramento, generazione e riproduzione delle misure](experiments/text_table/README.md#lettura-condizionale-delle-regioni-cp).
 
 I concetti sono disposti in **livelli**: sotto la radice i concetti generali,

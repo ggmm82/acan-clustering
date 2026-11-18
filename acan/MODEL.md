@@ -129,7 +129,7 @@ riconosciute. Questa uguaglianza vale per qualunque prefisso e per ogni categori
 
 ## Informatica
 
-### Dal testo di apprendimento al modello
+### Dal corpus al checkpoint
 
 1. Il tokenizer BPE viene appreso sul train. Per ciascun token si misurano separatamente
    i vicini sinistri e destri all'interno dello stesso articolo. Nella prova finale si
@@ -159,6 +159,34 @@ riconosciute. Questa uguaglianza vale per qualunque prefisso e per ogni categori
    condividono 1.421.564 prototipi. La condivisione riduce le matrici da 370 a 182 MB
    con le stesse probabilità. Le regioni sono indirizzi di contesto e i prototipi
    sono distribuzioni riutilizzabili del seguito.
+
+### Come una parola composta da più token aiuta il richiamo
+
+«Doctor» e «physician» possono terminare in token diversi. Per conservare il
+significato oltre i frammenti, una colonna aggiuntiva segue i confini di parola
+nel prefisso BPE. Il train misura quali parole ricorrono nelle cinque posizioni
+precedenti e successive, dentro la stessa riga di testo. Un vicino vale di più
+se è vicino in posizione e se ricorre con quella parola più spesso di quanto
+suggerisca la sua frequenza generale. Una SVD riassume questi profili in 64
+coordinate. Le soglie CP raggruppano le parole con profili simili.
+
+Nel documento corrente si osservano le tre parole precedenti e il frammento
+corrente. Tre posizioni riconoscono una regione CP, la quarta fornisce il
+vettore da confrontare. La validazione prova ciascuna posizione in questo ruolo.
+Nella frase «for the doctor is» il vettore variabile può essere quello di
+«doctor». Se ricompare la regione con un altro vettore, le osservazioni passate
+con parole più simili ricevono più peso. Con vettori di norma unitaria $u$ e $v$
+il peso relativo è proporzionale a $\exp(16 u^\top v)$. È una densità gaussiana
+sulla distanza fra i vettori unitari. Il token da predire resta la categoria BPE.
+
+La massa e i conteggi pesati entrano nella lettura categorica già descritta.
+Il riferimento generale pesa meno quando le categorie osservate nella regione
+sono ripetutamente insolite rispetto al corpus e la parola variabile assume
+valori diversi. Per misurarlo si confronta la probabilità sequenziale dei seguiti
+con due riferimenti iniziali, uniforme e proporzionale alle frequenze del train.
+Il rapporto si aggiorna **dopo** aver osservato ciascun seguito. La validazione
+decide la forza di questa correzione. Ogni regione confronta al massimo 128
+parole osservate. Le parole sconosciute lasciano disponibili le altre colonne.
 
 ### Dal prompt al prossimo token
 
@@ -193,9 +221,9 @@ e gli stessi confini di articolo. Una NLL inferiore indica più probabilità sul
 La nuova tabella migliora sul contatore in 51 blocchi su 64. Il vantaggio medio è
 0,0205 nat/token e l'errore standard appaiato per blocco è 0,0083. Tenendo solo
 l'ultimo token e le frequenze del documento si ottiene 4,8501. Rimescolando le
-identità dei concetti si sale a 6,9826. Sulle 4.933 posizioni con una coppia
+identità dei concetti si sale a 6,9824. Sulle 4.933 posizioni con una coppia
 letterale finale mai vista nel train si passa da 4,4170 con il solo token recente
-a 4,3425 con il contesto. La differenza maggiore proviene dalle prime quattro
+a 4,3424 con il contesto. La differenza maggiore proviene dalle prime quattro
 posizioni. Nelle bande 1–31, 32–127, 128–255 e 256–511 la NLL completa è
 rispettivamente 4,9508, 4,6564, 4,4571 e 4,3672.
 
@@ -204,8 +232,12 @@ e la rappresentazione con 64 coordinate CP ottiene 4,6870. La SVD è stata scelt
 per rappresentare i token. I tagli dei tratti e la lettura del target usano i concetti.
 La memoria del documento contribuisce al risultato, con una NLL di 4,8877 quando è
 disabilitata. A 300.000 token di distanza si recuperano al primo posto 16 associazioni
-su 16, 16 copie su 16 e 14 richieste lessicali identiche su 16. Nella prova in cui
-la parola della richiesta è sostituita con un sinonimo il risultato è 0 su 16.
+su 16, 16 copie su 16 e 16 richieste lessicali identiche su 16. Quando la richiesta usa un sinonimo,
+la coordinata della parola porta il risultato da 0 a 8 su 16 a tutte e quattro le
+distanze provate. Sui 64 blocchi principali, con e senza questa coordinata, la NLL
+arrotondata è 4,4794. Su altri 64 blocchi disgiunti si passa da 4,58650 a 4,58621.
+La differenza più netta riguarda il richiamo. Nella prova di associazione il tempo
+mediano per generare un token è circa 4 ms dopo 1.000 token e 8 ms dopo 300.000.
 
 Sui dieci dataset tabulari forniti il confronto riproduce le predizioni precedenti.
 GiocoSet completo dà quattro gruppi senza etichette. Togliendo la colonna «Gioco»

@@ -10,8 +10,9 @@ from .dyadic import TARGET
 
 
 class ConditionalText:
-    def __init__(self, geometry, graph, memory, base=None):
+    def __init__(self, geometry, graph, memory, base=None, words=None):
         self.geometry, self.graph, self.memory = geometry, graph, memory
+        self.words = words
         self.base = base
         self.reading = graph.category_regions[TARGET]
         self.features = list(dict.fromkeys([f for f, t, k in self.reading.levels] + [f for f, k in memory]))
@@ -35,15 +36,19 @@ class Cursor:
         self.n = 0
         geometry = model.geometry
         # At scale j an ordered composition needs the child from 2**j positions earlier.
-        self.rings = [np.zeros(1 << j, np.uint32) for j in range(len(geometry.pairs))]
+        used = max((j for f in model.features for lag, j, b in f), default=0)
+        self.rings = [np.zeros(1 << j, np.uint32) for j in range(used)]
         self.tails = [
             np.zeros(
                 1 + max((lag for f in model.features for lag, s, b in f if s == j), default=0),
                 dtype=np.uint32,
             )
-            for j in range(len(geometry.depths))
+            for j in range(used + 1)
         ]
         self.window = 1 << (geometry.scales - 1)
+        from .word_regions import WordDocument
+
+        self.words = WordDocument(model.words, model.reading.prior, self.window) if model.words else None
         self.tables = {f: Table.empty(len(geometry.vectors)) for f, k in model.memory}
         self.previous = self.tables.copy()
         self.delta = {f: {} for f, k in model.memory}
@@ -52,6 +57,7 @@ class Cursor:
     def fork(self):
         other = copy(self)
         other.base = self.base.fork() if self.base is not None else None
+        other.words = self.words.fork() if self.words else None
         other.rings = [r.copy() for r in self.rings]
         other.tails = [r.copy() for r in self.tails]
         other.current = self.current.copy()
@@ -61,6 +67,9 @@ class Cursor:
         return other
 
     def advance(self, ids):
+        if self.words is not None:
+            for y in ids:
+                self.words.observe(int(y))
         if self.base is not None:
             self.base.prefill(ids)
         g = self.model.geometry
@@ -148,7 +157,33 @@ class Cursor:
                 if key not in m:
                     m[key] = Counter()
                 m[key][token] += 1
-        self.advance(np.asarray([token], dtype=np.int32))
+        if self.words:
+            self.words.observe(int(token))
+        if self.base:
+            self.base.observe(token)
+        g = self.model.geometry
+        child = int(token)
+        values = [int(g.token_codes[child])]
+        for (tree, vectors), ring in zip(g.pairs, self.rings):
+            half = len(ring)
+            slot = self.n % half
+            older = int(ring[slot])
+            ring[slot] = child
+            child = tree.pair_code(vectors[older], vectors[child]) if self.n + 1 >= 2 * half else 0
+            values.append(child)
+        for tail, value in zip(self.tails, values):
+            tail[:-1] = tail[1:]
+            tail[-1] = value
+        self.n += 1
+        for f in self.model.features:
+            key = 1
+            for lag, j, b in f:
+                if self.n < lag + (1 << j):
+                    key = 0
+                    break
+                code = int(self.tails[j][-1 - lag]) >> (g.depths[j] - b)
+                key = (key << b) | (code & ((1 << b) - 1))
+            self.current[f] = key
         self.rotate()
 
     def distribution(self):
@@ -179,4 +214,4 @@ class Cursor:
             p *= w / (c + w)
             for ys, counts in observed:
                 p[ys] += counts / (c + w)
-        return p
+        return self.words.distribution(p) if self.words else p

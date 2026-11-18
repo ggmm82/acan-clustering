@@ -76,6 +76,16 @@ class SemanticCuts:
             node = 2 * node + (vectors[rows, self.axis[node]] > self.threshold[node])
         return node
 
+    def pair_code(self, older, recent):
+        """Scalar traversal of the same split tree on two adjacent feature blocks."""
+        node = 1
+        width = len(older)
+        for _ in range(self.depth):
+            axis = self.axis[node]
+            value = older[axis] if axis < width else recent[axis - width]
+            node = 2 * node + int(value > self.threshold[node])
+        return node
+
 
 class ConditionalReading:
     """Read observed hard memberships with the shared categorical operator and a judged prior."""

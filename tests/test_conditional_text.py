@@ -105,3 +105,38 @@ class ConditionalTests(unittest.TestCase):
         before = graph.predict_proba(frame, "token")[0]
         del graph.category_regions
         np.testing.assert_array_equal(before, graph.predict_proba(frame, "token")[0])
+
+
+class WordRegionTests(unittest.TestCase):
+    def test_synonym_composed_of_two_pieces_recalls_a_previously_observed_answer(self):
+        from experiments.text_table.word_regions import WordDocument, WordProfiles
+
+        pieces = ["Ġalpha", "Ġbeta", "Ġmedic", "Ġsays", "Ġanswer", "Ġphys", "ician", "[EOS]"]
+
+        class Tokenizer:
+            def id_to_token(self, i):
+                return pieces[i]
+
+            def get_vocab_size(self):
+                return len(pieces)
+
+        index = {s: i for i, s in enumerate(("alpha", "beta", "medic", "says", "answer", "physician"))}
+        vectors = np.eye(len(index))
+        vectors[5] = vectors[2]
+        profiles = WordProfiles(index, vectors, np.arange(len(index)), Tokenizer())
+        profiles.weights = [(2, 1.0, 0.25)]
+        prior = np.full(len(pieces), 1 / len(pieces))
+        doc = WordDocument(profiles, prior, window=32)
+        # The first query only learns the answer after it has been consumed.
+        for y in [0, 1, 2, 3]:
+            doc.observe(y)
+        np.testing.assert_array_equal(doc.distribution(prior), prior)
+        doc.observe(4)
+        other = doc.fork()
+        for y in [7, 0, 1, 5, 6, 3]:
+            other.observe(y)
+        self.assertEqual(other.distribution(prior).argmax(), 4)
+        self.assertAlmostEqual(other.distribution(prior).sum(), 1.0)
+        parent = doc.distribution(prior).copy()
+        other.observe(0)
+        np.testing.assert_array_equal(parent, doc.distribution(prior))

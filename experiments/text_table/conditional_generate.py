@@ -1,6 +1,7 @@
 """Completa un prompt con un checkpoint locale prodotto da conditional_run."""
 
 import argparse
+import hashlib
 import pickle
 from pathlib import Path
 
@@ -20,6 +21,9 @@ def main():
     tokenizer = Tokenizer.from_file(str(args.tokenizer))
     with args.checkpoint.open("rb") as stream:
         model = ConditionalText(*pickle.load(stream))
+    fingerprint = getattr(model.geometry, "tokenizer_sha256", None)
+    if fingerprint and hashlib.sha256(args.tokenizer.read_bytes()).hexdigest() != fingerprint:
+        parser.error("Il tokenizer non coincide con quello del training.")
     if tokenizer.get_vocab_size() != len(model.geometry.vectors):
         parser.error("Il vocabolario del tokenizer è incompatibile con il checkpoint.")
     prefix = tokenizer.encode(args.prompt).ids
