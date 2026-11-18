@@ -7,7 +7,7 @@ opzionale. Richiede Python 3.9 o successivo.
 
 ## Il modello
 
-Il modello tabulare e l'addestramento lungo del testo usano lo stesso
+Il modello tabulare e la prova sperimentale sul testo usano lo stesso
 `ConceptModel`. Il testo diventa una tabella di prefissi e seguiti.
 Il grafo appreso riconosce il prefisso e legge il token successivo attraverso
 i suoi livelli. La [guida unica del modello](acan/MODEL.md) è anche il testo
@@ -95,7 +95,7 @@ Guida dettagliata della scheda Modello e della valutazione: [docs/GUI.md](docs/G
 
 ## Laboratorio generativo
 
-La scheda **Generativo** addestra il grafo dei concetti su una coda di testi. Prepara una miscela di dati italiani e inglesi per conversare da dataset
+La scheda **Generativo** usa il contatore di contesti per l’addestramento lungo. Prepara una miscela di dati italiani e inglesi per conversare da dataset
 pubblici con licenze aperte (verificati e scaricati dal worker, con pausa e
 ripresa), impara una coda di testi uno dopo l'altro (anche file propri:
 Markdown, Python, ZIP, EPUB, DOCX, PDF), salva in modo permanente, riprende da

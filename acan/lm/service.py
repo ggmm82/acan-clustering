@@ -161,11 +161,6 @@ def create_app(root=None, token=None):
     def finish(identifier):
         return jsonify(store.finish_corpus(identifier, request.workspace))
 
-    def new_profile(options):
-        if options.get('architecture') == 'concepts' and options.get('routing_profile') == 'concept-lm-v1':
-            return dict(options, routing_profile='concept-table-v1', concept_paths=False)
-        return options
-
     @app.post('/jobs')
     def create_job():
         options=request.get_json()
@@ -173,7 +168,7 @@ def create_app(root=None, token=None):
             raise ValueError('Configurazione di training non valida.')
         if options.get('protocol')=='controlled-v1':
             from .research_options import validate_options as controlled_options
-            config=controlled_options(new_profile(options))
+            config=controlled_options(options)
             from .resources import check_profile
             import torch
             check_profile(config,torch.cuda.is_available())
@@ -211,7 +206,7 @@ def create_app(root=None, token=None):
         if not isinstance(corpora, list) or not 1 <= len(corpora) <= 200:
             raise ValueError('Scegli da 1 a 200 testi per la coda.')
         queue = _uuid.uuid4().hex[:8]
-        jobs = [queue_item(new_profile(base), corpus, queue, order) for order, corpus in enumerate(corpora)]
+        jobs = [queue_item(base, corpus, queue, order) for order, corpus in enumerate(corpora)]
         for config in jobs:
             check_profile(config, torch.cuda.is_available())
         created = [store.create_job(request.workspace, config) for config in jobs]

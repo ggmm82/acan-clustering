@@ -253,7 +253,7 @@ class TestPublicExperiments(unittest.TestCase):
                 result = client.post('/public-experiments', headers=headers, json=dict(dataset='fixture', preset='check'))
                 self.assertEqual(result.status_code, 200, result.get_data(as_text=True))
                 data = result.get_json(); job = data['job']
-                self.assertEqual((job['config']['architecture'], job['config']['routing_profile']), ('concepts', 'concept-table-v1'))   # the concept model
+                self.assertEqual((job['config']['architecture'], job['config']['routing_profile']), ('concepts', 'concept-lm-v1'))   # the concept model
                 self.assertEqual(job['config']['concept_piece'], 50_000)
                 download.assert_called_once(); launch.assert_called_once()
                 self.assertEqual(client.get('/state', headers=other).get_json()['corpora'], [])

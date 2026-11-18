@@ -225,7 +225,7 @@ La chiave si vede solo quando la crei: conservala; se la perdi, revocala e crean
                 html.Div([dbc.Input(id=id, type='number', value=value) for id, value in (('lm-batch', 1), ('lm-accum', 8), ('lm-lr', .001), ('lm-slots', 16),
                                                                                         ('lm-window', 16), ('lm-patience', 0), ('lm-min-delta', .01))]
                          + [dbc.Input(id='lm-cp-weight',type='number',value=0.), dbc.Input(id='lm-rank',type='number',value=8),
-                            dcc.Dropdown(id='lm-routing',value='concept-table-v1',options=[{'label':'concept-table-v1','value':'concept-table-v1'}]),
+                            dcc.Dropdown(id='lm-routing',value='concept-lm-v1',options=[{'label':'concept-lm-v1','value':'concept-lm-v1'}]),
                             dcc.Dropdown(id='lm-fraction',value=1.,options=[{'label':'1','value':1.}]), dbc.Checkbox(id='lm-distill', value=False),
                             dcc.Dropdown(id='lm-device', options=[{'label':'Processore (CPU)','value':'cpu'}], value='cpu')],
                          style={'display':'none'}),
@@ -282,7 +282,7 @@ def native_config(corpus, size, name, steps, length, batch, accumulation, lr, sl
                   min_delta, validation):
     """A project of the manual form: the concept model (the network settings of earlier projects are ignored)."""
     return dict(corpus_id=corpus, name=name, sequence_length=int(length or 256), save_steps=int(save_steps or 100),
-                protocol='controlled-v1', architecture='concepts', routing_profile='concept-table-v1', vocabulary=8000, concept_piece=200_008,
+                protocol='controlled-v1', architecture='concepts', routing_profile='concept-lm-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=int(validation or 8), device='cpu',
                 chat_probes=True)
 
@@ -1038,7 +1038,7 @@ def register(app):
                 parts.append('ancora peggiore del modello di partenza')
             control = job['config'].get('architecture') == 'dense-control'
             detail.append(dbc.Alert('; '.join(parts)+'. ' + (
-                'Ogni passo legge un nuovo tratto di testo e aggiorna i conteggi; l\'errore è misurato sul testo di validazione, che non viene mai contato. '
+                'Ogni passo conta un milione di token del testo e aggiunge le sue somme; l\'errore è misurato sul testo di validazione, che non viene mai contato. '
                 'Il confronto con una rete neurale sugli stessi dati è nella scheda Matematica e in «Confronto con una rete neurale».' if concepts else
                 'Questo è il controllo denso: è il riferimento con cui confrontare i progetti ACAN dello stesso budget.' if control else
                 'Il modello di partenza non ha visto questo corpus, quindi scendere sotto la sua linea non dimostra che i concetti servano: '
@@ -1077,7 +1077,7 @@ def register(app):
                                  f"Struttura: tutti i {graft['total_layers']} layer usano l'attenzione normale."))
         last_step = max((s['step'] for s in job['snapshots']), default=0)
         if job['config'].get('architecture') == 'concepts':
-            detail.append(html.P(f'Ogni passo aggiorna le statistiche su un nuovo tratto del testo. La linea su testo mai visto si aggiorna a ogni salvataggio (ultimo: checkpoint passo {last_step}).', className='small text-muted'))
+            detail.append(html.P(f'Un passo conta un milione di token: il testo intero si legge una volta sola, contarlo di nuovo non insegnerebbe nulla. La linea su testo mai visto si aggiorna a ogni salvataggio (ultimo: checkpoint passo {last_step}).', className='small text-muted'))
         else:
             detail.append(html.P(f'La linea di addestramento oscilla perché ogni passo legge un pezzo di testo diverso. La linea su testo mai visto si aggiorna a ogni salvataggio (ultimo: checkpoint passo {last_step}). I token elaborati possono contare più volte lo stesso testo.', className='small text-muted'))
         available = [dict(label=("Migliore conservato · " if s.get('best') else "")+f"Passo {s['step']}"+(f" · validazione {s['validation_nll']:.3f}" if s.get('validation_nll') is not None else ""), value=s['name']) for s in job['snapshots']]

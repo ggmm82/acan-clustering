@@ -2,6 +2,11 @@
 
 ## Matematica
 
+La coda **Addestramento lungo** usa per impostazione predefinita il contatore
+di contesti. Apprende i conteggi delle continuazioni per suffissi ordinati
+e legge dal suffisso generale al più specifico. Il grafo tabulare sul testo
+qui descritto resta sperimentale. Le sue misure sono nella sezione Informatica.
+
 ### Dalle osservazioni ai concetti
 
 Una riga di tabella contiene attributi osservabili e, se prevista, una colonna da leggere.
@@ -99,7 +104,7 @@ rimane disponibile per il documento successivo.
 
 ### Dal corpus al checkpoint
 
-1. In **Generativo → Addestramento lungo** si prepara il corpus e si avvia la
+1. Per una prova esplicita con il profilo sperimentale `concept-table-v1` si prepara il corpus e si avvia la
    coda. Il programma separa i documenti, elimina i duplicati nel corpus e
    costruisce il tokenizer BPE sui documenti di addestramento campionati. I
    testi successivi della stessa coda usano lo stesso vocabolario.

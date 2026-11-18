@@ -421,7 +421,7 @@ class NativeSeriesTest(unittest.TestCase):
         for cuda in (False, True):                                          # the page learns the concept model, with or without GPU
             config = validate_options(dict(profile(cuda), corpus_id='a'*32))
             check_profile(config, cuda)
-            self.assertEqual((config['architecture'], config['routing_profile']), ('concepts', 'concept-table-v1'))
+            self.assertEqual((config['architecture'], config['routing_profile']), ('concepts', 'concept-lm-v1'))
         with self.assertRaisesRegex(ValueError, 'concept-lm-v1'):
             validate_options(dict(profile(False), corpus_id='a'*32, routing_profile='concept-graph-v2'))
 
