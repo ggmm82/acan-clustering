@@ -1,0 +1,577 @@
+{
+  "seed": 0,
+  "options": {
+    "data": "/workspace/work/text-table-data",
+    "output": "/workspace/work/text-table-200k.json",
+    "rows": 200000,
+    "dimensions": 32,
+    "context": 8,
+    "concepts": 256,
+    "judged_rows": 512,
+    "refine_rows": 20000
+  },
+  "runs": [
+    {
+      "kind": "exact_counter_control",
+      "scope": "same_rows",
+      "train_tokens": 200008,
+      "seconds": 1.1292556390000072,
+      "validation": {
+        "nll": 5.539487109843807,
+        "positions": 16352,
+        "bands": {
+          "0-32": 5.9772992419394075,
+          "32-128": 5.752478291022466,
+          "128-256": 5.560829418298956,
+          "256-512": 5.395927949803284
+        }
+      },
+      "test": {
+        "nll": 5.407505726575695,
+        "positions": 32704,
+        "bands": {
+          "0-32": 6.218173106394896,
+          "32-128": 5.648011711155114,
+          "128-256": 5.381878642167683,
+          "256-512": 5.231962771537437
+        }
+      },
+      "bytes": 35738976
+    },
+    {
+      "kind": "exact_counter_control",
+      "scope": "full_train",
+      "train_tokens": 2729601,
+      "seconds": 8.506843998999898,
+      "validation": {
+        "nll": 4.5942744728701435,
+        "positions": 16352,
+        "bands": {
+          "0-32": 4.849650618819547,
+          "32-128": 4.694085648821391,
+          "128-256": 4.581421807246848,
+          "256-512": 4.5323471595265135
+        }
+      },
+      "test": {
+        "nll": 4.519949282501661,
+        "positions": 32704,
+        "bands": {
+          "0-32": 5.115141880270456,
+          "32-128": 4.638626913222963,
+          "128-256": 4.472898342064456,
+          "256-512": 4.426896537563709
+        }
+      },
+      "bytes": 422557872
+    },
+    {
+      "kind": "ConceptModel_vector_rows",
+      "train_rows": 200000,
+      "seconds": 335.262058155,
+      "concepts": 83,
+      "levels": [
+        2,
+        14,
+        83
+      ],
+      "sparse_pairs": 580030,
+      "sparse_density": 0.873539156626506,
+      "target_judgment": "numeric vector density in the unchanged ConceptModel; exact-token judgment is not yet used for selecting the merge path",
+      "training_merge": "unchanged reader radius excludes target columns",
+      "progress": [
+        {
+          "phase": "scale",
+          "rows": 2048,
+          "total": null
+        },
+        {
+          "phase": "scale",
+          "rows": 22528,
+          "total": null
+        },
+        {
+          "phase": "scale",
+          "rows": 43008,
+          "total": null
+        },
+        {
+          "phase": "scale",
+          "rows": 63488,
+          "total": null
+        },
+        {
+          "phase": "scale",
+          "rows": 83968,
+          "total": null
+        },
+        {
+          "phase": "scale",
+          "rows": 104448,
+          "total": null
+        },
+        {
+          "phase": "scale",
+          "rows": 124928,
+          "total": null
+        },
+        {
+          "phase": "scale",
+          "rows": 145408,
+          "total": null
+        },
+        {
+          "phase": "scale",
+          "rows": 165888,
+          "total": null
+        },
+        {
+          "phase": "scale",
+          "rows": 186368,
+          "total": null
+        },
+        {
+          "phase": "scan",
+          "rows": 2048,
+          "total": 200000,
+          "concepts": 64
+        },
+        {
+          "phase": "scan",
+          "rows": 22528,
+          "total": 200000,
+          "concepts": 192
+        },
+        {
+          "phase": "scan",
+          "rows": 43008,
+          "total": 200000,
+          "concepts": 192
+        },
+        {
+          "phase": "scan",
+          "rows": 63488,
+          "total": 200000,
+          "concepts": 320
+        },
+        {
+          "phase": "scan",
+          "rows": 83968,
+          "total": 200000,
+          "concepts": 192
+        },
+        {
+          "phase": "scan",
+          "rows": 104448,
+          "total": 200000,
+          "concepts": 256
+        },
+        {
+          "phase": "scan",
+          "rows": 124928,
+          "total": 200000,
+          "concepts": 320
+        },
+        {
+          "phase": "scan",
+          "rows": 145408,
+          "total": 200000,
+          "concepts": 256
+        },
+        {
+          "phase": "scan",
+          "rows": 165888,
+          "total": 200000,
+          "concepts": 192
+        },
+        {
+          "phase": "scan",
+          "rows": 186368,
+          "total": 200000,
+          "concepts": 320
+        },
+        {
+          "phase": "levels",
+          "concepts": 318,
+          "start": 318,
+          "search": 1,
+          "score": -13.437342133011537
+        },
+        {
+          "phase": "finish",
+          "rows": 2048,
+          "total": 200000,
+          "concepts": 83
+        },
+        {
+          "phase": "finish",
+          "rows": 22528,
+          "total": 200000,
+          "concepts": 83
+        },
+        {
+          "phase": "finish",
+          "rows": 43008,
+          "total": 200000,
+          "concepts": 83
+        },
+        {
+          "phase": "finish",
+          "rows": 63488,
+          "total": 200000,
+          "concepts": 83
+        },
+        {
+          "phase": "finish",
+          "rows": 83968,
+          "total": 200000,
+          "concepts": 83
+        },
+        {
+          "phase": "finish",
+          "rows": 104448,
+          "total": 200000,
+          "concepts": 83
+        },
+        {
+          "phase": "finish",
+          "rows": 124928,
+          "total": 200000,
+          "concepts": 83
+        },
+        {
+          "phase": "finish",
+          "rows": 145408,
+          "total": 200000,
+          "concepts": 83
+        },
+        {
+          "phase": "finish",
+          "rows": 165888,
+          "total": 200000,
+          "concepts": 83
+        },
+        {
+          "phase": "finish",
+          "rows": 186368,
+          "total": 200000,
+          "concepts": 83
+        }
+      ],
+      "kappa": 0.03125,
+      "validation": {
+        "nll": 7.013771341490832,
+        "positions": 16352,
+        "bands": {
+          "0-32": 6.969194175013588,
+          "32-128": 6.9951574873585445,
+          "128-256": 7.060158018597781,
+          "256-512": 7.002956214490069
+        }
+      },
+      "test": {
+        "nll": 6.920744563511388,
+        "positions": 32704,
+        "bands": {
+          "0-32": 6.983559868417723,
+          "32-128": 6.950859145488636,
+          "128-256": 6.963558408922742,
+          "256-512": 6.88043813173574
+        }
+      },
+      "kappa_search": [
+        [
+          7.049819370475335,
+          0.03125
+        ],
+        [
+          7.059831860939116,
+          0.0625
+        ],
+        [
+          7.103632164843938,
+          0.125
+        ],
+        [
+          7.197603026558914,
+          0.25
+        ],
+        [
+          7.355381537783212,
+          0.5
+        ],
+        [
+          7.582013751454774,
+          1.0
+        ],
+        [
+          7.8706438966613055,
+          2.0
+        ],
+        [
+          8.203854738739917,
+          4.0
+        ],
+        [
+          8.558962574151339,
+          8.0
+        ],
+        [
+          8.914751337954794,
+          16.0
+        ],
+        [
+          9.256086081270459,
+          32.0
+        ],
+        [
+          9.574620260285343,
+          64.0
+        ],
+        [
+          9.867003139014292,
+          128.0
+        ],
+        [
+          10.132780762213155,
+          256.0
+        ]
+      ],
+      "peak_rss_kib": 2751592
+    }
+  ],
+  "source_sha256": {
+    "train": "e83889baabc497075506f91975be5fac0d45c5290b6b20582c8cd1e853d0c9f7",
+    "validation": "204929b7ff9d6184953f867dedb860e40aa69c078fc1e54b3baaa8fb28511c4c",
+    "test": "5f1bea067869d04849c0f975a2b29c4ff47d867f484f5010ea5e861eab246d91"
+  },
+  "tokenizer_sha256": "56f1a142fb9933ceadbf399f0754c4006ddf57a3b193ef275a93f975de58ed88",
+  "tokens": {
+    "train": 2729601,
+    "validation": 287825,
+    "test": 329679
+  },
+  "validation_offsets": [
+    12288,
+    17408,
+    18432,
+    22016,
+    22528,
+    24064,
+    24576,
+    33792,
+    43520,
+    45568,
+    48640,
+    52224,
+    54784,
+    61440,
+    75776,
+    98304,
+    102400,
+    104960,
+    108032,
+    111104,
+    112640,
+    119296,
+    119808,
+    121856,
+    123904,
+    131584,
+    132608,
+    135168,
+    136704,
+    140800,
+    146944,
+    151040,
+    155136,
+    167424,
+    172544,
+    173568,
+    180224,
+    188416,
+    189440,
+    192000,
+    193536,
+    195072,
+    197632,
+    199168,
+    206848,
+    208896,
+    209408,
+    211968,
+    213504,
+    218112,
+    221184,
+    222208,
+    226816,
+    235008,
+    242176,
+    247296,
+    249344,
+    254464,
+    263680,
+    268800,
+    270336,
+    276992,
+    278016,
+    286208
+  ],
+  "test_offsets": [
+    13824,
+    19968,
+    21504,
+    25600,
+    26112,
+    28160,
+    28672,
+    38912,
+    50176,
+    52224,
+    55808,
+    60416,
+    62464,
+    70656,
+    87552,
+    112640,
+    113664,
+    117248,
+    120320,
+    124416,
+    129024,
+    130560,
+    137728,
+    138240,
+    140288,
+    142848,
+    151040,
+    153600,
+    156160,
+    158720,
+    161280,
+    169472,
+    173568,
+    177664,
+    194560,
+    199168,
+    200192,
+    209408,
+    217600,
+    218112,
+    222720,
+    223232,
+    229888,
+    230912,
+    239104,
+    240640,
+    241664,
+    242688,
+    244224,
+    244736,
+    250368,
+    255488,
+    257024,
+    261120,
+    270336,
+    279040,
+    285696,
+    286208,
+    294912,
+    302080,
+    305664,
+    310272,
+    317952,
+    318464
+  ],
+  "protocol": "64 non-overlapping blocks512, seed42; position0 excluded because no prefix; validation first32 selects, last32 checks; test64 fixed",
+  "historical_comparison": "Historical tokenizer and offsets were not supplied; old neural numbers are context, not a matched rerun.",
+  "vectors": {
+    "source": "full training only",
+    "dimensions": 32,
+    "singular_values": [
+      28.751389632252202,
+      23.499935543128473,
+      20.61783485170577,
+      18.009583791621612,
+      16.295959279472005,
+      14.716397757909268,
+      12.990043215133387,
+      11.239025008012653,
+      10.676462275365443,
+      10.506211670435928,
+      9.810023293066033,
+      9.459265218672211,
+      9.333511744621998,
+      9.115404457029939,
+      8.801022635955276,
+      8.436847252502018,
+      8.131641335871862,
+      7.939067437419577,
+      7.759213193563028,
+      7.636737752111823,
+      7.444343897285412,
+      7.228673617960207,
+      6.9456732186225265,
+      6.860178582473411,
+      6.710450727624381,
+      6.616801670706671,
+      6.549494880627368,
+      6.40599254169023,
+      6.189896090628765,
+      6.101043312616491,
+      6.0805170709771135,
+      5.903130913675512
+    ],
+    "sha256": "76d6dcdbb2f7ce7c8079fe8c190ac8973c25dc8a6fb56c1d2faf8d6179b0ab3f",
+    "seconds": 0.489545587000066
+  },
+  "status": "measured",
+  "base_commit": "10b4b7b755e45ee901e33b1891f0aba8ed3c8952",
+  "versions": {
+    "numpy": "2.5.4",
+    "pandas": "3.1.1",
+    "scipy": "1.18.1",
+    "scikit-learn": "1.9.1",
+    "tokenizers": "0.22.2"
+  },
+  "diagnosis": {
+    "single_concept_collapse_reproduced": false,
+    "known_features": 256,
+    "numeric_targets": 32,
+    "per_known_attribute_weight": 1,
+    "per_target_attribute_weight": 256,
+    "total_known_weight": 256,
+    "total_target_weight": 8192,
+    "target_weight_ratio": 32,
+    "token_nll_used_for_model_path_selection": false,
+    "target_in_scan_merge_cost": false,
+    "interpretation": "Il collasso non si ripete, ma il target vettoriale \u00e8 trattato come32 risposte indipendenti, la ricerca giudica densit\u00e0 vettoriali e le unioni ignorano il target. Non sono state eseguite ablazioni causali che provino quale correzione migliori la NLL."
+  },
+  "decision": "Non integrare nel prodotto; chiedere come proseguire prima di cambiare il criterio di giudizio e la ricerca.",
+  "peak_memory_scope": "Picco dell\u2019intero processo, che conserva anche il controllo a conteggio completo; non misura isolata del solo prototipo.",
+  "limits": [
+    "Nessun affinamento iterativo dei vettori",
+    "Nessuna memoria del documento o secondo layer",
+    "Nessuna prova di contesto300000 o prestazioni LLM",
+    "Massimo concetti configurato256 \u00e8 una capacit\u00e0, la scansione parte da318 concetti; giudizio su512 righe, rifinitura su20000, somme finali su200000."
+  ],
+  "implementation_sha256": {
+    "experiments/text_table/model.py": "b5d528e1d71fe384f2e7d0ef1d5e9d70f8ed34fd81d25bbe4ca9e32bd495abf9",
+    "experiments/text_table/run.py": "3a0691b781f1f8829f45bb1bd1d72412514d9948c7c7f8a0bf9a729455a7346c",
+    "acan/core/concepts.py": "6ffef7b910a2fe79b7b0185bb2d40dfdd45bcd1f90c95673a867676752a35a91",
+    "acan/core/scan.py": "81ad4ae6bc2846275c322a7846f26b4de56a74b4635628e577e13563989c70c8",
+    "acan/concept_algebra.py": "580c92775380ff1f313af1e813382d42998402865a03d58697e2ded64ef9e33e",
+    "acan/lm/concept_lm.py": "3987c26f90be23baff5e826ce89f64feae251e8b227b3fb3b58728ec091151e4"
+  },
+  "variance_prior_kappa": 1.0,
+  "verification": {
+    "tests_passed": 277,
+    "skipped": 0,
+    "subtests": 13,
+    "tabular_core_changed": false,
+    "contract_files_changed": false,
+    "browser": "filters, mathematics550/1440, graph550/1440, numeric classes, project selection",
+    "minimal_environment": "five new tests also pass without Torch",
+    "project_datasets": "ACAN_DATA provides Titanic and credit-g, instead of skipping those guards"
+  }
+}

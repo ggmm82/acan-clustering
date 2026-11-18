@@ -9,10 +9,14 @@ EXTRA=dict(protocol='controlled-v1',routing_profile='shared-algebra-v1',architec
 
 
 def validate_options(options):
+    options = dict(options)
+    refine = options.pop('context_refinement', False)
+    if not isinstance(refine,bool) or (refine and (options.get('routing_profile') != 'concept-lm-v1' or options.get('concept_paths'))):
+        raise ValueError('La lettura sperimentale richiede i contesti diretti del modello a conteggi.')
     extra={key:options.get(key,value) for key,value in EXTRA.items()}
     if isinstance(extra['graft_fraction'],bool) or extra['graft_fraction'] not in (.5,1.):
         raise ValueError('Frazione ACAN ammessa: 0.5 oppure 1.0.')
-    if extra['routing_profile'] not in ('legacy-causal-v1','shared-algebra-v1','cp-routing-v1','cp-joint-v1','cp-v9','concept-graph-v1','concept-graph-v2','concept-lm-v1'):
+    if extra['routing_profile'] not in ('legacy-causal-v1','shared-algebra-v1','cp-routing-v1','cp-joint-v1','cp-v9','concept-graph-v1','concept-graph-v2','concept-lm-v1','concept-table-v1'):
         raise ValueError('Profilo algebrico non valido.')
     if extra['architecture'] not in ('hybrid','dense-control','native','concepts'):
         raise ValueError('Architettura non supportata.')
@@ -37,8 +41,8 @@ def validate_options(options):
         raise ValueError('Attenzione del modello nativo: concepts oppure dense (il controllo).')
     if extra['architecture']=='native' and extra['routing_profile'] not in ('concept-graph-v1','concept-graph-v2'):
         raise ValueError('Il modello nativo usa il grafo dei concetti (concept-graph-v1).')
-    if (extra['architecture']=='concepts')!=(extra['routing_profile']=='concept-lm-v1'):
-        raise ValueError('Il modello a concetti (architettura «concepts») usa il profilo concept-lm-v1, e solo lui.')
+    if (extra['architecture']=='concepts')!=(extra['routing_profile'] in ('concept-lm-v1','concept-table-v1')):
+        raise ValueError('Il modello a concetti (architettura «concepts») richiede il profilo del grafo tabulare (concept-lm-v1 per i checkpoint precedenti).')
     for key,lo,hi in [('concept_depth',1,12),('concept_document',0,8),('concept_memory_mb',0,262144),('concept_piece',10_000,50_000_000)]:
         value=extra[key]
         if isinstance(value,bool) or not isinstance(value,int) or not lo<=value<=hi:
@@ -57,4 +61,6 @@ def validate_options(options):
     result.update(extra)
     if extra['cp_weight'] and (extra['routing_profile'] not in ('cp-routing-v1','cp-joint-v1') or extra['architecture']!='hybrid'):
         raise ValueError('Il peso CP richiede il routing CP diretta e l’architettura ibrida.')
+    if refine:
+        result['context_refinement'] = True
     return result
