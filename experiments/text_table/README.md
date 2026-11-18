@@ -41,3 +41,22 @@ nuova coda. La prova di carico ripete e ruota gli ID del train per generare
 nuove chiavi. Misura tempi e memoria al crescere del flusso. Il numero di
 byte è quello degli identificatori a 32 bit. La prova di qualità usa invece
 il train originale e un test separato.
+
+Per misurare l'effetto di una quantità maggiore di testo naturale, il protocollo
+`natural_stream` legge entrambi gli shard originali di train di WikiText-103 raw
+alla stessa revisione. WikiText-103 e WikiText-2 condividono esattamente i
+parquet di validazione e test, verificabili tramite SHA-256. Si conserva il BPE
+8.000 già imparato sul train piccolo per confrontare le NLL nella stessa unità.
+Il programma tokenizza in streaming, verifica la validazione alla fine di ciascuno
+shard e legge i 64 blocchi di test dopo aver completato entrambi.
+
+```sh
+python -m experiments.text_table.natural_stream --data DIR \
+  --shards train-00000-of-00002.parquet train-00001-of-00002.parquet --output naturale.json
+```
+
+Per provare il profilo della coda web, compresi il tokenizer da 32.000, la
+preparazione dei documenti, il worker e il caricamento del checkpoint, eseguire
+`python -m experiments.text_table.worker_queue --data DIR --output worker.json`.
+I dati hanno split espliciti e i duplicati vengono rimossi dal worker.
+Le NLL con vocabolari diversi sono espresse in unità di token diverse.
