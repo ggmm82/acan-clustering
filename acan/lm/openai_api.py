@@ -216,12 +216,16 @@ def write(model, tokenizer, prompt, settings):
     rng = np.random.default_rng(settings['seed'])
     hold = max([len(item) for item in settings['stop']]+[1])-1
     produced, sent, reason, text = [], 0, 'length', ''
+    cursor = model.cursor(ids) if hasattr(model, 'cursor') and model.model is not None else None
     for _ in range(settings['max_tokens']):
-        token = draw(model.distribution(np.asarray(ids+produced, np.int64)), settings['temperature'], settings['top_p'], rng)
+        probabilities = cursor.distribution() if cursor is not None else model.distribution(np.asarray(ids+produced, np.int64))
+        token = draw(probabilities, settings['temperature'], settings['top_p'], rng)
         if token in end:
             reason = 'stop'
             break
         produced.append(token)
+        if cursor is not None:
+            cursor.observe(token)
         text = tokenizer.decode(produced, skip_special_tokens=True)
         found = [text.find(item, max(sent-hold, 0)) for item in settings['stop']]
         found = [at for at in found if at >= 0]

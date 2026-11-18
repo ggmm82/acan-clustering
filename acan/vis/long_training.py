@@ -28,10 +28,10 @@ def profile(cuda, size=None):
     There is no size to choose: the model grows with what it reads (its concepts), up to its memory budget,
     a quarter of the server's memory unless set. ``size`` is accepted for earlier callers and ignored.
     """
-    return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-lm-v1', vocabulary=32000,
+    return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-table-v1', vocabulary=8000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='cpu',
                 chat_probes=True, auto_resume=True, sequence_length=256, concept_depth=6, concept_document=4,
-                concept_memory_mb=0, concept_piece=1_000_000, concept_paths=False)
+                concept_memory_mb=0, concept_piece=200_008, concept_paths=False)
 
 
 def queues(jobs):
@@ -142,13 +142,13 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
         _tile('Avanzamento', f'{share:.0f}%' if ready else 'prepara i token',
               f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' if ready else 'il totale si conosce quando i token sono pronti'),
         _tile('Tempo che manca', 'finito' if status == 'completed' else when(remaining), 'stima dalla velocità finora'),
-        _tile('Velocità', f'{speed:,.0f} token/s' if speed else '—', 'un passo è un milione di token'),
+        _tile('Velocità', f'{speed:,.0f} token/s' if speed else '—', f'fino a {piece:,} token per passo'),
         _tile('Errore su testo mai visto', '—' if error is None else f'{error:.3f}',
               (f'esita fra circa {perplexity:,.0f} token' if perplexity else '') + (f' · prima di leggere {before:.3f}' if before is not None else '')),
         _tile('Dimensione del modello', _bytes(size) if size else '—',
               (f'di {_bytes(budget)} di memoria per i concetti' if budget else '') + (f' · file scaricabile {_bytes(checkpoint_bytes)}' if checkpoint_bytes else '')),
         _tile('Concetti', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—',
-              f"{progress.get('generalized_concepts', 0):,} generalizzati per stare nella memoria" if progress.get('concepts_total') else None),
+              'nei livelli del grafo' if config.get('routing_profile') == 'concept-table-v1' else None),
     ]
     bar = dbc.Progress(value=share, className='mb-2', style={'height': '8px'}) if ready else None
     return html.Div([bar, dbc.Row(tiles)])
@@ -164,6 +164,10 @@ def concept_footprint_view(item):
     levels = progress.get('concepts_per_level') or []
     budget = progress.get('budget_bytes')
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
+    if config.get('routing_profile') == 'concept-table-v1':
+        return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')),
+                         html.P('Concetti appresi per livello: ' + (' → '.join(map(str,levels)) or 'in preparazione')),
+                         html.P('Il checkpoint conserva lo stesso grafo tabulare e i conteggi del token successivo.')])
     rows = [
         ('Modello', [
             ('Tipo', 'modello a concetti: nessuna rete neurale, nessun peso addestrato'),
@@ -341,9 +345,9 @@ layout = html.Div([
                 "convertito in testo. Quando è pronto compare fra i testi del passo 2.", className='small text-muted mb-1'),
          html.Div(id='lm-file-upload'), html.Div(id='lm-upload-status', role='status', className='small')),
     step(2, 'Crea la coda e avvia',
-         html.P("La coda impara i testi uno dopo l'altro: ognuno parte da ciò che hanno imparato i precedenti e aggiunge il suo, senza "
-                "dimenticare nulla. Il vocabolario (32.000 token) si impara una volta, all'avvio, dai testi che sono in coda in quel momento: "
-                "metti subito tutti quelli che vuoi.", className='small'),
+         html.P("Il primo testo forma il grafo con lo stesso modello delle tabelle. I testi successivi aggiornano le "
+                "continuazioni nei concetti appresi. Il tokenizer viene imparato dai documenti di training della coda.",
+                className='small'),
          dbc.Label('Testi da imparare, in ordine'),
          dcc.Dropdown(id='lm-long-corpora', multi=True, placeholder='Scegli uno o più testi preparati al passo 1', className='mb-2'),
          html.Div(id='lm-long-size-info', className='small text-muted mb-2'),
@@ -353,18 +357,8 @@ layout = html.Div([
              dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Salva ogni'), dbc.Input(id='lm-long-save', type='number', value=10, min=1, max=10000), dbc.InputGroupText('passi')]), md=6),
                       dbc.Col(dbc.InputGroup([dbc.InputGroupText('Tieni per sempre ogni'), dbc.Input(id='lm-long-milestone', type='number', value=100, min=0, max=10000000), dbc.InputGroupText('passi')]), md=6)],
                      className='mb-1'),
-             html.Small("Un passo conta un milione di token: un testo di 300 MB sono circa 40 passi, e si legge una volta sola. Si salva anche "
-                        "ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
-             dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Memoria massima dei concetti'), dbc.Input(id='lm-long-memory', type='number', value=0, min=0, max=262144, step=256), dbc.InputGroupText('MB')]), md=6),
-                      dbc.Col(html.Small("0 = automatica: un quarto della memoria del server (o del suo contenitore), al massimo 2 GB; con il "
-                                         "contenitore da 4 GB sono 1.024 MB. Mentre somma il processo ne usa fino a circa il triplo: non superare "
-                                         "un quarto della memoria del contenitore. Oltre il limite i concetti che servono meno vengono "
-                                         "generalizzati nel livello sopra.", className='text-muted'), md=6)], className='mb-2'),
-             dbc.Row([dbc.Col(dbc.Checkbox(id='lm-long-paths', value=False, label='Concetti dei token e percorsi'), md=6),
-                      dbc.Col(html.Small("Il modello trova da sé i token che si somigliano («gatto» e «cane») e legge il prossimo token anche "
-                                         "dal concetto generale al particolare. Aiuta sui testi piccoli (wikitext-2, 2 milioni di token: da 4,59 a "
-                                         "4,45); peggiora su quelli grandi con il limite di memoria (69 milioni di token, 2 GB: da 3,91 a 3,96).",
-                                         className='text-muted'), md=6)], className='mb-2'),
+             html.Small("Il primo passo impara la struttura. I salvataggi successivi conservano il grafo, i conteggi "
+                        "aggiornati e la posizione di ripresa.", className='text-muted'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
          html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),
@@ -543,7 +537,7 @@ def register(app):
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
-                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'), State('lm-long-paths', 'value'),
+                  State('lm-long-length', 'value'),
                   prevent_initial_call=True)
     def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0, paths=False):
         try:
@@ -551,7 +545,7 @@ def register(app):
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
-                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0), concept_paths=bool(paths),
+                        milestone_steps=int(milestone or 0),
                         probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             return result.get('message', 'Coda creata.'), result['queue']

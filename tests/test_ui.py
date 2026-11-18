@@ -377,7 +377,7 @@ b,?,no
         options=backend.call_args_list[0].args[3]
         # The manual form makes the concept model, whatever the hidden controls of earlier profiles say.
         self.assertEqual(options['protocol'],'controlled-v1');self.assertEqual(options['distillation_weight'],0.)
-        self.assertEqual((options['architecture'],options['routing_profile']),('concepts','concept-lm-v1'))
+        self.assertEqual((options['architecture'],options['routing_profile']),('concepts','concept-table-v1'))
         self.assertEqual((options['sequence_length'],options['save_steps'],options['validation_batches']),(64,5,32))
         for network in ('lora_rank','base_model','native_size','learning_rate','slots','window','cp_weight'):
             self.assertNotIn(network,options)
@@ -386,7 +386,7 @@ b,?,no
         with patch('acan.vis.generative.backend',side_effect=[{'id':'joint-job'},{}]) as backend:
             self.invoke('..lm-active-job.data',[('lm-start','n_clicks',2),('lm-pause','n_clicks',0),('lm-resume','n_clicks',0)],states)
         self.assertNotIn('cp_weight',backend.call_args_list[0].args[3])         # earlier profiles cannot be chosen any more
-        self.assertEqual(backend.call_args_list[0].args[3]['routing_profile'],'concept-lm-v1')
+        self.assertEqual(backend.call_args_list[0].args[3]['routing_profile'],'concept-table-v1')
 
     def test_sessions_receive_distinct_server_identifiers(self):
         other = self.app.server.test_client()

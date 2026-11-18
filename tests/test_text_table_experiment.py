@@ -1,4 +1,4 @@
-"""Garanzie del prototipo fuori dal prodotto, senza reti o contesti esatti."""
+"""Controlli delle righe e della lettura condivise con il worker."""
 import unittest
 import numpy as np
 from experiments.text_table.model import TextRows,VectorTable,semantic_vectors
@@ -81,3 +81,17 @@ class TextTableExperimentTests(unittest.TestCase):
         actual = posterior_counts(table, reading, self.ids, width=1, chunk=11).toarray()
         np.testing.assert_allclose(actual, expected)
         np.testing.assert_allclose(actual.sum(0), np.bincount(self.ids[p], minlength=len(self.vectors)))
+
+    def test_worker_checkpoint_preserves_future_probabilities_and_updates(self):
+        from acan.lm.text_graph import TextGraph
+        graph = TextGraph(7)
+        graph.add(self.ids[:80])
+        restored = TextGraph.from_arrays(graph.arrays())
+        for model in (graph, restored):
+            model.add(self.ids[80:])
+        np.testing.assert_allclose(graph.counts, restored.counts, rtol=0, atol=1e-12)
+        self.assertAlmostEqual(graph.counts.sum(), len(self.ids)-8)
+        prefix = [1, 3, 2, 0]
+        np.testing.assert_allclose(graph.distribution(prefix), restored.distribution(prefix))
+        seq = np.array(prefix+[5, 3])
+        np.testing.assert_allclose(graph.logp(seq)[4], np.log(graph.distribution(prefix)[5]))

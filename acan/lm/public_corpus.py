@@ -159,7 +159,7 @@ def experiment(store, owner, dataset, preset):
     corpus, provenance = import_corpus(store, owner, dataset)
     # The concept model on the public text: its tokenizer is learned from it, the text is counted.
     config = validate_options(dict(corpus_id=corpus['id'], name=spec['title']+' · '+settings['title'],
-                                   architecture='concepts', routing_profile='concept-lm-v1', vocabulary=4000,
+                                   architecture='concepts', routing_profile='concept-table-v1', vocabulary=4000,
                                    sequence_length=settings['sequence_length'], save_steps=1, concept_piece=settings['piece'],
                                    validation_batches=8, chat_probes=False))
     job = store.create_job(owner, config)
