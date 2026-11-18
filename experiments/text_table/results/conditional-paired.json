@@ -1,0 +1,8 @@
+{
+  "counter_nll": 4.499967216684232,
+  "candidate_nll": 4.479427489794419,
+  "difference": -0.020539726889814553,
+  "paired_block_se": 0.008309453930436849,
+  "improved_blocks": 51,
+  "blocks": 64
+}

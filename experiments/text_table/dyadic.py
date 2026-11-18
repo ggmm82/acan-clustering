@@ -70,7 +70,7 @@ class Reader:
         return np.where(mask, x, 0.0), mask, ids
 
     @staticmethod
-    def route(params, x, mask, ids, target=None, weight=0):
+    def route(params, x, mask, ids, target=None, weight=0, log=False):
         g, a, ga, b, logp, prior = params
         logits = prior - 0.5 * ((x * x) @ a.T - 2 * x @ ga.T + mask @ b.T)
         for col in ids:
@@ -79,6 +79,8 @@ class Reader:
         if target is not None:
             logits += weight * logp[:, target].T
         logits -= logits.max(1, keepdims=True)
+        if log:
+            return logits - np.log(np.exp(logits).sum(1, keepdims=True))
         np.exp(logits, out=logits)
         return logits / logits.sum(1, keepdims=True)
 
@@ -130,12 +132,18 @@ def embeddings(ids, starts, vocabulary, method, top=24, dimensions=12):
             profile[seen] - center, n_components=min(dimensions, *profile[seen].shape), random_state=42
         )
         return (profile - center) @ axes.T, []
-    if method != "cp":
+    if method not in ("cp", "cp_log"):
         raise ValueError(method)
     # Same train-only profiles. The embedding coordinates are probabilities of the learned concepts.
     graph = ConceptModel(**OPTIONS).fit(pd.DataFrame(profile[seen], columns=names("x", profile.shape[1])))
     reader = Reader(graph)
-    return reader.assignments(profile, np.empty((len(profile), 0), int)), reader.layer_sizes()
+    codes = np.empty((len(profile), 0), int)
+    if method == "cp_log":
+        x, mask, cats, _ = reader.seen(profile, codes)
+        # Preserve distances between strongly classified profiles even when probabilities underflow.
+        log_p = reader.route(reader.work, x, mask, cats, log=True)
+        return np.log1p(-log_p), reader.layer_sizes()
+    return reader.assignments(profile, codes), reader.layer_sizes()
 
 
 class Pair:
@@ -382,6 +390,14 @@ class Cursor:
         self.n = 0
         self.buffers = [np.full(1 << j, -1, np.int32) for j in range(len(model.pairs))]
         self.last = [-1] * (1 + len(model.pairs))
+
+    def fork(self):
+        from copy import copy
+
+        other = copy(self)
+        other.buffers = [buf.copy() for buf in self.buffers]
+        other.last = self.last.copy()
+        return other
 
     def prefill(self, ids):
         for begin in range(0, len(ids), 2048):

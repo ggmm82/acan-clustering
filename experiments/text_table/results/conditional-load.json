@@ -1,0 +1,17 @@
+{
+  "rows": 89478486,
+  "input_region_and_target_bytes": 1073741832,
+  "repeated_wikitext_training_rows": 2728972,
+  "feature": [
+    [
+      0,
+      0,
+      16
+    ]
+  ],
+  "concepts": 7743,
+  "seconds": 23.161497473003692,
+  "rows_per_second": 3863242.69854716,
+  "table_bytes": 9165096,
+  "peak_rss_kib": 967244
+}

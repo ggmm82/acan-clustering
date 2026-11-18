@@ -13,10 +13,11 @@ la colonna categorica del token successivo. La prova diadica si esegue in
 `experiments/text_table`. La coda lunga del sito continua a usare il contatore.
 [Matematica, apprendimento e risultati](acan/MODEL.md).
 
-Nella prova diadica WikiText-2 la NLL sul test è 7,1808, contro 4,5000 del
-contatore sugli stessi blocchi e confini di articolo. Il lettore finale ha
-scelto un solo concetto con entrambi gli embedding. La guida riporta anche
-le prove di causalità, richiamo, velocità e conservazione dei risultati tabulari.
+Su 32.704 previsioni di test WikiText-2 la tabella con affinamenti CP ottiene
+**4,4794 nat/token**, contro 4,5000 del contatore e 7,1808 della prima tabella.
+Il vantaggio compare in 51 blocchi su 64. A distanza di 300.000 token recupera
+16 associazioni su 16 e 16 copie su 16, con 0 su 16 nella prova dei sinonimi.
+[Addestramento, generazione e riproduzione delle misure](experiments/text_table/README.md#lettura-condizionale-delle-regioni-cp).
 
 I concetti sono disposti in **livelli**: sotto la radice i concetti generali,
 poi i comportamenti particolari. Ogni livello toglie alle osservazioni il

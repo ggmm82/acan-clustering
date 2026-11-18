@@ -590,6 +590,7 @@ class ConceptModel:
         self.resolution = self._resolution(base)
 
     def fit(self, frame, labels=(), encoder=None, progress=None):
+        self.category_regions = {}
         if len(frame) > self.refine_rows:                        # a large table is read a chunk at a time
             step = self.chunk_rows
             self._total = len(frame)
@@ -610,6 +611,7 @@ class ConceptModel:
            last pass every row is added to the concepts of the working level: their sums are over
            the whole table.
         """
+        self.category_regions = {}
         self.labels = list(labels)
         rng = np.random.default_rng(self.seed)
         self.encoder = encoder or Encoder().fit_chunks(read())
@@ -829,10 +831,34 @@ class ConceptModel:
         weights = self._weights(0.) if observed_only else self.train_weights
         return self._route(self.statistics, data, weights)[0]
 
+    def refine_category(self, label):
+        """Extend a categorical target with CP regions observed in additional table columns.
+
+        A missing region inherits the ordinary prediction. The label never participates in routing.
+        The caller proposes cuts and judges their categorical sums on separate rows.
+        """
+        from acan.core.conditional import ConditionalReading
+
+        if label not in self.labels or label not in self.encoder.categorical:
+            raise ValueError("Il raffinamento richiede un target categorico addestrato.")
+        if not hasattr(self, 'category_regions'):
+            self.category_regions = {}
+        self.category_regions.pop(label, None)
+        base, categories = self.predict_proba(pd.DataFrame(index=[0]), label)
+        reading = ConditionalReading(len(categories))
+        reading.prior = base[0] / base[0].sum()
+        self.category_regions[label] = reading
+        return reading
+
     def predict_proba(self, frame, label):
-        t = self.assignments(frame.drop(columns=[c for c in self.labels if c in frame]))
+        observed = frame.drop(columns=[c for c in self.labels if c in frame])
+        t = self.assignments(observed)
         _, _, log_p = self._parameters(self.statistics)
-        return t@np.exp(log_p[:, self.encoder.block(label)]), self.encoder.categories[label]
+        probability = t@np.exp(log_p[:, self.encoder.block(label)])
+        reading = getattr(self, 'category_regions', {}).get(label)
+        if reading is not None:
+            probability = reading.apply(observed, probability)
+        return probability, self.encoder.categories[label]
 
     def predict(self, frame, label):
         if label in self.encoder.numeric:

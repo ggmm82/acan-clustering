@@ -102,139 +102,115 @@ La qualità sul testo si misura
 con la NLL, la media del logaritmo negativo della probabilità assegnata al
 seguito realmente osservato.
 
+### Perché affinare la lettura del contesto
+
+Se due contesti portano spesso a seguiti diversi, accorparli fa perdere informazione.
+Viceversa, separare «del salotto» da ogni altra coppia sulla base di una sola occorrenza
+rende la stima del seguito fragile. Il modello confronta due risoluzioni. Prima considera
+un gruppo ampio, poi propone di dividerlo ponendo una soglia su una coordinata osservata.
+Nei due sottogruppi misura la dispersione **su tutte le coordinate** rispetto al genitore.
+Tiene una divisione con CP a coppie positiva. Le frequenze di training pesano le coppie.
+Questa è la costruzione delle regioni candidate.
+
+Per decidere quali regioni usare per la previsione, il modello accumula i seguiti di
+**tutte** le righe di training in ciascuna regione. Applica quindi la stessa formula
+categorica $q_i$ vista sopra. Ora la regione è osservata per intero oppure assente
+e il peso di appartenenza è rispettivamente uno oppure zero. Diverse risoluzioni
+possono contribuire alla stessa previsione. La validazione confronta la probabilità
+del token vero, regola la forza del livello precedente e può scartare un affinamento.
+È questa seconda verifica che distingue una separazione geometrica utile da una che
+migliora anche la lettura del seguito. Una regione mai osservata eredita la stima già
+disponibile.
+
+Due regioni che hanno sempre dato lo stesso unico seguito, osservato lo stesso numero
+di volte, applicano esattamente la stessa funzione alla stima precedente. Possono
+condividere il prototipo di lettura conservando distinti gli indirizzi con cui vengono
+riconosciute. Questa uguaglianza vale per qualunque prefisso e per ogni categoria.
+
 ## Informatica
 
-### Dal corpus al checkpoint
+### Dal testo di apprendimento al modello
 
-1. La prova di ricerca usa il tokenizer BPE 8.000 imparato sul train di
-   WikiText-2. Ogni intestazione di articolo apre un documento. Gli identificatori
-   del tokenizer servono per leggere il testo e identificare le categorie target.
-2. Ogni tipo di token diventa una riga di frequenze dei vicini sinistri e destri,
-   misurate sul training all'interno di ogni articolo. Su ciascun lato si
-   distinguono i 24 vicini più frequenti più una categoria residua e si prende
-   la radice delle frequenze relative. Si confrontano due embedding alla stessa
-   dimensione. La SVD conserva le principali direzioni di variazione. L'alternativa
-   usa come coordinate le probabilità di appartenenza assegnate dal modello
-   tabulare ai profili. Entrambe le rappresentazioni restano fisse sul test.
-3. Per costruire una finestra di due token, il modello tabulare legge i vettori
-   della metà più vecchia e di quella più recente in colonne distinte. Per una
-   finestra di quattro token legge i due concetti di coppia, ancora in ordine.
-   La costruzione prosegue per raddoppio. In queste tabelle ausiliarie il vettore
-   del seguito è un target di training. Per riconoscere un tratto si forniscono
-   esclusivamente le due metà. Come rappresentante discreto del tratto si
-   prende il concetto con la maggiore appartenenza.
-4. A ogni posizione la tabella finale ha il vettore dell'ultimo token, una
-   colonna categorica per ciascuna scala appresa e un target categorico, il
-   vero token seguente. Una finestra che oltrepassa l'inizio del documento
-   produce un valore mancante. Una **scala** è una lunghezza scelta per le
-   colonne. Un **livello** è una distinzione che il modello trova *dentro*
-   una di queste tabelle. Le venti scale previste vanno da 1 a 524.288 token.
-5. La prova campiona uniformemente fino a 2.048 tratti eleggibili per apprendere
-   ogni composizione e 12.000 posizioni distribuite sul train per la struttura
-   finale. Le colonne dei concetti sono costruite a blocchi su disco. Una passata
-   su tutti i 2.729.601 token completa le somme del livello di lavoro con il
-   dizionario intero e il prior empirico del train. Le probabilità restano quelle
-   del modello tabulare. I campioni pongono un limite alle strutture che si possono
-   scoprire. Il numero di concetti e livelli entro il budget è scelto dal giudizio.
-6. I primi 32 blocchi di validazione scelgono l'embedding. Altri 32 controllano
-   la scelta. È possibile salvare localmente lo stato dell'esperimento e
-   verificare che, dopo il caricamento, lo stesso prompt dia le stesse probabilità.
+1. Il tokenizer BPE viene appreso sul train. Per ciascun token si misurano separatamente
+   i vicini sinistri e destri all'interno dello stesso articolo. Nella prova finale si
+   distinguono i 96 vicini più frequenti per lato e una categoria residua. Le radici
+   delle frequenze relative formano il profilo numerico del token.
+2. Si provano due modi di rappresentare il profilo. La SVD ne conserva le principali
+   direzioni di variazione. Il modello a concetti può invece usare le distanze espresse
+   dalle sue log-probabilità di appartenenza. La trasformazione $\log(1-\log p)$
+   conserva differenze fra appartenenze molto piccole. La validazione sceglie la
+   rappresentazione prima di aprire il test.
+3. Una finestra di due token accosta i vettori della metà più vecchia e della metà
+   recente, in quest'ordine. Il modello propone tagli CP su coppie campionate da tutto
+   il train. A ogni regione assegna un vettore calcolato dai seguiti di tutte le sue
+   occorrenze. È la media dei vettori del token successivo, con un'osservazione di
+   riferimento dal genitore. Le finestre di quattro token leggono questi vettori delle
+   due coppie. La stessa operazione costruisce ogni scala successiva. Il vettore di
+   una regione viene fissato nel training. Sul prompt basta riconoscere le due metà.
+4. Alla posizione successiva a «del salotto», il modello può riconoscere sia il concetto
+   preciso di «salotto» sia una regione più ampia per il tratto precedente. Le due metà
+   possono essere lette con precisioni diverse. Il modello conta le categorie target
+   in queste regioni con somme sparse. Le colonne di training possono risiedere su
+   disco e i conteggi di blocchi disgiunti si sommano. Il giudizio su testo separato
+   seleziona le letture e i loro pesi. Il numero di concetti emerge entro il budget
+   di ricerca, che limita campione, profondità e direzioni provate.
+5. Il checkpoint conserva le soglie, i vettori dei tratti, le categorie osservate e
+   le letture selezionate. Nella prova finale 5.307.315 regioni dei livelli di lettura
+   condividono 1.421.564 prototipi. La condivisione riduce le matrici da 370 a 182 MB
+   con le stesse probabilità. Le regioni sono indirizzi di contesto e i prototipi
+   sono distribuzioni riutilizzabili del seguito.
 
 ### Dal prompt al prossimo token
 
-Il tokenizer legge il prompt. Nell'esempio, quando arriva «salotto», il modello
-forma la coppia «del salotto», poi unisce il concetto di «sul tappeto» al concetto
-di quella coppia. Le finestre già complete riempiono la riga. La lettura categorica
-del modello finale produce una distribuzione sull'intero vocabolario. Si può
-scegliere il token più probabile, registrarlo come ultima osservazione e ripetere.
+Il cursore registra «salotto» e completa le finestre che terminano in quella posizione.
+Un buffer circolare per scala gli restituisce la metà più vecchia. Le soglie apprese
+trasformano ciascuna coppia di metà in una regione, poi il modello tabulare completa
+la colonna target. Le somme temporanee del documento leggono gli stessi concetti
+e incorporano soltanto seguiti già osservati. Così il seguito incontrato poco prima
+o molte pagine prima può cambiare la distribuzione. Dopo avere scelto il prossimo
+token, il cursore lo aggiunge al prefisso e ripete il calcolo. Un documento nuovo
+riparte con memoria vuota.
 
-Per ogni scala il cursore conserva in un buffer circolare la metà più vecchia
-che servirà a completare le finestre successive. Coprire una finestra massima
-$W$ richiede $O(\log W)$ colonne e fino a $O(W)$ identificatori in questi buffer.
-A modelli fissati, leggere un prompt di $n$ token richiede $O(n\log W)$
-composizioni. Generare un token richiede $O(\log W)$ composizioni più la
-lettura sul vocabolario. Il prefisso e la generazione incrementale danno la
-stessa previsione del calcolo per blocchi. Il checkpoint di questa prova può
-essere usato da un processo di ricerca locale. La coda lunga dell'app usa il
-contatore di suffissi; i progetti già salvati mantengono il loro lettore.
+Per una finestra massima $W$, le scale richiedono $O(\log W)$ composizioni per token
+a geometria fissata e fino a $O(W)$ posizioni nei buffer. Si aggiungono le letture
+sparse e il costo di emettere una distribuzione sul vocabolario. La memoria del
+documento conserva l'epoca corrente e la precedente, ciascuna lunga fino a $W$ token.
+Con venti scale il budget è 524.288 token per epoca. Sul train WikiText-2 l'articolo
+più lungo ha 22.891 token e la maggiore scala compositiva addestrata è 16.384.
 
-### Che cosa hanno mostrato le prove
+### Verifiche
 
-Su 64 blocchi di test da 512 token (32.704 previsioni), il lettore diadico
-ottiene **7,1808 nat/token**. Il contatore raggiunge **4,5000** con gli stessi
-confini di articolo e gli stessi blocchi. Il precedente contatore con gruppi
-CP ottiene 4,4555. I riferimenti storici erano rispettivamente 4,5023 e 4,4588
-con il precedente trattamento dei confini. Il valore 4,403 della rete Llama
-a quattro strati è il riferimento fornito per il progetto, senza una nuova
-misura in questa prova.
+Su WikiText-2 con BPE 8.000 il confronto usa 64 blocchi di test, 32.704 previsioni
+e gli stessi confini di articolo. Una NLL inferiore indica più probabilità sul token vero.
 
-**Il contesto non ha migliorato la previsione.** Il modello ha trovato
-distinzioni nelle singole scale. Per la tabella con target token, il miglior
-taglio nel giudizio interno conteneva un solo concetto. Anche prima di
-applicare la preferenza per i tagli semplici, il giudizio favoriva quella
-soluzione. La passata sul train intero ha quindi aggiornato un'unica
-distribuzione di continuazioni. Questo spiega perché mascherare una scala
-alla volta, rimescolare gli identificatori dei concetti o dare al modello
-tutto il prefisso dell'articolo lascia la NLL invariata. La scelta della
-struttura è stata fatta su un campione di 12.000 righe, mentre il dizionario
-del target comprende 8.000 tipi. La scarsità di ripetizioni utili al giudizio
-è una possibile spiegazione del taglio scelto.
-
-**Embedding.** Con otto coordinate per entrambe le rappresentazioni, la NLL
-di selezione è 7,2106 sia con SVD sia con appartenenze CP. In caso di parità
-il protocollo conserva il primo candidato, qui CP. La misura riguarda questa
-tabella finale e questi profili; non consente di dichiarare una rappresentazione
-semanticamente migliore dell'altra.
-
-| Posizione nel blocco | NLL diadica sul test |
+| Lettura | NLL sul test |
 |---|---:|
-| 1–31 | 7,1829 |
-| 32–127 | 7,1497 |
-| 128–255 | 7,1960 |
-| 256–511 | 7,1846 |
+| Prima tabella diadica, un solo concetto finale | 7,1808 |
+| Contatore di riferimento | 4,5000 |
+| Tabella con affinamenti CP e memoria del documento | **4,4794** |
+| Precedente esperimento con suffissi e gruppi CP | 4,4555 |
 
-**Scale e livelli.** Il train contiene 629 articoli. Il più lungo ha 22.891
-token. La maggiore scala con esempi di training è quindi 16.384. Nel campione
-di test, anche dando tutto il prefisso dell'articolo, 7.663 posizioni hanno
-la scala 8.192 disponibile e nessuna ha la scala 16.384. Ogni numero nella
-colonna di destra è il numero di concetti in un livello appreso per la
-rappresentazione CP.
+La nuova tabella migliora sul contatore in 51 blocchi su 64. Il vantaggio medio è
+0,0205 nat/token e l'errore standard appaiato per blocco è 0,0083. Tenendo solo
+l'ultimo token e le frequenze del documento si ottiene 4,8501. Rimescolando le
+identità dei concetti si sale a 6,9826. Sulle 4.933 posizioni con una coppia
+letterale finale mai vista nel train si passa da 4,4170 con il solo token recente
+a 4,3425 con il contesto. La differenza maggiore proviene dalle prime quattro
+posizioni. Nelle bande 1–31, 32–127, 128–255 e 256–511 la NLL completa è
+rispettivamente 4,9508, 4,6564, 4,4571 e 4,3672.
 
-| Lunghezza del tratto | Concetti nei livelli appresi |
-|---:|---|
-| 1, embedding CP | 5 → 4 → 7 → 8 |
-| 2 | 4 → 3 → 14 |
-| 4 | 3 → 4 → 7 → 11 |
-| 8 | 3 → 7 → 11 |
-| 16 | 5 → 6 → 7 → 8 |
-| 32 | 7 → 8 → 9 → 10 |
-| 64 | 6 → 7 → 8 → 9 |
-| 128 | 5 → 6 → 7 → 10 |
-| 256 | 8 → 7 |
-| 512 | 7 |
-| 1.024 | 8 → 9 → 10 |
-| 2.048 | 10 → 5 → 6 → 8 → 9 → 10 → 11 → 14 |
-| 4.096 | 8 → 14 |
-| 8.192 | 6 → 6 → 7 → 8 |
-| 16.384 | 3 → 5 → 6 → 9 |
-| 32.768–524.288 | Nessun tratto di training abbastanza lungo |
-| Tabella che predice il token | 1 |
+Sulla metà di controllo della validazione, la SVD a otto coordinate ottiene 4,5724
+e la rappresentazione con 64 coordinate CP ottiene 4,6870. La SVD è stata scelta
+per rappresentare i token. I tagli dei tratti e la lettura del target usano i concetti.
+La memoria del documento contribuisce al risultato, con una NLL di 4,8877 quando è
+disabilitata. A 300.000 token di distanza si recuperano al primo posto 16 associazioni
+su 16, 16 copie su 16 e 14 richieste lessicali identiche su 16. Nella prova in cui
+la parola della richiesta è sostituita con un sinonimo il risultato è 0 su 16.
 
-**Richiamo e costo.** A 1.000, 10.000, 100.000 e 300.000 token la tabella
-ottiene 0 risposte corrette su 16 al primo posto sull'intero vocabolario in
-ciascuna prova di associazione, copia e riformulazione lessicale. Limitando
-le risposte a sedici candidati ottiene 1 su 16. La prova di associazione ha
-richiesto circa 0,29 ms per token generato dopo il prefisso corto e 0,24 ms
-dopo quello lungo. Leggere il prefisso con 300.000 token di riempimento ha
-richiesto circa 0,25 s. Il fit ha richiesto 381 s con embedding CP e 322 s con
-SVD in questo ambiente, con picco del processo di circa 4,22 GiB. Un prompt
-lungo può dunque essere elaborato rapidamente anche se il modello non ne
-recupera il contenuto.
-
-Sul tabulare, il giudizio per un target categorico ora sottrae l'osservazione
-dal solo valore coinvolto e aggiorna massa e numero di valori distinti. Su
-8.000 categorie e 64 concetti, quattro giudizi da 256 righe sono passati da
-6,74 s a 0,11 s. Lo scarto massimo nei punteggi è stato inferiore a
-$2\times10^{-15}$. Sui dieci file di esempio il confronto prima/dopo conserva
-livelli e risultati. GiocoSet completo produce quattro gruppi senza target
-e Letter raggiunge il 97,80% su 4.000 righe di test.
+Sui dieci dataset tabulari forniti il confronto riproduce le predizioni precedenti.
+GiocoSet completo dà quattro gruppi senza etichette. Togliendo la colonna «Gioco»
+ne dà sei. Letter raggiunge il 97,80% sulle 4.000 righe tenute fuori dal training.
+Il benchmark sul testo usa 2.729.601 token originali. In una prova distinta, la somma
+sparsa di un solo livello elabora 1 GiB di coppie regione–target ottenute ripetendo
+le righe di training. La coda web resta sul contatore. Il checkpoint della lettura
+diadica si può addestrare e interrogare con i comandi di ricerca.

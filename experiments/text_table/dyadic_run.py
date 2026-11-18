@@ -179,11 +179,7 @@ def recall(model, train, test, tokenizer):
             ranks = []
             timings = []
             for words, y in zip(cases, targets):
-                from copy import copy
-
-                branch = copy(cursor)
-                branch.last = cursor.last.copy()
-                branch.buffers = [b.copy() for b in cursor.buffers]
+                branch = cursor.fork()
                 for word in words:
                     branch.observe(word)
                 start = time.perf_counter()
