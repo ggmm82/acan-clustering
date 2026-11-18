@@ -28,7 +28,7 @@ class ContextRefinementTests(unittest.TestCase):
         for a, b in zip(streamed.levels, whole.levels):
             for x, y in zip(a.pairs(), b.pairs()):
                 np.testing.assert_array_equal(x, y)
-        for depth, coarse in streamed.refinement.tables.items(self):
+        for depth, coarse in streamed.refinement.tables.items():
             assert coarse.counts.sum() == streamed.levels[depth].counts.sum()
         # Checkpoint in the middle of a suffix, then append more evidence.
         restored = ConceptLM.from_arrays(streamed.arrays())
