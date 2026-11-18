@@ -25,6 +25,17 @@ def losses(model, texts):
     return np.array([-model.logp(text, np.arange(1, len(text))).mean() for text in texts])
 
 
+def truncate_context(model, texts):
+    """Ablate just the available suffix lengths in the fitted reader, keeping weights fixed."""
+    nll = {depth: [] for depth in (0, 1, 2, 3, model.depth)}
+    for text in texts:
+        counts, document, prior, *extra = model._prepared(0, text, np.arange(1, len(text)))
+        for depth in nll:
+            cache = (counts[: depth + 1], document[: depth + 1], prior, *extra)
+            nll[depth].append(-model._factor(0, cache).mean())
+    return {depth: float(np.mean(scores)) for depth, scores in nll.items()}
+
+
 def run(train, validation, test, budget, continuous=False):
     start = time.monotonic()
     model = ConceptLM(8000, depth=6, document=4, budget_bytes=budget)
@@ -79,6 +90,8 @@ def run(train, validation, test, budget, continuous=False):
             candidate=float(measured.mean()),
             paired_se=float(delta.std(ddof=1) / np.sqrt(len(delta))),
         )
+    if continuous:
+        report["fresh_nll_by_visible_suffix"] = truncate_context(model, groups["fresh"])
     if chosen:
         # Identical class sizes and tuning protocol, random token identities.
         model.refinement = None

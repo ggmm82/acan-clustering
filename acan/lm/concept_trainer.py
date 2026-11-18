@@ -2,7 +2,6 @@
 
 Existing exact-context jobs retain their original state format and training path.
 """
-import hashlib
 import json
 import math
 import resource
@@ -30,10 +29,9 @@ def contract(profile=PROFILE):
 def training_contract(config):
     if not config.get('context_refinement'):
         return contract(config['routing_profile'])
-    root = Path(__file__).parent
-    paths = ['concept_lm.py', 'context_refinement.py', 'concept_trainer.py', 'native.py',
-             '../core/concepts.py', '../core/scan.py', '../concept_algebra.py']
-    return hashlib.sha256(b''.join((root/name).read_bytes() for name in paths)).hexdigest()
+    # Numerical identity of the initially published CP suffix reader. Increment when its learned
+    # statistic or selection semantics change. Evaluation timing and sparse score queries are compatible.
+    return '8045d421740f61401cfda484d4cc52b7c5882858953390d1701ff553132f11f4'
 
 
 MEASURES = ('validation_nll', 'validation_perplexity', 'training_nll')
@@ -348,21 +346,28 @@ def evaluate(store, job, request, directory, check):
     quality = dict(nll=nll, perplexity=math.exp(nll) if nll < 700 else None, tokens=len(every), batches=len(values),
                    block_indices=blocks.evaluation_indices('test', limit), step=state['step'], concept_model=True)
     performance = []
-    tokens = np.asarray(blocks.tokens['test'], np.int64)
+    tokens = blocks.tokens['test']  # keep multi-GB test files memory-mapped
     for length in request.get('context_lengths', ()):
         check()
         prompt = np.resize(tokens, length) if length > len(tokens) else tokens[:length]   # longer than the test text: repeated
         started = time.perf_counter()
-        model.logp(prompt)                                       # reading the prompt: every position at once
+        cursor = model.prediction_cursor(prompt) if getattr(model, 'context_trained_at', 0) else None
+        if cursor is None:
+            model.logp(prompt)
         reading = time.perf_counter()-started
         new_tokens = int(request.get('new_tokens', 16))
         started = time.perf_counter()
-        model.generate(prompt, new_tokens, temperature=0.)
+        if cursor is None:
+            model.generate(prompt, new_tokens, temperature=0.)
+        else:
+            model.generate((), new_tokens, temperature=0., cursor=cursor)
         writing = time.perf_counter()-started
         memory = model.nbytes()
         performance.append(dict(prompt_tokens=length, new_tokens=new_tokens, prefill_seconds=reading,
                                 prefill_tokens_per_second=length/max(reading, 1e-9), decode_seconds=writing,
                                 decode_tokens_per_second=new_tokens/max(writing, 1e-9),
                                 cache=dict(dense_layers=0, acan_layers=memory, total=memory)))
+        if cursor is not None:
+            performance[-1]['document_cells_after_decode'] = cursor.cells.tolist()
     quality['performance'] = performance
     return quality

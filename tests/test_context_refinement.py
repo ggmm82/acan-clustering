@@ -61,6 +61,10 @@ class ContextRefinementTests(unittest.TestCase):
         a, b = 2 * model.a, 3 * model.b
         long = np.arange(90) % 9
         scores = model.logp(long, a=a, b=b)
+        positions = [37, -1, 2, 37]
+        np.testing.assert_allclose(model.logp(long, positions, a=a, b=b), scores[positions])
+        expected = model.generate(long, 5)
+        assert model.generate((), 5, cursor=model.prediction_cursor(long)) == expected
         for y, score in zip(long, scores):
             np.testing.assert_allclose(np.log(cursor.probability(y, a, b)), score)
             cursor.observe(y)

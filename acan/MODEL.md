@@ -170,13 +170,17 @@ Ogni coppia usa le stesse posizioni e lo stesso limite alle statistiche.
 
 Rimescolare le identità dei token mantenendo le dimensioni dei gruppi quasi
 annulla il vantaggio. Con 256 MiB il taglio genera anche oltre 600.000 suffissi
-distinti al terzo livello raggruppato: il numero di contesti ordinati e il
+distinti al terzo livello raggruppato. Le chiavi sono interi a 64 bit: per i
+suffissi lunghi la codifica può avere collisioni. Il numero di contesti ordinati e il
 numero di classi di token misurano cose diverse. Il limite della tabella
 riguarda le statistiche residenti. Raggruppamento, ordinamento e selezione
 hanno richiesto fino a circa 1,4 GiB di memoria del processo nella prova da
 256 MiB. Ripetendo il confronto a 256 MiB con il contesto mantenuto tra i
 blocchi di training come nel worker, la NLL passa da 4,5403 a **4,4946**
-(errore standard della differenza 0,0021 nat/token).
+(errore standard della differenza 0,0021 nat/token). Sugli stessi blocchi,
+tenendo fissi i pesi e limitando i suffissi visibili a uno, due, tre oppure sei
+token, la NLL vale rispettivamente 4,8204, 4,5223, 4,5012 e 4,4946. Queste
+differenze misurano il contributo delle posizioni precedenti all'ultima.
 
 Con gli stessi indizi casuali dell'esperimento precedente, a distanza di
 300.000 token le due letture recuperano entrambe 16 associazioni su 16 e

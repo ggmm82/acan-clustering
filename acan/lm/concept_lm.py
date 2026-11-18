@@ -531,11 +531,18 @@ class ConceptLM:
         positions = np.arange(len(ids)) if positions is None else np.asarray(positions)
         if self.context_trained_at and self.document and len(ids) > self.document_limit():
             cursor = self.prediction_cursor([])
-            values = np.empty(len(ids))
-            for i,y in enumerate(ids):
-                values[i] = np.log(cursor.probability(y, a, b))
-                cursor.observe(y)
-            return values[positions]
+            selected = np.where(positions < 0, positions + len(ids), positions)
+            if np.any((selected < 0) | (selected >= len(ids))):
+                raise IndexError('Posizione fuori dal testo.')
+            unique, inverse = np.unique(selected, return_inverse=True)
+            values = np.empty(len(unique))
+            begin = 0
+            for k, end in enumerate(unique):
+                cursor.prefill(ids[begin:end])
+                values[k] = np.log(cursor.probability(ids[end], a, b))
+                cursor.observe(ids[end])
+                begin = end + 1
+            return values[inverse]
         each = np.stack([sum(self._factor(r, self._prepared(r, ids, positions), a, b) for r in own) for own in self.of_path])
         return _mix(each, self.w)
 
@@ -655,12 +662,13 @@ class ConceptLM:
             p += weight*path
         return p
 
-    def generate(self, ids, new_tokens, stop=(), temperature=0., seed=0):
+    def generate(self, ids, new_tokens, stop=(), temperature=0., seed=0, cursor=None):
         """Continue a text: the most probable token (temperature 0) or one drawn from the reading."""
         rng = np.random.default_rng(seed)
         ids = list(np.asarray(ids, np.int64))
         produced = []
-        cursor = self.prediction_cursor(ids)
+        if cursor is None:
+            cursor = self.prediction_cursor(ids)
         for _ in range(new_tokens):
             p = cursor.distribution() if cursor is not None else self.distribution(np.asarray(ids))
             if temperature > 0:

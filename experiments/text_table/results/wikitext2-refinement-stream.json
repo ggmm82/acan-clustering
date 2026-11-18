@@ -78,7 +78,7 @@
     988736,
     1009889
   ],
-  "baseline_seconds": 17.007246605000546,
+  "baseline_seconds": 37.700129523000214,
   "cp_cuts": [
     193,
     47,
@@ -86,7 +86,7 @@
     11,
     4
   ],
-  "refinement_seconds": 39.86628433400256,
+  "refinement_seconds": 88.71357836199968,
   "selected_classes": 193,
   "strengths": [
     8.0,
@@ -116,8 +116,15 @@
     "2": 147711,
     "3": 610518
   },
+  "fresh_nll_by_visible_suffix": {
+    "0": 7.034469432696148,
+    "1": 4.82040579200415,
+    "2": 4.522312027436678,
+    "3": 4.5011646514203445,
+    "6": 4.49462868117571
+  },
   "shuffled_fresh": 4.540089199866605,
-  "peak_rss_kib": 1405752,
+  "peak_rss_kib": 1124960,
   "source_sha256": {
     "bpe-8000.json": "56f1a142fb9933ceadbf399f0754c4006ddf57a3b193ef275a93f975de58ed88",
     "train.parquet": "e83889baabc497075506f91975be5fac0d45c5290b6b20582c8cd1e853d0c9f7",

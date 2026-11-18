@@ -361,7 +361,7 @@ layout = html.Div([
                         "ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
              dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Memoria massima dei concetti'), dbc.Input(id='lm-long-memory', type='number', value=0, min=0, max=262144, step=256), dbc.InputGroupText('MB')]), md=6),
                       dbc.Col(html.Small("0 = automatica: un quarto della memoria del server (o del suo contenitore), al massimo 2 GB; con il "
-                                         "contenitore da 4 GB sono 1.024 MB. Mentre somma il processo ne usa fino a circa il triplo: non superare "
+                                         "contenitore da 4 GB sono 1.024 MB. Il limite riguarda le statistiche: ordinamento, stima dei concetti e worker usano altra RAM. Imposta al massimo "
                                          "un quarto della memoria del contenitore. Oltre il limite i concetti che servono meno vengono "
                                          "generalizzati nel livello sopra.", className='text-muted'), md=6)], className='mb-2'),
              dbc.Checkbox(id='lm-long-paths', value=False,
