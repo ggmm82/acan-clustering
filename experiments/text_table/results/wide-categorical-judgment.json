@@ -1,0 +1,17 @@
+{
+  "seed": 71,
+  "categories": 8000,
+  "concepts": 64,
+  "judged_rows": 256,
+  "readings": 4,
+  "baseline_commit": "1b8c695",
+  "max_score_difference": 1.7763568394002505e-15,
+  "before": {
+    "seconds": 6.741249806000269,
+    "peak_rss_kib": 608384
+  },
+  "after": {
+    "seconds": 0.11909665699931793,
+    "peak_rss_kib": 408672
+  }
+}

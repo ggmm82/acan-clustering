@@ -364,10 +364,6 @@ layout = html.Div([
                                          "contenitore da 4 GB sono 1.024 MB. Il limite riguarda le statistiche: ordinamento, stima dei concetti e worker usano altra RAM. Imposta al massimo "
                                          "un quarto della memoria del contenitore. Oltre il limite i concetti che servono meno vengono "
                                          "generalizzati nel livello sopra.", className='text-muted'), md=6)], className='mb-2'),
-             dbc.Checkbox(id='lm-long-paths', value=False,
-                          label='Sperimentale: raggruppa il token più lontano del suffisso con i concetti tabulari'),
-             html.Small("La validazione sceglie se la distinzione migliora la probabilità del token successivo. "
-                        "Richiede tempo e memoria aggiuntivi per valutare i livelli.", className='text-muted'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
          html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),
@@ -546,15 +542,15 @@ def register(app):
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
-                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'), State('lm-long-paths', 'value'),
+                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'),
                   prevent_initial_call=True)
-    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0, paths=False):
+    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
-                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0), context_refinement=bool(paths),
+                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0),
                         probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             return result.get('message', 'Coda creata.'), result['queue']
