@@ -98,6 +98,16 @@ def record_answers(directory, model, tokenizer, state, questions=None, new_token
     return entry
 
 
+def chat_turns(tokenizer):
+    """(<|im_start|>, user, <|im_end|>) token ids when the tokenizer writes the chat format, else None."""
+    start, end = (tokenizer.convert_tokens_to_ids(name) for name in ('<|im_start|>', '<|im_end|>'))
+    opening = tokenizer('<|im_start|>user')['input_ids']
+    if (not isinstance(start, int) or not isinstance(end, int) or tokenizer.unk_token_id in (start, end)
+            or len(opening) != 2 or opening[0] != start):
+        return None
+    return int(start), int(opening[1]), int(end)
+
+
 def quantities(model, config):
     """What the page shows about the model while it learns."""
     levels = model.concepts()
@@ -156,6 +166,7 @@ def run_training(root, identifier, stop_event=None):
         if previous:
             model, state = load(previous, identity, budget)
             model.max_context = config.get('concept_context', 512)   # used if the scales are not learned yet
+            model.turns = model.turns if model.model is not None else chat_turns(tokenizer)
             with store.db() as db:
                 db.execute('DELETE FROM metrics WHERE job=? AND step>?', (identifier, state['step']))
         else:
@@ -166,7 +177,7 @@ def run_training(root, identifier, stop_event=None):
                 if start.vocabulary != len(tokenizer) or start.eos != tokenizer.eos_token_id:
                     raise ValueError('La coda contiene un checkpoint con un vocabolario diverso.')
             model = start if start is not None else PairText(len(tokenizer), tokenizer.eos_token_id, budget,
-                                                                 config.get('concept_context', 512))
+                                                                 config.get('concept_context', 512), chat_turns(tokenizer))
             model.tail = np.empty(0, np.int64)                   # a new text starts with an empty prefix
             state = dict(step=0, tokens_trained=0, device='cpu', identity=identity, model_contract=contract(profile), profile=profile,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},
