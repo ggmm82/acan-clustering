@@ -253,7 +253,9 @@ def add_chunk(model, ids, starts, tail, tables, budget, pending=None):
 def flush(model, tables, pending, budget):
     """Add the queued counts to the tables and keep each table inside its share of the budget."""
     strengths = getattr(model, "training_weights", model.weights)
-    total_weight = sum(k**-0.5 for k in strengths.values())
+    topics = getattr(model, "topics", {})
+    # Topic tables hold at most concepts x vocabulary cells: they are never pruned and take no share.
+    total_weight = sum(k**-0.5 for f, k in strengths.items() if f not in topics)
     for feature, levels in pending.items():
         parts = [t for t in levels if t is not None]
         if not parts:
@@ -263,7 +265,7 @@ def flush(model, tables, pending, budget):
             total = total + part
         total = total if feature not in tables else tables[feature] + total
         # Each table inherits through its preceding readout when a rare key is removed.
-        limit = int(budget * strengths[feature] ** -0.5 / total_weight)
+        limit = np.inf if feature in topics else int(budget * strengths[feature] ** -0.5 / total_weight)
         if total.nbytes() > limit:
             sizes = 24 + 16 * total.D
             at = np.argsort(-total.C / (sizes + 0.0), kind="stable")

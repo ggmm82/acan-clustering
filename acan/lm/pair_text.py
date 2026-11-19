@@ -153,6 +153,9 @@ class PairText:
                     loss[f] += [-(np.log(p[y]) + b*lr[y] - np.log(p @ np.exp(b*lr))) for b in self.BETAS]
         for f in m.topics:
             m.topics[f][1] = float(self.BETAS[int(np.argmin(loss[f]))])
+        if __import__("os").environ.get("ACAN_PAIR_DEBUG"):
+            print("argomenti, perdita per beta:", {f: np.round(loss[f]/max(n, 1), 4).tolist() for f in m.topics},
+                  "senza:", round(plain/max(n, 1), 4), flush=True)
         if any(b for _, b in m.topics.values()) and n:
             together = -sum(float(self.logp(row.y).sum()) for row in rows) / n
             if together >= plain / n:
