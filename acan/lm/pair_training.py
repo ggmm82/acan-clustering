@@ -324,18 +324,35 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
     tr = EncodedPrefix(ids, starts)
     va = validation_rows(tuning, eos)
     rows = {"train": tr, "tune": va}
-    vectors, _ = semantic_vectors(ids, vocabulary, dimensions=8, top=96, seed=42, starts=starts)
-    names = [f"x{i}" for i in range(vectors.shape[1])]
-    tokens = pd.DataFrame(vectors[np.unique(ids)], columns=names)
-    every = pd.DataFrame(vectors, columns=names)
-
-    def token_score(model):
-        found = model.assignments(every).argmax(1) + 1
-        previous = {name: shift(found[row.y].astype(np.uint32), 1, row.age) for name, row in (("train", tr), ("tune", va))}
-        return reading_score(previous["train"], tr.y, previous["tune"], va.y, vocabulary)
-
     tell('tokens', 1, time.monotonic()-started)
-    root = enough_rows(lambda rows: concept_model(rows, searching(1)).fit(tokens), len(tokens), token_score)
+
+    def token_space(dimensions):
+        """Token coordinates with this many dimensions, and the concepts of the tokens found on them."""
+        vectors, _ = semantic_vectors(ids, vocabulary, dimensions=dimensions, top=96, seed=42, starts=starts)
+        names = [f"x{i}" for i in range(vectors.shape[1])]
+        tokens = pd.DataFrame(vectors[np.unique(ids)], columns=names)
+        every = pd.DataFrame(vectors, columns=names)
+
+        def token_score(model):
+            found = model.assignments(every).argmax(1) + 1
+            previous = {name: shift(found[row.y].astype(np.uint32), 1, row.age) for name, row in (("train", tr), ("tune", va))}
+            return reading_score(previous["train"], tr.y, previous["tune"], va.y, vocabulary)
+
+        root = enough_rows(lambda rows: concept_model(rows, searching(1)).fit(tokens), len(tokens), token_score)
+        return vectors, names, every, root, token_score(root)
+
+    # How many numbers describe a token is not fixed: the coordinates double while the concepts of the
+    # tokens found on them predict the next token of held-out text better, by more than one standard error
+    # of the paired difference (the judgment used for the rows of every sample).
+    dimensions = 8
+    vectors, names, every, root, best = token_space(dimensions)
+    while 2 * dimensions <= 2 * 97:                              # the profile has 2 x (96 neighbours + 1) columns
+        trial = token_space(2 * dimensions)
+        gain = trial[-1] - best
+        if gain.mean() <= gain.std(ddof=1) / np.sqrt(max(len(gain) - 1, 1)):
+            break
+        dimensions *= 2
+        vectors, names, every, root, best = trial
     classes = root.assignments(every).argmax(1) + 1
     padded = np.vstack([np.full(vectors.shape[1], np.nan), vectors])
 
