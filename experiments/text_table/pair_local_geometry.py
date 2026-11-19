@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from .pair_layers import age
 from acan.core.category_pairs import CategoryPairs
 
 
@@ -36,6 +35,8 @@ def run(folder):
     pair = keys("train")
     unique = np.unique(pair[pair > 0])
     local = graph.fit_subconcepts(frame(unique))
+    with (folder / "native-local-router.pkl").open("wb") as stream:
+        pickle.dump(local, stream, protocol=pickle.HIGHEST_PROTOCOL)
     for split in ("train", "validation", "test"):
         pair = keys(split)
         values, ix = np.unique(pair, return_inverse=True)

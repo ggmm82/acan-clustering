@@ -1,3 +1,4 @@
+import pickle
 import unittest
 
 import numpy as np
@@ -40,5 +41,5 @@ class CategoryPairTest(unittest.TestCase):
         model = ConceptModel(max_concepts=12, covariance=False).fit(x)
         router = model.fit_subconcepts(x)
         codes = router.transform(x)
-        np.testing.assert_array_equal(codes[:10], router.transform(x.iloc[:10]))
+        np.testing.assert_array_equal(codes[:10], pickle.loads(pickle.dumps(router)).transform(x.iloc[:10]))
         self.assertTrue(np.all((0 <= codes) & (codes < router.concepts)))

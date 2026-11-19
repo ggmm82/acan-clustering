@@ -13,8 +13,7 @@ dalle righe di training che le somigliano.
 Seguiamo la frase «il gatto nero dorme sul tappeto del salotto». Per semplicità
 supponiamo che ogni parola sia un token. Alla posizione successiva la prima
 colonna descrive «salotto». La seconda identifica il concetto di «del salotto».
-La terza identifica il concetto di «sul tappeto del salotto». La quarta riassume
-le otto parole già lette. Il punto che potrebbe seguire è un possibile valore
+La terza identifica il concetto di «sul tappeto del salotto». La prova arriva a sei token combinando una coppia più vecchia con le quattro parole recenti. Il punto che potrebbe seguire è un possibile valore
 della colonna da completare. In un'altra frase «della cucina» può ricevere lo
 stesso concetto di «del salotto» se il modello ha trovato somiglianze sufficienti.
 
@@ -102,32 +101,63 @@ La qualità sul testo si misura
 con la NLL, la media del logaritmo negativo della probabilità assegnata al
 seguito realmente osservato.
 
-### Perché affinare la lettura del contesto
+### Come due concetti formano un contesto
 
-Se due contesti portano spesso a seguiti diversi, accorparli fa perdere informazione.
-Viceversa, separare «del salotto» da ogni altra coppia sulla base di una sola occorrenza
-rende la stima del seguito fragile. Il modello confronta due risoluzioni. Prima considera
-un gruppo ampio, poi propone di dividerlo ponendo una soglia su una coordinata osservata.
-Nei due sottogruppi misura la dispersione **su tutte le coordinate** rispetto al genitore.
-Tiene una divisione con CP a coppie positiva. Le frequenze di training pesano le coppie.
-Questa è la costruzione delle regioni candidate.
+Nella frase «sul tappeto del salotto», due righe di due token descrivono «sul
+tappeto» e «del salotto». Ciascuna contiene le coordinate del primo token seguite
+da quelle del secondo. Il modello tabulare individua il concetto di ciascuna
+coppia tramite la CP descritta sopra. Il concetto trasmette al livello seguente
+il centro delle sue coppie osservate. Per formare una riga di quattro token si
+affiancano il centro della coppia più vecchia e il centro di quella recente.
+Invertire le due metà cambia la riga. L'apprendimento usa tutte le coppie complete
+che ricadono nello stesso articolo.
 
-Per decidere quali regioni usare per la previsione, il modello accumula i seguiti di
-**tutte** le righe di training in ciascuna regione. Applica quindi la stessa formula
-categorica $q_i$ vista sopra. Ora la regione è osservata per intero oppure assente
-e il peso di appartenenza è rispettivamente uno oppure zero. Diverse risoluzioni
-possono contribuire alla stessa previsione. La validazione confronta la probabilità
-del token vero, regola la forza del livello precedente e può scartare un affinamento.
-È questa seconda verifica che distingue una separazione geometrica utile da una che
-migliora anche la lettura del seguito. Una regione mai osservata eredita la stima già
-disponibile.
+Un concetto ampio può fornire evidenza per «della cucina» anche con pochi esempi
+esatti. L'identità esatta rimane disponibile come colonna categorica. Per esempio
+si può leggere il concetto della metà più vecchia insieme al valore esatto della
+metà recente. Le frequenze dei seguiti di quella combinazione affinano la
+probabilità precedente con la stessa formula $q_i$. Quando la combinazione non
+è mai comparsa, $M_i=N_i(y)=0$ e la formula restituisce la probabilità precedente.
 
-Due regioni che hanno sempre dato lo stesso unico seguito, osservato lo stesso numero
-di volte, applicano esattamente la stessa funzione alla stima precedente. Possono
-condividere il prototipo di lettura conservando distinti gli indirizzi con cui vengono
-riconosciute. Questa uguaglianza vale per qualunque prefisso e per ogni categoria.
+Per cercare più dettagli si lavora dentro un padre. Per gli attributi numerici
+si può ripetere la procedura CP sulle righe assegnate a quel padre. Per due colonne
+categoriche si possono provare i valori del figlio osservati con quel padre.
+Su righe di giudizio separate si misura, per ogni seguito, il guadagno
+$g=\log p_{\rm figlio}(y)-\log p_{\rm padre}(y)$. Nella prova si mantiene il
+figlio con almeno due letture e un guadagno medio superiore a un errore standard
+stimato. Questo è un criterio di selezione predittiva. Il numero di figli dipende
+dai dati. La memoria della ricerca cresce con le coppie osservate e, nella ricerca
+geometrica locale, con la dimensione del ramo che si sta elaborando.
 
 ## Informatica
+
+### Apprendimento e previsione nella prova a sei token
+
+1. Il training impara un vocabolario BPE di 8.000 token. Per ciascun token conta
+   i vicini a sinistra e a destra entro l'articolo. La SVD ricava otto coordinate
+   da queste frequenze. Il modello conserva anche l'identificatore esatto.
+2. Il modello tabulare impara le geometrie delle coppie e poi delle coppie di
+   coppie. Per un orizzonte di sei token usa una metà più vecchia di due token
+   e una recente di quattro. Le letture intermedie di tre e cinque token sono
+   disponibili anche al contatore di confronto.
+3. Ogni posizione di train aggiunge il token che segue alle distribuzioni dei
+   concetti e delle categorie riconosciute nel prefisso. Il giudizio dei figli
+   categorici usa articoli tenuti da parte dentro il train. La validazione esterna
+   regola congiuntamente i pesi delle letture sulla NLL del prossimo token.
+4. Per un nuovo prefisso si ricostruiscono le stesse coppie in ordine. Il modello
+   calcola una distribuzione sull'intero vocabolario. Con memoria attiva può
+   utilizzare anche i seguiti già osservati nel documento. Il token corrente
+   entra nei conteggi locali soltanto dopo aver ricevuto la sua probabilità.
+   Gli inizi di blocco e articolo azzerano il contesto nella prova.
+
+Il sito usa ancora il contatore per l'addestramento lungo. Il confronto qui
+descritto riguarda il protocollo di ricerca. [Misure per orizzonte e istruzioni
+di riproduzione](../experiments/text_table/README.md#coppie-di-concetti).
+
+## Esperimento precedente con albero di soglie CP
+
+Le sezioni che seguono descrivono il precedente riconoscitore ad albero, il suo
+checkpoint e le sue prove di richiamo a distanza.
 
 ### Dal corpus al checkpoint
 

@@ -5,6 +5,77 @@ tabulare. L'implementazione usata dall'app risiede in `acan/lm`: la scoperta
 dei concetti è affidata a `acan/core/concepts.py`. La spiegazione di
 apprendimento e previsione si trova nella [guida unica](../../acan/MODEL.md).
 
+## Coppie di concetti
+
+Per ogni posizione il riconoscitore tabulare apprende la coppia ordinata di token
+precedenti e poi la coppia di concetti che copre quattro token. Per arrivare a sei,
+combina la coppia più vecchia con le quattro posizioni recenti. Le letture esatte
+degli stessi suffissi permettono di misurare separatamente quanto aggiungono i
+concetti. Il test comprende 32.704 previsioni nei 64 blocchi del protocollo
+WikiText-2 raw v1. Ogni orizzonte usa soltanto le colonne che gli competono.
+I pesi sono scelti sui primi 32 blocchi di validazione, separatamente con e
+senza memoria. La memoria locale di entrambi usa al massimo quattro token come
+chiave, sempre entro l'orizzonte della riga. L’ablazione delle sole identità
+esatte mantiene il lettore nativo del token singolo e toglie le colonne dei
+concetti composti. Gli altri 32 blocchi servono da controllo.
+
+Il primo passaggio usa fino a 256 concetti geometrici per scala. Il successivo
+scopre figli locali dentro i padri. Per la lettura categorica, un articolo su
+cinque del train fornisce il giudizio su 577.414 righe, mentre gli altri articoli
+forniscono i conteggi candidati. Dopo la selezione si ricalcolano le frequenze
+sull'intero train. Un secondo esperimento ripete la CP numerica dentro ciascun
+padre della coppia di token su tutte le coppie distinte osservate. Nel confronto
+fra queste due risoluzioni si usa la NLL senza memoria a sei token sulla metà di
+controllo della validazione. Le quattro righe riportate per la soluzione scelta
+usano la stessa procedura.
+
+| Token visibili | Concetti senza memoria | Contatore senza memoria | Concetti con memoria | Contatore con memoria |
+|---:|---:|---:|---:|---:|
+| 1 | 5,2676 | 5,3004 | 4,8088 | 4,8313 |
+| 2 | 4,9028 | 4,9562 | 4,5035 | 4,5426 |
+| 4 | 4,8541 | 4,9202 | 4,4600 | 4,5056 |
+| 6 | 4,8453 | 4,9141 | 4,4537 | 4,5000 |
+
+[Ricevuta con selezione, ablazioni, costi, risultati tabulari e differenze per blocco](results/native-pair-scales.json).
+
+A sei token, conservare solo le letture delle identità esatte sopra il lettore
+nativo a un token dà 4,8849 senza memoria. Con le coppie apprese e le letture
+esatte si arriva a 4,8453. Togliendo solo le letture dei suffissi interamente
+esatti più lunghi di un token si ottiene 4,9024. Sul controllo di validazione
+separato il modello scelto ottiene 4,9137 e il contatore 4,9742.
+
+La ricerca dentro i padri usa 27.878 codici categorici distinti sul train
+alla scala due e 15.461 alla scala quattro. Sullo stesso corpus il riesame
+geometrico di 561.791 tipi di coppia con CP divide 159 padri e occupa 6.971
+codici geometrici. Il giudizio geometrico considera 545.153 righe locali.
+Questa ricerca richiede 704 secondi e un picco di circa 851 MiB nel processo
+di misura. Il suo contributo aggiuntivo sul test a sei token è di 0,00075
+nat/token rispetto ai soli figli categorici. Le due ricerche locali hanno
+perciò costi e contributi diversi.
+
+Le dieci prove tabulari standard riproducono le predizioni di riferimento. In
+una prova separata con il 20% del train riservato al giudizio locale, su
+breast-cancer la NLL passa da 0,5314 a 0,5293 e le classificazioni corrette da
+45 a 44 su 58. Su Vote e Mushroom le predizioni conservano la stessa NLL e
+accuratezza. Su Iris è stata verificata l'assegnazione dei dati di test ai
+sottoconcetti numerici.
+
+Per riprodurre, preparare i parquet e il tokenizer BPE 8.000 indicati sotto.
+Le colonne intermedie e i parametri appresi vengono scritti in `RIGHE`.
+
+```sh
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false
+python -m experiments.text_table.pair_layers --data DIR --workdir RIGHE
+python -m experiments.text_table.pair_counter --data DIR --output contatori.json
+python -m experiments.text_table.pair_reading --workdir RIGHE --output scale.json
+python -m experiments.text_table.pair_subconcepts --workdir RIGHE
+python -m experiments.text_table.pair_reading --workdir RIGHE --local --output figli.json
+python -m experiments.text_table.pair_local_geometry --workdir RIGHE
+python -m experiments.text_table.pair_reading --workdir RIGHE --local --native-local --output figli_cp.json
+python -m experiments.text_table.dyadic_tabular DIR_ALLEGATI tabulare.json
+python -m experiments.text_table.pair_tabular DIR_ALLEGATI rami_tabulari.json
+```
+
 ## Identità esatta del token precedente
 
 Il punto 1 mantiene il prefisso numerico della prova nativa e aggiunge una
@@ -35,9 +106,7 @@ quando manca la coppia, la probabilità dipende dalla distribuzione di riferimen
 
 Il valore storico di 4,8204 nella prova di troncamento conservava i conteggi
 locali del documento. Per il confronto attuale il contatore viene addestrato
-con profondità uno e memoria zero. La soglia richiesta di 4,82 resta mancata,
-quindi la prova si ferma prima di aumentare il numero di concetti o comporre
-coppie su più scale. [Ricevuta](results/exact-identity-gate.json).
+con profondità uno e memoria zero. Per la fase successiva il riferimento corretto a un token senza memoria è 5,3004. Le misure aggiornate delle coppie sono riportate sopra. [Ricevuta](results/exact-identity-gate.json).
 
 Il comando usa le matrici prodotte dallo stadio `prepare` descritto sotto.
 

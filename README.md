@@ -13,20 +13,13 @@ posizione. Le colonne riassumono il prefisso a distanze crescenti. Ogni concetto
 accumula le frequenze dei token che lo seguono e contribuisce alla previsione
 in proporzione al grado di appartenenza della riga.
 
-Su WikiText-2, a parità di righe, il riconoscitore nativo ottiene una NLL di
-6,868 contro 6,950 dell’albero CP sulla validazione di controllo. Nel test di
-generazione il contatore resta migliore sia con memoria del documento sia senza.
-I dieci risultati tabulari sono stati riprodotti. La coda lunga del sito usa il
-contatore. [Protocollo e ricevuta della verifica](experiments/text_table/README.md#verifica-del-riconoscitore-nativo).
-
-Aggiungendo l’identità esatta del token precedente, la NLL del modello nativo
-senza memoria del documento scende da 6,8272 a 5,3158. Il contatore a un token
-ottiene 5,3004 sugli stessi blocchi. La soglia di 4,82 resta mancata.
-[Prova dell’identità esatta](experiments/text_table/README.md#identità-esatta-del-token-precedente).
-
-Il precedente risultato di 4,4794 nat/token derivava da un esperimento che usava
-un albero per riconoscere il contesto e affinamenti condizionali per prevedere.
-[Misure di quell’esperimento](experiments/text_table/README.md#lettura-condizionale-delle-regioni-cp).
+Su WikiText-2, il modello che compone le coppie arriva a **4,8453
+nat/token senza memoria del documento** su 32.704 previsioni con sei token di
+contesto. Il contatore ottiene 4,9141. Con la memoria
+i valori sono 4,4537 e 4,5000. I dieci
+risultati tabulari standard sono stati riprodotti. La coda lunga del sito usa
+ancora il contatore. [Spiegazione matematica](acan/MODEL.md) ·
+[Confronti a 1, 2, 4 e 6 token](experiments/text_table/README.md#coppie-di-concetti).
 
 I concetti sono disposti in **livelli**: sotto la radice i concetti generali,
 poi i comportamenti particolari. Ogni livello toglie alle osservazioni il
