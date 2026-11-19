@@ -12,7 +12,7 @@ from acan.core.conditional import calibrated_weights
 from acan.concept_algebra import categorical_reading
 from .concept_lm import document_counts
 from .pair_model import PairEncoder, PairLanguageModel
-from .pair_training import add_chunk, learn
+from .pair_training import add_chunk, flush, learn
 
 PROFILE = "concept-pairs-v1"
 
@@ -45,6 +45,7 @@ class PairText:
             self.model.training_weights = dict(self.model.weights)
             self.target_kappa = self.model.root.observed_targets["token"]["kappa"]
             self.target_mass = np.zeros_like(self.model.head)
+        pending, bigrams = {}, None                             # counted per chunk, added to the tables once
         for i in range(0, len(ids), 200000):
             check()
             part = np.asarray(ids[i : i + 200000], dtype=np.int32)
@@ -61,11 +62,14 @@ class PairText:
             pairs = sparse.coo_matrix(
                 (np.ones(len(part)), (part, previous)), shape=(self.vocabulary, self.vocabulary + 1)
             ).tocsr()
-            self.target_mass = self.target_mass + (pairs @ self.model.leaf_weights).T
+            bigrams = pairs if bigrams is None else bigrams + pairs
             self.tail = add_chunk(
-                self.model, part, starts, self.tail, self.model.tables, self.budget_bytes
+                self.model, part, starts, self.tail, self.model.tables, self.budget_bytes, pending
             )
             self.tokens += len(part)
+        if bigrams is not None:
+            self.target_mass = self.target_mass + (bigrams @ self.model.leaf_weights).T
+        flush(self.model, self.model.tables, pending, self.budget_bytes)
         counts = self.target_mass
         frequency = counts.sum(0) + 1
         self.model.head = categorical_reading(

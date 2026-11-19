@@ -1,5 +1,7 @@
 """Fit native numeric pair concepts and judge categorical descendants on separate documents."""
 
+from copy import copy
+
 import numpy as np
 import pandas as pd
 
@@ -12,10 +14,45 @@ from .pair_model import EncodedPrefix, PairEncoder, PairLanguageModel, shift
 
 
 CONTEXT = 512                                                    # longest scale tried by default (concept_context sets more)
-# Rows on which the concepts of a scale are found and judged. The judgment reads every drawn row at
-# every candidate cut, so its time grows with these rows: a scale takes seconds instead of minutes.
-GEOMETRY = dict(max_concepts=256, bins=24, judged_rows=int(__import__('os').environ.get('ACAN_PAIR_JUDGED', 2048)),
-                refine_rows=int(__import__('os').environ.get('ACAN_PAIR_REFINE', 4096)), covariance=False, seed=42)
+
+
+def enough_rows(fit, available, score, first=2048):
+    """Fit on a drawn sample that doubles while it makes the next token more predictable.
+
+    The concept model finds its concepts on ``refine_rows`` drawn rows and judges every candidate cut on
+    ``judged_rows`` of them, so its time grows with these rows. The rows are not fixed: the sample
+    doubles while the concepts it finds predict the next token of held-out text better, by more than
+    one standard error of the paired difference (the same judgment the model uses to choose its cuts).
+    ``score(model)`` gives the log-probability of every held-out next token.
+    """
+    rows = min(first, available)
+    model = fit(rows)
+    best = score(model)
+    while rows < available:
+        rows = min(2*rows, available)
+        bigger = fit(rows)
+        trial = score(bigger)
+        gain = trial-best
+        if gain.mean() <= gain.std(ddof=1)/np.sqrt(max(len(gain)-1, 1)):
+            break
+        model, best = bigger, trial
+    return model
+
+
+def reading_score(train_keys, train_y, tune_keys, tune_y, vocabulary):
+    """Held-out log-probability of the next token read from one categorical column (best smoothing)."""
+    from acan.concept_algebra import KAPPA_GRID
+    table = Table.count_regions([(train_keys, train_y)], vocabulary)
+    mass, counts, distinct = table.lookup(tune_keys, tune_y)
+    prior = (np.bincount(train_y, minlength=vocabulary)+1.)[tune_y]
+    prior /= len(train_y)+vocabulary
+    return max((np.log(categorical_reading(counts, mass, distinct, prior, k, np)) for k in KAPPA_GRID),
+               key=lambda logp: logp.mean())
+
+
+def concept_model(rows):
+    return ConceptModel(max_concepts=256, bins=24, judged_rows=max(rows//2, 1), refine_rows=rows,
+                        covariance=False, seed=42)
 
 
 def semantic_vectors(ids, vocabulary, dimensions=32, top=512, seed=0, starts=None):
@@ -56,21 +93,36 @@ def geometry(splits, vectors, width):
     packed = keys(splits["train"])
     types, counts = np.unique(packed[packed > 0], return_counts=True)
     x = frame(types)
-    graph = ConceptModel(
-        **GEOMETRY
-    )
-    graph.fit_counted_numeric(x, counts)
-    for row in splits.values():
-        packed = keys(row)
-        typ, inv = np.unique(packed, return_inverse=True)
-        valid = np.flatnonzero(typ > 0)
-        codes = np.zeros(len(typ), np.uint32)
-        for idx in np.array_split(valid, max(1, (len(valid) + 1023) // 1024)):
-            if len(idx):
-                codes[idx] = graph.assignments(frame(typ[idx])).argmax(1) + 1
-        row.spans[f"c{width}"] = codes[inv]
-        if row is splits["train"]:
-            train_codes = codes[valid]
+    vocabulary = int(max(int(row.y.max()) for row in splits.values()))+1
+
+    def assign(graph):
+        found = {}
+        for name, row in splits.items():
+            packed = keys(row)
+            typ, inv = np.unique(packed, return_inverse=True)
+            valid = np.flatnonzero(typ > 0)
+            codes = np.zeros(len(typ), np.uint32)
+            for idx in np.array_split(valid, max(1, (len(valid) + 1023) // 1024)):
+                if len(idx):
+                    codes[idx] = graph.assignments(frame(typ[idx])).argmax(1) + 1
+            found[name] = codes[inv], codes[valid]
+        return found
+
+    def score(graph):
+        found = assign(graph)
+        graph._found = found
+        rows = {name: copy(row) for name, row in splits.items()}
+        for name, row in rows.items():
+            row.spans = dict(row.spans, **{f"c{width}": found[name][0]})
+        return reading_score(rows["train"].feature(f"c{width}"), rows["train"].y,
+                             rows["tune"].feature(f"c{width}"), rows["tune"].y, vocabulary)
+
+    graph = enough_rows(lambda rows: concept_model(rows).fit_counted_numeric(x, counts), int(counts.sum()), score)
+    found = graph._found
+    del graph._found
+    for name, row in splits.items():
+        row.spans[f"c{width}"] = found[name][0]
+    train_codes = found["train"][1]
     mass = np.bincount(train_codes, weights=counts, minlength=graph.concepts + 1)
     means = np.zeros((len(mass), x.shape[1]))
     for j, col in enumerate(x.to_numpy().T):
@@ -146,15 +198,49 @@ def stages(local=False):
         yield w, features + ["e" + str(w)]
 
 
-def add_chunk(model, ids, starts, tail, tables, budget):
+def add_chunk(model, ids, starts, tail, tables, budget, pending=None):
+    """Count a chunk of text into the tables of the selected readings.
+
+    With ``pending`` the counts of the chunk are only queued: equal-sized parts are added two by two
+    (a binary counter), and ``flush`` adds them to the large tables once. Adding a small part to a large
+    table rewrites the large table, so doing it once per piece instead of once per chunk saves most of
+    the work, with the same sums.
+    """
     row = model.encoder.encode(np.r_[tail, ids], np.unique(np.r_[0, len(tail) + starts]).astype(int))
     begin = len(tail)
     strengths = getattr(model, "training_weights", model.weights)
-    total_weight = sum(k**-0.5 for k in strengths.values())
+    queue = {} if pending is None else pending
     for feature in strengths:
         key = row.feature(feature)[begin:]
         part = Table.count_regions([(key, ids.astype(np.int64, copy=False))], model.vocabulary)
-        total = part if feature not in tables else tables[feature] + part
+        levels = queue.setdefault(feature, [])
+        level = 0
+        while level < len(levels) and levels[level] is not None:
+            part = levels[level] + part
+            levels[level] = None
+            level += 1
+        if level == len(levels):
+            levels.append(part)
+        else:
+            levels[level] = part
+    if pending is None:
+        flush(model, tables, queue, budget)
+    age = int(row.age[-1]) + 1
+    return row.y[-min(age, model.encoder.width) :].copy()
+
+
+def flush(model, tables, pending, budget):
+    """Add the queued counts to the tables and keep each table inside its share of the budget."""
+    strengths = getattr(model, "training_weights", model.weights)
+    total_weight = sum(k**-0.5 for k in strengths.values())
+    for feature, levels in pending.items():
+        parts = [t for t in levels if t is not None]
+        if not parts:
+            continue
+        total = parts[0]
+        for part in parts[1:]:
+            total = total + part
+        total = total if feature not in tables else tables[feature] + total
         # Each table inherits through its preceding readout when a rare key is removed.
         limit = int(budget * strengths[feature] ** -0.5 / total_weight)
         if total.nbytes() > limit:
@@ -164,8 +250,7 @@ def add_chunk(model, ids, starts, tail, tables, budget):
             keep[at[np.cumsum(sizes[at]) <= limit]] = True
             total = total.keep(keep)
         tables[feature] = total
-    age = int(row.age[-1]) + 1
-    return row.y[-min(age, model.encoder.width) :].copy()
+    pending.clear()
 
 
 def sample_documents(tokens, eos, limit=262144, block=4096, documents=None):
@@ -217,11 +302,16 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
     rows = {"train": tr, "tune": va}
     vectors, _ = semantic_vectors(ids, vocabulary, dimensions=8, top=96, seed=42, starts=starts)
     names = [f"x{i}" for i in range(vectors.shape[1])]
-    root = ConceptModel(
-        **GEOMETRY
-    )
-    root.fit(pd.DataFrame(vectors[np.unique(ids)], columns=names))
-    classes = root.assignments(pd.DataFrame(vectors, columns=names)).argmax(1) + 1
+    tokens = pd.DataFrame(vectors[np.unique(ids)], columns=names)
+    every = pd.DataFrame(vectors, columns=names)
+
+    def token_score(model):
+        found = model.assignments(every).argmax(1) + 1
+        previous = {name: shift(found[row.y].astype(np.uint32), 1, row.age) for name, row in (("train", tr), ("tune", va))}
+        return reading_score(previous["train"], tr.y, previous["tune"], va.y, vocabulary)
+
+    root = enough_rows(lambda rows: concept_model(rows).fit(tokens), len(tokens), token_score)
+    classes = root.assignments(every).argmax(1) + 1
     padded = np.vstack([np.full(vectors.shape[1], np.nan), vectors])
 
     def batches(row):

@@ -436,10 +436,9 @@ class ConceptModel:
             alone = mass < 1e-9
             g, v = centre_variance(cm, u, q, above[0], self.kappa, np)
             v = np.where(cm > 1e-9, np.maximum(v, self.resolution), scale[part][:, None])
-            terms, read = [], []
-            for j, name in enumerate(encoder.numeric):
-                terms.append(-.5*((xs[..., j]-g[..., j])**2/v[..., j]+np.log(v[..., j])+LOG_2PI)*ms[..., j])
-                read.append(name in self.labels)
+            # Every numeric attribute at once: rows x concepts x attributes, one log-density each.
+            numeric = -.5*((xs-g)**2/v+np.log(v)+LOG_2PI)*ms if encoder.numeric else None
+            terms, read = [], [name in self.labels for name in encoder.numeric]
             for name, block, info in zip(encoder.categorical, blocks, categorical):
                 present, codes, counts, totals, distinct, binary = info
                 if not binary:
@@ -468,7 +467,12 @@ class ConceptModel:
                 else:
                     terms.append(np.zeros_like(mass))
                 read.append(name in self.labels)
-            terms = np.stack(terms, -1)
+            if numeric is None:
+                terms = np.stack(terms, -1)
+            elif terms:
+                terms = np.concatenate((numeric, np.stack(terms, -1)), -1)
+            else:
+                terms = numeric
             if self.cross is not None and s is self.statistics:  # the features are read together
                 terms[..., self.cov] = 0
                 terms[..., self.cov[0]] = self._block_unseen(x[part], mask[part], t[part])
