@@ -203,9 +203,17 @@ def run_training(root, identifier, stop_event=None):
                     updated.add(ids, train[:read], tune, check)
             except PreparationPaused:
                 break
+            learned = model.model is None                        # this piece also learned the structure
             model = updated
             state.update(step=state['step']+1, tokens_trained=state['tokens_trained']+len(ids))
-            state['tokens_per_second'] = (state['tokens_trained']-initial)/max(time.monotonic()-started, 1e-6)
+            if learned:
+                # The structure is learned once: its time is not reading speed. The speed (and the time left)
+                # is measured from the next piece; the structure time is reported apart.
+                state['structure_seconds'] = time.monotonic()-started
+                started, initial = time.monotonic(), state['tokens_trained']
+                state.pop('tokens_per_second', None)
+            else:
+                state['tokens_per_second'] = (state['tokens_trained']-initial)/max(time.monotonic()-started, 1e-6)
             due = state['step'] % config['save_steps'] == 0 or time.monotonic()-last_save >= config['save_seconds']
             last = due or should_pause() or state['step'] == config['total_steps']
             measured = last or state['step'] % measure_every(config['total_steps']) == 0

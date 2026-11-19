@@ -173,7 +173,9 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     tiles = [
         first,
         _tile('Tempo che manca', 'finito' if status == 'completed' else when(remaining), 'stima dalla velocità finora'),
-        _tile('Velocità', f'{speed:,.0f} token/s' if speed else '—', 'un passo è un milione di token'),
+        _tile('Velocità', f'{speed:,.0f} token/s' if speed else '—',
+              'un passo è un milione di token' + (f" · struttura imparata in {progress['structure_seconds']/60:,.0f} minuti"
+                                                  if progress.get('structure_seconds') else '')),
         _tile('Errore su testo mai visto', '—' if error is None else f'{error:.3f}',
               (f'esita fra circa {perplexity:,.0f} token' if perplexity else '') + (f' · prima di leggere {before:.3f}' if before is not None else '')),
         _tile('Dimensione del modello', _bytes(size) if size else '—',
@@ -212,6 +214,7 @@ def concept_footprint_view(item):
             ('Passo', f'{step:,} di {total:,}' if progress.get('graft') else '— (il totale si conosce quando i token del testo sono pronti)'),
             ('Token letti', f"{progress.get('tokens_trained', 0):,}"),
             ('Velocità', f'{speed:,.0f} token al secondo' if speed else '—'),
+            ('Struttura (passo 0)', f"imparata in {progress['structure_seconds']/60:,.1f} minuti" if progress.get('structure_seconds') else '—'),
             ('Tempo che manca, stima', '—' if remaining is None else f'{remaining/3600:,.1f} ore' if remaining > 3600 else f'{remaining/60:,.0f} minuti'),
             ('Token per passo', f'{piece:,} (un pezzo del testo, contato e aggiunto)')]),
         ('Qualità', [
