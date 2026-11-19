@@ -88,7 +88,7 @@ class PairText:
         p = self.model.root_probability(row, np.arange(len(ids)))
         return row, p
 
-    def judge(self, pieces):
+    def judge(self, pieces, final=False):
         if self.model is None:
             return
         m = self.model
@@ -122,51 +122,60 @@ class PairText:
             fields, lambda r, f: m.tables[f].lookup(r.feature(f), r.y), base, m.weights
         )
         m.memory, _ = fit(doc, document_stats, base, m.memory)
-        if m.topics:
+        if m.topics and (final or not getattr(self, "topics_judged", False)):
             self._judge_topics([row for row, _ in rows])
 
     BETAS = (0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0)
 
     def _judge_topics(self, rows):
-        """Choose how strongly each topic multiplies the reading: the beta with the best held-out likelihood.
+        """Choose how strongly each topic multiplies the reading, on held-out text.
 
-        Every topic is judged on the reading without topics, then the chosen ones are kept together only if
-        they still read the held-out text better than without them.
+        Topics at different scales say much the same thing, so their weights are not chosen one by one as if
+        each were alone: the topic that helps most alone is chosen first, then each other one is judged with
+        those already chosen in the reading, and keeps beta 0 if it adds nothing. Topics left at 0 are
+        dropped, with their concepts and counts.
         """
         from .pair_model import topic_factor, walk
         m = self.model
         saved = {f: list(v) for f, v in m.topics.items()}
+        debug = __import__("os").environ.get("ACAN_PAIR_DEBUG")
+
+        def losses(candidates):
+            """Held-out loss of each candidate topic for every beta, on the reading as it stands now."""
+            loss = {f: np.zeros(len(self.BETAS)) for f in candidates}
+            n = 0
+            for row in rows:
+                keys = {f: row.feature(f) for f in candidates}
+                for i, p in enumerate(walk(m, row)):
+                    y = int(row.y[i]); n += 1
+                    for f in candidates:
+                        ratio = topic_factor(m, f, int(keys[f][i]))
+                        if ratio is None:
+                            loss[f] -= np.log(p[y])
+                            continue
+                        lr = np.log(ratio)
+                        loss[f] += [-(np.log(p[y]) + b*lr[y] - np.log(p @ np.exp(b*lr))) for b in self.BETAS]
+            return {f: v / max(n, 1) for f, v in loss.items()}
+
         for f in m.topics:
             m.topics[f][1] = 0.0
-        loss = {f: np.zeros(len(self.BETAS)) for f in m.topics}
-        plain, n = 0.0, 0
-        for row in rows:
-            keys = {f: row.feature(f) for f in m.topics}
-            for i, p in enumerate(walk(m, row)):
-                y = int(row.y[i]); plain -= np.log(p[y]); n += 1
-                for f in m.topics:
-                    ratio = topic_factor(m, f, int(keys[f][i]))
-                    if ratio is None:
-                        loss[f] -= np.log(p[y])
-                        continue
-                    lr = np.log(ratio)
-                    loss[f] += [-(np.log(p[y]) + b*lr[y] - np.log(p @ np.exp(b*lr))) for b in self.BETAS]
-        for f in m.topics:
-            m.topics[f][1] = float(self.BETAS[int(np.argmin(loss[f]))])
-        if __import__("os").environ.get("ACAN_PAIR_DEBUG"):
-            print("argomenti, perdita per beta:", {f: np.round(loss[f]/max(n, 1), 4).tolist() for f in m.topics},
-                  "senza:", round(plain/max(n, 1), 4), flush=True)
-        if any(b for _, b in m.topics.values()) and n:
-            together = -sum(float(self.logp(row.y).sum()) for row in rows) / n
-            if together >= plain / n:
-                for f in m.topics:
-                    m.topics[f][1] = 0.0
+        alone = losses(list(m.topics))
+        order = sorted((f for f in alone if alone[f].argmin() > 0), key=lambda f: alone[f].min())
+        if debug:
+            print("argomenti da soli:", {f: (self.BETAS[int(v.argmin())], round(float(v.min()), 4)) for f, v in alone.items()},
+                  "senza:", round(float(next(iter(alone.values()))[0]), 4) if alone else None, flush=True)
+        for position, f in enumerate(order):
+            loss = alone[f] if position == 0 else losses([f])[f]
+            m.topics[f][1] = float(self.BETAS[int(loss.argmin())])
+            if debug:
+                print(f"  {f}: beta {m.topics[f][1]} con i precedenti, perdita {loss.min():.4f}", flush=True)
         # A topic the judgment does not use is not computed any more: its concepts and counts are dropped.
         for f in [f for f, (_, b) in m.topics.items() if not b]:
             del m.topics[f]
             m.encoder.topics.pop(int(f[1:]), None)
             m.tables.pop(f, None)
             m.training_weights.pop(f, None)
+        self.topics_judged = True
         return saved
 
     def logp(self, ids, positions=None):
