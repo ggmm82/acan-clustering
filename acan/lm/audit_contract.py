@@ -2,6 +2,9 @@
 PROTOCOL='controlled-v1'
 MIN_TESTS=52
 REQUIRED_TESTS={
+    'test_pair_graph_queue_resume_generation_and_export',
+    'test_checkpoint_prefix_document_and_resume',
+    'test_checkpoints_of_removed_models_say_so',
     'test_project_selection_loads_only_selected_plot_data',
     'test_overview_cache_is_invalidated_by_updates_and_rollback',
     'test_overview_and_exact_pages_reach_all_steps_and_enforce_ownership',

@@ -64,10 +64,12 @@ def check_inference_contract(options,state):
     legacy = legacy or (recorded == PRE_NATIVE_INFERENCE and options.get('architecture') != 'native')
     # concept-graph-v2 is a new layer beside the others: every earlier profile reads as before.
     legacy = legacy or (recorded == PRE_SCAN_INFERENCE and options.get('routing_profile') != 'concept-graph-v2')
+    from .compatibility import PRE_TABLE_INFERENCE
+    legacy = legacy or recorded == PRE_TABLE_INFERENCE
     legacy = legacy or recorded == PRE_CONCEPT_LM_INFERENCE        # the concept language model was added beside the others
     if options.get('architecture') == 'concepts':                    # no network: its checkpoints name the counting code
         from .concept_trainer import contract as concept_contract
-        if recorded != concept_contract():
+        if recorded != concept_contract(options['routing_profile']):
             raise ValueError('Modello di un’altra versione: usare l’immagine worker che lo ha creato.')
         return
     if recorded is not None and recorded!=inference_contract() and not legacy:
