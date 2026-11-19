@@ -833,6 +833,17 @@ class ConceptModel:
         weights = self._weights(0.) if observed_only else self.train_weights
         return self._route(self.statistics, data, weights)[0]
 
+    def fit_subconcepts(self, observations):
+        """Fit the same CP procedure inside each parent and return a sparse hard router.
+
+        Only predictor columns enter the local geometry. The fitted parent supplies the
+        coordinate system and routing for later rows. Each branch is judged on its own rows.
+        """
+        from .subconcepts import LocalConcepts
+
+        features = [c for c in (*self.encoder.numeric, *self.encoder.categorical) if c not in self.labels]
+        return LocalConcepts(self).fit(observations[features])
+
     def fit_observed_target(self, label, categories, chunks, validation):
         """Fit a new categorical column after fitting the geometry on its observed predictors.
 
@@ -908,6 +919,46 @@ class ConceptModel:
         reading.prior = base[0] / base[0].sum()
         self.category_regions[label] = reading
         return reading
+
+    def fit_category_pair(self, label, parent, child, build, judgment):
+        """Judge a categorical child inside each parent on separate labeled tabular rows."""
+        from copy import copy
+        from .category_pairs import PairColumns
+
+        for name in (parent, child):
+            if name not in self.encoder.categorical or name in self.labels or name == label:
+                raise ValueError("Servono due predittori categorici già appresi.")
+        if parent == child:
+            raise ValueError("I due predittori devono essere distinti.")
+        feature = PairColumns(parent, child, self.encoder)
+        base = copy(self)
+        base.category_regions = dict(getattr(self, 'category_regions', {}))
+        if label in base.category_regions:
+            reading = copy(base.category_regions[label])
+            reading.levels = [(f, table, k) for f, table, k in reading.levels
+                              if not isinstance(f, PairColumns) or f.names != feature.names]
+            base.category_regions[label] = reading
+        else:
+            reading = base.refine_category(label)
+        _, categories = base.predict_proba(build.iloc[:1], label)
+        dictionary = {value:i for i,value in enumerate(categories)}
+        def parts(frame):
+            values = frame[label] if label in getattr(self, 'observed_targets', {}) else frame[label].astype('string')
+            ids = values.map(dictionary)
+            eligible = ids.notna()
+            return (*feature.parts(frame.loc[eligible]), ids[eligible].to_numpy(dtype=int)), eligible
+        train, _ = parts(build)
+        valid, keep = parts(judgment)
+        if not len(train[-1]) or not len(valid[-1]):
+            raise ValueError("Servono esempi di training e giudizio con target noto.")
+        table, report = reading.subconcepts(train, valid, train)
+        prob, _ = base.predict_proba(judgment.loc[keep], label)
+        keys = feature.keys(judgment.loc[keep])
+        _, choice = reading.propose(table, keys, valid[-1], prob[np.arange(len(keys)), valid[-1]])
+        if choice:
+            reading.levels.append((feature, table, choice[1]))
+        self.category_regions = {**getattr(self, 'category_regions', {}), label: reading}
+        return {**report, 'applied': choice is not None}
 
     def predict_proba(self, frame, label):
         head = getattr(self, 'observed_targets', {}).get(label)

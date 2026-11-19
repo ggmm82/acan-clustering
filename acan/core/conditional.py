@@ -2,6 +2,8 @@
 
 import numpy as np
 
+from .category_pairs import PairColumns
+
 from acan.concept_algebra import KAPPA_GRID, categorical_reading, pair_mass, unbiased
 
 
@@ -106,6 +108,17 @@ class ConditionalReading:
                 best, choice = loss, (table, kappa, p)
         return best, choice
 
+    def subconcepts(self, build, judgment, complete):
+        """Discover supported refinements inside each observed categorical parent of a tabular target."""
+        from .category_pairs import CategoryPairs, category_rows, judged_subconcepts
+        from .category_table import Table
+
+        accepted, report = judged_subconcepts(build, judgment, self.vocabulary)
+        parents, children, target = category_rows(complete, self.vocabulary)
+        keys = CategoryPairs.keys(parents, children)
+        table = Table.count_regions([(keys, target)], self.vocabulary)
+        return table.keep(np.isin(table.keys, accepted, assume_unique=True)), report
+
     def probability(self, keys, targets, omit=(), prior=None):
         p = self.prior[targets].copy() if prior is None else np.array(prior, copy=True)
         for feature, table, kappa in self.levels:
@@ -130,9 +143,12 @@ class ConditionalReading:
         """Native predict_proba on a matrix of rows, including rows with unavailable regions."""
         p = prior.copy()
         for feature, table, kappa in self.levels:
-            if feature not in frame:
+            if isinstance(feature, PairColumns):
+                values = feature.keys(frame)
+            elif feature in frame:
+                values = frame[feature].fillna(0).to_numpy(dtype=np.uint64)
+            else:
                 continue
-            values = frame[feature].fillna(0).to_numpy(dtype=np.uint64)
             indices = table.find(values)
             for index in np.unique(indices[indices >= 0]):
                 rows = np.flatnonzero(indices == index)

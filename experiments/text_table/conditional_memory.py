@@ -71,10 +71,19 @@ def judge(model, rows, memory):
     stats = [s for f, s in global_levels + local_levels]
     weights = [k for f, t, k in model.levels] + [k for f, k in memory]
     mass_prior = model.prior[rows.y] if rows.initial is None else rows.initial
+    weights = calibrated_weights(stats, weights, mass_prior)
+    n = len(model.levels)
+    model.levels = [(f, t, k) for (f, t, _), k in zip(model.levels, weights[:n]) if np.isfinite(k)]
+    return [(f, k) for (f, _), k in zip(memory, weights[n:]) if np.isfinite(k)]
+
+
+def calibrated_weights(stats, initial, mass_prior):
+    """Choose categorical smoothing strengths jointly on held-out target probabilities."""
+    weights = list(initial)
     for _ in range(4):
         # Each more specific reading is affine in the preceding probability.
         after = []
-        slope, intercept = np.ones(len(rows.y)), np.zeros(len(rows.y))
+        slope, intercept = np.ones(len(mass_prior)), np.zeros(len(mass_prior))
         for (m, n, d), k in reversed(list(zip(stats, weights))):
             after.append((slope, intercept))
             if np.isfinite(k):
@@ -94,6 +103,4 @@ def judge(model, rows, memory):
             weights[i], prior = winner, result
         if not changed:
             break
-    n = len(model.levels)
-    model.levels = [(f, t, k) for (f, t, _), k in zip(model.levels, weights[:n]) if np.isfinite(k)]
-    return [(f, k) for (f, _), k in zip(memory, weights[n:]) if np.isfinite(k)]
+    return weights
