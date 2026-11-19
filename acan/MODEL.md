@@ -131,7 +131,7 @@ geometrica locale, con la dimensione del ramo che si sta elaborando.
 
 ## Informatica
 
-### Apprendimento e previsione nella prova a sei token
+### Dal corpus al checkpoint
 
 1. Il training impara un vocabolario BPE di 8.000 token. Per ciascun token conta
    i vicini a sinistra e a destra entro l'articolo. La SVD ricava otto coordinate
@@ -144,11 +144,17 @@ geometrica locale, con la dimensione del ramo che si sta elaborando.
    concetti e delle categorie riconosciute nel prefisso. Il giudizio dei figli
    categorici usa articoli tenuti da parte dentro il train. La validazione esterna
    regola congiuntamente i pesi delle letture sulla NLL del prossimo token.
-4. Per un nuovo prefisso si ricostruiscono le stesse coppie in ordine. Il modello
-   calcola una distribuzione sull'intero vocabolario. Con memoria attiva può
-   utilizzare anche i seguiti già osservati nel documento. Il token corrente
-   entra nei conteggi locali soltanto dopo aver ricevuto la sua probabilità.
-   Gli inizi di blocco e articolo azzerano il contesto nella prova.
+   Il checkpoint della geometria conserva i riconoscitori e i centri trasmessi
+   fra i livelli. Le tabelle di lettura associano a ogni regione i conteggi dei
+   seguiti osservati nel train.
+
+### Dal prompt al prossimo token
+
+Per un nuovo prefisso si ricostruiscono le stesse coppie in ordine. Il modello
+calcola una distribuzione sull'intero vocabolario. Con memoria attiva può
+utilizzare anche i seguiti già osservati nel documento. Il token corrente
+entra nei conteggi locali soltanto dopo aver ricevuto la sua probabilità.
+Gli inizi di blocco e articolo azzerano il contesto nella prova.
 
 Il sito usa ancora il contatore per l'addestramento lungo. Il confronto qui
 descritto riguarda il protocollo di ricerca. [Misure per orizzonte e istruzioni
@@ -159,7 +165,7 @@ di riproduzione](../experiments/text_table/README.md#coppie-di-concetti).
 Le sezioni che seguono descrivono il precedente riconoscitore ad albero, il suo
 checkpoint e le sue prove di richiamo a distanza.
 
-### Dal corpus al checkpoint
+### Apprendimento del precedente albero
 
 1. Il tokenizer BPE viene appreso sul train. Per ciascun token si misurano separatamente
    i vicini sinistri e destri all'interno dello stesso articolo. Nella prova finale si
@@ -218,7 +224,7 @@ Il rapporto si aggiorna **dopo** aver osservato ciascun seguito. La validazione
 decide la forza di questa correzione. Ogni regione confronta al massimo 128
 parole osservate. Le parole sconosciute lasciano disponibili le altre colonne.
 
-### Dal prompt al prossimo token
+### Predizione con il precedente albero
 
 Il cursore registra «salotto» e completa le finestre che terminano in quella posizione.
 Un buffer circolare per scala gli restituisce la metà più vecchia. Le soglie apprese
