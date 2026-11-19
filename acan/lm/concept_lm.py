@@ -794,6 +794,9 @@ def load(directory, expected=None, budget_bytes=None):
 
 
 def from_checkpoint_arrays(arrays, budget_bytes=None):
+    if 'pair_text' in arrays:
+        from .pair_text import PairText
+        return PairText.from_arrays(arrays,budget_bytes)
     if 'text_graph' in arrays:
         from .text_graph import TextGraph
         return TextGraph.from_arrays(arrays)

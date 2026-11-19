@@ -13,13 +13,7 @@ posizione. Le colonne riassumono il prefisso a distanze crescenti. Ogni concetto
 accumula le frequenze dei token che lo seguono e contribuisce alla previsione
 in proporzione al grado di appartenenza della riga.
 
-Su WikiText-2, il modello che compone le coppie arriva a **4,8453
-nat/token senza memoria del documento** su 32.704 previsioni con sei token di
-contesto. Il contatore ottiene 4,9141. Con la memoria
-i valori sono 4,4537 e 4,5000. I dieci
-risultati tabulari standard sono stati riprodotti. La coda lunga del sito usa
-ancora il contatore. [Spiegazione matematica](acan/MODEL.md) ·
-[Confronti a 1, 2, 4 e 6 token](experiments/text_table/README.md#coppie-di-concetti).
+Su WikiText-2, a parità di 32.704 target e di prefisso d’articolo, le coppie a 32 token ottengono **4,84090 nat/token** senza memoria e **4,08543** con memoria. Il contatore a sei token ottiene 4,91300 e 4,11082. La validazione seleziona 128 token, con NLL di test senza memoria pari a 4,84216. Le scale 256 e 512 esauriscono il criterio di arresto. [Guida matematica e informatica](acan/MODEL.md) · [Protocolli e ricevute](experiments/text_table/README.md).
 
 I concetti sono disposti in **livelli**: sotto la radice i concetti generali,
 poi i comportamenti particolari. Ogni livello toglie alle osservazioni il

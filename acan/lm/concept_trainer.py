@@ -19,6 +19,8 @@ PROFILE = 'concept-lm-v1'
 
 def contract(profile=PROFILE):
     """The sources that define what a checkpoint of this model means."""
+    if profile == 'concept-pairs-v1':
+        return 'concept-pairs-v1/1'
     if profile == PROFILE:
         # Identity used by the previous release for persisted exact-context jobs.
         return '5e751934b49d4184d0021e518f40988f8781380714518a330d5577837913f2cd'
@@ -103,7 +105,7 @@ def record_answers(directory, model, tokenizer, state, questions=None, new_token
 
 def quantities(model, config):
     """What the page shows about the model while it learns."""
-    if config['routing_profile'] == 'concept-table-v1':
+    if config['routing_profile'] in ('concept-pairs-v1','concept-table-v1'):
         levels = model.concepts()
         return dict(concepts_per_level=levels, concepts_total=sum(levels), statistics_bytes=model.nbytes(),
                     memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024)
@@ -137,6 +139,7 @@ def run_training(root, identifier, stop_event=None):
     from transformers import AutoTokenizer
     from .concept_lm import PATH_DEPTH, ConceptLM, default_budget, load, save
     from .text_graph import TextGraph, PROFILE as graph_profile
+    from .pair_text import PairText, PROFILE as pair_profile
     from .native import resolve
     from .research_data import Blocks, prepare
     from .retention import retain_with_milestones
@@ -144,7 +147,8 @@ def run_training(root, identifier, stop_event=None):
     job = store.job(identifier)
     config = job['config']
     profile = config['routing_profile']
-    graph = profile == graph_profile
+    pairs = profile == pair_profile
+    graph = profile in (graph_profile,pair_profile)
     directory = store.directory('jobs', identifier)
     should_pause = lambda: bool((stop_event and stop_event.is_set()) or store.job(identifier)['pause'])
     try:
@@ -174,7 +178,7 @@ def run_training(root, identifier, stop_event=None):
         root_checkpoints.mkdir(exist_ok=True)
         previous = checkpoints.for_resume(root_checkpoints, identity, job['checkpoint'], job['progress'].get('step', 0))
         budget = int(config.get('concept_memory_mb') or 0)*(1 << 20) or default_budget()
-        tune, judge = judged_pieces(blocks, config['validation_batches'], disjoint=config.get('context_refinement', False))
+        tune, judge = judged_pieces(blocks, config['validation_batches'], disjoint=pairs or config.get('context_refinement', False))
         if previous:
             model, state = load(previous, identity, budget)
             with store.db() as db:
@@ -185,10 +189,11 @@ def run_training(root, identifier, stop_event=None):
             if config.get('warm_start'):                        # the queue goes on with the concepts of the previous text
                 source = previous_checkpoint(store, job)
                 start, _ = load(source, budget_bytes=budget)
-                if isinstance(start, TextGraph) != graph:
+                if (isinstance(start, PairText) != pairs or isinstance(start, TextGraph) != (profile == graph_profile)
+                        or (pairs and (start.vocabulary!=len(tokenizer) or start.eos!=tokenizer.eos_token_id))):
                     raise ValueError('La coda contiene un checkpoint con una diversa struttura dei concetti.')
             if graph:
-                model = start if start is not None else TextGraph(len(tokenizer))
+                model = start if start is not None else (PairText(len(tokenizer),tokenizer.eos_token_id,budget) if pairs else TextGraph(len(tokenizer)))
                 model.tail = np.empty(0, np.int64)
             else:
                 if start is not None:
@@ -235,12 +240,18 @@ def run_training(root, identifier, stop_event=None):
                 # Commit a whole piece or keep the previous sums intact on pause.
                 from copy import copy
                 updated = copy(model)
-                if model.model is not None:
+                if pairs and model.model is not None:
+                    updated.model=copy(model.model)
+                    updated.model.tables=dict(model.model.tables)
+                elif model.model is not None:
                     updated.counts = model.counts.copy()
                     updated.reading = None
                 try:
                     with threadpool_limits(limits=2):
-                        updated.add(ids, check)
+                        if pairs:
+                            updated.add(ids,train[:math.ceil(len(train)*share)],tune,check)
+                        else:
+                            updated.add(ids, check)
                 except PreparationPaused:
                     break
                 model = updated
@@ -254,7 +265,9 @@ def run_training(root, identifier, stop_event=None):
             last = due or should_pause() or state['step'] == config['total_steps']
             measured = last or state['step'] % measure_every(config['total_steps']) == 0
             if measured:                                         # the error on unseen text, about twenty times per text
-                if not graph:
+                if pairs:
+                    model.judge(tune)
+                elif not graph:
                     if config.get('context_refinement'):
                         from threadpoolctl import threadpool_limits
                         with threadpool_limits(limits=2):
@@ -281,7 +294,9 @@ def run_training(root, identifier, stop_event=None):
             row = state if measured else {key: value for key, value in state.items() if key not in MEASURES}
             store.record(identifier, state['step'], row, progress=state)
         if (graph or config.get('context_refinement')) and state['step'] != saved_step:
-            if not graph:
+            if pairs:
+                model.judge(tune)
+            elif not graph:
                 from threadpoolctl import threadpool_limits
                 with threadpool_limits(limits=2):
                     model.judge_contexts(tune)
@@ -351,7 +366,7 @@ def evaluate(store, job, request, directory, check):
         check()
         prompt = np.resize(tokens, length) if length > len(tokens) else tokens[:length]   # longer than the test text: repeated
         started = time.perf_counter()
-        cursor = model.prediction_cursor(prompt) if getattr(model, 'context_trained_at', 0) else None
+        cursor = model.prediction_cursor(prompt) if (getattr(model, 'context_trained_at', 0) or state.get('profile') == 'concept-pairs-v1') else None
         if cursor is None:
             model.logp(prompt)
         reading = time.perf_counter()-started
@@ -367,7 +382,7 @@ def evaluate(store, job, request, directory, check):
                                 prefill_tokens_per_second=length/max(reading, 1e-9), decode_seconds=writing,
                                 decode_tokens_per_second=new_tokens/max(writing, 1e-9),
                                 cache=dict(dense_layers=0, acan_layers=memory, total=memory)))
-        if cursor is not None:
+        if cursor is not None and hasattr(cursor,'cells'):
             performance[-1]['document_cells_after_decode'] = cursor.cells.tolist()
     quality['performance'] = performance
     return quality

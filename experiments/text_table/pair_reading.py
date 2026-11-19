@@ -15,7 +15,8 @@ from acan.core.category_table import Table
 from acan.concept_algebra import categorical_reading
 from acan.lm.concept_lm import document_counts
 from .pair_layers import age, batches
-from .conditional_memory import calibrated_weights
+from acan.lm.pair_training import stages
+from acan.core.conditional import calibrated_weights
 
 
 def lag(values, n, ages):
@@ -27,7 +28,7 @@ def lag(values, n, ages):
 
 
 class Columns:
-    def __init__(self, folder, split, local=False, widths=(1, 2, 4), native_local=False):
+    def __init__(self, folder, split, local=False, widths=(1, 2, 4)):
         source = "validation" if split == "control" else split
         self.y = np.load(folder / (source + "-y.npy"))
         self.starts = np.load(folder / (source + "-starts.npy"))
@@ -38,8 +39,6 @@ class Columns:
         if local:
             for w in (2, 4):
                 self.spans["s" + str(w)] = np.load(folder / (source + f"-local-{w}.npy"), mmap_mode="r")
-        if native_local:
-            self.spans["g2"] = np.load(folder / (source + "-native-local-2.npy"), mmap_mode="r")
         self.pos = (
             np.arange(len(self.y)) if split == "train" else np.flatnonzero(np.arange(len(self.y)) % 512)
         )
@@ -73,33 +72,6 @@ def compose_exact(splits):
         encoder = CategoryPairs().fit(*halves(splits["train"]))
         for s in splits.values():
             s.spans["e" + str(width)] = encoder.transform(*halves(s))
-
-
-def stages(local=False, native_local=False):
-    # The odd suffixes use a leaf and the dyadic suffix. Six uses two followed by four.
-    for w, left, right in ((1, 0, 0), (2, 1, 1), (3, 1, 2), (4, 2, 2), (5, 1, 4), (6, 2, 4)):
-        if w == 1:
-            yield w, ["c1", "e1"]
-            continue
-        a, b = str(left), str(right)
-        features = ["c" + str(w)] if w in (2, 4) else []
-        features += ["c" + a + "|c" + b, "e" + a + "|c" + b, "c" + a + "|e" + b]
-        if local:
-            if w in (2, 4):
-                features += ["s" + str(w)]
-            for l in ("s" + a, "c" + a, "e" + a):
-                for r in ("s" + b, "c" + b, "e" + b):
-                    if "s" not in l + r or ("s1" in (l, r)):
-                        continue
-                    features.append(l + "|" + r)
-        if native_local:
-            if w == 2:
-                features.append("g2")
-            if left == 2 or right == 2:
-                left_views = ("g2", "c2", "e2") if left == 2 else ("c" + a, "e" + a)
-                right_views = ("g2", "c2", "e2") if right == 2 else ("c" + b, "e" + b)
-                features.extend(l + "|" + r for l in left_views for r in right_views if "g2" in (l, r))
-        yield w, features + ["e" + str(w)]
 
 
 def root_probabilities(folder, splits):
@@ -153,10 +125,10 @@ def local_stats(s, keys):
     return document_counts(groups.astype(np.uint64), keys != 0, s.y)[:, s.pos]
 
 
-def measure(folder, output, local=False, native_local=False):
+def measure(folder, output, local=False):
     start = time.monotonic()
     splits = {
-        k: Columns(folder, k, local, native_local=native_local)
+        k: Columns(folder, k, local)
         for k in ("train", "validation", "control", "test")
     }
     compose_exact(splits)
@@ -181,7 +153,7 @@ def measure(folder, output, local=False, native_local=False):
                 kept.append((f, kappa))
         return ps, kept
 
-    for width, features in stages(local, native_local):
+    for width, features in stages(local):
         for f in features:
             train = splits["train"]
             table = Table.count_regions([(train.feature(f), train.y)], 8000)
@@ -255,6 +227,5 @@ if __name__ == "__main__":
     p.add_argument("--workdir", required=True, type=Path)
     p.add_argument("--output", required=True, type=Path)
     p.add_argument("--local", action="store_true")
-    p.add_argument("--native-local", action="store_true")
     args = p.parse_args()
-    measure(args.workdir, args.output, args.local, args.native_local)
+    measure(args.workdir, args.output, args.local)

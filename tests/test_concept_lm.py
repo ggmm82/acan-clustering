@@ -237,6 +237,9 @@ class ConceptLongLearningTests(unittest.TestCase):
     def test_queue_pause_resume_answers_generation_test_and_export(self):
         self._exercise_queue('concept-lm-v1')
 
+    def test_pair_graph_queue_resume_generation_and_export(self):
+        self._exercise_queue('concept-pairs-v1')
+
     def test_tabular_graph_queue_resume_generation_and_export(self):
         self._exercise_queue('concept-table-v1')
 
@@ -295,7 +298,7 @@ class ConceptLongLearningTests(unittest.TestCase):
                 from acan.core.concepts import ConceptModel
                 saved = store.directory('jobs', job['id'])/'checkpoints'/done['checkpoint']
                 graph, _ = load(saved)
-                self.assertIsInstance(graph.model, ConceptModel)
+                self.assertIsInstance(graph.model.root if profile == "concept-pairs-v1" else graph.model, ConceptModel)
                 self.assertEqual(graph.tokens, progress['tokens_trained'])
             history = store.history(job['id'], owner)
             measured = [row['step'] for row in history if 'validation_nll' in row]

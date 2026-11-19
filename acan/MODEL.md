@@ -13,7 +13,7 @@ dalle righe di training che le somigliano.
 Seguiamo la frase «il gatto nero dorme sul tappeto del salotto». Per semplicità
 supponiamo che ogni parola sia un token. Alla posizione successiva la prima
 colonna descrive «salotto». La seconda identifica il concetto di «del salotto».
-La terza identifica il concetto di «sul tappeto del salotto». La prova arriva a sei token combinando una coppia più vecchia con le quattro parole recenti. Il punto che potrebbe seguire è un possibile valore
+La terza identifica il concetto di «sul tappeto del salotto». Per leggere otto token si accostano due tratti di quattro. La stessa operazione raddoppia ancora la lunghezza del contesto. Il punto che potrebbe seguire è un possibile valore
 della colonna da completare. In un'altra frase «della cucina» può ricevere lo
 stesso concetto di «del salotto» se il modello ha trovato somiglianze sufficienti.
 
@@ -119,166 +119,52 @@ metà recente. Le frequenze dei seguiti di quella combinazione affinano la
 probabilità precedente con la stessa formula $q_i$. Quando la combinazione non
 è mai comparsa, $M_i=N_i(y)=0$ e la formula restituisce la probabilità precedente.
 
-Per cercare più dettagli si lavora dentro un padre. Per gli attributi numerici
-si può ripetere la procedura CP sulle righe assegnate a quel padre. Per due colonne
-categoriche si possono provare i valori del figlio osservati con quel padre.
-Su righe di giudizio separate si misura, per ogni seguito, il guadagno
-$g=\log p_{\rm figlio}(y)-\log p_{\rm padre}(y)$. Nella prova si mantiene il
-figlio con almeno due letture e un guadagno medio superiore a un errore standard
-stimato. Questo è un criterio di selezione predittiva. Il numero di figli dipende
-dai dati. La memoria della ricerca cresce con le coppie osservate e, nella ricerca
-geometrica locale, con la dimensione del ramo che si sta elaborando.
+Un figlio distingue, dentro il concetto padre, una combinazione più precisa delle due metà. Per esempio, due coppie possono avere lo stesso concetto nella metà sinistra e due identità distinte nella metà destra. Alcuni articoli di training servono a costruire le distribuzioni candidate. Altri articoli dello stesso train servono a giudicarle. Per ciascuna osservazione di giudizio si calcola
+
+$$
+g=\log p_{\rm figlio}(y)-\log p_{\rm padre}(y).
+$$
+
+Si conserva un figlio con almeno due osservazioni di giudizio quando il guadagno medio supera il proprio errore standard. La CP individua somiglianze nelle colonne osservate. Il giudizio sul token decide quali distinzioni aiutano a prevedere. Una tabella priva di target può fermarsi dopo la scoperta dei concetti. Nel testo il corpus fornisce automaticamente il target spostando la sequenza di una posizione.
+
+Nella memoria del documento si applica la stessa lettura categorica. Qui $N_i(y)$ conta quante volte **prima della posizione corrente** il contesto è ricaduto nel concetto $i$ ed è stato seguito da $y$. La distribuzione di riferimento è la previsione già ottenuta dal corpus. Due prefissi diversi possono perciò condividere i seguiti osservati nel documento se attivano lo stesso concetto o sotto-concetto. Un sinonimo aiuta soltanto se la sua codifica e il resto del prefisso danno sufficiente evidenza alla stessa risposta.
 
 ## Informatica
 
 ### Dal corpus al checkpoint
 
-1. Il training impara un vocabolario BPE di 8.000 token. Per ciascun token conta
-   i vicini a sinistra e a destra entro l'articolo. La SVD ricava otto coordinate
-   da queste frequenze. Il modello conserva anche l'identificatore esatto.
-2. Il modello tabulare impara le geometrie delle coppie e poi delle coppie di
-   coppie. Per un orizzonte di sei token usa una metà più vecchia di due token
-   e una recente di quattro. Le letture intermedie di tre e cinque token sono
-   disponibili anche al contatore di confronto.
-3. Ogni posizione di train aggiunge il token che segue alle distribuzioni dei
-   concetti e delle categorie riconosciute nel prefisso. Il giudizio dei figli
-   categorici usa articoli tenuti da parte dentro il train. La validazione esterna
-   regola congiuntamente i pesi delle letture sulla NLL del prossimo token.
-   Il checkpoint della geometria conserva i riconoscitori e i centri trasmessi
-   fra i livelli. Le tabelle di lettura associano a ogni regione i conteggi dei
-   seguiti osservati nel train.
+Il testo viene diviso per documento fra training, validazione e test. Il tokenizer impara sul training a scomporre le parole in token. Ogni token riceve un identificatore. Le frequenze dei vicini sinistri e destri forniscono un profilo del suo uso. Una SVD comprime questi profili in otto coordinate. L’identificatore rimane disponibile quando è importante distinguere due token con usi simili.
+
+Si prendono due token consecutivi e si affiancano le coordinate nello stesso ordine del testo. Sono le colonne numeriche di una normale tabella ACAN. Il riconoscitore assegna la coppia a un concetto. La media delle coppie assegnate descrive il concetto al livello successivo. Due metà di due token producono una riga di quattro, due metà di quattro una riga di otto. Quando la descrizione del centro supera 32 coordinate, si conservano le direzioni di maggiore varianza fra i centri, pesati per la loro massa. Coppie identiche possono entrare nel training come una sola riga con la loro molteplicità. Al confine del documento una metà incompleta ha codice zero.
+
+Quando compare il token successivo, il modello può completare la riga. La sua categoria aggiorna i conteggi dei contesti che terminavano **prima** del token. I conteggi arrivano sia alle letture generali sia alle combinazioni più specifiche. Le probabilità dei token veri in validazione determinano quanto peso concedere a ogni lettura. La procedura di confronto delle scale congela i pesi già scelti prima di provare una scala maggiore e misura il guadagno su una seconda parte della validazione.
+
+Per la coda lunga, il worker apprende la geometria su finestre di training distribuite lungo il primo file, fino a 262.144 token. Poi percorre per intero i file della coda a pezzi. Ogni posizione aggiorna la distribuzione del target della radice e le tabelle sparse delle letture scelte. Le chiavi delle due metà possono registrare seguiti nuovi. Entro il budget di conteggio, un livello che supera la sua quota conserva le chiavi con più osservazioni per byte. Il budget riguarda queste tabelle. Geometria, memoria del documento e lavoro temporaneo occupano altra RAM.
+
+Il checkpoint contiene il tokenizer nella cartella del progetto, i parametri dei riconoscitori, i centri, le categorie apprese e i loro conteggi, i pesi di lettura e il tratto finale del pezzo. Quest’ultimo permette di riprendere dal token successivo anche se un contesto attraversava il punto di salvataggio. All’inizio di un nuovo file la coda conserva gli apprendimenti precedenti e inizia con un prefisso vuoto.
 
 ### Dal prompt al prossimo token
 
-Per un nuovo prefisso si ricostruiscono le stesse coppie in ordine. Il modello
-calcola una distribuzione sull'intero vocabolario. Con memoria attiva può
-utilizzare anche i seguiti già osservati nel documento. Il token corrente
-entra nei conteggi locali soltanto dopo aver ricevuto la sua probabilità.
-Gli inizi di blocco e articolo azzerano il contesto nella prova.
+Il tokenizer del checkpoint converte il prompt in identificatori. Il cursore ricostruisce le coppie con gli stessi parametri del training. Legge il prefisso in blocchi, registra i seguiti già incontrati nel documento e tiene in coda i token necessari per comporre la scala più lunga. Per la prossima posizione parte dalle appartenenze del token vicino. Applica nell’ordine le letture di corpus selezionate e poi quelle locali. Il risultato è una probabilità per ciascun token del vocabolario, comprese le alternative mai seguite a quel particolare prefisso.
 
-Il sito usa ancora il contatore per l'addestramento lungo. Il confronto qui
-descritto riguarda il protocollo di ricerca. [Misure per orizzonte e istruzioni
-di riproduzione](../experiments/text_table/README.md#coppie-di-concetti).
+A temperatura zero si sceglie il token con probabilità massima. Con temperatura positiva si campiona dalla distribuzione ripesata. Solo dopo la scelta il token entra nella memoria e nel prefisso. La stessa sequenza di operazioni produce la posizione successiva. A parametri fissati, il calcolo per un nuovo token dipende dalla finestra appresa, dai conteggi consultati e dal vocabolario. Nessun passo costruisce una matrice di attenzione fra tutte le posizioni del documento.
 
-## Esperimento precedente con albero di soglie CP
+### Verifiche sul testo
 
-Le sezioni che seguono descrivono il precedente riconoscitore ad albero, il suo
-checkpoint e le sue prove di richiamo a distanza.
+Su WikiText-2 si misurano gli stessi 32.704 token in tutte le righe. Entrambi i modelli possono leggere il prefisso dall’inizio dell’articolo. Il contatore usa fino a sei token vicini come chiave. I valori sono NLL in nat/token, con memoria del documento spenta.
 
-### Apprendimento del precedente albero
+| Scala provata | Coppie sul controllo | Coppie sul test | Contatore sul test |
+|---:|---:|---:|---:|
+| 6 | 4,91266 | 4,84475 | 4,91300 |
+| 8 | 4,91098 | 4,84207 | 4,91300 |
+| 16 | 4,90990 | 4,84097 | 4,91300 |
+| 32 | 4,90987 | 4,84090 | 4,91300 |
+| 64 | 4,90987 | 4,84090 | 4,91300 |
+| 128 | 4,90913 | 4,84216 | 4,91300 |
+| 256 | 4,90913 | 4,84216 | 4,91300 |
+| 512 | 4,90913 | 4,84216 | 4,91300 |
 
-1. Il tokenizer BPE viene appreso sul train. Per ciascun token si misurano separatamente
-   i vicini sinistri e destri all'interno dello stesso articolo. Nella prova finale si
-   distinguono i 96 vicini più frequenti per lato e una categoria residua. Le radici
-   delle frequenze relative formano il profilo numerico del token.
-2. Si provano due modi di rappresentare il profilo. La SVD ne conserva le principali
-   direzioni di variazione. Il modello a concetti può invece usare le distanze espresse
-   dalle sue log-probabilità di appartenenza. La trasformazione $\log(1-\log p)$
-   conserva differenze fra appartenenze molto piccole. La validazione sceglie la
-   rappresentazione prima di aprire il test.
-3. Una finestra di due token accosta i vettori della metà più vecchia e della metà
-   recente, in quest'ordine. Il modello propone tagli CP su coppie campionate da tutto
-   il train. A ogni regione assegna un vettore calcolato dai seguiti di tutte le sue
-   occorrenze. È la media dei vettori del token successivo, con un'osservazione di
-   riferimento dal genitore. Le finestre di quattro token leggono questi vettori delle
-   due coppie. La stessa operazione costruisce ogni scala successiva. Il vettore di
-   una regione viene fissato nel training. Sul prompt basta riconoscere le due metà.
-4. Alla posizione successiva a «del salotto», il modello può riconoscere sia il concetto
-   preciso di «salotto» sia una regione più ampia per il tratto precedente. Le due metà
-   possono essere lette con precisioni diverse. Il modello conta le categorie target
-   in queste regioni con somme sparse. Le colonne di training possono risiedere su
-   disco e i conteggi di blocchi disgiunti si sommano. Il giudizio su testo separato
-   seleziona le letture e i loro pesi. Il numero di concetti emerge entro il budget
-   di ricerca, che limita campione, profondità e direzioni provate.
-5. Il checkpoint conserva le soglie, i vettori dei tratti, le categorie osservate e
-   le letture selezionate. Nella prova finale 5.307.315 regioni dei livelli di lettura
-   condividono 1.421.564 prototipi. La condivisione riduce le matrici da 370 a 182 MB
-   con le stesse probabilità. Le regioni sono indirizzi di contesto e i prototipi
-   sono distribuzioni riutilizzabili del seguito.
 
-### Come una parola composta da più token aiuta il richiamo
+Il controllo seleziona la scala 128. Le prove a 256 e 512 mantengono la stessa distribuzione. Sul test, il valore più basso della serie si osserva a 32. Il guadagno fra 6 e 32 è 0,00385 nat/token. Il guadagno maggiore rispetto al contatore si vede già a sei token.
 
-«Doctor» e «physician» possono terminare in token diversi. Per conservare il
-significato oltre i frammenti, una colonna aggiuntiva segue i confini di parola
-nel prefisso BPE. Il train misura quali parole ricorrono nelle cinque posizioni
-precedenti e successive, dentro la stessa riga di testo. Un vicino vale di più
-se è vicino in posizione e se ricorre con quella parola più spesso di quanto
-suggerisca la sua frequenza generale. Una SVD riassume questi profili in 64
-coordinate. Le soglie CP raggruppano le parole con profili simili.
-
-Nel documento corrente si osservano le tre parole precedenti e il frammento
-corrente. Tre posizioni riconoscono una regione CP, la quarta fornisce il
-vettore da confrontare. La validazione prova ciascuna posizione in questo ruolo.
-Nella frase «for the doctor is» il vettore variabile può essere quello di
-«doctor». Se ricompare la regione con un altro vettore, le osservazioni passate
-con parole più simili ricevono più peso. Con vettori di norma unitaria $u$ e $v$
-il peso relativo è proporzionale a $\exp(16 u^\top v)$. È una densità gaussiana
-sulla distanza fra i vettori unitari. Il token da predire resta la categoria BPE.
-
-La massa e i conteggi pesati entrano nella lettura categorica già descritta.
-Il riferimento generale pesa meno quando le categorie osservate nella regione
-sono ripetutamente insolite rispetto al corpus e la parola variabile assume
-valori diversi. Per misurarlo si confronta la probabilità sequenziale dei seguiti
-con due riferimenti iniziali, uniforme e proporzionale alle frequenze del train.
-Il rapporto si aggiorna **dopo** aver osservato ciascun seguito. La validazione
-decide la forza di questa correzione. Ogni regione confronta al massimo 128
-parole osservate. Le parole sconosciute lasciano disponibili le altre colonne.
-
-### Predizione con il precedente albero
-
-Il cursore registra «salotto» e completa le finestre che terminano in quella posizione.
-Un buffer circolare per scala gli restituisce la metà più vecchia. Le soglie apprese
-trasformano ciascuna coppia di metà in una regione, poi il modello tabulare completa
-la colonna target. Le somme temporanee del documento leggono gli stessi concetti
-e incorporano soltanto seguiti già osservati. Così il seguito incontrato poco prima
-o molte pagine prima può cambiare la distribuzione. Dopo avere scelto il prossimo
-token, il cursore lo aggiunge al prefisso e ripete il calcolo. Un documento nuovo
-riparte con memoria vuota.
-
-Per una finestra massima $W$, le scale richiedono $O(\log W)$ composizioni per token
-a geometria fissata e fino a $O(W)$ posizioni nei buffer. Si aggiungono le letture
-sparse e il costo di emettere una distribuzione sul vocabolario. La memoria del
-documento conserva l'epoca corrente e la precedente, ciascuna lunga fino a $W$ token.
-Con venti scale il budget è 524.288 token per epoca. Sul train WikiText-2 l'articolo
-più lungo ha 22.891 token e la maggiore scala compositiva addestrata è 16.384.
-
-### Verifiche
-
-Su WikiText-2 con BPE 8.000 il confronto usa 64 blocchi di test, 32.704 previsioni
-e gli stessi confini di articolo. Una NLL inferiore indica più probabilità sul token vero.
-
-| Lettura | NLL sul test |
-|---|---:|
-| Prima tabella diadica, un solo concetto finale | 7,1808 |
-| Contatore di riferimento | 4,5000 |
-| Tabella con affinamenti CP e memoria del documento | **4,4794** |
-| Precedente esperimento con suffissi e gruppi CP | 4,4555 |
-
-La nuova tabella migliora sul contatore in 51 blocchi su 64. Il vantaggio medio è
-0,0205 nat/token e l'errore standard appaiato per blocco è 0,0083. Tenendo solo
-l'ultimo token e le frequenze del documento si ottiene 4,8501. Rimescolando le
-identità dei concetti si sale a 6,9824. Sulle 4.933 posizioni con una coppia
-letterale finale mai vista nel train si passa da 4,4170 con il solo token recente
-a 4,3424 con il contesto. La differenza maggiore proviene dalle prime quattro
-posizioni. Nelle bande 1–31, 32–127, 128–255 e 256–511 la NLL completa è
-rispettivamente 4,9508, 4,6564, 4,4571 e 4,3672.
-
-Sulla metà di controllo della validazione, la SVD a otto coordinate ottiene 4,5724
-e la rappresentazione con 64 coordinate CP ottiene 4,6870. La SVD è stata scelta
-per rappresentare i token. I tagli dei tratti e la lettura del target usano i concetti.
-La memoria del documento contribuisce al risultato, con una NLL di 4,8877 quando è
-disabilitata. A 300.000 token di distanza si recuperano al primo posto 16 associazioni
-su 16, 16 copie su 16 e 16 richieste lessicali identiche su 16. Quando la richiesta usa un sinonimo,
-la coordinata della parola porta il risultato da 0 a 8 su 16 a tutte e quattro le
-distanze provate. Sui 64 blocchi principali, con e senza questa coordinata, la NLL
-arrotondata è 4,4794. Su altri 64 blocchi disgiunti si passa da 4,58650 a 4,58621.
-La differenza più netta riguarda il richiamo. Nella prova di associazione il tempo
-mediano per generare un token è circa 4 ms dopo 1.000 token e 8 ms dopo 300.000.
-
-Sui dieci dataset tabulari forniti il confronto riproduce le predizioni precedenti.
-GiocoSet completo dà quattro gruppi senza etichette. Togliendo la colonna «Gioco»
-ne dà sei. Letter raggiunge il 97,80% sulle 4.000 righe tenute fuori dal training.
-Il benchmark sul testo usa 2.729.601 token originali. In una prova distinta, la somma
-sparsa di un solo livello elabora 1 GiB di coppie regione–target ottenute ripetendo
-le righe di training. La coda web resta sul contatore. Il checkpoint della lettura
-diadica si può addestrare e interrogare con i comandi di ricerca.
+A 32 token, la memoria delle sole identità esatte porta la NLL di test a 4,08816. La memoria dei soli concetti e sotto-concetti dà 4,30614. La validazione combina le due fonti e il test scende a 4,08543, contro 4,11082 del contatore con memoria. Nel test di richiamo si assegna un seguito casuale a ciascuna di sedici espressioni. Con una richiesta sinonima, la lettura combinata trova la risposta 2 volte su 16 fra i candidati a ciascuna distanza fra 1.000 e 300.000 token. Sull’intero vocabolario la risposta arriva prima 0 volte su 16. Ricordare un seguito letterale e riconoscere una parafrasi restano capacità distinte. [Risultati per blocco, scala e compito](../experiments/text_table/results/native-long-context.json).

@@ -602,6 +602,41 @@ class ConceptModel:
         self.rows = len(frame)
         return self._learn(self.encoder.transform(frame), progress)
 
+    def fit_counted_numeric(self, frame, counts):
+        """Fit a table of finite numeric rows with positive integral occurrence counts.
+
+        Identical input rows have additive sufficient statistics. The scan operates on
+        types, while standardization, the refinement sample and final masses use occurrences.
+        """
+        counts = np.asarray(counts)
+        values = frame.to_numpy(dtype=float)
+        if (counts.shape != (len(frame),) or not len(frame) or counts.dtype.kind not in "iu"
+                or np.any(counts < 1) or not np.isfinite(values).all()):
+            raise ValueError("Servono righe numeriche finite e molteplicità intere positive.")
+        self.encoder = Encoder().fit(frame)
+        if self.encoder.categorical:
+            raise ValueError("La tabella delle coppie deve avere colonne numeriche.")
+        self.labels, self.category_regions, self.observed_targets = [], {}, {}
+        self.rows = int(counts.sum())
+        self.encoder.mean = np.average(values, axis=0, weights=counts)
+        std = np.sqrt(np.average((values-self.encoder.mean)**2, axis=0, weights=counts))
+        self.encoder.std = np.where(std > 1e-12, std, 1.)
+        rng = np.random.default_rng(self.seed)
+        sample_ranks = rng.choice(self.rows, min(self.rows, self.refine_rows), replace=False)
+        sample = self.encoder.transform(frame.iloc[np.searchsorted(counts.cumsum(), sample_ranks, side='right')])
+        self._roots(sample)
+        scanner = Scan(self, self._block(self.max_concepts, self.rows))
+        order = rng.permutation(len(frame))
+        for i in range(0, len(frame), 2048):
+            ix = order[i:i+2048]
+            scanner.push(self.encoder.transform(frame.iloc[ix]), counts[ix])
+        self._learn(sample, None, specific=scanner.result())
+        def batches():
+            for i in range(0, len(frame), 2048):
+                yield frame.iloc[i:i+2048], counts[i:i+2048]
+        self._finish(batches, counted=True)
+        return self
+
     def fit_chunks(self, read, labels=(), encoder=None, progress=None):
         """Learn from a table too large to hold: ``read()`` gives its rows as an iterator of frames.
 
@@ -658,14 +693,17 @@ class ConceptModel:
             self._finish(read)
         return self
 
-    def _finish(self, read):
+    def _finish(self, read, counted=False):
         """Every row of the table is added to the concepts of the working level, as it recognizes them."""
         total, cross, done = None, None, 0
-        for frame in read():
+        for item in read():
+            frame, counts = item if counted else (item, None)
             done += len(frame)
             self._tell('finish', rows=done, total=self.rows, concepts=len(self.statistics['C']))
             data = self._seen(self.encoder.transform(frame))[0]
             t = self._route(self.statistics, data, self.train_weights)[0]
+            if counts is not None:
+                t = t * counts[:, None]
             part = self._statistics(t, data)
             total = part if total is None else {key: total[key]+part[key] for key in part}
             if self.cross is not None:
@@ -832,17 +870,6 @@ class ConceptModel:
         data = self._seen(self.encoder.transform(frame))[0]
         weights = self._weights(0.) if observed_only else self.train_weights
         return self._route(self.statistics, data, weights)[0]
-
-    def fit_subconcepts(self, observations):
-        """Fit the same CP procedure inside each parent and return a sparse hard router.
-
-        Only predictor columns enter the local geometry. The fitted parent supplies the
-        coordinate system and routing for later rows. Each branch is judged on its own rows.
-        """
-        from .subconcepts import LocalConcepts
-
-        features = [c for c in (*self.encoder.numeric, *self.encoder.categorical) if c not in self.labels]
-        return LocalConcepts(self).fit(observations[features])
 
     def fit_observed_target(self, label, categories, chunks, validation):
         """Fit a new categorical column after fitting the geometry on its observed predictors.

@@ -35,11 +35,3 @@ class CategoryPairTest(unittest.TestCase):
             model.predict_proba(frame.assign(p="unknown"), "class")[0].sum(1), 1.0
         )
         self.assertEqual(set(classes), {"0", "1"})
-
-    def test_native_local_router_predicts_from_observations_alone(self):
-        x = pd.DataFrame(np.random.default_rng(12).normal(size=(100, 2)), columns=["a", "b"])
-        model = ConceptModel(max_concepts=12, covariance=False).fit(x)
-        router = model.fit_subconcepts(x)
-        codes = router.transform(x)
-        np.testing.assert_array_equal(codes[:10], pickle.loads(pickle.dumps(router)).transform(x.iloc[:10]))
-        self.assertTrue(np.all((0 <= codes) & (codes < router.concepts)))

@@ -1,4 +1,4 @@
-"""Held-out tests of the same parent-local numeric router and categorical readout on ordinary tables."""
+"""Held-out tests of the same parent-local categorical readout on ordinary tables."""
 
 import argparse
 import json
@@ -12,7 +12,7 @@ from acan.vis.datasets import clean_frame, read_arff, target_and_filters
 
 def run(directory):
     results = {}
-    for filename in ("vote.arff", "breast-cancer.arff", "mushroom.arff", "iris.arff"):
+    for filename in ("vote.arff", "breast-cancer.arff", "mushroom.arff"):
         frame = clean_frame(read_arff(next(directory.rglob(filename)).read_bytes()))
         label = target_and_filters(frame)[0][0]
         frame = frame.dropna(subset=[label]).copy()
@@ -36,15 +36,6 @@ def run(directory):
             parent, child = categorical[:2]
             report = model.fit_category_pair(label, parent, child, build, judge)
             report["columns"] = [parent, child]
-        else:
-            router = model.fit_subconcepts(build.drop(columns=label))
-            ids = router.transform(test.drop(columns=label))
-            report = dict(
-                numeric_parents=model.concepts,
-                numeric_local_codes=int(np.unique(ids).size),
-                allocated_codes=router.concepts,
-                judged=router.judged,
-            )
         results[filename] = dict(
             build=len(build),
             judgment=len(judge),

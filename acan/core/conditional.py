@@ -4,89 +4,7 @@ import numpy as np
 
 from .category_pairs import PairColumns
 
-from acan.concept_algebra import KAPPA_GRID, categorical_reading, pair_mass, unbiased
-
-
-class SemanticCuts:
-    """Nested cuts of numeric profiles. A split needs positive pair CP against its own parent."""
-
-    def fit(self, vectors, masses, depth=16):
-        vectors = np.asarray(vectors, dtype=float)
-        masses = np.asarray(masses, dtype=float)
-        if vectors.ndim != 2 or masses.shape != (len(vectors),) or not np.any(masses > 0):
-            raise ValueError("Servono profili e masse di training.")
-        self.depth = depth
-        # A uint32 stores a prefix with a leading sentinel bit, including the missing code 0.
-        if not 1 <= depth <= 30:
-            raise ValueError("Profondità CP non rappresentabile.")
-        self.rules = {}
-        active = {1: np.flatnonzero(masses > 0)}
-        for _ in range(depth):
-            children = {}
-            for node, ix in active.items():
-                if len(ix) < 2:
-                    continue
-                x, w = vectors[ix], masses[ix]
-                mean = np.average(x, axis=0, weights=w)
-                centered = x - mean
-                variance = np.average(centered**2, axis=0, weights=w)
-                varying = variance > 1e-15
-                if not varying.any():
-                    continue
-                # Propose a bisection along the two widest coordinates; judge all coordinates.
-                axes = np.argsort(-variance, kind="stable")[:2]
-                parent = unbiased(variance[varying], w.sum(), np)
-                normalized = centered[:, varying] / np.sqrt(parent)
-                best = 0.0
-                for axis in axes:
-                    if not varying[axis]:
-                        continue
-                    right = x[:, axis] > mean[axis]
-                    score = 0.0
-                    for group in (right, ~right):
-                        ww = w[group]
-                        total = ww.sum()
-                        if total <= 1:
-                            continue
-                        xx = normalized[group]
-                        mu = np.average(xx, axis=0, weights=ww)
-                        var = np.average((xx - mu) ** 2, axis=0, weights=ww)
-                        score += (
-                            pair_mass(total, np) * (1 - np.minimum(2.0, unbiased(var, total, np))).sum()
-                        )
-                    if score > best:
-                        best, split = score, (axis, mean[axis], right)
-                if best > 0:
-                    axis, threshold, right = split
-                    self.rules[node] = (axis, threshold)
-                    for bit, subset in enumerate((ix[~right], ix[right])):
-                        children[2 * node + bit] = subset
-            active = children
-        self.axis = np.zeros(2**depth, dtype=np.int32)
-        self.threshold = np.full(2**depth, np.inf)
-        for node, (axis, threshold) in self.rules.items():
-            self.axis[node], self.threshold[node] = axis, threshold
-        del self.rules
-        return self
-
-    def encode(self, vectors):
-        """All points, including unseen ones, traverse numeric thresholds. Leaf codes are padded."""
-        vectors = np.asarray(vectors)
-        node = np.ones(len(vectors), np.uint32)
-        rows = np.arange(len(node))
-        for _ in range(self.depth):
-            node = 2 * node + (vectors[rows, self.axis[node]] > self.threshold[node])
-        return node
-
-    def pair_code(self, older, recent):
-        """Scalar traversal of the same split tree on two adjacent feature blocks."""
-        node = 1
-        width = len(older)
-        for _ in range(self.depth):
-            axis = self.axis[node]
-            value = older[axis] if axis < width else recent[axis - width]
-            node = 2 * node + int(value > self.threshold[node])
-        return node
+from acan.concept_algebra import KAPPA_GRID, categorical_reading
 
 
 class ConditionalReading:
@@ -158,3 +76,32 @@ class ConditionalReading:
                 p[rows] *= weight / denominator
                 p[np.ix_(rows, targets)] += counts[None, :] / denominator
         return p
+
+
+def calibrated_weights(stats, initial, mass_prior):
+    """Choose categorical smoothing strengths jointly on held-out target probabilities."""
+    weights = list(initial)
+    for _ in range(4):
+        # Each more specific reading is affine in the preceding probability.
+        after = []
+        slope, intercept = np.ones(len(mass_prior)), np.zeros(len(mass_prior))
+        for (m, n, d), k in reversed(list(zip(stats, weights))):
+            after.append((slope, intercept))
+            if np.isfinite(k):
+                w = k * np.maximum(d, 1)
+                intercept = intercept + slope * n / (m + w)
+                slope = slope * w / (m + w)
+        prior = mass_prior
+        changed = False
+        for i, ((m, n, d), (a, b)) in enumerate(zip(stats, reversed(after))):
+            winner, best, result = np.inf, -np.log(a * prior + b).mean(), prior
+            for k in KAPPA_GRID:
+                candidate = categorical_reading(n, m, d, prior, k, np)
+                loss = -np.log(a * candidate + b).mean()
+                if loss < best - 1e-12:
+                    winner, best, result = k, loss, candidate
+            changed |= weights[i] != winner
+            weights[i], prior = winner, result
+        if not changed:
+            break
+    return weights

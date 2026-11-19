@@ -13,7 +13,6 @@ from scipy import sparse
 from tokenizers import Tokenizer
 
 from acan.core.concepts import ConceptModel
-from acan.core.conditional import SemanticCuts
 from acan.concept_algebra import KAPPA_GRID, categorical_reading
 from .dyadic import embeddings
 from .dyadic_run import corpus
@@ -127,7 +126,7 @@ def judge(weights, features, labels, root, head):
     )
 
 
-def compare(folder, method):
+def compare(folder):
     x = {s: np.load(folder / (s + ".npy"), mmap_mode="r") for s in ("train", "validation", "test")}
     y = {s: np.load(folder / (s + "-y.npy"), mmap_mode="r") for s in x}
     for split in ("validation", "test"):
@@ -138,30 +137,21 @@ def compare(folder, method):
     prior = (np.bincount(y["train"], minlength=vocabulary) + 1) / (len(train) + vocabulary)
     begin = time.monotonic()
     names = [f"x{j}" for j in range(train.shape[1])]
-    if method == "native":
 
-        def frames():
-            for i in range(0, len(train), 8192):
-                yield pd.DataFrame(train[i : i + 8192], columns=names)
+    def frames():
+        for i in range(0, len(train), 8192):
+            yield pd.DataFrame(train[i : i + 8192], columns=names)
 
-        model = ConceptModel(
-            max_concepts=256, bins=24, judged_rows=4096, refine_rows=32768, seed=42, covariance=False
-        )
-        model.fit_chunks(frames)
+    model = ConceptModel(
+        max_concepts=256, bins=24, judged_rows=4096, refine_rows=32768, seed=42, covariance=False
+    )
+    model.fit_chunks(frames)
 
-        def weights(a):
-            return model.assignments(pd.DataFrame(a, columns=names))
+    def weights(a):
+        return model.assignments(pd.DataFrame(a, columns=names))
 
-        k = model.concepts
-        selection = [s["concepts"] for s in model.levels]
-    else:
-        model = SemanticCuts().fit(train, np.ones(len(train)), depth=8)
-
-        def weights(a):
-            return np.eye(256)[model.encode(a) - 256]
-
-        k = 256
-        selection = []
+    k = model.concepts
+    selection = [s["concepts"] for s in model.levels]
     head = np.zeros((k, vocabulary))
     for i in range(0, len(train), 2048):
         targets = y["train"][i : i + 2048]
@@ -184,13 +174,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--workdir", type=Path, required=True)
-    parser.add_argument("--stage", choices=("prepare", "native", "tree"), required=True)
+    parser.add_argument("--stage", choices=("prepare", "native"), required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     args.workdir.mkdir(parents=True, exist_ok=True)
     result = (
         prepare(args.data, args.workdir)
         if args.stage == "prepare"
-        else compare(args.workdir, args.stage)
+        else compare(args.workdir)
     )
     args.output.write_text(json.dumps(result, indent=2) + "\n")

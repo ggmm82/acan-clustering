@@ -4,17 +4,22 @@ import pandas as pd
 from sklearn.utils.extmath import randomized_svd
 
 
-def semantic_vectors(ids, vocabulary, dimensions=32, top=512, seed=0):
+def semantic_vectors(ids, vocabulary, dimensions=32, top=512, seed=0, starts=None):
     ids=np.asarray(ids,dtype=np.int64)
     frequency=np.bincount(ids,minlength=vocabulary)
     top=min(top,vocabulary)
     common=np.argsort(-frequency,kind='stable')[:top]
     where=np.full(vocabulary,top,dtype=int);where[common]=np.arange(top)
-    before=np.bincount(ids[1:]*(top+1)+where[ids[:-1]],minlength=vocabulary*(top+1)).reshape(vocabulary,top+1)
-    after=np.bincount(ids[:-1]*(top+1)+where[ids[1:]],minlength=vocabulary*(top+1)).reshape(vocabulary,top+1)
+    left,right=ids[:-1],ids[1:]
+    if starts is not None:
+        valid=np.ones(len(left),bool)
+        valid[np.asarray(starts)[1:]-1]=False
+        left,right=left[valid],right[valid]
+    before=np.bincount(right*(top+1)+where[left],minlength=vocabulary*(top+1)).reshape(vocabulary,top+1)
+    after=np.bincount(left*(top+1)+where[right],minlength=vocabulary*(top+1)).reshape(vocabulary,top+1)
     profile=np.hstack([np.sqrt(a/np.maximum(a.sum(1,keepdims=True),1)) for a in (before,after)])
     center=profile[frequency>0].mean(0)
-    _,singular,directions=randomized_svd(profile-center,n_components=dimensions,n_iter=5,random_state=seed)
+    _,singular,directions=randomized_svd((profile if starts is None else profile[frequency>0])-center,n_components=min(dimensions,profile.shape[1]),n_iter=5,random_state=seed)
     return ((profile-center)@directions.T).astype(np.float32),singular
 
 
