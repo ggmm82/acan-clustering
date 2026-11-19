@@ -423,12 +423,12 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
             misses = 0 if gain else misses + 1
             if misses == 2:
                 break
-    # What the text talks about: the concept of the mean token vector of the last W tokens, for scales whose
-    # concepts make the next token of held-out text more predictable. They are read by multiplying (topic
-    # / general)^beta, with beta chosen on validation once the counts are made (PairText.judge).
-    for width in (64, 128, 256, 512):
-        if width > max(max_context, 8) or tr.age.max() < width - 1:
-            break
+    # What the text talks about, at every scale the model learned: the concept of the mean token vector of
+    # the last W tokens, kept where its concepts make the next token of held-out text more predictable. It
+    # is read by multiplying (topic / general)^beta, with beta chosen on validation once the counts are made
+    # (PairText.judge). Every scale offers both readings, the ordered halves and the topic; the judgment
+    # decides which ones help, scale by scale.
+    for width in sorted(enc.nodes):
         check()
         tell('topics', width, time.monotonic()-started)
         names_t = [f"x{i}" for i in range(vectors.shape[1])]

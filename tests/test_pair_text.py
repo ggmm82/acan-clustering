@@ -75,18 +75,18 @@ class TopicTest(unittest.TestCase):
     def test_topics_are_judged_read_by_multiplying_and_agree_token_by_token(self):
         rng = np.random.default_rng(1)
         eos, docs = 40, []
-        for i in range(160):                                   # two subjects with their own words, shared grammar
+        for i in range(80):                                    # two subjects with their own words, shared grammar
             words = np.arange(1, 20) if i % 2 else np.arange(20, 39)
             body = []
-            for _ in range(30):
+            for _ in range(12):
                 body += [int(rng.choice(words)), int(rng.choice(words)), 39]   # 39: a full stop in both
             docs += body + [eos]
         ids = np.array(docs)
-        tune = [ids[:900], ids[900:1800]]
-        model = PairText(41, eos, 1 << 22, max_context=64)
+        tune = [ids[:370], ids[370:740]]
+        model = PairText(41, eos, 1 << 22, max_context=8)
         model.add(ids, ids, tune, lambda: None)
         model.judge(tune)
-        self.assertTrue(model.model.topics)                     # the scale of 64 tokens has topic concepts
+        self.assertTrue(model.model.topics)                     # the scales have topic concepts
         for f in model.model.topics:
             model.model.topics[f][1] = 0.5                     # read them, to check the reading itself
         doc = ids[:ids.tolist().index(eos)+1]
