@@ -356,8 +356,10 @@ class ConceptModel:
         """Add together the disjoint pairs that cost the reader least. Every pair is a candidate."""
         k = len(s['C'])
         first, second = np.triu_indices(k, 1)
-        cost = np.concatenate([self._pair_costs(s, first[start:start+100000], second[start:start+100000])
-                               for start in range(0, len(first), 100000)])
+        # Adding a pair materializes its sufficient statistics, including categorical counts.
+        batch = min(100000, max(1, 1000000//max(self.encoder.width+len(self.encoder.numeric), 1)))
+        cost = np.concatenate([self._pair_costs(s, first[start:start+batch], second[start:start+batch])
+                               for start in range(0, len(first), batch)])
         used, pairs = np.zeros(k, bool), []
         for place in np.argsort(cost):
             i, j = first[place], second[place]
@@ -410,34 +412,69 @@ class ConceptModel:
         k, encoder = len(s['C']), self.encoder
         above = self._prior(s)
         scores = np.empty(len(x))
-        size = max(int(4e6//(k*max(x.shape[1]+onehot.shape[1], 1))), 1)
+        # Each categorical observation contributes to exactly one bin in its attribute.
+        # Leave it out of that bin, keeping totals and distinct counts for the entire block.
+        # This avoids materializing a rows x concepts x categories tensor for a wide target.
+        blocks = self._blocks()
+        categorical = []
+        for block in blocks:
+            observed = onehot[:, block]
+            present = observed.sum(1) > 0
+            binary = ((observed == 0) | (observed == 1)).all() and np.all(observed.sum(1) <= 1)
+            codes = observed.argmax(1) if observed.shape[1] else np.zeros(len(x), int)
+            counts = s['N'][:, block]
+            categorical.append((present, codes, counts, counts.sum(1), (counts > 1e-9).sum(1), binary))
+        size = max(int(4e6//(k*max(x.shape[1]+len(blocks), 1))), 1)
         for start in range(0, len(x), size):
             part = slice(start, start+size)
             r = t[part][:, :, None]
-            xs, ms, hs = x[part][:, None], mask[part][:, None], onehot[part][:, None]
-            rest = {key: s[key][None]-r*value for key, value in (('Cm', ms), ('U', xs), ('Q', xs*xs), ('N', hs))}
-            rest = {key: np.maximum(value, 0) if key != 'U' else value for key, value in rest.items()}
-            rest['C'] = np.maximum(s['C'][None]-t[part], 0)
-            alone = rest['C'] < 1e-9                             # nobody else: the row's own level above
-            # The level above is context, not something the row says about itself: it stays as it is.
-            g, v, log_p = self._parameters(rest, above)
-            v = np.where(rest['Cm'] > 1e-9, v, scale[part][:, None])
-            terms, read = [], []                                 # one log-density per attribute: rows x k
+            xs, ms = x[part][:, None], mask[part][:, None]
+            cm = np.maximum(s['Cm'][None]-r*ms, 0)
+            u = s['U'][None]-r*xs
+            q = np.maximum(s['Q'][None]-r*(xs*xs), 0)
+            mass = np.maximum(s['C'][None]-t[part], 0)
+            alone = mass < 1e-9
+            g, v = centre_variance(cm, u, q, above[0], self.kappa, np)
+            v = np.where(cm > 1e-9, np.maximum(v, self.resolution), scale[part][:, None])
+            terms, read = [], []
             for j, name in enumerate(encoder.numeric):
                 terms.append(-.5*((xs[..., j]-g[..., j])**2/v[..., j]+np.log(v[..., j])+LOG_2PI)*ms[..., j])
                 read.append(name in self.labels)
-            for name, block in zip(encoder.categorical, self._blocks()):
-                fallback = np.log(np.maximum(frequency[part][:, None, block], 1e-12))
-                value = np.where(alone[..., None], fallback, log_p[..., block])
-                terms.append((value*hs[..., block]).sum(-1))
+            for name, block, info in zip(encoder.categorical, blocks, categorical):
+                present, codes, counts, totals, distinct, binary = info
+                if not binary:
+                    # Custom matrix encoders may supply several values or weights for an attribute.
+                    # Preserve the original weighted log-density, one observation at a time.
+                    terms_block = np.empty_like(mass)
+                    for i, obs in enumerate(onehot[part, block]):
+                        left = np.maximum(counts-r[i]*obs, 0)
+                        d = (left > 1e-9).sum(1, keepdims=True) if self.distinct else 1.
+                        prob = categorical_reading(left, left.sum(1, keepdims=True), d,
+                                                   above[1][:, block], self.kappa, np)
+                        prior = np.maximum(frequency[start+i, block], 1e-12)
+                        terms_block[i] = np.log(np.where(alone[i, :, None], prior, prob))@obs
+                    terms.append(terms_block)
+                elif counts.shape[1]:
+                    code = codes[part]
+                    before = counts[:, code].T
+                    after = np.maximum(before-t[part], 0.)
+                    total = np.maximum(totals-before, 0.)+after
+                    d = distinct-(before > 1e-9).astype(int)+(after > 1e-9) if self.distinct else 1.
+                    prior = above[1][:, block.start+code].T
+                    probability = categorical_reading(after, total, d, prior, self.kappa, np)
+                    fallback = frequency[np.arange(start, start+len(code)), block.start+code][:, None]
+                    term = np.where(alone, np.log(np.maximum(fallback, 1e-12)), np.log(probability))
+                    terms.append(term*present[part,None])
+                else:
+                    terms.append(np.zeros_like(mass))
                 read.append(name in self.labels)
             terms = np.stack(terms, -1)
             if self.cross is not None and s is self.statistics:  # the features are read together
                 terms[..., self.cov] = 0
                 terms[..., self.cov[0]] = self._block_unseen(x[part], mask[part], t[part])
-            observed = np.concatenate((ms[:, 0], *[hs[:, 0, block].sum(-1, keepdims=True) for block in self._blocks()]), -1) > 0
+            observed = np.column_stack((mask[part], *[item[0][part] for item in categorical])) > 0
             read = np.asarray(read, bool)
-            prior = np.log(np.maximum(rest['C'], 1e-300))
+            prior = np.log(np.maximum(mass, 1e-300))
             if self.labels and not structure:
                 routed, _ = _softmax(prior+terms[..., ~read].sum(-1))
                 scores[part] = np.log(np.maximum((routed*np.exp(terms[..., read].sum(-1))).sum(1), 1e-300))
@@ -553,6 +590,8 @@ class ConceptModel:
         self.resolution = self._resolution(base)
 
     def fit(self, frame, labels=(), encoder=None, progress=None):
+        self.category_regions = {}
+        self.observed_targets = {}
         if len(frame) > self.refine_rows:                        # a large table is read a chunk at a time
             step = self.chunk_rows
             self._total = len(frame)
@@ -562,6 +601,41 @@ class ConceptModel:
         self.encoder = encoder or Encoder().fit(frame)
         self.rows = len(frame)
         return self._learn(self.encoder.transform(frame), progress)
+
+    def fit_counted_numeric(self, frame, counts):
+        """Fit a table of finite numeric rows with positive integral occurrence counts.
+
+        Identical input rows have additive sufficient statistics. The scan operates on
+        types, while standardization, the refinement sample and final masses use occurrences.
+        """
+        counts = np.asarray(counts)
+        values = frame.to_numpy(dtype=float)
+        if (counts.shape != (len(frame),) or not len(frame) or counts.dtype.kind not in "iu"
+                or np.any(counts < 1) or not np.isfinite(values).all()):
+            raise ValueError("Servono righe numeriche finite e molteplicità intere positive.")
+        self.encoder = Encoder().fit(frame)
+        if self.encoder.categorical:
+            raise ValueError("La tabella delle coppie deve avere colonne numeriche.")
+        self.labels, self.category_regions, self.observed_targets = [], {}, {}
+        self.rows = int(counts.sum())
+        self.encoder.mean = np.average(values, axis=0, weights=counts)
+        std = np.sqrt(np.average((values-self.encoder.mean)**2, axis=0, weights=counts))
+        self.encoder.std = np.where(std > 1e-12, std, 1.)
+        rng = np.random.default_rng(self.seed)
+        sample_ranks = rng.choice(self.rows, min(self.rows, self.refine_rows), replace=False)
+        sample = self.encoder.transform(frame.iloc[np.searchsorted(counts.cumsum(), sample_ranks, side='right')])
+        self._roots(sample)
+        scanner = Scan(self, self._block(self.max_concepts, self.rows))
+        order = rng.permutation(len(frame))
+        for i in range(0, len(frame), 2048):
+            ix = order[i:i+2048]
+            scanner.push(self.encoder.transform(frame.iloc[ix]), counts[ix])
+        self._learn(sample, None, specific=scanner.result())
+        def batches():
+            for i in range(0, len(frame), 2048):
+                yield frame.iloc[i:i+2048], counts[i:i+2048]
+        self._finish(batches, counted=True)
+        return self
 
     def fit_chunks(self, read, labels=(), encoder=None, progress=None):
         """Learn from a table too large to hold: ``read()`` gives its rows as an iterator of frames.
@@ -573,6 +647,8 @@ class ConceptModel:
            last pass every row is added to the concepts of the working level: their sums are over
            the whole table.
         """
+        self.category_regions = {}
+        self.observed_targets = {}
         self.labels = list(labels)
         rng = np.random.default_rng(self.seed)
         self.encoder = encoder or Encoder().fit_chunks(read())
@@ -617,14 +693,17 @@ class ConceptModel:
             self._finish(read)
         return self
 
-    def _finish(self, read):
+    def _finish(self, read, counted=False):
         """Every row of the table is added to the concepts of the working level, as it recognizes them."""
         total, cross, done = None, None, 0
-        for frame in read():
+        for item in read():
+            frame, counts = item if counted else (item, None)
             done += len(frame)
             self._tell('finish', rows=done, total=self.rows, concepts=len(self.statistics['C']))
             data = self._seen(self.encoder.transform(frame))[0]
             t = self._route(self.statistics, data, self.train_weights)[0]
+            if counts is not None:
+                t = t * counts[:, None]
             part = self._statistics(t, data)
             total = part if total is None else {key: total[key]+part[key] for key in part}
             if self.cross is not None:
@@ -792,10 +871,137 @@ class ConceptModel:
         weights = self._weights(0.) if observed_only else self.train_weights
         return self._route(self.statistics, data, weights)[0]
 
+    def fit_observed_target(self, label, categories, chunks, validation):
+        """Fit a new categorical column after fitting the geometry on its observed predictors.
+
+        Batches give predictor rows and integer indices into categories. The same memberships read
+        and update the target. Validation chooses its smoothing without changing the geometry.
+        """
+        if label in self.encoder.numeric or label in self.encoder.categorical:
+            raise ValueError("La colonna da aggiungere deve essere esterna ai predittori addestrati.")
+        categories = list(categories)
+        if not categories or len(set(categories)) != len(categories):
+            raise ValueError("Serve un dizionario di categorie distinte.")
+        counts = np.zeros((self.concepts, len(categories)))
+
+        def encode(rows, targets):
+            targets = np.asarray(targets)
+            if targets.ndim != 1 or len(targets) != len(rows) or not np.issubdtype(targets.dtype, np.integer):
+                raise ValueError("Serve una categoria codificata per ogni riga.")
+            if np.any((targets < 0) | (targets >= len(categories))):
+                raise ValueError("Categoria fuori dal dizionario.")
+            return self.assignments(rows), targets
+
+        for rows, targets in chunks:
+            if not len(rows):
+                continue
+            shares, targets = encode(rows, targets)
+            order = np.argsort(targets, kind='stable')
+            values, starts = np.unique(targets[order], return_index=True)
+            counts[:, values] += np.add.reduceat(shares[order], starts, axis=0).T
+        if counts.sum() == 0:
+            raise ValueError("Servono righe di training per il target.")
+        mass = counts.sum(1, keepdims=True)
+        distinct = (counts > 1e-9).sum(1, keepdims=True)
+        frequency = counts.sum(0) + 1
+        prior = frequency / frequency.sum()
+        scores = np.zeros(len(KAPPA_GRID))
+        n = 0
+        for rows, targets in validation:
+            shares, targets = encode(rows, targets)
+            n += len(targets)
+            for j, kappa in enumerate(KAPPA_GRID):
+                q = categorical_reading(counts[:, targets], mass, distinct, prior[targets], kappa, np)
+                p = np.einsum('ij,ji->i', shares, q)
+                scores[j] -= np.log(np.maximum(p, 1e-300)).sum()
+        if not n:
+            raise ValueError("Servono righe di validazione per il giudizio.")
+        kappa = KAPPA_GRID[int(scores.argmin())]
+        if not hasattr(self, 'observed_targets'):
+            self.observed_targets = {}
+        self.observed_targets[label] = dict(
+            categories=categories,
+            kappa=kappa,
+            probability=categorical_reading(counts, mass, distinct, prior, kappa, np),
+        )
+        getattr(self, 'category_regions', {}).pop(label, None)
+        return self
+
+    def refine_category(self, label):
+        """Extend a categorical target with CP regions observed in additional table columns.
+
+        A missing region inherits the ordinary prediction. The label never participates in routing.
+        The caller proposes cuts and judges their categorical sums on separate rows.
+        """
+        from acan.core.conditional import ConditionalReading
+
+        fitted_head = label in getattr(self, 'observed_targets', {})
+        if not fitted_head and (label not in self.labels or label not in self.encoder.categorical):
+            raise ValueError("Il raffinamento richiede un target categorico addestrato.")
+        if not hasattr(self, 'category_regions'):
+            self.category_regions = {}
+        self.category_regions.pop(label, None)
+        base, categories = self.predict_proba(pd.DataFrame(index=[0]), label)
+        reading = ConditionalReading(len(categories))
+        reading.prior = base[0] / base[0].sum()
+        self.category_regions[label] = reading
+        return reading
+
+    def fit_category_pair(self, label, parent, child, build, judgment):
+        """Judge a categorical child inside each parent on separate labeled tabular rows."""
+        from copy import copy
+        from .category_pairs import PairColumns
+
+        for name in (parent, child):
+            if name not in self.encoder.categorical or name in self.labels or name == label:
+                raise ValueError("Servono due predittori categorici già appresi.")
+        if parent == child:
+            raise ValueError("I due predittori devono essere distinti.")
+        feature = PairColumns(parent, child, self.encoder)
+        base = copy(self)
+        base.category_regions = dict(getattr(self, 'category_regions', {}))
+        if label in base.category_regions:
+            reading = copy(base.category_regions[label])
+            reading.levels = [(f, table, k) for f, table, k in reading.levels
+                              if not isinstance(f, PairColumns) or f.names != feature.names]
+            base.category_regions[label] = reading
+        else:
+            reading = base.refine_category(label)
+        _, categories = base.predict_proba(build.iloc[:1], label)
+        dictionary = {value:i for i,value in enumerate(categories)}
+        def parts(frame):
+            values = frame[label] if label in getattr(self, 'observed_targets', {}) else frame[label].astype('string')
+            ids = values.map(dictionary)
+            eligible = ids.notna()
+            return (*feature.parts(frame.loc[eligible]), ids[eligible].to_numpy(dtype=int)), eligible
+        train, _ = parts(build)
+        valid, keep = parts(judgment)
+        if not len(train[-1]) or not len(valid[-1]):
+            raise ValueError("Servono esempi di training e giudizio con target noto.")
+        table, report = reading.subconcepts(train, valid, train)
+        prob, _ = base.predict_proba(judgment.loc[keep], label)
+        keys = feature.keys(judgment.loc[keep])
+        _, choice = reading.propose(table, keys, valid[-1], prob[np.arange(len(keys)), valid[-1]])
+        if choice:
+            reading.levels.append((feature, table, choice[1]))
+        self.category_regions = {**getattr(self, 'category_regions', {}), label: reading}
+        return {**report, 'applied': choice is not None}
+
     def predict_proba(self, frame, label):
-        t = self.assignments(frame.drop(columns=[c for c in self.labels if c in frame]))
-        _, _, log_p = self._parameters(self.statistics)
-        return t@np.exp(log_p[:, self.encoder.block(label)]), self.encoder.categories[label]
+        head = getattr(self, 'observed_targets', {}).get(label)
+        observed = frame.drop(columns=[*self.labels, label], errors='ignore')
+        t = self.assignments(observed)
+        if head is None:
+            _, _, log_p = self._parameters(self.statistics)
+            probability = t @ np.exp(log_p[:, self.encoder.block(label)])
+            categories = self.encoder.categories[label]
+        else:
+            probability = t @ head['probability']
+            categories = head['categories']
+        reading = getattr(self, 'category_regions', {}).get(label)
+        if reading is not None:
+            probability = reading.apply(observed, probability)
+        return probability, categories
 
     def predict(self, frame, label):
         if label in self.encoder.numeric:
