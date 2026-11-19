@@ -425,19 +425,40 @@ class ConceptModel:
             counts = s['N'][:, block]
             categorical.append((present, codes, counts, counts.sum(1), (counts > 1e-9).sum(1), binary))
         size = max(int(4e6//(k*max(x.shape[1]+len(blocks), 1))), 1)
+        # Centre and variance of every concept with all its members. Leaving a row out changes them only
+        # where the row has weight: elsewhere the change is below rounding, and they are reused.
+        whole_g, whole_v = centre_variance(s['Cm'], s['U'], s['Q'], above[0], self.kappa, np)
+        whole_v = np.maximum(whole_v, self.resolution)
+        log_v = np.log(whole_v)
+        smallest = np.where(s['Cm'] > 0, s['Cm'], np.inf).min(1) if s['Cm'].shape[1] else s['C']
+        floor = 1e-12*np.where(np.isfinite(smallest), smallest, s['C'])
         for start in range(0, len(x), size):
             part = slice(start, start+size)
             r = t[part][:, :, None]
             xs, ms = x[part][:, None], mask[part][:, None]
-            cm = np.maximum(s['Cm'][None]-r*ms, 0)
-            u = s['U'][None]-r*xs
-            q = np.maximum(s['Q'][None]-r*(xs*xs), 0)
             mass = np.maximum(s['C'][None]-t[part], 0)
             alone = mass < 1e-9
-            g, v = centre_variance(cm, u, q, above[0], self.kappa, np)
-            v = np.where(cm > 1e-9, np.maximum(v, self.resolution), scale[part][:, None])
-            # Every numeric attribute at once: rows x concepts x attributes, one log-density each.
-            numeric = -.5*((xs-g)**2/v+np.log(v)+LOG_2PI)*ms if encoder.numeric else None
+            numeric = None
+            if encoder.numeric:
+                # Every numeric attribute at once: rows x concepts x attributes, one log-density each.
+                numeric = (xs-whole_g[None])**2
+                numeric /= whole_v[None]
+                numeric += log_v[None]
+                empty = np.flatnonzero((s['Cm'] <= 1e-9).any(1))
+                if len(empty):                                   # a concept without members of an attribute
+                    v = np.where(s['Cm'][empty][None] > 1e-9, whole_v[empty][None], scale[part][:, None])
+                    numeric[:, empty] = (xs-whole_g[empty][None])**2/v+np.log(v)
+                numeric += LOG_2PI
+                numeric *= -.5*ms
+                row, concept = np.nonzero(t[part] > floor[None])
+                if len(row):                                     # the concepts the row belongs to: without it
+                    w = t[part][row, concept][:, None]
+                    xe, me = x[part][row], mask[part][row]
+                    cm = np.maximum(s['Cm'][concept]-w*me, 0)
+                    g, ve = centre_variance(cm, s['U'][concept]-w*xe, np.maximum(s['Q'][concept]-w*xe*xe, 0),
+                                            above[0][concept], self.kappa, np)
+                    ve = np.where(cm > 1e-9, np.maximum(ve, self.resolution), scale[part][row])
+                    numeric[row, concept] = -.5*((xe-g)**2/ve+np.log(ve)+LOG_2PI)*me
             terms, read = [], [name in self.labels for name in encoder.numeric]
             for name, block, info in zip(encoder.categorical, blocks, categorical):
                 present, codes, counts, totals, distinct, binary = info
@@ -486,7 +507,13 @@ class ConceptModel:
                 # Attribute j read from all the others: sum_k softmax(total - terms_j)_k exp(terms_jk)
                 # = exp(LSE_k total - LSE_k(total - terms_j)), for every attribute at once.
                 total = prior+terms.sum(-1)
-                value = (_logsumexp(total, 1)[:, None]-_logsumexp(total[..., None]-terms, 1))*observed
+                # LSE over concepts of (total - terms_j) for every attribute j: laid out as rows x attributes
+                # x concepts so the sum runs over contiguous memory, computed in place.
+                left = np.subtract(total[:, None, :], np.moveaxis(terms, 2, 1), order='C')
+                top = left.max(-1)
+                left -= top[..., None]
+                np.exp(left, out=left)
+                value = (_logsumexp(total, 1)[:, None]-(np.log(left.sum(-1))+top))*observed
                 scores[part] = value.sum(1)/np.maximum(observed.sum(1), 1)
         return scores
 
