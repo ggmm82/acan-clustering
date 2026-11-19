@@ -15,7 +15,7 @@ from acan.lm.pair_model import PairEncoder, PairLanguageModel, shift
 from .pair_reading import Columns, local_stats, read
 from acan.lm.pair_training import finer_spans
 from acan.core.conditional import calibrated_weights
-from .dyadic_run import recall, corpus
+from .common import recall, corpus
 
 
 def get(file):
@@ -78,7 +78,7 @@ def compile_graph(folder, scores):
 
 
 def evaluate(model, data, retune=False):
-    from .run import blocks
+    from .common import blocks
 
     tok = Tokenizer.from_file(str(data / "bpe-8000.json"))
     ps = {}

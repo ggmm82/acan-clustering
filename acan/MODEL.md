@@ -139,7 +139,7 @@ Si prendono due token consecutivi e si affiancano le coordinate nello stesso ord
 
 Quando compare il token successivo, il modello può completare la riga. La sua categoria aggiorna i conteggi dei contesti che terminavano **prima** del token. I conteggi arrivano sia alle letture generali sia alle combinazioni più specifiche. Le probabilità dei token veri in validazione determinano quanto peso concedere a ogni lettura. La procedura di confronto delle scale congela i pesi già scelti prima di provare una scala maggiore e misura il guadagno su una seconda parte della validazione.
 
-Per la coda lunga, il worker apprende la geometria su finestre di training distribuite lungo il primo file, fino a 262.144 token. Poi percorre per intero i file della coda a pezzi. Ogni posizione aggiorna la distribuzione del target della radice e le tabelle sparse delle letture scelte. Le chiavi delle due metà possono registrare seguiti nuovi. Entro il budget di conteggio, un livello che supera la sua quota conserva le chiavi con più osservazioni per byte. Il budget riguarda queste tabelle. Geometria, memoria del documento e lavoro temporaneo occupano altra RAM.
+Il sito usa questo modello sia per le tabelle sia per il testo. Per la coda lunga, il worker apprende la geometria su finestre di training distribuite lungo il primo file, fino a 262.144 token. La lunghezza del contesto non è fissata: la validazione aggiunge le scale 8, 16, … fino a 512 token finché migliorano la previsione e si ferma dopo due scale senza guadagno. Poi percorre per intero i file della coda a pezzi. Ogni posizione aggiorna la distribuzione del target della radice e le tabelle sparse delle letture scelte. Le chiavi delle due metà possono registrare seguiti nuovi. Entro il budget di conteggio, un livello che supera la sua quota conserva le chiavi con più osservazioni per byte. Il budget riguarda queste tabelle. Geometria, memoria del documento e lavoro temporaneo occupano altra RAM.
 
 Il checkpoint contiene il tokenizer nella cartella del progetto, i parametri dei riconoscitori, i centri, le categorie apprese e i loro conteggi, i pesi di lettura e il tratto finale del pezzo. Quest’ultimo permette di riprendere dal token successivo anche se un contesto attraversava il punto di salvataggio. All’inizio di un nuovo file la coda conserva gli apprendimenti precedenti e inizia con un prefisso vuoto.
 
@@ -151,7 +151,7 @@ A temperatura zero si sceglie il token con probabilità massima. Con temperatura
 
 ### Verifiche sul testo
 
-Su WikiText-2 si misurano gli stessi 32.704 token in tutte le righe. Entrambi i modelli possono leggere il prefisso dall’inizio dell’articolo. Il contatore usa fino a sei token vicini come chiave. I valori sono NLL in nat/token, con memoria del documento spenta.
+Su WikiText-2 si misurano gli stessi 32.704 token in tutte le righe. Il confronto è con un contatore di suffissi esatti, il modello generativo usato in precedenza dal sito: oggi non fa più parte del prodotto e resta solo come riferimento negli esperimenti. Entrambi i modelli possono leggere il prefisso dall’inizio dell’articolo. Il contatore usa fino a sei token vicini come chiave. I valori sono NLL in nat/token, con memoria del documento spenta.
 
 | Scala provata | Coppie sul controllo | Coppie sul test | Contatore sul test |
 |---:|---:|---:|---:|

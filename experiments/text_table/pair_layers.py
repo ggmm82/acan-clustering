@@ -12,9 +12,9 @@ import pandas as pd
 from tokenizers import Tokenizer
 
 from acan.core.concepts import ConceptModel
-from .dyadic import embeddings
-from .dyadic_run import corpus
-from .run import blocks
+from .common import embeddings
+from .common import corpus
+from .common import blocks
 
 
 def datasets(data):

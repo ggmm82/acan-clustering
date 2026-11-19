@@ -150,12 +150,12 @@ def load_export(directory, device='cpu', cache_dir=None):
 
 CONCEPT_README = """Modello linguistico a concetti ACAN: nessuna rete neurale.
 
-concepts.safetensors   le somme dei concetti per contesto e i pesi scelti dal giudizio
+concepts.safetensors   i concetti dei token e dei tratti di testo, i loro conteggi e i pesi scelti dal giudizio
                        (safetensors: un formato standard e sicuro per tabelle di numeri)
 tokenizer/             il tokenizer che trasforma il testo in token e viceversa
 scrivi.py              uno script pronto: carica il modello e scrive
 config.json            le impostazioni dell'apprendimento
-training-summary.json  passi, token letti, errore su testo mai visto, concetti per livello
+training-summary.json  passi, token letti, errore su testo mai visto, concetti per scala, contesto letto
 export-manifest.json   le impronte SHA-256 di ogni file
 
 Non contiene il testo di addestramento.
@@ -195,8 +195,6 @@ parser.add_argument('--seme', type=int, default=0)
 args = parser.parse_args()
 arrays = load_file(str(here/'concepts.safetensors'))
 model = from_checkpoint_arrays(arrays)
-if 'context_fit_tokens' in arrays and getattr(model, 'context_trained_at', None) != int(arrays['context_fit_tokens'][0]):
-    raise SystemExit('Il checkpoint usa la lettura CP dei suffissi. Installa la versione ACAN usata dal worker.')
 tokenizer = AutoTokenizer.from_pretrained(str(here/'tokenizer'), local_files_only=True)
 prompt = args.testo if args.testo else f"<|im_start|>user\\n{args.domanda.strip()}<|im_end|>\\n<|im_start|>assistant\\n"
 stop = {tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids('<|im_end|>')} - {None, tokenizer.unk_token_id}
@@ -215,9 +213,8 @@ def _export_concepts(directory, snapshot, name, receipt, job):
     payloads = {'concepts.safetensors': (snapshot/'trainables.safetensors').read_bytes(),
                 'config.json': json.dumps(job['config'], indent=2).encode(),
                 'training-summary.json': json.dumps({key: state.get(key) for key in ('step', 'tokens_trained', 'validation_nll', 'baseline_nll',
-                                                     'concepts_per_level', 'generalized_concepts', 'weights_global', 'weights_document',
-                                                     'paths', 'path_weights', 'context_classes', 'pooled_contexts',
-                                                     'context_fit_tokens')}, indent=2).encode(),
+                                                     'concepts_per_level', 'concepts_total', 'context_tokens',
+                                                     'statistics_bytes')}, indent=2).encode(),
                 'scrivi.py': CONCEPT_SCRIPT.encode(),
                 'README.txt': CONCEPT_README.encode()}
     for item in sorted((directory/'tokenizer').iterdir()):

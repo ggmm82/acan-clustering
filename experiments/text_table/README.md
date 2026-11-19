@@ -2,6 +2,8 @@
 
 La [guida del modello](../../acan/MODEL.md) spiega le equazioni, il training e la generazione. Le prove in questa directory misurano la probabilità del prossimo token con lo stesso tokenizer e gli stessi target per ciascuna coppia di modelli.
 
+Il riferimento di confronto è il contatore di suffissi esatti (`counter.py`), che era il modello generativo del sito e non fa più parte del prodotto. Le funzioni comuni (blocchi del protocollo, corpus per articolo, vettori dei token, prove di richiamo) sono in `common.py`.
+
 ## Coppie di concetti
 
 Il protocollo breve usa WikiText-2 raw v1, un BPE da 8.000 token appreso sul train e 64 blocchi da 512 token. I 511 seguiti di ciascun blocco danno 32.704 osservazioni. Il contesto e la memoria ripartono a ogni blocco o inizio di articolo.

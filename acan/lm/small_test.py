@@ -4,8 +4,8 @@ Three tiny transformers, identical except for attention, are trained from scratc
 
 * ``dense``: ordinary attention over every previous token (the best one can do);
 * ``window``: only the last ``window`` tokens (the same memory as concepts, no concepts);
-* ``concepts``: the concept model itself (acan/lm/concept_lm.py), no network: the training sequences
-  and text are counted, the weights of its levels are chosen by the judgment.
+* ``concepts``: the concept model itself (acan/lm/pair_text.py), no network: the training sequences
+  become rows of concepts of their pairs, the weights of its readings are chosen by the judgment.
 
 Two tasks with a plain measure each:
 
@@ -175,14 +175,26 @@ def read_corpus(path, jsonl, limit=3*1024*1024):
     return '\n\n'.join(texts)
 
 
+def concept_model(train, tune, vocabulary, eos, check):
+    """The generative concept model (acan/lm/pair_text.py) learned on ``train`` and judged on ``tune``."""
+    import numpy as np
+    from .pair_text import PairText
+    train = np.asarray(train, np.int32)
+    model = PairText(vocabulary, eos, 256 << 20)
+    for start in range(0, len(train), 200_000):
+        check()
+        model.add(train[start:start+200_000], train, tune, check)
+    model.judge(tune)
+    return model
+
+
 def concept_memory(pairs, filler, values, settings, seed, check, varied=False):
-    """The memory task with the concept model (acan/lm/concept_lm.py): the training sequences are counted.
+    """The memory task with the concept model (acan/lm/pair_text.py): the training sequences are its table.
 
     The same sequences a network would read in its training steps; the weights of the levels are chosen
     by the judgment on other training sequences; the measure is the same as for the networks.
     """
     import numpy as np
-    from .concept_lm import ConceptLM
     keys, questions = max(values, 2*pairs), 4
     vocabulary = keys+values+1+8
     generator = torch.Generator().manual_seed(seed)
@@ -198,15 +210,9 @@ def concept_memory(pairs, filler, values, settings, seed, check, varied=False):
     count = settings['memory_steps']*32                           # the sequences of a network's training
     rows, _ = sequences(count, generator, None if varied else filler)
     check()
-    model = ConceptLM(vocabulary, depth=4, document=2)
-    model.add(np.concatenate([np.r_[row, vocabulary-1] for row in rows]))
-    model.settle()
     tune_rows, tune_targets = sequences(200, torch.Generator().manual_seed(1000+seed), None if varied else filler)
-    texts, places = [], []
-    for row, target in zip(tune_rows, tune_targets):
-        for at in np.flatnonzero(target != -100):
-            texts.append(np.r_[row[:at+1], target[at]]); places.append(np.array([at+1]))
-    model.judge(texts, places)
+    texts = [np.r_[row, vocabulary-1] for row in tune_rows]
+    model = concept_model(np.concatenate([np.r_[row, vocabulary-1] for row in rows]), texts, vocabulary, vocabulary-1, check)
     check()
     ids, targets = recall_batch(512, pairs, keys, values, filler, questions, torch.Generator().manual_seed(10_000+seed))
     ids, targets = ids.numpy(), targets.numpy()
@@ -274,11 +280,10 @@ def cost(shape, lengths, check):
     long the text is. The network is untrained, the concept model counts random text: only the cost is measured.
     """
     import numpy as np
-    from .concept_lm import ConceptLM
     rows = []
     TinyLM(64, 'dense', length=64, **shape).eval()(torch.zeros(1, 64, dtype=torch.long))   # warm-up
-    concept = ConceptLM(64, depth=4, document=2)
-    concept.add(np.random.default_rng(0).integers(0, 64, 100_000)); concept.settle()
+    text = np.random.default_rng(0).integers(0, 63, 100_000)
+    concept = concept_model(text, [text[-2048:]], 64, 63, lambda: None)
     for length in lengths:
         check()
         row = dict(length=length)
@@ -290,7 +295,7 @@ def cost(shape, lengths, check):
         started = time.perf_counter()
         concept.logp(ids[0].numpy())
         row['concepts'] = dict(milliseconds_per_token=1000*(time.perf_counter()-started)/length,
-                               kept_vectors=concept.depth+1+concept.document)
+                               kept_vectors=concept.context_tokens())
         rows.append(row)
     x = torch.tensor([row['length'] for row in rows], dtype=torch.float64)
     y = torch.tensor([row['dense']['milliseconds_per_token'] for row in rows], dtype=torch.float64)
@@ -370,19 +375,14 @@ def run(text, budget='quick', check=lambda: None, report=lambda message: None, s
 
 
 def concept_text(train_data, held, alphabet, block, check):
-    """The text with the concept model: the training text is counted once, measured as the networks are."""
+    """The text with the concept model: the training text is read once, measured as the networks are."""
     import numpy as np
-    from .concept_lm import ConceptLM
     started = time.monotonic()
     data, held = train_data.numpy(), held.numpy()
     counted, tune = data[:-len(data)//10], data[-len(data)//10:]       # the weights are judged on text never counted
-    model = ConceptLM(len(alphabet), depth=8, document=4)
-    for start in range(0, len(counted), 100_000):
-        check()
-        model.add(counted[start:start+100_000])
-    model.settle()
     pieces = [tune[start:start+block] for start in range(0, len(tune)-block, block)][:200]
-    model.judge(pieces, [np.arange(block//2, block)]*len(pieces))
+    # The alphabet has no end-of-text character: one more symbol, never seen, marks the end of a document.
+    model = concept_model(counted, pieces, len(alphabet)+1, len(alphabet), check)
     evaluation = torch.Generator().manual_seed(20_000)
     values = []
     for _ in range(8):
@@ -390,7 +390,7 @@ def concept_text(train_data, held, alphabet, block, check):
         for row, target in zip(ids.numpy(), targets.numpy()):
             values.append(model.logp(np.r_[row, target[-1:]], np.arange(block//2+1, block+1)))
     prompt = held[:block]
-    produced = model.generate(prompt, 300, temperature=.8, seed=1)
+    produced = model.generate(prompt, 300, stop={len(alphabet)}, temperature=.8, seed=1)
     return dict(bits_per_character=float(-np.concatenate(values).mean()/math.log(2)), seconds=time.monotonic()-started,
                 prompt=''.join(alphabet[i] for i in prompt[-80:].tolist()), sample=''.join(alphabet[i] for i in produced),
                 parameters=0, concepts=sum(model.concepts()), training_curve=[])

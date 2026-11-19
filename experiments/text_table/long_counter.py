@@ -7,9 +7,9 @@ from pathlib import Path
 import numpy as np
 from tokenizers import Tokenizer
 
-from acan.lm.concept_lm import ConceptLM
-from .dyadic_run import corpus
-from .run import blocks
+from .counter import ConceptLM
+from .common import corpus
+from .common import blocks
 
 
 def evaluation(data, split, tokenizer):

@@ -151,7 +151,7 @@ def resolve(store, job, options):
             ids = list(dict.fromkeys(other['config']['corpus_id'] for other in members)) or ids
         corpora = [store.corpus(identifier, job['owner'], ready=True) for identifier in ids]
         paths = [store.directory('corpora', item['id'])/'corpus' for item in corpora]
-        training_only = options.get('routing_profile') in ('concept-table-v1','concept-pairs-v1') or options.get('context_refinement')
+        training_only = options.get('routing_profile') == 'concept-pairs-v1'
         names = [item['name'] for item in corpora] if training_only else None
         train_tokenizer(paths, folder, options.get('vocabulary', 32000), training_names=names)
     hashes = _hashes(folder)

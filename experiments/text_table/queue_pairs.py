@@ -11,8 +11,8 @@ from tokenizers import Tokenizer
 
 from acan.lm.pair_text import PairText
 from .document_pairs import evaluate
-from .dyadic_run import corpus
-from .run import blocks
+from .common import corpus
+from .common import blocks
 
 
 def run(args):

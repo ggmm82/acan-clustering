@@ -13,11 +13,11 @@ from tokenizers import Tokenizer
 from acan.core.category_pairs import CategoryPairs
 from acan.core.category_table import Table
 from acan.lm.pair_training import geometry, finer_spans
-from .dyadic_run import corpus
+from .common import corpus
 from .pair_layers import age, route_pairs
 from .pair_reading import Columns, compose_exact, root_probabilities, stages, read
 from acan.core.conditional import calibrated_weights
-from .run import blocks
+from .common import blocks
 
 
 def full_articles(data, folder, split):

@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from acan.lm.pair_training import add_chunk
-from acan.lm.concept_lm import ConceptLM
+from .counter import ConceptLM
 from .long_counter import evaluation
 from .document_pairs import evaluate
 from tokenizers import Tokenizer

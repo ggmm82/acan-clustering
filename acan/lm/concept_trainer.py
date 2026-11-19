@@ -1,6 +1,8 @@
-"""Train, validate and checkpoint the tabular graph on causal text rows.
+"""Train, validate and checkpoint the concept model of text (acan/lm/pair_text.py) from the long queue.
 
-Existing exact-context jobs retain their original state format and training path.
+The generative model is the tabular concept model: every position of the text is a row whose known
+columns are ordered pairs of concepts of the preceding tokens, and the next token is the column to
+complete (acan/MODEL.md). Checkpoints of the earlier generative models are refused with a clear message.
 """
 import json
 import math
@@ -14,26 +16,19 @@ from . import checkpoints
 from .data import PreparationPaused
 from .store import Store
 
-PROFILE = 'concept-lm-v1'
+PROFILE = 'concept-pairs-v1'
 
 
 def contract(profile=PROFILE):
     """The sources that define what a checkpoint of this model means."""
-    if profile == 'concept-pairs-v1':
-        return 'concept-pairs-v1/1'
-    if profile == PROFILE:
-        # Identity used by the previous release for persisted exact-context jobs.
-        return '5e751934b49d4184d0021e518f40988f8781380714518a330d5577837913f2cd'
-    # Numerical identity of the original causal-row graph. Its equations are unchanged.
-    return '08e7cc96bbeab2e6d8ef2d9f6f3c59e25837072235786faef1809d670147980d'
+    if profile != PROFILE:
+        raise ValueError(f'Il modello generativo «{profile}» non fa più parte del prodotto: '
+                         f'crea un nuovo progetto, che userà il modello a concetti ({PROFILE}).')
+    return 'concept-pairs-v1/1'
 
 
 def training_contract(config):
-    if not config.get('context_refinement'):
-        return contract(config['routing_profile'])
-    # Numerical identity of the initially published CP suffix reader. Increment when its learned
-    # statistic or selection semantics change. Evaluation timing and sparse score queries are compatible.
-    return '8045d421740f61401cfda484d4cc52b7c5882858953390d1701ff553132f11f4'
+    return contract(config['routing_profile'])
 
 
 MEASURES = ('validation_nll', 'validation_perplexity', 'training_nll')
@@ -105,55 +100,34 @@ def record_answers(directory, model, tokenizer, state, questions=None, new_token
 
 def quantities(model, config):
     """What the page shows about the model while it learns."""
-    if config['routing_profile'] in ('concept-pairs-v1','concept-table-v1'):
-        levels = model.concepts()
-        return dict(concepts_per_level=levels, concepts_total=sum(levels), statistics_bytes=model.nbytes(),
-                    memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024)
-    levels = model.concepts() if not model.counter else None
-    refined = {}
-    if config.get('context_refinement'):
-        chosen = model.refinement
-        refined = dict(context_fit_tokens=model.context_trained_at, context_classes=len(np.unique(chosen.mapping)) if chosen else 0,
-                       pooled_contexts={j: len(table.keys) for j, table in chosen.tables.items()} if chosen else {})
-    return dict(**refined, concepts_per_level=levels, concepts_total=sum(levels) if levels else None, statistics_bytes=model.nbytes(),
-                budget_bytes=model.budget_bytes, generalized_concepts=model.generalized, context_depth=model.depth,
-                document_depth=model.document, weights_global=[float(x) for x in model.a],
-                weights_document=[float(x) for x in model.b], memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
-                paths=len(model.paths), path_weights=[float(x) for x in model.w], readings=len(model.readings), path_depth=model.path_depth,
-                token_concepts=[int(m.max())+1 for m in model.maps])
-
-
-CONCEPT_TEXT = 20_000_000                                       # tokens read to find the concepts of the tokens
-
-
-def learn_paths(train, vocabulary, depth, should_pause=lambda: False):
-    """The concepts of the tokens and the paths through them, found on the start of the training text."""
-    from .concept_lm import standard_paths, token_concepts
-    if should_pause():
-        raise PreparationPaused()
-    levels = token_concepts(np.asarray(train[:CONCEPT_TEXT], np.int64), vocabulary)
-    return standard_paths(levels, depth)
+    levels = model.concepts()
+    return dict(concepts_per_level=levels, concepts_total=sum(levels), statistics_bytes=model.nbytes(),
+                budget_bytes=model.budget_bytes, context_tokens=model.context_tokens(),
+                memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024)
 
 
 def run_training(root, identifier, stop_event=None):
+    from copy import copy
+    from threadpoolctl import threadpool_limits
     from transformers import AutoTokenizer
-    from .concept_lm import PATH_DEPTH, ConceptLM, default_budget, load, save
-    from .text_graph import TextGraph, PROFILE as graph_profile
-    from .pair_text import PairText, PROFILE as pair_profile
+    from .concept_lm import default_budget, load, save
     from .native import resolve
+    from .pair_text import PairText
     from .research_data import Blocks, prepare
     from .retention import retain_with_milestones
     store = Store(root)
     job = store.job(identifier)
     config = job['config']
     profile = config['routing_profile']
-    pairs = profile == pair_profile
-    graph = profile in (graph_profile,pair_profile)
     directory = store.directory('jobs', identifier)
     should_pause = lambda: bool((stop_event and stop_event.is_set()) or store.job(identifier)['pause'])
-    try:
+
+    def check():
         if should_pause():
             raise PreparationPaused()
+    try:
+        contract(profile)                                       # an earlier generative model is refused here
+        check()
         store.update(identifier, status='preparing', error=None)
         path, base = resolve(store, job, config)
         tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=False, local_files_only=True)
@@ -162,13 +136,13 @@ def run_training(root, identifier, stop_event=None):
         if checkpoints.digest_file(source) != corpus['sha256']:
             raise ValueError('Il corpus è stato modificato dopo il caricamento.')
         tokens = prepare(source, corpus['name'], tokenizer, directory, dict(corpus=corpus['sha256'], base=base), should_pause)
-        if should_pause():
-            raise PreparationPaused()
+        check()
         blocks = Blocks(directory, config['sequence_length'], config['seed'], config['validation_batches'])
         train = blocks.tokens['train']
         piece = piece_tokens(config)
         share = min(config.get('passes') or 1., 1.)              # counting a text twice teaches nothing new
-        steps = max(1, math.ceil(len(train)*share/piece))
+        read = math.ceil(len(train)*share)
+        steps = max(1, math.ceil(read/piece))
         if config.get('total_steps') != steps and not job['checkpoint']:
             config['total_steps'] = steps
             store.set_config(identifier, config)
@@ -178,46 +152,26 @@ def run_training(root, identifier, stop_event=None):
         root_checkpoints.mkdir(exist_ok=True)
         previous = checkpoints.for_resume(root_checkpoints, identity, job['checkpoint'], job['progress'].get('step', 0))
         budget = int(config.get('concept_memory_mb') or 0)*(1 << 20) or default_budget()
-        tune, judge = judged_pieces(blocks, config['validation_batches'], disjoint=pairs or config.get('context_refinement', False))
+        tune, judge = judged_pieces(blocks, config['validation_batches'], disjoint=True)
         if previous:
             model, state = load(previous, identity, budget)
             with store.db() as db:
                 db.execute('DELETE FROM metrics WHERE job=? AND step>?', (identifier, state['step']))
         else:
-            depth, document = config.get('concept_depth', 6), config.get('concept_document', 4)
             start = None
             if config.get('warm_start'):                        # the queue goes on with the concepts of the previous text
                 source = previous_checkpoint(store, job)
                 start, _ = load(source, budget_bytes=budget)
-                if (isinstance(start, PairText) != pairs or isinstance(start, TextGraph) != (profile == graph_profile)
-                        or (pairs and (start.vocabulary!=len(tokenizer) or start.eos!=tokenizer.eos_token_id))):
-                    raise ValueError('La coda contiene un checkpoint con una diversa struttura dei concetti.')
-            if graph:
-                model = start if start is not None else (PairText(len(tokenizer),tokenizer.eos_token_id,budget) if pairs else TextGraph(len(tokenizer)))
-                model.tail = np.empty(0, np.int64)
-            else:
-                if start is not None:
-                    maps, paths, reach = start.maps, start.paths, start.path_depth
-                elif config.get('concept_paths'):
-                    maps, paths = learn_paths(train, len(tokenizer), depth, should_pause)
-                    reach = PATH_DEPTH
-                else:
-                    maps, paths, reach = [], None, None
-                model = ConceptLM(len(tokenizer), depth, document, budget, maps, paths, reach)
+                if start.vocabulary != len(tokenizer) or start.eos != tokenizer.eos_token_id:
+                    raise ValueError('La coda contiene un checkpoint con un vocabolario diverso.')
+            model = start if start is not None else PairText(len(tokenizer), tokenizer.eos_token_id, budget)
+            model.tail = np.empty(0, np.int64)                   # a new text starts with an empty prefix
             state = dict(step=0, tokens_trained=0, device='cpu', identity=identity, model_contract=contract(profile), profile=profile,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},
                          graft=dict(profile=profile, vocabulary=len(tokenizer), replaced_layers=[], total_layers=0,
                                     slots=0, window=0, fraction=1.))
             if start is not None:
-                if not graph:
-                    model.merge(start)
-                    model.a, model.b, model.w = start.a.copy(), start.b.copy(), start.w.copy()
-                    if config.get('context_refinement'):
-                        model.context_trained_at = start.context_trained_at
-                        if start.refinement is not None:
-                            model.refinement = start.refinement.build(model)
-                state['warm_start'] = dict(checkpoint=source.name, job=source.parent.parent.name,
-                                           tokens=start.tokens)
+                state['warm_start'] = dict(checkpoint=source.name, job=source.parent.parent.name, tokens=start.tokens)
             state['baseline_nll'] = measure(model, judge)       # before reading this text
             state['validation_nll'] = state['baseline_nll']
             state['best_validation_nll'] = state['validation_nll']
@@ -230,51 +184,25 @@ def run_training(root, identifier, stop_event=None):
         saved_step = state['step']
         while state['step'] < config['total_steps'] and not should_pause():
             begin = state['step']*piece
-            end = min(begin+piece, math.ceil(len(train)*share)) if graph or config.get('context_refinement') else begin+piece
-            ids = np.asarray(train[begin:end], np.int64)
-            if graph:
-                from threadpoolctl import threadpool_limits
-                def check():
-                    if should_pause():
-                        raise PreparationPaused()
-                # Commit a whole piece or keep the previous sums intact on pause.
-                from copy import copy
-                updated = copy(model)
-                if pairs and model.model is not None:
-                    updated.model=copy(model.model)
-                    updated.model.tables=dict(model.model.tables)
-                elif model.model is not None:
-                    updated.counts = model.counts.copy()
-                    updated.reading = None
-                try:
-                    with threadpool_limits(limits=2):
-                        if pairs:
-                            updated.add(ids,train[:math.ceil(len(train)*share)],tune,check)
-                        else:
-                            updated.add(ids, check)
-                except PreparationPaused:
-                    break
-                model = updated
-            elif config.get('context_refinement'):
-                model.add_context_piece(ids)
-            else:
-                model.add(ids)
+            ids = np.asarray(train[begin:min(begin+piece, read)], np.int64)
+            # Commit a whole piece or keep the previous sums intact on pause.
+            updated = copy(model)
+            if model.model is not None:
+                updated.model = copy(model.model)
+                updated.model.tables = dict(model.model.tables)
+            try:
+                with threadpool_limits(limits=2):
+                    updated.add(ids, train[:read], tune, check)
+            except PreparationPaused:
+                break
+            model = updated
             state.update(step=state['step']+1, tokens_trained=state['tokens_trained']+len(ids))
             state['tokens_per_second'] = (state['tokens_trained']-initial)/max(time.monotonic()-started, 1e-6)
             due = state['step'] % config['save_steps'] == 0 or time.monotonic()-last_save >= config['save_seconds']
             last = due or should_pause() or state['step'] == config['total_steps']
             measured = last or state['step'] % measure_every(config['total_steps']) == 0
             if measured:                                         # the error on unseen text, about twenty times per text
-                if pairs:
-                    model.judge(tune)
-                elif not graph:
-                    if config.get('context_refinement'):
-                        from threadpoolctl import threadpool_limits
-                        with threadpool_limits(limits=2):
-                            model.judge_contexts(tune, final=state['step'] == config['total_steps'])
-                    else:
-                        model.settle()
-                        model.judge(tune)
+                model.judge(tune)
                 state['validation_nll'] = measure(model, judge)
                 state['validation_perplexity'] = math.exp(state['validation_nll']) if state['validation_nll'] < 700 else None
                 following = np.asarray(train[state['step']*piece:state['step']*piece+4096], np.int64)
@@ -293,13 +221,8 @@ def run_training(root, identifier, stop_event=None):
             # A step without a measure does not repeat the last one: the chart draws only what was measured.
             row = state if measured else {key: value for key, value in state.items() if key not in MEASURES}
             store.record(identifier, state['step'], row, progress=state)
-        if (graph or config.get('context_refinement')) and state['step'] != saved_step:
-            if pairs:
-                model.judge(tune)
-            elif not graph:
-                from threadpoolctl import threadpool_limits
-                with threadpool_limits(limits=2):
-                    model.judge_contexts(tune)
+        if state['step'] != saved_step:                          # paused between two saves: keep what was read
+            model.judge(tune)
             state.update(quantities(model, config))
             state['validation_nll'] = measure(model, judge)
             state['validation_perplexity'] = math.exp(state['validation_nll'])
@@ -366,23 +289,16 @@ def evaluate(store, job, request, directory, check):
         check()
         prompt = np.resize(tokens, length) if length > len(tokens) else tokens[:length]   # longer than the test text: repeated
         started = time.perf_counter()
-        cursor = model.prediction_cursor(prompt) if (getattr(model, 'context_trained_at', 0) or state.get('profile') == 'concept-pairs-v1') else None
-        if cursor is None:
-            model.logp(prompt)
+        cursor = model.prediction_cursor(prompt)
         reading = time.perf_counter()-started
         new_tokens = int(request.get('new_tokens', 16))
         started = time.perf_counter()
-        if cursor is None:
-            model.generate(prompt, new_tokens, temperature=0.)
-        else:
-            model.generate((), new_tokens, temperature=0., cursor=cursor)
+        model.generate((), new_tokens, temperature=0., cursor=cursor)
         writing = time.perf_counter()-started
         memory = model.nbytes()
         performance.append(dict(prompt_tokens=length, new_tokens=new_tokens, prefill_seconds=reading,
                                 prefill_tokens_per_second=length/max(reading, 1e-9), decode_seconds=writing,
                                 decode_tokens_per_second=new_tokens/max(writing, 1e-9),
                                 cache=dict(dense_layers=0, acan_layers=memory, total=memory)))
-        if cursor is not None and hasattr(cursor,'cells'):
-            performance[-1]['document_cells_after_decode'] = cursor.cells.tolist()
     quality['performance'] = performance
     return quality

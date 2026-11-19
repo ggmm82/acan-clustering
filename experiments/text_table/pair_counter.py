@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import numpy as np
-from acan.lm.concept_lm import ConceptLM
+from .counter import ConceptLM
 from .pair_layers import datasets
 
 

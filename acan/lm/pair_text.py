@@ -165,6 +165,14 @@ class PairText:
             for w, (graph, _) in m.encoder.nodes.items()
         ]
 
+    def context_tokens(self):
+        """Tokens of context the selected scales can read (chosen on validation, up to 512)."""
+        return int(self.model.encoder.width) if self.model is not None else 0
+
+    def scales(self):
+        """The span lengths whose concepts the model learned: 2, 4, 8, ..."""
+        return sorted(int(w) for w in self.model.encoder.nodes) if self.model is not None else []
+
     def nbytes(self):
         return sum(a.nbytes for a in self.arrays().values())
 
