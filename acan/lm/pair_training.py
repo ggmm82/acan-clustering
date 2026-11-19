@@ -294,7 +294,7 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
     started = time.monotonic()
     # A scale of w tokens is learned only from windows longer than w: the sample grows with the
     # longest scale allowed, and keeps its windows long enough to contain it.
-    limit = max(262144, 4 * max_context)
+    limit = max(int(__import__('os').environ.get('ACAN_PAIR_SAMPLE', 262144)), 4 * max_context)
     ids, starts = sample_documents(tokens, eos, limit=limit, block=max(4096, min(2 * max_context, limit)),
                                    documents=documents)
     tr = EncodedPrefix(ids, starts)
