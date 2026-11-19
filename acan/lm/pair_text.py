@@ -29,7 +29,7 @@ def document_stats(row, name):
 
 
 class PairText:
-    def __init__(self, vocabulary, eos, budget, max_context=1 << 19):
+    def __init__(self, vocabulary, eos, budget, max_context=512):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), eos, int(budget)
         self.max_context = int(max_context)                     # longest scale the validation may choose
         self.tokens = 0

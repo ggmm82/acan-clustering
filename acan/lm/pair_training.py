@@ -11,7 +11,7 @@ from acan.concept_algebra import categorical_reading
 from .pair_model import EncodedPrefix, PairEncoder, PairLanguageModel, shift
 
 
-CONTEXT = 1 << 19                                                # longest scale tried by default: 524,288 tokens
+CONTEXT = 512                                                    # longest scale tried by default (concept_context sets more)
 # Rows on which the concepts of a scale are found and judged. The judgment reads every drawn row at
 # every candidate cut, so its time grows with these rows: a scale takes seconds instead of minutes.
 GEOMETRY = dict(max_concepts=256, bins=24, judged_rows=int(__import__('os').environ.get('ACAN_PAIR_JUDGED', 2048)),

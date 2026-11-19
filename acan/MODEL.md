@@ -254,7 +254,9 @@ scheda tabulare lo usa direttamente; il generativo lo usa attraverso
    - scala dopo scala, i concetti dei tratti (passo 7) e i sotto-concetti (passo 8);
    - quali letture usare e con quale peso, scegliendo sulla validazione (passo 8).
    Il contesto massimo ammesso è un'impostazione (`concept_context`, da 8 a
-   1.048.576 token, di default 524.288): la validazione sceglie fin dove salire.
+   1.048.576 token, di default 512): la validazione sceglie fin dove salire.
+   Ogni scala costa da qualche decina di secondi a un paio di minuti; un contesto
+   massimo più alto allarga anche il campione, quindi la coda parte più tardi.
 4. **Tutti i pezzi: i conteggi.** Il modello legge il testo a pezzi di un milione di
    token. Per ogni posizione aggiunge il token vero ai conteggi delle chiavi lette
    (identità e concetti delle scale scelte). I conteggi stanno in tabelle sparse,

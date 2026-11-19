@@ -155,7 +155,7 @@ def run_training(root, identifier, stop_event=None):
         tune, judge = judged_pieces(blocks, config['validation_batches'], disjoint=True)
         if previous:
             model, state = load(previous, identity, budget)
-            model.max_context = config.get('concept_context', 1 << 19)   # used if the scales are not learned yet
+            model.max_context = config.get('concept_context', 512)   # used if the scales are not learned yet
             with store.db() as db:
                 db.execute('DELETE FROM metrics WHERE job=? AND step>?', (identifier, state['step']))
         else:
@@ -166,7 +166,7 @@ def run_training(root, identifier, stop_event=None):
                 if start.vocabulary != len(tokenizer) or start.eos != tokenizer.eos_token_id:
                     raise ValueError('La coda contiene un checkpoint con un vocabolario diverso.')
             model = start if start is not None else PairText(len(tokenizer), tokenizer.eos_token_id, budget,
-                                                                 config.get('concept_context', 1 << 19))
+                                                                 config.get('concept_context', 512))
             model.tail = np.empty(0, np.int64)                   # a new text starts with an empty prefix
             state = dict(step=0, tokens_trained=0, device='cpu', identity=identity, model_contract=contract(profile), profile=profile,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},
