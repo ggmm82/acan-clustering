@@ -103,10 +103,10 @@ un risultato possibile. Nell'esempio il risultato è: due concetti.
 ### Passo 5 · Predire la colonna che manca
 
 Per un numero (il prezzo) si leggono le medie dei concetti, pesate con le quote della
-riga:
+riga (in k€):
 
 $$
-\hat y = \sum_i T_i(x)\,\mu_{i,\rm prezzo}\approx 0{,}98\cdot 13+0{,}02\cdot 42\approx 13{,}6\ \mathrm{k€}.
+\hat y = \sum_i T_i(x)\,\mu_{i,\rm prezzo}\approx 0{,}98\cdot 13+0{,}02\cdot 42\approx 13{,}6 .
 $$
 
 Per una categoria (come il prossimo token) ogni concetto dà la sua distribuzione dei
