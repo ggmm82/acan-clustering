@@ -92,7 +92,14 @@ class PairText:
             return
         m = self.model
         fields = list(m.tables)
-        doc = ["root", "e1", "c1"] + [f"{s}{w}" for w in m.encoder.nodes for s in ("e", "c", "s")]
+        # The memory of the document is read as the corpus is: from the general to the particular,
+        # every scale as concept, sub-concept and then exact identity, every exact suffix included.
+        scales = sorted({1, *m.encoder.nodes, *m.encoder.exact})
+        doc = ["root"]
+        for w in scales:
+            doc += [f"c{w}"] if w == 1 or w in m.encoder.nodes else []
+            doc += [f"s{w}"] if w in m.encoder.nodes else []
+            doc += [f"e{w}"]
         rows = [self._scores(np.asarray(p, np.int32)) for p in pieces if len(p)]
         base = np.concatenate([p for _, p in rows])
 
