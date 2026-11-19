@@ -19,6 +19,89 @@ def shift(values, distance, ages):
     return out
 
 
+def span_means(vectors, row, width):
+    """For every position i, the mean vector of the tokens (i-width, i] of its document: what it talks about."""
+    n = len(row.y)
+    total = np.cumsum(np.vstack([np.zeros(vectors.shape[1]), vectors[row.y]]), 0)
+    end = np.arange(n) + 1
+    begin = np.maximum(end - width, end - 1 - row.age)
+    return (total[end] - total[begin]) / (end - begin)[:, None]
+
+
+def topic_codes(graph, vectors, row, width):
+    """The concept of what the last ``width`` tokens talk about, for every position (0 before any token)."""
+    means = span_means(vectors, row, width)
+    codes = np.zeros(len(row.y), np.uint32)
+    columns = graph.encoder.numeric
+    for i in range(0, len(codes), 65536):
+        part = slice(i, i + 65536)
+        codes[part] = graph.assignments(pd.DataFrame(means[part], columns=columns)).argmax(1) + 1
+    return codes
+
+
+def topic_factor(model, f, key):
+    """(q_topic / q_general) for every token, from the counts of a topic concept; None if never seen."""
+    table = model.tables.get(f)
+    if table is None or not key:
+        return None
+    ix = table.find(np.array([key], np.uint64))[0]
+    if ix < 0:
+        return None
+    kappa = model.topics[f][0]
+    targets, counts = table.followers(ix)
+    a = kappa * max(table.D[ix], 1)
+    ratio = np.full(model.vocabulary, a / (table.C[ix] + a))
+    ratio[targets] += counts / (table.C[ix] + a) / model.unigram[targets]
+    return ratio
+
+
+def read_distribution(model, previous, keys, memory):
+    """The probability of every token: the corpus readings, from the general to the particular, then the
+    memory of the document, then what the topics say, each multiplying by (q_topic / q_general)^beta."""
+    p = model.leaf_weights[previous] @ model.head
+    for f, k in model.weights.items():
+        table = model.tables[f]
+        ix = table.find(np.array([keys[f]], np.uint64))[0]
+        if ix >= 0:
+            targets, counts = table.followers(ix)
+            weight = k * max(table.D[ix], 1)
+            denom = table.C[ix] + weight
+            p = p * (weight / denom)
+            p[targets] += counts / denom
+    for f, k in model.memory.items():
+        counts = memory(f, keys[f])
+        if counts:
+            weight = k * len(counts)
+            denom = sum(counts.values()) + weight
+            p = p * (weight / denom)
+            p[list(counts)] += np.fromiter(counts.values(), float) / denom
+    for f, (_, beta) in getattr(model, "topics", {}).items():
+        if beta:
+            ratio = topic_factor(model, f, keys[f])
+            if ratio is not None:
+                p = p * ratio ** beta
+                p /= p.sum()
+    return p
+
+
+def walk(model, row):
+    """The distribution at every position of a text read in bulk, exactly as a cursor reads it token by token."""
+    names = list(dict.fromkeys([*model.weights, *model.memory, *getattr(model, "topics", {})]))
+    keys = {f: row.feature(f) for f in names}
+    previous = np.r_[0, row.y[:-1].astype(np.int64) + 1]
+    previous[row.age == 0] = 0
+    seen = {f: {} for f in model.memory}
+    for i in range(len(row.y)):
+        if row.age[i] == 0:
+            seen = {f: {} for f in model.memory}
+        yield read_distribution(model, previous[i], {f: int(keys[f][i]) for f in names},
+                                lambda f, key: seen[f].get(key) if key else None)
+        for f in model.memory:
+            key = int(keys[f][i])
+            if key:
+                seen[f].setdefault(key, Counter())[int(row.y[i])] += 1
+
+
 class EncodedPrefix:
     def __init__(self, ids, starts):
         self.y = np.asarray(ids, dtype=np.int32)
@@ -54,6 +137,7 @@ class PairEncoder:
         self.width = max([6, *nodes])
         self._memo = {}
         self.open_exact = False
+        self.topics = {}                                        # W -> concept model of the mean of W token vectors
 
     def encode(self, ids, starts=None):
         starts = np.asarray([0] if starts is None else starts, dtype=int)
@@ -108,6 +192,8 @@ class PairEncoder:
                 seen = code > 0
                 result[seen] = offset + code[seen]
             row.spans[f"s{w}"] = result
+        for w, graph in getattr(self, "topics", {}).items():
+            row.spans[f"t{w}"] = topic_codes(graph, self.vectors, row, w)
         return row
 
 
@@ -115,6 +201,8 @@ class PairLanguageModel:
     def __init__(self, encoder, root, tables, weights, memory):
         self.encoder, self.root = encoder, root
         self.tables, self.weights, self.memory = tables, weights, memory
+        self.topics = {}                                        # f -> [kappa, beta]: topics read by multiplying
+        self.unigram = None
         self.vocabulary = root.observed_targets["token"]["probability"].shape[1]
         leaf = np.vstack([np.full(encoder.vectors.shape[1], np.nan), encoder.vectors])
         self.leaf_weights = root.assignments(pd.DataFrame(leaf, columns=root.encoder.numeric))
@@ -187,7 +275,7 @@ class PairCursor:
             row = self.model.encoder.encode(np.r_[self.tail, np.int32(0)])
             self.next_keys = {
                 f: int(row.feature(f)[-1])
-                for f in dict.fromkeys([*self.model.weights, *self.model.memory])
+                for f in dict.fromkeys([*self.model.weights, *self.model.memory, *getattr(self.model, "topics", {})])
             }
         return self.next_keys
 
@@ -204,20 +292,9 @@ class PairCursor:
         self.next_keys = None
 
     def distribution(self):
-        model = self.model
-        p = self.model.leaf_weights[int(self.tail[-1]) + 1 if len(self.tail) else 0] @ model.head
         keys = self._keys()
-        for f, k in model.weights.items():
-            table = model.tables[f]
-            ix = table.find(np.array([keys[f]], np.uint64))[0]
-            if ix >= 0:
-                targets, counts = table.followers(ix)
-                weight = k * max(table.D[ix], 1)
-                denom = table.C[ix] + weight
-                p = p * (weight / denom)
-                p[targets] += counts / denom
-        for f, k in model.memory.items():
-            key = keys[f]
+
+        def memory(f, key):
             counts = Counter()
             table = self.tables.get(f)
             if table is not None and key:
@@ -226,9 +303,7 @@ class PairCursor:
                     ys, ns = table.followers(ix)
                     counts.update(dict(zip(ys, ns)))
             counts.update(self.overlay[f].get(key, {}))
-            if counts:
-                weight = k * len(counts)
-                denom = sum(counts.values()) + weight
-                p *= weight / denom
-                p[list(counts)] += np.fromiter(counts.values(), float) / denom
-        return p
+            return counts
+
+        previous = int(self.tail[-1]) + 1 if len(self.tail) else 0
+        return read_distribution(self.model, previous, keys, memory)

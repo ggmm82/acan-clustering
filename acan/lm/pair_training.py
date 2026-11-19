@@ -10,7 +10,7 @@ from acan.core.category_table import Table
 from acan.core.concepts import ConceptModel
 from acan.core.conditional import calibrated_weights
 from acan.concept_algebra import categorical_reading
-from .pair_model import EncodedPrefix, PairEncoder, PairLanguageModel, shift
+from .pair_model import EncodedPrefix, PairEncoder, PairLanguageModel, shift, span_means
 
 
 CONTEXT = 512                                                    # longest scale tried by default (concept_context sets more)
@@ -423,9 +423,34 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
             misses = 0 if gain else misses + 1
             if misses == 2:
                 break
+    # What the text talks about: the concept of the mean token vector of the last W tokens, for scales whose
+    # concepts make the next token of held-out text more predictable. They are read by multiplying (topic
+    # / general)^beta, with beta chosen on validation once the counts are made (PairText.judge).
+    for width in (64, 128, 256, 512):
+        if width > max(max_context, 8) or tr.age.max() < width - 1:
+            break
+        check()
+        tell('topics', width, time.monotonic()-started)
+        names_t = [f"x{i}" for i in range(vectors.shape[1])]
+        means = {name: span_means(vectors, row, width) for name, row in rows.items()}
+        draw = np.random.default_rng(42).permutation(len(tr.y))
+
+        def topic_score(graph):
+            codes = {name: graph.assignments(pd.DataFrame(m, columns=names_t)).argmax(1) + 1
+                     for name, m in means.items()}
+            return reading_score(shift(codes["train"].astype(np.uint32), 1, tr.age), tr.y,
+                                 shift(codes["tune"].astype(np.uint32), 1, va.age), va.y, vocabulary)
+
+        graph = enough_rows(lambda rows_: concept_model(rows_, searching(width)).fit(
+            pd.DataFrame(means["train"][draw[:rows_]], columns=names_t)), len(tr.y), topic_score)
+        if graph.concepts < 2:
+            continue
+        enc.topics[width] = graph
+        model.topics[f"t{width}"] = [1.0, 0.0]                  # beta 0 until judged on the counts
+        model.weights.pop(f"t{width}", None)
     where['step'] = where['steps']
     tell('done', max([6, *enc.nodes]), time.monotonic()-started)
-    enc.width = max([6, *enc.nodes])
+    enc.width = max([6, *enc.nodes, *enc.topics])
     # Every training target is subsequently counted exactly once by the streaming worker.
-    model.tables = {f: Table.empty(vocabulary) for f in model.weights}
+    model.tables = {f: Table.empty(vocabulary) for f in [*model.weights, *model.topics]}
     return model

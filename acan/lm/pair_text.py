@@ -42,7 +42,7 @@ class PairText:
         if self.model is None:
             self.model = learn(train, self.vocabulary, self.eos, tune, check, documents, self.max_context,
                                getattr(self, 'report', None))
-            self.model.training_weights = dict(self.model.weights)
+            self.model.training_weights = {**self.model.weights, **{f: 1.0 for f in self.model.topics}}
             self.target_kappa = self.model.root.observed_targets["token"]["kappa"]
             self.target_mass = np.zeros_like(self.model.head)
         pending, bigrams = {}, None                             # counted per chunk, added to the tables once
@@ -81,6 +81,7 @@ class PairText:
             np,
         )
         self.model.root.observed_targets["token"]["probability"] = self.model.head
+        self.model.unigram = frequency / frequency.sum()        # what a topic is compared with
 
     def _scores(self, ids):
         row = self.model.encoder.encode(ids, document_starts(ids, self.eos))
@@ -116,10 +117,48 @@ class PairText:
                     chosen[f] = float(k)
             return chosen, prior
 
+        fields = [f for f in fields if f not in m.topics]
         m.weights, base = fit(
             fields, lambda r, f: m.tables[f].lookup(r.feature(f), r.y), base, m.weights
         )
         m.memory, _ = fit(doc, document_stats, base, m.memory)
+        if m.topics:
+            self._judge_topics([row for row, _ in rows])
+
+    BETAS = (0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0)
+
+    def _judge_topics(self, rows):
+        """Choose how strongly each topic multiplies the reading: the beta with the best held-out likelihood.
+
+        Every topic is judged on the reading without topics, then the chosen ones are kept together only if
+        they still read the held-out text better than without them.
+        """
+        from .pair_model import topic_factor, walk
+        m = self.model
+        saved = {f: list(v) for f, v in m.topics.items()}
+        for f in m.topics:
+            m.topics[f][1] = 0.0
+        loss = {f: np.zeros(len(self.BETAS)) for f in m.topics}
+        plain, n = 0.0, 0
+        for row in rows:
+            keys = {f: row.feature(f) for f in m.topics}
+            for i, p in enumerate(walk(m, row)):
+                y = int(row.y[i]); plain -= np.log(p[y]); n += 1
+                for f in m.topics:
+                    ratio = topic_factor(m, f, int(keys[f][i]))
+                    if ratio is None:
+                        loss[f] -= np.log(p[y])
+                        continue
+                    lr = np.log(ratio)
+                    loss[f] += [-(np.log(p[y]) + b*lr[y] - np.log(p @ np.exp(b*lr))) for b in self.BETAS]
+        for f in m.topics:
+            m.topics[f][1] = float(self.BETAS[int(np.argmin(loss[f]))])
+        if any(b for _, b in m.topics.values()) and n:
+            together = -sum(float(self.logp(row.y).sum()) for row in rows) / n
+            if together >= plain / n:
+                for f in m.topics:
+                    m.topics[f][1] = 0.0
+        return saved
 
     def logp(self, ids, positions=None):
         ids = np.asarray(ids, np.int32)
@@ -128,6 +167,11 @@ class PairText:
             return np.full(len(pos), -np.log(self.vocabulary))
         if not len(ids):
             return np.empty(0)
+        if any(beta for _, beta in getattr(self.model, "topics", {}).values()):
+            from .pair_model import walk
+            row = self.model.encoder.encode(ids, document_starts(ids, self.eos))
+            values = np.fromiter((p[y] for p, y in zip(walk(self.model, row), ids)), float, len(ids))
+            return np.log(values[pos])
         row, p = self._scores(ids)
         p = p[pos]
         for f, k in self.model.weights.items():
@@ -213,6 +257,7 @@ class PairText:
             "exact": [],
             "local": [],
             "tables": list(m.tables),
+            "topics": [(int(f[1:]), float(k), float(b)) for f, (k, b) in getattr(m, "topics", {}).items()],
         }
 
         def put_graph(key, graph):
@@ -244,6 +289,10 @@ class PairText:
             meta["nodes"].append(w)
             put_graph(f"g{w}_", g)
             data[f"centres{w}"] = centres
+        for w, graph in getattr(m.encoder, "topics", {}).items():
+            put_graph(f"topic{w}_", graph)
+        if getattr(m, "unigram", None) is not None:
+            data["unigram"] = m.unigram
         for w, (l, r, d) in m.encoder.exact.items():
             meta["exact"].append((w, l, r))
             data[f"exact{w}"] = d.observed
@@ -308,4 +357,9 @@ class PairText:
         enc.open_exact = True
         text.model = PairLanguageModel(enc, root, tables, dict(meta["weights"]), dict(meta["memory"]))
         text.model.training_weights = dict(meta["training_weights"])
+        for w, k, b in meta.get("topics", []):
+            enc.topics[w] = graph(f"topic{w}_")
+            text.model.topics[f"t{w}"] = [k, b]
+        enc.width = max([enc.width, *enc.topics])
+        text.model.unigram = data["unigram"] if "unigram" in data else None
         return text

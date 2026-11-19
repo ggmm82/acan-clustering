@@ -67,3 +67,36 @@ class OwnWordsTest(unittest.TestCase):
         loud.observe(3)
         self.assertNotEqual({f: dict(v) for f, v in loud.overlay.items()}, {f: dict(v) for f, v in cursor.overlay.items()})
         np.testing.assert_array_equal(cursor.distribution(), before)
+
+
+class TopicTest(unittest.TestCase):
+    """What the text talks about multiplies the reading; writing and scoring agree, and checkpoints keep it."""
+
+    def test_topics_are_judged_read_by_multiplying_and_agree_token_by_token(self):
+        rng = np.random.default_rng(1)
+        eos, docs = 40, []
+        for i in range(160):                                   # two subjects with their own words, shared grammar
+            words = np.arange(1, 20) if i % 2 else np.arange(20, 39)
+            body = []
+            for _ in range(30):
+                body += [int(rng.choice(words)), int(rng.choice(words)), 39]   # 39: a full stop in both
+            docs += body + [eos]
+        ids = np.array(docs)
+        tune = [ids[:900], ids[900:1800]]
+        model = PairText(41, eos, 1 << 22, max_context=64)
+        model.add(ids, ids, tune, lambda: None)
+        model.judge(tune)
+        self.assertTrue(model.model.topics)                     # the scale of 64 tokens has topic concepts
+        for f in model.model.topics:
+            model.model.topics[f][1] = 0.5                     # read them, to check the reading itself
+        doc = ids[:ids.tolist().index(eos)+1]
+        q = model.logp(doc)
+        cursor = model.model.cursor()
+        for i, t in enumerate(doc[:-1]):
+            p = cursor.distribution()
+            self.assertAlmostEqual(p.sum(), 1.0)
+            self.assertAlmostEqual(np.log(p[t]), q[i])
+            cursor.observe(t)
+        restored = from_checkpoint_arrays(model.arrays())
+        np.testing.assert_allclose(restored.logp(doc), q)
+        self.assertEqual(restored.model.topics, model.model.topics)
