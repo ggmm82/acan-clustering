@@ -29,7 +29,7 @@ def document_stats(row, name):
 
 
 class PairText:
-    def __init__(self, vocabulary, eos, budget, max_context=512):
+    def __init__(self, vocabulary, eos, budget, max_context=1 << 19):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), eos, int(budget)
         self.max_context = int(max_context)                     # longest scale the validation may choose
         self.tokens = 0
@@ -167,7 +167,7 @@ class PairText:
         ]
 
     def context_tokens(self):
-        """Tokens of context the selected scales can read (chosen on validation, up to 512)."""
+        """Tokens of context the selected scales can read (chosen on validation)."""
         return int(self.model.encoder.width) if self.model is not None else 0
 
     def scales(self):

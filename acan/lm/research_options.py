@@ -5,7 +5,7 @@ from .trainer import validate_options as legacy_options
 EXTRA=dict(protocol='controlled-v1',routing_profile='shared-algebra-v1',architecture='hybrid',graft_fraction=.5,distillation_weight=0.,distillation_temperature=2.,
            early_stop_patience=3,early_stop_min_delta=.01,validation_batches=8,cp_weight=0.,
            milestone_steps=0,chat_probes=False,probe_prompts=[],auto_resume=False,passes=0,warm_start=False,native_size='micro',vocabulary=32000,native_attention='concepts',
-           concept_memory_mb=0,concept_piece=1_000_000,concept_context=512)
+           concept_memory_mb=0,concept_piece=1_000_000,concept_context=1<<19)
 # Options of the earlier generative models: accepted from older clients and ignored.
 RETIRED=('context_refinement','concept_depth','concept_document','concept_paths')
 
@@ -46,8 +46,8 @@ def validate_options(options):
         raise ValueError('Il modello nativo usa il grafo dei concetti (concept-graph-v1).')
     if (extra['architecture']=='concepts')!=(extra['routing_profile']=='concept-pairs-v1'):
         raise ValueError('Il modello a concetti (architettura «concepts») usa il profilo concept-pairs-v1.')
-    if extra['concept_context'] not in (8,16,32,64,128,256,512):
-        raise ValueError('Contesto massimo dei concetti: 8, 16, 32, 64, 128, 256 o 512 token.')
+    if extra['concept_context'] not in tuple(1<<k for k in range(3,21)):
+        raise ValueError('Contesto massimo dei concetti: una potenza di 2 da 8 a 1.048.576 token.')
     for key,lo,hi in [('concept_memory_mb',0,262144),('concept_piece',10_000,50_000_000)]:
         value=extra[key]
         if isinstance(value,bool) or not isinstance(value,int) or not lo<=value<=hi:

@@ -11,6 +11,9 @@ from acan.concept_algebra import categorical_reading
 from .pair_model import EncodedPrefix, PairEncoder, PairLanguageModel, shift
 
 
+CONTEXT = 1 << 19                                                # longest scale tried by default: 524,288 tokens
+
+
 def semantic_vectors(ids, vocabulary, dimensions=32, top=512, seed=0, starts=None):
     """Token coordinates: the neighbours on the left and right of each token, compressed by SVD."""
     from sklearn.utils.extmath import randomized_svd
@@ -191,9 +194,13 @@ def validation_rows(pieces, eos):
     )
 
 
-def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=512):
+def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CONTEXT):
     """Discover the geometry on train and select predictors on held-out next-token likelihood."""
-    ids, starts = sample_documents(tokens, eos, documents=documents)
+    # A scale of w tokens is learned only from windows longer than w: the sample grows with the
+    # longest scale allowed, and keeps its windows long enough to contain it.
+    limit = max(262144, 4 * max_context)
+    ids, starts = sample_documents(tokens, eos, limit=limit, block=max(4096, min(2 * max_context, limit)),
+                                   documents=documents)
     tr = EncodedPrefix(ids, starts)
     va = validation_rows(tuning, eos)
     rows = {"train": tr, "tune": va}
@@ -222,7 +229,7 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=51
     reading = root.refine_category("token")
     old_vectors = np.nan_to_num(padded)
     misses = 0
-    for width in (1, 2, 3, 4, 5, 6, 8, 16, 32, 64, 128, 256, 512):
+    for width in (1, 2, 3, 4, 5, 6, *(1 << k for k in range(3, 21) if 1 << k <= max(max_context, 8))):
         check()
         if width > max(max_context, 6) or (width > 1 and tr.age.max() < width - 1):
             break
