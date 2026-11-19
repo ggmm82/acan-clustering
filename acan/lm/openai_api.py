@@ -13,7 +13,7 @@ installation never leaves the server.
 
 A model is a project: its id is the project id (``<32 hex>``), optionally ``<id>:<checkpoint>``; without a
 checkpoint the last saved one is read. The checkpoint is read from disk, so a project can answer while it keeps
-learning. The model is the concept model (acan/lm/concept_lm.py): no GPU and no worker process; the last two
+learning. The model is the concept model of text (acan/lm/pair_text.py): no GPU and no worker process; the last two
 models read are kept in memory.
 
 Sampling: ``temperature`` (0 = the most probable token), ``top_p`` (the smallest set of tokens holding that
@@ -102,7 +102,7 @@ class Models:
     def available(self, owner):
         out = []
         for job in self.store.jobs(owner):
-            if job['config'].get('architecture') == 'concepts' and job['checkpoint']:
+            if job['config'].get('routing_profile') == 'concept-pairs-v1' and job['checkpoint']:
                 out.append(job)
         return out
 
@@ -118,6 +118,8 @@ class Models:
             raise APIError(404, f'Modello «{name}» non trovato.', code='model_not_found', param='model') from None
         if job['config'].get('architecture') != 'concepts':
             raise APIError(400, 'Solo i modelli a concetti rispondono dall\'API.', param='model')
+        if job['config'].get('routing_profile') != 'concept-pairs-v1':
+            raise APIError(400, 'Questo progetto usa un modello generativo che non fa più parte del prodotto: riaddestralo.', param='model')
         checkpoint = checkpoint or job['checkpoint']
         if not checkpoint or not re.fullmatch('[a-z0-9-]{1,128}', checkpoint):
             raise APIError(404, 'Il modello non ha ancora un checkpoint salvato.', code='model_not_found', param='model')
@@ -216,12 +218,18 @@ def write(model, tokenizer, prompt, settings):
     rng = np.random.default_rng(settings['seed'])
     hold = max([len(item) for item in settings['stop']]+[1])-1
     produced, sent, reason, text = [], 0, 'length', ''
+    cursor = model.cursor(ids) if hasattr(model, 'cursor') and model.model is not None else None
+    if hasattr(model, 'prediction_cursor'):
+        cursor = model.prediction_cursor(ids)
     for _ in range(settings['max_tokens']):
-        token = draw(model.distribution(np.asarray(ids+produced, np.int64)), settings['temperature'], settings['top_p'], rng)
+        probabilities = cursor.distribution() if cursor is not None else model.distribution(np.asarray(ids+produced, np.int64))
+        token = draw(probabilities, settings['temperature'], settings['top_p'], rng)
         if token in end:
             reason = 'stop'
             break
         produced.append(token)
+        if cursor is not None:
+            cursor.observe(token)
         text = tokenizer.decode(produced, skip_special_tokens=True)
         found = [text.find(item, max(sent-hold, 0)) for item in settings['stop']]
         found = [at for at in found if at >= 0]

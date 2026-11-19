@@ -123,9 +123,12 @@ class Scan:
         both = {key: np.concatenate((older[key], node[key]))[None] for key in KEYS}
         return {key: value[0] for key, value in aggregate(self.model, both, self.bins, self.radius).items()}
 
-    def push(self, data):
+    def push(self, data, frequencies=None):
         """Rows of the table, already encoded: every one is read once."""
         s = rows_as_concepts(self.model, data)
+        if frequencies is not None:
+            for key, value in s.items():
+                s[key] = value * frequencies.reshape((-1,) + (1,) * (value.ndim - 1))
         if self.pending is not None:
             s = {key: np.concatenate((self.pending[key], s[key])) for key in KEYS}
         self.rows += len(data[0])

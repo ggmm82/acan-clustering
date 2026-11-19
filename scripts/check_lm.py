@@ -26,6 +26,8 @@ def main():
     suite=unittest.defaultTestLoader.discover(str(ROOT/'tests'),pattern='test_lm*.py')
     suite.addTests(unittest.defaultTestLoader.discover(str(ROOT/'tests'),pattern='test_exclusive_cp.py'))
     suite.addTests(unittest.defaultTestLoader.discover(str(ROOT/'tests'),pattern='test_history_navigation.py'))
+    suite.addTests(unittest.defaultTestLoader.discover(str(ROOT/'tests'),pattern='test_concept_lm.py'))
+    suite.addTests(unittest.defaultTestLoader.discover(str(ROOT/'tests'),pattern='test_pair_text.py'))
     from acan.lm.audit_contract import REQUIRED_TESTS,MIN_TESTS,PROTOCOL
     def cases(suite):
         for item in suite:
