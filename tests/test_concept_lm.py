@@ -235,6 +235,15 @@ class ConceptPathTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec('transformers') and importlib.util.find_spec('tokenizers'), 'Tokenizer required')
 class ConceptLongLearningTests(unittest.TestCase):
     def test_queue_pause_resume_answers_generation_test_and_export(self):
+        self._exercise_queue('concept-lm-v1')
+
+    def test_tabular_graph_queue_resume_generation_and_export(self):
+        self._exercise_queue('concept-table-v1')
+
+    def test_refined_queue_resume_generation_and_export(self):
+        self._exercise_queue('concept-lm-v1', refine=True)
+
+    def _exercise_queue(self, profile, refine=False):
         from acan.lm.concept_trainer import evaluate, generate, run_training
         from acan.lm.research_options import validate_options
         from acan.lm.store import Store, owner_key
@@ -253,9 +262,9 @@ class ConceptLongLearningTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             store = Store(root); owner = owner_key('a'*64)
             first, second = corpus(store, owner, 'uno.jsonl', 1500), corpus(store, owner, 'due.jsonl', 300)
-            base = dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-lm-v1', vocabulary=4000,
+            base = dict(protocol='controlled-v1', architecture='concepts', routing_profile=profile, vocabulary=4000,
                         sequence_length=64, validation_batches=4, save_steps=2, concept_piece=10_000, concept_depth=4,
-                        concept_document=2, chat_probes=True, probe_prompts=['Ciao!'], device='cpu', concept_paths=True)
+                        concept_document=2, chat_probes=True, probe_prompts=['Ciao!'], device='cpu', concept_paths=not refine, context_refinement=refine)
             job = store.create_job(owner, validate_options(dict(base, corpus_id=first['id'], name='Coda · 1')))
             store.update(job['id'], status='queued')
             stop = threading.Event()
@@ -275,8 +284,19 @@ class ConceptLongLearningTests(unittest.TestCase):
             self.assertLess(progress['validation_nll'], progress['baseline_nll'])          # it learned
             self.assertEqual(progress['tokens_trained'], progress['dataset']['tokens']['train'])
             self.assertTrue(progress['concepts_per_level'] and progress['concepts_total'] > 0)
-            self.assertGreater(progress['paths'], 1)                                        # through the concepts of the tokens
-            self.assertAlmostEqual(sum(progress['path_weights']), 1.)
+            if refine:
+                self.assertEqual(progress['context_fit_tokens'], progress['tokens_trained'])
+                self.assertEqual(progress['paths'], 1)
+            elif profile == 'concept-lm-v1':
+                self.assertGreater(progress['paths'], 1)                                        # through the concepts of the tokens
+                self.assertAlmostEqual(sum(progress['path_weights']), 1.)
+            else:
+                from acan.lm.concept_lm import load
+                from acan.core.concepts import ConceptModel
+                saved = store.directory('jobs', job['id'])/'checkpoints'/done['checkpoint']
+                graph, _ = load(saved)
+                self.assertIsInstance(graph.model, ConceptModel)
+                self.assertEqual(graph.tokens, progress['tokens_trained'])
             history = store.history(job['id'], owner)
             measured = [row['step'] for row in history if 'validation_nll' in row]
             self.assertEqual(measured[0], 0)                                              # the error before reading

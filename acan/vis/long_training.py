@@ -147,7 +147,7 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
               (f'esita fra circa {perplexity:,.0f} token' if perplexity else '') + (f' · prima di leggere {before:.3f}' if before is not None else '')),
         _tile('Dimensione del modello', _bytes(size) if size else '—',
               (f'di {_bytes(budget)} di memoria per i concetti' if budget else '') + (f' · file scaricabile {_bytes(checkpoint_bytes)}' if checkpoint_bytes else '')),
-        _tile('Concetti', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—',
+        _tile('Contesti registrati' if config.get('context_refinement') else 'Concetti', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—',
               f"{progress.get('generalized_concepts', 0):,} generalizzati per stare nella memoria" if progress.get('concepts_total') else None),
     ]
     bar = dbc.Progress(value=share, className='mb-2', style={'height': '8px'}) if ready else None
@@ -172,8 +172,12 @@ def concept_footprint_view(item):
               if config.get('warm_start') else f"{config.get('vocabulary', 32000):,} token (si sta imparando dai testi della coda)")),
             ('Livelli di contesto', f"da 0 a {progress.get('context_depth', config.get('concept_depth'))} token precedenti"),
             ('Livelli del testo in corso', f"da 1 a {progress.get('document_depth', config.get('concept_document'))} token precedenti, a qualunque distanza"),
-            ('Concetti per livello', ' · '.join(f'{count:,}' for count in levels) if levels else '—'),
-            ('Concetti in tutto', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—'),
+            ('Contesti esatti per livello' if config.get('context_refinement') else 'Concetti per livello', ' · '.join(f'{count:,}' for count in levels) if levels else '—'),
+            *([('Classi CP scelte in validazione', str(progress.get('context_classes', '—'))),
+               ('Contesti raggruppati per livello', ' · '.join(str(n) for n in (progress.get('pooled_contexts') or {}).values()) or '—'),
+               ('Token letti all’ultima stima dei gruppi', f"{progress.get('context_fit_tokens', 0):,}")]
+              if config.get('context_refinement') else []),
+            ('Contesti esatti in tutto' if config.get('context_refinement') else 'Concetti in tutto', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—'),
             ('Concetti generalizzati nel livello sopra', f"{progress.get('generalized_concepts', 0):,} (per stare nella memoria)"),
             ('Memoria dei concetti', (_bytes(progress['statistics_bytes']) if progress.get('statistics_bytes') else '—')
              + (f' di {_bytes(budget)} disponibili' if budget else '')),
@@ -357,14 +361,9 @@ layout = html.Div([
                         "ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
              dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Memoria massima dei concetti'), dbc.Input(id='lm-long-memory', type='number', value=0, min=0, max=262144, step=256), dbc.InputGroupText('MB')]), md=6),
                       dbc.Col(html.Small("0 = automatica: un quarto della memoria del server (o del suo contenitore), al massimo 2 GB; con il "
-                                         "contenitore da 4 GB sono 1.024 MB. Mentre somma il processo ne usa fino a circa il triplo: non superare "
+                                         "contenitore da 4 GB sono 1.024 MB. Il limite riguarda le statistiche: ordinamento, stima dei concetti e worker usano altra RAM. Imposta al massimo "
                                          "un quarto della memoria del contenitore. Oltre il limite i concetti che servono meno vengono "
                                          "generalizzati nel livello sopra.", className='text-muted'), md=6)], className='mb-2'),
-             dbc.Row([dbc.Col(dbc.Checkbox(id='lm-long-paths', value=False, label='Concetti dei token e percorsi'), md=6),
-                      dbc.Col(html.Small("Il modello trova da sé i token che si somigliano («gatto» e «cane») e legge il prossimo token anche "
-                                         "dal concetto generale al particolare. Aiuta sui testi piccoli (wikitext-2, 2 milioni di token: da 4,59 a "
-                                         "4,45); peggiora su quelli grandi con il limite di memoria (69 milioni di token, 2 GB: da 3,91 a 3,96).",
-                                         className='text-muted'), md=6)], className='mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
          html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),
@@ -543,15 +542,15 @@ def register(app):
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
-                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'), State('lm-long-paths', 'value'),
+                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'),
                   prevent_initial_call=True)
-    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0, paths=False):
+    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
-                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0), concept_paths=bool(paths),
+                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0),
                         probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             return result.get('message', 'Coda creata.'), result['queue']

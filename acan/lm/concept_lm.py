@@ -41,6 +41,7 @@ from pathlib import Path
 import numpy as np
 
 from acan.concept_algebra import KAPPA_GRID, categorical_reading
+from acan.core.category_table import Table
 
 MASK = np.uint64(0xFFFFFFFFFFFFFFFF)
 MARGIN = .6                                                    # pruning leaves the sums at this fraction of the budget
@@ -63,16 +64,6 @@ def context_keys(ids, depth, vocabulary):
             ok = np.zeros(len(ids), bool); ok[j:] = True
             valid.append(ok)
     return keys, valid
-
-
-def _union(a, b):
-    """The values of two sorted arrays without repeats, sorted."""
-    both = np.concatenate((a, b))
-    both.sort(kind='stable')                                    # two sorted runs: a merge
-    keep = np.empty(len(both), bool)
-    keep[0] = True
-    np.not_equal(both[1:], both[:-1], out=keep[1:])
-    return both[keep]
 
 
 def _add_into(tables, others):
@@ -102,111 +93,6 @@ def _threshold(ratios, sizes, need):
             break
         low, high = (low, middle) if freed(middle) >= need else (middle, high)
     return high
-
-
-def _scatter_add(total, where, values):
-    """total[where] += values for indices that do not repeat (each list holds every key once)."""
-    total[where] += values
-
-
-class Table:
-    """The concepts of one level: sorted keys with C, D and the cells (concept, token) with their counts."""
-
-    def __init__(self, keys, C, cells, counts, vocabulary):
-        self.V = vocabulary
-        self.keys, self.C, self.cells, self.counts = keys, C, cells, counts
-        self.D = np.bincount((cells//(vocabulary+1)).astype(np.int64), minlength=len(keys)) if len(keys) else np.zeros(0, np.int64)
-
-    @classmethod
-    def count(cls, keys, targets, vocabulary):
-        """The sums of one level from the context keys and the targets of some positions."""
-        concepts, which, C = np.unique(keys, return_inverse=True, return_counts=True)
-        cells, counts = np.unique(which.astype(np.int64)*(vocabulary+1)+targets, return_counts=True)
-        return cls(concepts, C.astype(np.int64), cells, counts.astype(np.int64), vocabulary)
-
-    @classmethod
-    def empty(cls, vocabulary):
-        return cls(np.zeros(0, np.uint64), np.zeros(0, np.int64), np.zeros(0, np.int64), np.zeros(0, np.int64), vocabulary)
-
-    def pairs(self):
-        """Every cell as (context key, token, count)."""
-        concept = (self.cells//(self.V+1)).astype(np.int64)
-        return self.keys[concept], self.cells % (self.V+1), self.counts
-
-    def __add__(self, other):
-        """Two tables of the same level added together: sums are additive.
-
-        Both lists are sorted, so the sum is a merge of sorted lists: the keys of both, each once, and the
-        cells (concept, token) of both renumbered on the merged keys, each once. Every array is built in
-        place where possible: the process holds the two tables, their sum and about one more copy of the
-        cells.
-        """
-        if not len(other.keys):
-            return self
-        if not len(self.keys):
-            return other
-        base = self.V+1
-        keys = _union(self.keys, other.keys)
-        renumbered = []
-        for table in (self, other):
-            at = np.searchsorted(keys, table.keys)
-            C_part = table.C
-            cells = table.cells//base
-            np.take(at, cells, out=cells)
-            cells *= base
-            cells += table.cells % base
-            renumbered.append((at, C_part, cells, table.counts))
-            del at
-        C = np.zeros(len(keys), np.int64)
-        for at, C_part, _, _ in renumbered:
-            _scatter_add(C, at, C_part)
-        cells = _union(renumbered[0][2], renumbered[1][2])
-        counts = np.zeros(len(cells), np.int64)
-        for _, _, part, n in renumbered:
-            _scatter_add(counts, np.searchsorted(cells, part), n)
-        return Table(keys, C, cells, counts, self.V)
-
-    def keep(self, alive):
-        """Only the concepts marked alive, with their cells."""
-        concept = (self.cells//(self.V+1)).astype(np.int64)
-        kept = alive[concept]
-        renumber = np.cumsum(alive)-1
-        cells = renumber[concept[kept]]*(self.V+1)+self.cells[kept] % (self.V+1)
-        return Table(self.keys[alive], self.C[alive], cells, self.counts[kept], self.V)
-
-    def find(self, keys):
-        """Index of the concept of every key, -1 where there is none."""
-        if not len(self.keys):
-            return np.full(len(keys), -1, np.int64)
-        place = np.minimum(np.searchsorted(self.keys, keys), len(self.keys)-1)
-        return np.where(self.keys[place] == keys, place, -1)
-
-    def lookup(self, keys, targets):
-        """C, N(target) and D of the concept of every key (zeros where there is none)."""
-        index = self.find(keys)
-        seen = index >= 0
-        safe = np.where(seen, index, 0)
-        cell = safe*(self.V+1)+targets
-        N = np.zeros(len(keys))
-        if len(self.cells):
-            at = np.minimum(np.searchsorted(self.cells, cell), len(self.cells)-1)
-            N = np.where(seen & (self.cells[at] == cell), self.counts[at], 0).astype(float)
-        if not len(self.keys):
-            z = np.zeros(len(keys)); return z, z, z
-        return np.where(seen, self.C[safe], 0).astype(float), N, np.where(seen, self.D[safe], 0).astype(float)
-
-    def followers(self, index):
-        """The tokens that follow concept ``index`` and their counts."""
-        start = np.searchsorted(self.cells, index*(self.V+1))
-        end = np.searchsorted(self.cells, (index+1)*(self.V+1))
-        return self.cells[start:end] % (self.V+1), self.counts[start:end]
-
-    @property
-    def size(self):
-        return len(self.keys)+len(self.cells)
-
-    def nbytes(self):
-        return sum(array.nbytes for array in (self.keys, self.C, self.D, self.cells, self.counts))
 
 
 EXACT = -1                                                      # a context symbol that is the token itself
@@ -281,6 +167,9 @@ class ConceptLM:
         self.V, self.depth, self.document = int(vocabulary), int(depth), int(document)
         self.path_depth = self.depth if path_depth is None else min(int(path_depth), self.depth)
         self.budget_bytes = budget_bytes
+        self.refinement = None
+        self.context_trained_at = 0
+        self.context_tail = None
         self.maps = [np.asarray(m, np.int64) for m in maps]
         self.paths = list(paths) if paths is not None else [((), EXACT)]
         self.readings, self.of_path = [], []
@@ -317,20 +206,43 @@ class ConceptLM:
         return range(self.first[r], self.first[r]+len(self.readings[r].symbols)+1)
 
     # ---- learning: counting and adding ------------------------------------------------
-    def piece(self, ids):
+    def piece(self, ids, begin=0):
         """The tables of a piece of text (positions after its first token, contexts inside the piece)."""
         ids = np.asarray(ids, np.int64)
         tables = []
         for reading in self.readings:
             targets = reading.value[ids]
             for key, valid in reading.keys(ids, self.maps, self.V):
+                if begin:
+                    valid[:begin] = False
                 tables.append(Table.count(key[valid], targets[valid], reading.size))
         return tables
 
     def add(self, ids):
         """Learn a piece of text: count it and add it to the binary counter of pieces."""
-        tables = self.piece(ids)
-        self.tokens += len(ids)
+        self._accumulate(self.piece(ids), len(ids))
+
+    def add_context_piece(self, tokens):
+        """Continue one token stream across I/O pieces; the previous tail is context only."""
+        tail = self.context_tail if self.context_tail is not None else np.empty(0, np.int64)
+        refinement = self.refinement
+        if refinement is not None:
+            refinement.tables.clear()
+            refinement.dirty = True
+        self.refinement = None
+        try:
+            # Keep sort/merge temporaries bounded even when a worker step contains millions of tokens.
+            for begin in range(0, len(tokens), 200_008):
+                batch = tokens[begin:begin + 200_008]
+                ids = np.concatenate((tail, np.asarray(batch, dtype=np.int64)))
+                self._accumulate(self.piece(ids, len(tail)), len(batch))
+                tail = ids[-self.depth:].copy()
+        finally:
+            self.refinement = refinement
+        self.context_tail = tail
+
+    def _accumulate(self, tables, tokens):
+        self.tokens += tokens
         level = 0
         while level < len(self.counter) and self.counter[level] is not None:
             _add_into(tables, self.counter[level])
@@ -348,8 +260,11 @@ class ConceptLM:
         pending, self.counter = [tables for tables in self.counter if tables is not None], []
         for tables in pending:
             _add_into(self.levels, tables)
+        changed = bool(pending)
         del pending
         self.levels = self._within_budget(self.levels)
+        if self.refinement is not None and (changed or self.refinement.dirty):
+            self.refinement.build(self)
         return self
 
     def merge(self, other):
@@ -362,7 +277,7 @@ class ConceptLM:
 
     def nbytes(self):
         tables = list(self.levels)+[t for tables in self.counter if tables is not None for t in tables]
-        return sum(table.nbytes() for table in tables)
+        return sum(table.nbytes() for table in tables) + (self.refinement.nbytes() if self.refinement is not None else 0)
 
     def concepts(self):
         return [len(table.keys) for table in self.levels]
@@ -452,28 +367,35 @@ class ConceptLM:
         reading = self.readings[r]
         y, node = reading.value[ids], reading.node[ids]
         out = []
+        grouped = {}
         for t, (key, valid) in zip(self._tables(r), reading.keys(ids, self.maps, self.V)):
             C, N, D = self.levels[t].lookup(key[positions], y[positions])
             ok = valid[positions]
             out.append((C*ok, N*ok, D*ok))
+            if self.refinement is not None and t in self.refinement.tables:
+                grouped[t] = self.refinement.query(t,key[positions],y[positions],ok)
         document = []
         if self.document:
             keys, valid = context_keys(ids, self.document, self.V)
             with np.errstate(over='ignore'):
                 for j in range(0, self.document+1):             # level 0: every earlier token of the text in hand
-                    key = keys[j]*np.uint64(self.V+1)+node.astype(np.uint64)      # the context and the node
+                    key = keys[j] if self.context_trained_at else keys[j]*np.uint64(self.V+1)+node.astype(np.uint64)
                     C, N, D = document_counts(key, valid[j], y)
                     document.append((C[positions], N[positions], D[positions]))
         base = 1./reading.children[node[positions]]
-        return out, document, base
+        return (out, document, base, grouped) if grouped else (out, document, base)
 
     def _factor(self, r, cache, a=None, b=None):
         """log p of reading r at the prepared positions."""
         a = self.a if a is None else a
         b = self.b if b is None else b
-        out, document, p = cache
+        out, document, p = cache[:3]
+        grouped = cache[3] if len(cache)>3 else {}
         start = self.first[r]
         for j, (C, N, D) in enumerate(out):
+            if j in grouped:
+                c,n,d = grouped[j]
+                p = categorical_reading(n,c,d,p,self.refinement.weights[j-1],np)
             p = categorical_reading(N, C, D, p, a[start+j], np)
         for j, (C, N, D) in enumerate(document):
             p = categorical_reading(N, C, D, p, b[r*(self.document+1)+j], np)
@@ -493,6 +415,20 @@ class ConceptLM:
         """
         ids = np.asarray(ids, np.int64)
         positions = np.arange(len(ids)) if positions is None else np.asarray(positions)
+        if self.context_trained_at and self.document and len(ids) > self.document_limit():
+            cursor = self.prediction_cursor([])
+            selected = np.where(positions < 0, positions + len(ids), positions)
+            if np.any((selected < 0) | (selected >= len(ids))):
+                raise IndexError('Posizione fuori dal testo.')
+            unique, inverse = np.unique(selected, return_inverse=True)
+            values = np.empty(len(unique))
+            begin = 0
+            for k, end in enumerate(unique):
+                cursor.prefill(ids[begin:end])
+                values[k] = np.log(cursor.probability(ids[end], a, b))
+                cursor.observe(ids[end])
+                begin = end + 1
+            return values[inverse]
         each = np.stack([sum(self._factor(r, self._prepared(r, ids, positions), a, b) for r in own) for own in self.of_path])
         return _mix(each, self.w)
 
@@ -526,6 +462,32 @@ class ConceptLM:
             w = np.maximum(share.mean(1), 1e-12); w /= w.sum()
         self.w = w
         return -float(_mix(each, w).mean())
+
+    def judge_contexts(self, texts, final=False):
+        """Validate the exact reading first, then try its CP cuts on the same tuning pieces."""
+        if self.paths != [((), EXACT)]:
+            raise ValueError('La lettura dei suffissi richiede il percorso diretto.')
+        from .context_refinement import ContextRefinement, partitions
+        previous = self.refinement
+        self.refinement = None
+        self.settle()
+        self.judge(texts)
+        renew = final or self.tokens >= 2*max(self.context_trained_at, 1)
+        if renew:
+            maps = partitions(self)
+            self.context_trained_at = self.tokens
+        else:
+            maps = [previous.mapping] if previous is not None else []
+        self.refinement = ContextRefinement.select(self, texts, maps, self.context_trained_at)
+
+    def document_limit(self):
+        return max(self.V, (self.budget_bytes or (1 << 30)) // (768 * max(1, self.document)))
+
+    def prediction_cursor(self, ids):
+        if not self.context_trained_at:
+            return None
+        from .context_refinement import SuffixCursor
+        return SuffixCursor(self).prefill(ids)
 
     def _step(self, r, ids, tail_keys):
         """p(value | node, context) of reading r for the next position, for every (node, value) pair."""
@@ -574,6 +536,8 @@ class ConceptLM:
     def distribution(self, ids):
         """Probabilities of the next token after ``ids`` (the whole vocabulary)."""
         ids = np.asarray(ids, np.int64)
+        if self.context_trained_at:
+            return self.prediction_cursor(ids).distribution()
         tail = np.r_[ids, 0]                                     # a position after the text
         keys, _ = context_keys(tail, self.document, self.V) if self.document else ([], None)
         p = np.zeros(self.V)
@@ -584,13 +548,15 @@ class ConceptLM:
             p += weight*path
         return p
 
-    def generate(self, ids, new_tokens, stop=(), temperature=0., seed=0):
+    def generate(self, ids, new_tokens, stop=(), temperature=0., seed=0, cursor=None):
         """Continue a text: the most probable token (temperature 0) or one drawn from the reading."""
         rng = np.random.default_rng(seed)
         ids = list(np.asarray(ids, np.int64))
         produced = []
+        if cursor is None:
+            cursor = self.prediction_cursor(ids)
         for _ in range(new_tokens):
-            p = self.distribution(np.asarray(ids))
+            p = cursor.distribution() if cursor is not None else self.distribution(np.asarray(ids))
             if temperature > 0:
                 q = np.exp(np.log(np.maximum(p, 1e-300))/temperature)
                 token = int(rng.choice(len(q), p=q/q.sum()))
@@ -598,7 +564,11 @@ class ConceptLM:
                 token = int(np.argmax(p))
             if token in stop:
                 break
-            ids.append(token); produced.append(token)
+            if cursor is not None:
+                cursor.observe(token)
+            else:
+                ids.append(token)
+            produced.append(token)
         return produced
 
     # ---- saving ---------------------------------------------------------------------------
@@ -607,6 +577,15 @@ class ConceptLM:
         out = dict(a=self.a, b=self.b, w=self.w, document_zero=np.array([1], np.int64), path_depth=np.array([self.path_depth], np.int64), shape=np.array([self.V, self.depth, self.document, self.tokens, self.generalized], np.int64))
         width = max([len(steps) for steps, _ in self.paths]+[0])
         out['paths'] = np.array([[context]+list(steps)+[-1]*(width-len(steps)) for steps, context in self.paths], np.int64)
+        if self.context_tail is not None:
+            out['context_tail'] = self.context_tail
+        if self.context_trained_at:
+            out.update(context_fit_tokens=np.array([self.context_trained_at], np.int64),
+                       context_budget=np.array([self.budget_bytes or 0], np.int64))
+        if self.refinement is not None:
+            weights = np.array([w if j in self.refinement.tables else 0.
+                                for j, w in enumerate(self.refinement.weights, 1)])
+            out.update(context_map=self.refinement.mapping, context_weights=weights)
         if self.maps:
             out['maps'] = np.stack(self.maps).astype(np.int64)
         for j, table in enumerate(self.levels):
@@ -622,7 +601,11 @@ class ConceptLM:
         if 'paths' in arrays:                                    # written before the paths: only the direct one
             paths = [(tuple(int(s) for s in row[1:] if s >= 0), int(row[0])) for row in arrays['paths']]
         path_depth = int(arrays['path_depth'][0]) if 'path_depth' in arrays else None
+        if 'context_budget' in arrays:    # eviction and active levels are part of the saved reading
+            budget_bytes = int(arrays['context_budget'][0]) or None
         model = cls(V, depth, document, budget_bytes, maps, paths, path_depth)
+        model.context_trained_at = int(arrays.get('context_fit_tokens', [0])[0])
+        model.context_tail = arrays.get('context_tail')
         model.a, model.b, model.tokens, model.generalized = np.array(arrays['a']), np.array(arrays['b']), tokens, generalized
         if 'w' in arrays:
             model.w = np.array(arrays['w'])
@@ -630,6 +613,10 @@ class ConceptLM:
             model.b[::model.document+1] = 1e12
         model.levels = [Table(arrays[f'level{j}.keys'], arrays[f'level{j}.C'], arrays[f'level{j}.cells'],
                               arrays[f'level{j}.counts'], model.levels[j].V) for j in range(len(model.levels))]
+        if 'context_map' in arrays:
+            from .context_refinement import ContextRefinement
+            model.refinement = ContextRefinement(arrays['context_map'], arrays['context_weights'],
+                                                 arrays['context_fit_tokens'][0]).build(model)
         return model
 
 
@@ -803,4 +790,11 @@ def load(directory, expected=None, budget_bytes=None):
     checkpoints.verify(directory, expected)
     arrays = load_file(str(Path(directory)/'trainables.safetensors'))
     state = json.loads((Path(directory)/'state.json').read_text())
-    return ConceptLM.from_arrays(arrays, budget_bytes), state
+    return from_checkpoint_arrays(arrays, budget_bytes), state
+
+
+def from_checkpoint_arrays(arrays, budget_bytes=None):
+    if 'text_graph' in arrays:
+        from .text_graph import TextGraph
+        return TextGraph.from_arrays(arrays)
+    return ConceptLM.from_arrays(arrays, budget_bytes)

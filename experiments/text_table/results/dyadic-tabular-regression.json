@@ -1,0 +1,300 @@
+{
+  "seed": 42,
+  "baseline_commit": "1b8c695",
+  "datasets": {
+    "GiocoSet.xlsx": {
+      "before": {
+        "source_sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+        "all_columns": {
+          "concepts": 4,
+          "ari": 1.0
+        },
+        "without_outcome": {
+          "concepts": 6,
+          "ari": 0.12073428511407483
+        }
+      },
+      "after": {
+        "source_sha256": "d27b7db79ec6abd7daa80863db7fbf4c2285ac301a09a5fbd191f2ca00fd9e55",
+        "all_columns": {
+          "concepts": 4,
+          "ari": 1.0
+        },
+        "without_outcome": {
+          "concepts": 6,
+          "ari": 0.12073428511407483
+        }
+      },
+      "identical": true
+    },
+    "adultMinimal.xlsx": {
+      "before": {
+        "source_sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+        "train": 399,
+        "test": 100,
+        "metric": "accuracy",
+        "value": 0.8,
+        "levels": [
+          3,
+          5
+        ],
+        "prediction_sha256": "2240c89393e7eacb63e39cf9f6e8b1ed29848f09b0411e6a992af7eedb26c635"
+      },
+      "after": {
+        "source_sha256": "c2ccf14ca9e5f4bb1d106a8a1da66499a433c3042f0355962c45fa381a1e0d3d",
+        "train": 399,
+        "test": 100,
+        "metric": "accuracy",
+        "value": 0.8,
+        "levels": [
+          3,
+          5
+        ],
+        "prediction_sha256": "2240c89393e7eacb63e39cf9f6e8b1ed29848f09b0411e6a992af7eedb26c635"
+      },
+      "identical": true
+    },
+    "autoPrice.arff": {
+      "before": {
+        "source_sha256": "5ea04ff9db18f5dc4345f2adf738dad7e0cb8c16bbc575e347dec27ef9cedb8c",
+        "train": 127,
+        "test": 32,
+        "metric": "MAE",
+        "value": 1842.4176440393312,
+        "levels": [
+          2,
+          2,
+          12
+        ],
+        "prediction_sha256": "89efab0f650ac6c718c025f2b25eb22beef2a7d41d899ee8ac42aeb94db74a6f"
+      },
+      "after": {
+        "source_sha256": "5ea04ff9db18f5dc4345f2adf738dad7e0cb8c16bbc575e347dec27ef9cedb8c",
+        "train": 127,
+        "test": 32,
+        "metric": "MAE",
+        "value": 1842.4176440393312,
+        "levels": [
+          2,
+          2,
+          12
+        ],
+        "prediction_sha256": "89efab0f650ac6c718c025f2b25eb22beef2a7d41d899ee8ac42aeb94db74a6f"
+      },
+      "identical": true
+    },
+    "breast-cancer.arff": {
+      "before": {
+        "source_sha256": "f37aea89243c1ea4fff82269ccd0a677afd5d88966bd927295be9f774a15e9d9",
+        "train": 228,
+        "test": 58,
+        "metric": "accuracy",
+        "value": 0.6551724137931034,
+        "levels": [
+          3,
+          6,
+          17,
+          20,
+          23
+        ],
+        "prediction_sha256": "d762e3a0c291d61af3731ad3e748ac97694953af857cae856d2693e3b5d02e78"
+      },
+      "after": {
+        "source_sha256": "f37aea89243c1ea4fff82269ccd0a677afd5d88966bd927295be9f774a15e9d9",
+        "train": 228,
+        "test": 58,
+        "metric": "accuracy",
+        "value": 0.6551724137931034,
+        "levels": [
+          3,
+          6,
+          17,
+          20,
+          23
+        ],
+        "prediction_sha256": "d762e3a0c291d61af3731ad3e748ac97694953af857cae856d2693e3b5d02e78"
+      },
+      "identical": true
+    },
+    "iris.arff": {
+      "before": {
+        "source_sha256": "7d34ba556497e9dc28335ea6628a37d1dbcba090a1ae20dc2de9c7032d199153",
+        "train": 120,
+        "test": 30,
+        "metric": "accuracy",
+        "value": 1.0,
+        "levels": [
+          2,
+          3
+        ],
+        "prediction_sha256": "8daffb7180c91f1a15079c71adca50bb7389b39fc836f6b793223b336d745df3"
+      },
+      "after": {
+        "source_sha256": "7d34ba556497e9dc28335ea6628a37d1dbcba090a1ae20dc2de9c7032d199153",
+        "train": 120,
+        "test": 30,
+        "metric": "accuracy",
+        "value": 1.0,
+        "levels": [
+          2,
+          3
+        ],
+        "prediction_sha256": "8daffb7180c91f1a15079c71adca50bb7389b39fc836f6b793223b336d745df3"
+      },
+      "identical": true
+    },
+    "letter.arff": {
+      "before": {
+        "source_sha256": "a31f2d9ad119a53e182e7371d48981982dbb2b0a5e9f0aa7b73f373857b64e2e",
+        "train": 16000,
+        "test": 4000,
+        "metric": "accuracy",
+        "value": 0.978,
+        "levels": [
+          4,
+          12,
+          34,
+          91,
+          347
+        ],
+        "prediction_sha256": "6a4716ec32893def8683b6b505f01da6fe1ce49154df0f45efe746f13b926331"
+      },
+      "after": {
+        "source_sha256": "a31f2d9ad119a53e182e7371d48981982dbb2b0a5e9f0aa7b73f373857b64e2e",
+        "train": 16000,
+        "test": 4000,
+        "metric": "accuracy",
+        "value": 0.978,
+        "levels": [
+          4,
+          12,
+          34,
+          91,
+          347
+        ],
+        "prediction_sha256": "6a4716ec32893def8683b6b505f01da6fe1ce49154df0f45efe746f13b926331"
+      },
+      "identical": true
+    },
+    "mushroom.arff": {
+      "before": {
+        "source_sha256": "34a8ff8ed2864b6c1a9fbaf6f8951e694d48caa682f09b067ee5e5567622d671",
+        "train": 6499,
+        "test": 1625,
+        "metric": "accuracy",
+        "value": 1.0,
+        "levels": [
+          5,
+          11,
+          76
+        ],
+        "prediction_sha256": "86ffb3d4132d0041e2f8a02d48e4d6892add0cc677917367ab36c59d0bafed31"
+      },
+      "after": {
+        "source_sha256": "34a8ff8ed2864b6c1a9fbaf6f8951e694d48caa682f09b067ee5e5567622d671",
+        "train": 6499,
+        "test": 1625,
+        "metric": "accuracy",
+        "value": 1.0,
+        "levels": [
+          5,
+          11,
+          76
+        ],
+        "prediction_sha256": "86ffb3d4132d0041e2f8a02d48e4d6892add0cc677917367ab36c59d0bafed31"
+      },
+      "identical": true
+    },
+    "sonar.xlsx": {
+      "before": {
+        "source_sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+        "train": 166,
+        "test": 42,
+        "metric": "accuracy",
+        "value": 0.8571428571428571,
+        "levels": [
+          4,
+          11,
+          12
+        ],
+        "prediction_sha256": "9eec004ac3ac99c35f77e8395cf4f32ee89fe8a28293b15b7e81caebb0ba81c5"
+      },
+      "after": {
+        "source_sha256": "b42da28e02c2f6a0c5eb62b19baa1b6f5ca358c4d1bf851cbd1f911eeba364d3",
+        "train": 166,
+        "test": 42,
+        "metric": "accuracy",
+        "value": 0.8571428571428571,
+        "levels": [
+          4,
+          11,
+          12
+        ],
+        "prediction_sha256": "9eec004ac3ac99c35f77e8395cf4f32ee89fe8a28293b15b7e81caebb0ba81c5"
+      },
+      "identical": true
+    },
+    "titanic.csv": {
+      "before": {
+        "source_sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+        "train": 712,
+        "test": 179,
+        "metric": "accuracy",
+        "value": 0.7094972067039106,
+        "levels": [
+          3,
+          4,
+          11,
+          18,
+          33
+        ],
+        "prediction_sha256": "ae0475bca802d747c5cb688c73adf9758ddb1b5d6030ed6560c7fbd0f0b191b5"
+      },
+      "after": {
+        "source_sha256": "7d118fef8b6ccf7f81111877bc388536f7b1e498a655e3d649d19aaa010e9f6f",
+        "train": 712,
+        "test": 179,
+        "metric": "accuracy",
+        "value": 0.7094972067039106,
+        "levels": [
+          3,
+          4,
+          11,
+          18,
+          33
+        ],
+        "prediction_sha256": "ae0475bca802d747c5cb688c73adf9758ddb1b5d6030ed6560c7fbd0f0b191b5"
+      },
+      "identical": true
+    },
+    "vote.arff": {
+      "before": {
+        "source_sha256": "ee647a77207729d73d02cea20646afcd274fe9de95711cbf9909c903636cd65f",
+        "train": 348,
+        "test": 87,
+        "metric": "accuracy",
+        "value": 0.9540229885057471,
+        "levels": [
+          2,
+          4,
+          7
+        ],
+        "prediction_sha256": "5d4b8f5127a52680ec6a8bdddfa7d7714fa8bea7f4b7e604cc2e83500c93ef91"
+      },
+      "after": {
+        "source_sha256": "ee647a77207729d73d02cea20646afcd274fe9de95711cbf9909c903636cd65f",
+        "train": 348,
+        "test": 87,
+        "metric": "accuracy",
+        "value": 0.9540229885057471,
+        "levels": [
+          2,
+          4,
+          7
+        ],
+        "prediction_sha256": "5d4b8f5127a52680ec6a8bdddfa7d7714fa8bea7f4b7e604cc2e83500c93ef91"
+      },
+      "identical": true
+    }
+  }
+}

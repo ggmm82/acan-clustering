@@ -31,7 +31,7 @@ class OpenAICompatibleTests(unittest.TestCase):
         raw = ('\n'.join(lines)+'\n').encode()
         corpus = store.create_corpus(owner, 'chat.jsonl', len(raw))
         store.append_corpus(corpus['id'], owner, 0, raw); store.finish_corpus(corpus['id'], owner)
-        config = validate_options(dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-lm-v1',
+        config = validate_options(dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-table-v1',
                                        vocabulary=4000, sequence_length=64, validation_batches=4, save_steps=2,
                                        concept_piece=10_000, concept_depth=3, concept_document=2, device='cpu',
                                        corpus_id=corpus['id'], name='Prova API'))
