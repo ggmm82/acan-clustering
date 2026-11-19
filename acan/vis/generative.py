@@ -1089,9 +1089,9 @@ def register(app):
             head = [html.P([html.B(job['config'].get('name', 'Progetto')), f' · {status}'], className='mb-1'),
                     html.P(job['error'], className='text-danger') if job['error'] else None,
                     long_training.concept_summary(metrics, job['config'], status=job['status'])]
-            folded = dbc.Accordion([dbc.AccordionItem([item for item in detail if item is not None],
-                                                      title='Tutti i dettagli del progetto')], start_collapsed=True, className='mb-2')
-            return head+[folded], figure, available, selected_snapshot
+            fold = long_training.folded('Tutti i dettagli del progetto', [item for item in detail if item is not None],
+                                        'lm-project-details', 'mb-2')
+            return head+[fold], figure, available, selected_snapshot
         return detail, figure, available, selected_snapshot
 
     @app.callback(Output('lm-manage-status','children'),Output('lm-refresh','n_clicks',allow_duplicate=True),

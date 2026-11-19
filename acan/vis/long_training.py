@@ -78,6 +78,12 @@ def queue_table(items):
                      bordered=True, size='sm', responsive=True)
 
 
+def folded(title, children, key, class_name='mt-2'):
+    """A fold the page redraws every few seconds: it stays open or closed as the reader left it."""
+    return dbc.Accordion([dbc.AccordionItem(children, title=title, item_id=key+'-item')], id=key, start_collapsed=True,
+                         persistence=True, persistence_type='session', className=class_name)
+
+
 def answers_view(entries):
     if not entries:
         return html.P('Ancora nessuna risposta: compaiono al primo salvataggio (ogni 10 passi, ogni 5 minuti e alla fine).', className='small text-muted')
@@ -97,8 +103,8 @@ def answers_view(entries):
     return html.Div([html.P(header, className='small'),
                      dbc.Table([html.Thead(html.Tr([html.Th('Domanda'), html.Th('Prima'), html.Th('Adesso')])), html.Tbody(rows)],
                                bordered=True, size='sm', responsive=True),
-                     html.Details([html.Summary('Errore sul riferimento agli ultimi salvataggi', className='small'),
-                                   html.Ul(history, className='small')])])
+                     folded('Errore sul riferimento agli ultimi salvataggi', html.Ul(history, className='small'),
+                            'lm-long-answers-history')])
 
 
 def _bytes(value):
@@ -126,9 +132,18 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     perplexity = progress.get('validation_perplexity')
     size, budget = progress.get('statistics_bytes'), progress.get('budget_bytes')
     when = lambda seconds: '—' if seconds is None else f'{seconds/3600:,.1f} ore' if seconds > 3600 else f'{max(seconds, 0)/60:,.0f} minuti'
+    learning = progress.get('structure') if ready and step == 0 and status not in ('completed',) else None
+    if learning and learning.get('phase') != 'done':
+        doing = {'scale': f"concetti dei tratti di {learning['width']:,} token",
+                 'subconcepts': f"sotto-concetti dei tratti di {learning['width']:,} token",
+                 'readings': f"quali letture usare fino a {learning['width']:,} token"}.get(learning['phase'], 'struttura')
+        first = _tile('Avanzamento', 'impara la struttura',
+                      f"prima di leggere il testo: {doing} · da {learning['seconds']/60:,.0f} minuti")
+    else:
+        first = _tile('Avanzamento', f'{share:.0f}%' if ready else 'prepara i token',
+                      f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' if ready else 'il totale si conosce quando i token sono pronti')
     tiles = [
-        _tile('Avanzamento', f'{share:.0f}%' if ready else 'prepara i token',
-              f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' if ready else 'il totale si conosce quando i token sono pronti'),
+        first,
         _tile('Tempo che manca', 'finito' if status == 'completed' else when(remaining), 'stima dalla velocità finora'),
         _tile('Velocità', f'{speed:,.0f} token/s' if speed else '—', 'un passo è un milione di token'),
         _tile('Errore su testo mai visto', '—' if error is None else f'{error:.3f}',
@@ -190,9 +205,8 @@ def concept_footprint_view(item):
               for title, values in rows]
     note = html.P("Gli errori sono in nat per token: e elevato all'errore è fra quanti token, in media, il modello è incerto. "
                   "Si misurano solo su testo che il modello non ha letto.", className='small text-muted')
-    details = dbc.Accordion([dbc.AccordionItem([dbc.Row([dbc.Col(table, md=6) for table in tables]), note],
-                                               title='Tutti i dettagli: vocabolario, concetti, contesto, memoria e disco')],
-                            start_collapsed=True, className='mt-2')
+    details = folded('Tutti i dettagli: vocabolario, concetti, contesto, memoria e disco',
+                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note], 'lm-long-details')
     return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')), details])
 
 
@@ -586,7 +600,7 @@ def register(app):
     @app.callback(Output('lm-long-size-info', 'children'), Input('lm-long-model', 'value'))
     def size_info(size):
         return ("Non c'è una dimensione da scegliere: il modello è fatto dei concetti del testo che legge e cresce con esso, "
-                "fino alla memoria massima. Contesti fino a 6 token precedenti, più i concetti del testo in corso a qualunque distanza.")
+                "fino alla memoria massima. Legge i concetti dei tratti precedenti a scale che raddoppiano (2, 4, 8… token, fin dove la validazione trova un guadagno) e ricorda il testo in corso a qualunque distanza.")
 
     @app.callback(Output('lm-guide', 'children'), Input('lm-state', 'data'), Input('lm-long-builds', 'data'))
     def show_guide(state, builds):

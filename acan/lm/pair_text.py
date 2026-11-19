@@ -40,7 +40,8 @@ class PairText:
 
     def add(self, ids, train, tune, check, documents=None, starts_in_piece=None):
         if self.model is None:
-            self.model = learn(train, self.vocabulary, self.eos, tune, check, documents, self.max_context)
+            self.model = learn(train, self.vocabulary, self.eos, tune, check, documents, self.max_context,
+                               getattr(self, 'report', None))
             self.model.training_weights = dict(self.model.weights)
             self.target_kappa = self.model.root.observed_targets["token"]["kappa"]
             self.target_mass = np.zeros_like(self.model.head)

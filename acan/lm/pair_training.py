@@ -12,6 +12,10 @@ from .pair_model import EncodedPrefix, PairEncoder, PairLanguageModel, shift
 
 
 CONTEXT = 1 << 19                                                # longest scale tried by default: 524,288 tokens
+# Rows on which the concepts of a scale are found and judged. The judgment reads every drawn row at
+# every candidate cut, so its time grows with these rows: a scale takes seconds instead of minutes.
+GEOMETRY = dict(max_concepts=256, bins=24, judged_rows=int(__import__('os').environ.get('ACAN_PAIR_JUDGED', 2048)),
+                refine_rows=int(__import__('os').environ.get('ACAN_PAIR_REFINE', 4096)), covariance=False, seed=42)
 
 
 def semantic_vectors(ids, vocabulary, dimensions=32, top=512, seed=0, starts=None):
@@ -53,7 +57,7 @@ def geometry(splits, vectors, width):
     types, counts = np.unique(packed[packed > 0], return_counts=True)
     x = frame(types)
     graph = ConceptModel(
-        max_concepts=256, bins=24, judged_rows=8192, refine_rows=32768, covariance=False, seed=42
+        **GEOMETRY
     )
     graph.fit_counted_numeric(x, counts)
     for row in splits.values():
@@ -194,8 +198,15 @@ def validation_rows(pieces, eos):
     )
 
 
-def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CONTEXT):
-    """Discover the geometry on train and select predictors on held-out next-token likelihood."""
+def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CONTEXT, report=None):
+    """Discover the geometry on train and select predictors on held-out next-token likelihood.
+
+    ``report(phase, width, seconds)`` is told when each scale starts and ends, so the page can say what
+    the model is learning before it reads the text.
+    """
+    import time
+    tell = report or (lambda *args: None)
+    started = time.monotonic()
     # A scale of w tokens is learned only from windows longer than w: the sample grows with the
     # longest scale allowed, and keeps its windows long enough to contain it.
     limit = max(262144, 4 * max_context)
@@ -207,7 +218,7 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
     vectors, _ = semantic_vectors(ids, vocabulary, dimensions=8, top=96, seed=42, starts=starts)
     names = [f"x{i}" for i in range(vectors.shape[1])]
     root = ConceptModel(
-        max_concepts=256, bins=24, judged_rows=8192, refine_rows=32768, covariance=False, seed=42
+        **GEOMETRY
     )
     root.fit(pd.DataFrame(vectors[np.unique(ids)], columns=names))
     classes = root.assignments(pd.DataFrame(vectors, columns=names)).argmax(1) + 1
@@ -248,9 +259,11 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
                     shift(row.spans[l], right, row.age), row.spans[r]
                 )
             if width & (width - 1) == 0:
+                tell('scale', width, time.monotonic()-started)
                 graph, old_vectors, _ = geometry(rows, old_vectors, width)
                 enc.nodes[width] = graph, old_vectors
                 enc.local[width] = []
+                tell('subconcepts', width, time.monotonic()-started)
                 finer_spans(rows, reading, width, graph.concepts, enc.local[width])
         if width <= 6:
             features = dict(stages(True))[width]
@@ -272,10 +285,12 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
                 base = categorical_reading(n, m, d, base, k, np)
                 model.weights[f] = k
                 gain = True
+        tell('readings', width, time.monotonic()-started)
         if width >= 8:
             misses = 0 if gain else misses + 1
             if misses == 2:
                 break
+    tell('done', max([6, *enc.nodes]), time.monotonic()-started)
     enc.width = max([6, *enc.nodes])
     # Every training target is subsequently counted exactly once by the streaming worker.
     model.tables = {f: Table.empty(vocabulary) for f in model.weights}
