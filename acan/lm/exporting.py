@@ -150,12 +150,12 @@ def load_export(directory, device='cpu', cache_dir=None):
 
 CONCEPT_README = """Modello linguistico a concetti ACAN: nessuna rete neurale.
 
-concepts.safetensors   le somme dei concetti per contesto e i pesi scelti dal giudizio
+concepts.safetensors   i concetti dei token e dei tratti di testo, i loro conteggi e i pesi scelti dal giudizio
                        (safetensors: un formato standard e sicuro per tabelle di numeri)
 tokenizer/             il tokenizer che trasforma il testo in token e viceversa
 scrivi.py              uno script pronto: carica il modello e scrive
 config.json            le impostazioni dell'apprendimento
-training-summary.json  passi, token letti, errore su testo mai visto, concetti per livello
+training-summary.json  passi, token letti, errore su testo mai visto, concetti per scala, contesto letto
 export-manifest.json   le impronte SHA-256 di ogni file
 
 Non contiene il testo di addestramento.
@@ -166,10 +166,10 @@ Per usarlo serve Python con il pacchetto acan (lo stesso del server), transforme
     python scrivi.py --testo "C'era una volta"
 
 In Python:
-    from acan.lm.concept_lm import ConceptLM
+    from acan.lm.concept_lm import from_checkpoint_arrays
     from safetensors.numpy import load_file
     from transformers import AutoTokenizer
-    model = ConceptLM.from_arrays(load_file("concepts.safetensors"))
+    model = from_checkpoint_arrays(load_file("concepts.safetensors"))
     tokenizer = AutoTokenizer.from_pretrained("tokenizer")
     ids = tokenizer("C'era una volta")["input_ids"]
     print(tokenizer.decode(model.generate(ids, 64, temperature=0.7, seed=0)))
@@ -183,7 +183,7 @@ from pathlib import Path
 from safetensors.numpy import load_file
 from transformers import AutoTokenizer
 
-from acan.lm.concept_lm import ConceptLM
+from acan.lm.concept_lm import from_checkpoint_arrays
 
 here = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser()
@@ -193,7 +193,8 @@ parser.add_argument('--token', type=int, default=128)
 parser.add_argument('--temperatura', type=float, default=0.7)
 parser.add_argument('--seme', type=int, default=0)
 args = parser.parse_args()
-model = ConceptLM.from_arrays(load_file(str(here/'concepts.safetensors')))
+arrays = load_file(str(here/'concepts.safetensors'))
+model = from_checkpoint_arrays(arrays)
 tokenizer = AutoTokenizer.from_pretrained(str(here/'tokenizer'), local_files_only=True)
 prompt = args.testo if args.testo else f"<|im_start|>user\\n{args.domanda.strip()}<|im_end|>\\n<|im_start|>assistant\\n"
 stop = {tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids('<|im_end|>')} - {None, tokenizer.unk_token_id}
@@ -212,14 +213,14 @@ def _export_concepts(directory, snapshot, name, receipt, job):
     payloads = {'concepts.safetensors': (snapshot/'trainables.safetensors').read_bytes(),
                 'config.json': json.dumps(job['config'], indent=2).encode(),
                 'training-summary.json': json.dumps({key: state.get(key) for key in ('step', 'tokens_trained', 'validation_nll', 'baseline_nll',
-                                                     'concepts_per_level', 'generalized_concepts', 'weights_global', 'weights_document',
-                                                     'paths', 'path_weights')}, indent=2).encode(),
+                                                     'concepts_per_level', 'concepts_total', 'context_tokens',
+                                                     'statistics_bytes')}, indent=2).encode(),
                 'scrivi.py': CONCEPT_SCRIPT.encode(),
                 'README.txt': CONCEPT_README.encode()}
     for item in sorted((directory/'tokenizer').iterdir()):
         payloads['tokenizer/'+item.name] = item.read_bytes()
     manifest = dict(format=1, core_contract=receipt['contract'], model_contract=state.get('model_contract'), checkpoint=name,
-                    identity=receipt['identity'], kind='concept-lm-v1',
+                    identity=receipt['identity'], kind=job['config']['routing_profile'],
                     files_sha256={key: hashlib.sha256(value).hexdigest() for key, value in payloads.items()})
     temporary = exports/(uuid.uuid4().hex+'.tmp')
     try:

@@ -5,6 +5,7 @@ through the same ``backend`` helper as the rest of the generative tab, and reads
 ``lm-state``, which that tab refreshes every five seconds.
 """
 import dash
+import numpy as np
 from dash import Input, Output, State, dcc, html
 import dash_bootstrap_components as dbc
 
@@ -28,10 +29,9 @@ def profile(cuda, size=None):
     There is no size to choose: the model grows with what it reads (its concepts), up to its memory budget,
     a quarter of the server's memory unless set. ``size`` is accepted for earlier callers and ignored.
     """
-    return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-lm-v1', vocabulary=32000,
+    return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='cpu',
-                chat_probes=True, auto_resume=True, sequence_length=256, concept_depth=6, concept_document=4,
-                concept_memory_mb=0, concept_piece=1_000_000, concept_paths=False)
+                chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000)
 
 
 def queues(jobs):
@@ -79,6 +79,12 @@ def queue_table(items):
                      bordered=True, size='sm', responsive=True)
 
 
+def folded(title, children, key, class_name='mt-2'):
+    """A fold the page redraws every few seconds: it stays open or closed as the reader left it."""
+    return dbc.Accordion([dbc.AccordionItem(children, title=title, item_id=key+'-item')], id=key, start_collapsed=True,
+                         persistence=True, persistence_type='session', className=class_name)
+
+
 def answers_view(entries):
     if not entries:
         return html.P('Ancora nessuna risposta: compaiono al primo salvataggio (ogni 10 passi, ogni 5 minuti e alla fine).', className='small text-muted')
@@ -98,8 +104,8 @@ def answers_view(entries):
     return html.Div([html.P(header, className='small'),
                      dbc.Table([html.Thead(html.Tr([html.Th('Domanda'), html.Th('Prima'), html.Th('Adesso')])), html.Tbody(rows)],
                                bordered=True, size='sm', responsive=True),
-                     html.Details([html.Summary('Errore sul riferimento agli ultimi salvataggi', className='small'),
-                                   html.Ul(history, className='small')])])
+                     folded('Errore sul riferimento agli ultimi salvataggi', html.Ul(history, className='small'),
+                            'lm-long-answers-history')])
 
 
 def _bytes(value):
@@ -109,21 +115,29 @@ def _bytes(value):
         value /= 1024
 
 
-def _direct(weights, progress):
-    """The weights of the direct path (the first reading): one per context level."""
-    depth = progress.get('context_depth')
-    return weights[:depth+1] if isinstance(depth, int) else weights
-
-
-def _document(progress):
-    depth = progress.get('document_depth')
-    return depth if isinstance(depth, int) else len(progress.get('weights_document', []))-1
-
-
 def _tile(title, value, note=None):
     return dbc.Col(dbc.Card(dbc.CardBody([html.Div(title, className='small text-muted'), html.Div(value, className='fs-5 fw-semibold'),
                                           html.Div(note, className='small text-muted') if note else None], className='py-2')),
                    xs=6, md=4, className='mb-2')
+
+
+def structure_progress(learning):
+    """How far the structure is (0 to 1) and the seconds left, estimated from the time so far.
+
+    The scales are the steps; inside a scale the concepts are joined from ``start`` down to one, each
+    round joining a share of them, so the part done is the share of the way on a logarithmic scale.
+    """
+    steps, done = max(learning.get('steps') or 1, 1), max((learning.get('step') or 1)-1, 0)
+    inside = 0.
+    if learning.get('phase') in ('subconcepts', 'readings'):
+        inside = 1.
+    elif 'inside_permille' in learning:
+        inside = learning['inside_permille']/1000
+    elif learning.get('start', 0) > 1:
+        inside = 1-np.log(max(learning.get('concepts', 1), 1))/np.log(learning['start'])
+    part = min(max((done+inside)/steps, 0.), 1.)
+    seconds = learning.get('seconds') or 0.
+    return part, (seconds*(1-part)/part if part > .02 else None)
 
 
 def concept_summary(progress, config, checkpoint_bytes=None, status=None):
@@ -138,17 +152,36 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     perplexity = progress.get('validation_perplexity')
     size, budget = progress.get('statistics_bytes'), progress.get('budget_bytes')
     when = lambda seconds: '—' if seconds is None else f'{seconds/3600:,.1f} ore' if seconds > 3600 else f'{max(seconds, 0)/60:,.0f} minuti'
+    learning = progress.get('structure') if ready and step == 0 and status not in ('completed',) else None
+    if learning and learning.get('phase') != 'done':
+        part, left = structure_progress(learning)
+        doing = {'tokens': 'concetti dei token',
+                 'scale': f"concetti dei tratti di {learning['width']:,} token",
+                 'subconcepts': f"sotto-concetti dei tratti di {learning['width']:,} token",
+                 'readings': f"quali letture usare fino a {learning['width']:,} token"}.get(learning['phase'], 'struttura')
+        if learning.get('start') and learning['phase'] in ('tokens', 'scale'):
+            doing += f" ({learning['concepts']:,} concetti da unire, partiti da {learning['start']:,})"
+        where = f"scala {learning['step']} di {learning['steps']} al massimo · " if learning.get('steps') else ''
+        first = _tile('Avanzamento', f'struttura {100*part:.0f}%',
+                      f"prima di leggere il testo: {where}{doing} · da {learning['seconds']/60:,.0f} minuti")
+        tiles = [first, _tile('Tempo che manca', when(left), 'per la struttura, al massimo: la validazione può fermarsi prima')]
+        bar = dbc.Progress(value=100*part, className='mb-2', style={'height': '8px'}, color='info')
+        return html.Div([bar, dbc.Row(tiles)])
+    else:
+        first = _tile('Avanzamento', f'{share:.0f}%' if ready else 'prepara i token',
+                      f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' if ready else 'il totale si conosce quando i token sono pronti')
     tiles = [
-        _tile('Avanzamento', f'{share:.0f}%' if ready else 'prepara i token',
-              f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' if ready else 'il totale si conosce quando i token sono pronti'),
+        first,
         _tile('Tempo che manca', 'finito' if status == 'completed' else when(remaining), 'stima dalla velocità finora'),
-        _tile('Velocità', f'{speed:,.0f} token/s' if speed else '—', 'un passo è un milione di token'),
+        _tile('Velocità', f'{speed:,.0f} token/s' if speed else '—',
+              'un passo è un milione di token' + (f" · struttura imparata in {progress['structure_seconds']/60:,.0f} minuti"
+                                                  if progress.get('structure_seconds') else '')),
         _tile('Errore su testo mai visto', '—' if error is None else f'{error:.3f}',
               (f'esita fra circa {perplexity:,.0f} token' if perplexity else '') + (f' · prima di leggere {before:.3f}' if before is not None else '')),
         _tile('Dimensione del modello', _bytes(size) if size else '—',
               (f'di {_bytes(budget)} di memoria per i concetti' if budget else '') + (f' · file scaricabile {_bytes(checkpoint_bytes)}' if checkpoint_bytes else '')),
         _tile('Concetti', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—',
-              f"{progress.get('generalized_concepts', 0):,} generalizzati per stare nella memoria" if progress.get('concepts_total') else None),
+              f"contesto fino a {progress['context_tokens']:,} token" if progress.get('context_tokens') else None),
     ]
     bar = dbc.Progress(value=share, className='mb-2', style={'height': '8px'}) if ready else None
     return html.Div([bar, dbc.Row(tiles)])
@@ -170,26 +203,18 @@ def concept_footprint_view(item):
             ('Vocabolario', f"{(progress.get('graft') or {}).get('vocabulary', 0):,} token" if progress.get('graft') else
              (f"{config.get('vocabulary', 32000):,} token, lo stesso del testo precedente della coda (si stanno preparando i token di questo testo)"
               if config.get('warm_start') else f"{config.get('vocabulary', 32000):,} token (si sta imparando dai testi della coda)")),
-            ('Livelli di contesto', f"da 0 a {progress.get('context_depth', config.get('concept_depth'))} token precedenti"),
-            ('Livelli del testo in corso', f"da 1 a {progress.get('document_depth', config.get('concept_document'))} token precedenti, a qualunque distanza"),
-            ('Concetti per livello', ' · '.join(f'{count:,}' for count in levels) if levels else '—'),
+            ('Contesto letto', f"fino a {progress['context_tokens']:,} token precedenti (scale scelte sulla validazione)"
+             if progress.get('context_tokens') else '— (si sceglie dopo il primo pezzo di testo)'),
+            ('Concetti per scala', ' · '.join(f'{count:,}' for count in levels)
+             + ' (token, poi tratti di 2, 4, 8… token)' if levels else '—'),
             ('Concetti in tutto', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—'),
-            ('Concetti generalizzati nel livello sopra', f"{progress.get('generalized_concepts', 0):,} (per stare nella memoria)"),
-            ('Memoria dei concetti', (_bytes(progress['statistics_bytes']) if progress.get('statistics_bytes') else '—')
-             + (f' di {_bytes(budget)} disponibili' if budget else '')),
-            ('Concetti dei token', ' · '.join(f'{count:,}' for count in progress['token_concepts'])
-             + ' (trovati dal modello stesso, dal generale al particolare)' if progress.get('token_concepts') else '—'),
-            ('Percorsi verso il prossimo token', (f"{progress['paths']}: diretto"
-             + (f" e {progress['paths']-1} attraverso i concetti dei token (contesti fino a {progress.get('path_depth')} token)" if progress['paths'] > 1 else '')
-             + ' · pesi ' + ', '.join(f'{value:.2f}' for value in progress.get('path_weights', [])))
-             if progress.get('paths') else '1: diretto'),
-            ('Pesi scelti dal giudizio', ('contesto ' + ', '.join(f'{value:g}' for value in _direct(progress['weights_global'], progress))
-                                          + ' · testo in corso ' + ', '.join(f'{value:g}' for value in progress.get('weights_document', [])[1:_document(progress)+1]))
-             if progress.get('weights_global') else '—')]),
+            ('Memoria dei conteggi', (_bytes(progress['statistics_bytes']) if progress.get('statistics_bytes') else '—')
+             + (f' di {_bytes(budget)} disponibili' if budget else ''))]),
         ('Avanzamento e velocità', [
             ('Passo', f'{step:,} di {total:,}' if progress.get('graft') else '— (il totale si conosce quando i token del testo sono pronti)'),
             ('Token letti', f"{progress.get('tokens_trained', 0):,}"),
             ('Velocità', f'{speed:,.0f} token al secondo' if speed else '—'),
+            ('Struttura (passo 0)', f"imparata in {progress['structure_seconds']/60:,.1f} minuti" if progress.get('structure_seconds') else '—'),
             ('Tempo che manca, stima', '—' if remaining is None else f'{remaining/3600:,.1f} ore' if remaining > 3600 else f'{remaining/60:,.0f} minuti'),
             ('Token per passo', f'{piece:,} (un pezzo del testo, contato e aggiunto)')]),
         ('Qualità', [
@@ -210,10 +235,9 @@ def concept_footprint_view(item):
                         dbc.Table(html.Tbody([html.Tr([html.Td(name), html.Td(value)]) for name, value in values]), size='sm', bordered=True)])
               for title, values in rows]
     note = html.P("Gli errori sono in nat per token: e elevato all'errore è fra quanti token, in media, il modello è incerto. "
-                  "Si misurano solo su testo che il modello non ha contato.", className='small text-muted')
-    details = dbc.Accordion([dbc.AccordionItem([dbc.Row([dbc.Col(table, md=6) for table in tables]), note],
-                                               title='Tutti i dettagli: vocabolario, livelli, pesi, memoria e disco')],
-                            start_collapsed=True, className='mt-2')
+                  "Si misurano solo su testo che il modello non ha letto.", className='small text-muted')
+    details = folded('Tutti i dettagli: vocabolario, concetti, contesto, memoria e disco',
+                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note], 'lm-long-details')
     return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')), details])
 
 
@@ -357,14 +381,9 @@ layout = html.Div([
                         "ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
              dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Memoria massima dei concetti'), dbc.Input(id='lm-long-memory', type='number', value=0, min=0, max=262144, step=256), dbc.InputGroupText('MB')]), md=6),
                       dbc.Col(html.Small("0 = automatica: un quarto della memoria del server (o del suo contenitore), al massimo 2 GB; con il "
-                                         "contenitore da 4 GB sono 1.024 MB. Mentre somma il processo ne usa fino a circa il triplo: non superare "
-                                         "un quarto della memoria del contenitore. Oltre il limite i concetti che servono meno vengono "
-                                         "generalizzati nel livello sopra.", className='text-muted'), md=6)], className='mb-2'),
-             dbc.Row([dbc.Col(dbc.Checkbox(id='lm-long-paths', value=False, label='Concetti dei token e percorsi'), md=6),
-                      dbc.Col(html.Small("Il modello trova da sé i token che si somigliano («gatto» e «cane») e legge il prossimo token anche "
-                                         "dal concetto generale al particolare. Aiuta sui testi piccoli (wikitext-2, 2 milioni di token: da 4,59 a "
-                                         "4,45); peggiora su quelli grandi con il limite di memoria (69 milioni di token, 2 GB: da 3,91 a 3,96).",
-                                         className='text-muted'), md=6)], className='mb-2'),
+                                         "contenitore da 4 GB sono 1.024 MB. Il limite riguarda le statistiche: ordinamento, stima dei concetti e worker usano altra RAM. Imposta al massimo "
+                                         "un quarto della memoria del contenitore. Oltre il limite si tengono i conteggi "
+                                         "con più osservazioni per byte; gli altri leggono il concetto più generale.", className='text-muted'), md=6)], className='mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
          html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),
@@ -543,15 +562,15 @@ def register(app):
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
-                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'), State('lm-long-paths', 'value'),
+                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'),
                   prevent_initial_call=True)
-    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0, paths=False):
+    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
-                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0), concept_paths=bool(paths),
+                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0),
                         probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             return result.get('message', 'Coda creata.'), result['queue']
@@ -612,7 +631,7 @@ def register(app):
     @app.callback(Output('lm-long-size-info', 'children'), Input('lm-long-model', 'value'))
     def size_info(size):
         return ("Non c'è una dimensione da scegliere: il modello è fatto dei concetti del testo che legge e cresce con esso, "
-                "fino alla memoria massima. Contesti fino a 6 token precedenti, più i concetti del testo in corso a qualunque distanza.")
+                "fino alla memoria massima. Legge i concetti dei tratti precedenti a scale che raddoppiano (2, 4, 8… token, fin dove la validazione trova un guadagno) e ricorda il testo in corso a qualunque distanza.")
 
     @app.callback(Output('lm-guide', 'children'), Input('lm-state', 'data'), Input('lm-long-builds', 'data'))
     def show_guide(state, builds):
