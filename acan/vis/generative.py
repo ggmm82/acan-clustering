@@ -225,11 +225,11 @@ La chiave si vede solo quando la crei: conservala; se la perdi, revocala e crean
                 html.Div([dbc.Input(id=id, type='number', value=value) for id, value in (('lm-batch', 1), ('lm-accum', 8), ('lm-lr', .001), ('lm-slots', 16),
                                                                                         ('lm-window', 16), ('lm-patience', 0), ('lm-min-delta', .01))]
                          + [dbc.Input(id='lm-cp-weight',type='number',value=0.), dbc.Input(id='lm-rank',type='number',value=8),
-                            dcc.Dropdown(id='lm-routing',value='concept-lm-v1',options=[{'label':'concept-lm-v1','value':'concept-lm-v1'}]),
+                            dcc.Dropdown(id='lm-routing',value='concept-pairs-v1',options=[{'label':'concept-pairs-v1','value':'concept-pairs-v1'}]),
                             dcc.Dropdown(id='lm-fraction',value=1.,options=[{'label':'1','value':1.}]), dbc.Checkbox(id='lm-distill', value=False),
                             dcc.Dropdown(id='lm-device', options=[{'label':'Processore (CPU)','value':'cpu'}], value='cpu')],
                          style={'display':'none'}),
-                html.P('Il testo è letto come una tabella: ogni posizione è una riga, i token precedenti sono gli attributi, il token che segue è il target. Imparare è contarlo.', className='small text-muted'),
+                html.P('Il testo è letto come una tabella: ogni posizione è una riga, i concetti dei tratti che la precedono (2, 4, 8… token) sono le colonne note, il token che segue è la colonna da completare.', className='small text-muted'),
                 html.P("Il testo viene diviso in tre parti che non si mescolano: una per imparare, una per controllare i progressi e scegliere i pesi, una per la verifica finale. Viene conservata sempre la copia migliore.", className='small text-muted'),
                 html.P("Il lavoro viene salvato ogni 5 minuti e a ogni pausa: un arresto improvviso fa perdere al massimo i passi dall'ultimo salvataggio.", className='small text-muted'),
             ], title='Impostazioni avanzate')], start_collapsed=True, className='my-3'),
@@ -282,7 +282,7 @@ def native_config(corpus, size, name, steps, length, batch, accumulation, lr, sl
                   min_delta, validation):
     """A project of the manual form: the concept model (the network settings of earlier projects are ignored)."""
     return dict(corpus_id=corpus, name=name, sequence_length=int(length or 256), save_steps=int(save_steps or 100),
-                protocol='controlled-v1', architecture='concepts', routing_profile='concept-lm-v1', vocabulary=32000,
+                protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=int(validation or 8), device='cpu',
                 chat_probes=True)
 
@@ -517,7 +517,7 @@ def small_facts(result):
     if cost:
         last = cost['rows'][-1]
         text = (f"Costo: a {last['length']:,} token di contesto l'attenzione normale tiene {last['dense']['kept_vectors']:,} "
-                f"vettori per layer e cresce con il testo; il modello a concetti legge per ogni token {last['concepts']['kept_vectors']} concetti, uno per livello. "
+                f"vettori per layer e cresce con il testo; il modello a concetti tiene gli ultimi {last['concepts']['kept_vectors']} token e ne legge i concetti a scale che raddoppiano. "
                 f"Tempo per token: attenzione normale da {cost['rows'][0]['dense']['milliseconds_per_token']:.2f} a "
                 f"{last['dense']['milliseconds_per_token']:.2f} ms, concetti circa {cost['concepts_flat']:.2f} ms fissi.")
         if cost.get('faster_beyond'):
@@ -1089,9 +1089,9 @@ def register(app):
             head = [html.P([html.B(job['config'].get('name', 'Progetto')), f' · {status}'], className='mb-1'),
                     html.P(job['error'], className='text-danger') if job['error'] else None,
                     long_training.concept_summary(metrics, job['config'], status=job['status'])]
-            folded = dbc.Accordion([dbc.AccordionItem([item for item in detail if item is not None],
-                                                      title='Tutti i dettagli del progetto')], start_collapsed=True, className='mb-2')
-            return head+[folded], figure, available, selected_snapshot
+            fold = long_training.folded('Tutti i dettagli del progetto', [item for item in detail if item is not None],
+                                        'lm-project-details', 'mb-2')
+            return head+[fold], figure, available, selected_snapshot
         return detail, figure, available, selected_snapshot
 
     @app.callback(Output('lm-manage-status','children'),Output('lm-refresh','n_clicks',allow_duplicate=True),
@@ -1271,11 +1271,11 @@ def register(app):
                 return 'Generazione in corso…', [], None
             result = item['result']
             description = f"Copia del passo {result['step']} · {result['generated_tokens']} token scritti · {result['tokens_per_second']:.1f} token al secondo"
-            if result.get('concept_model'):                    # the concept model: concepts per level, no layers
+            if result.get('concept_model'):                    # the concept model: concepts per scale, no layers
                 levels = result.get('concepts_per_level') or []
-                memory = (f"Concetti letti: {sum(levels):,} in {len(levels)} livelli di contesto ("
-                          + ' · '.join(f'{count:,}' for count in levels) + f"), {result['cache_total_bytes']/1048576:,.1f} MB di somme. "
-                          "Il testo che sta scrivendo è letto come concetti del testo in corso, a qualunque distanza.")
+                memory = (f"Concetti: {sum(levels):,} fra token e tratti di 2, 4, 8… token ("
+                          + ' · '.join(f'{count:,}' for count in levels) + f"), {result['cache_total_bytes']/1048576:,.1f} MB di conteggi. "
+                          "Quello che il testo in corso ha già detto è ricordato a qualunque distanza.")
                 return media_view(result['text']), [html.P(description), html.P(memory)], None
             reduction = result['cache_reduction_fraction']
             memory = (f"Memoria per ricordare il testo letto: {result['cache_dense_layers_bytes']/1048576:.2f} MB nei layer normali, "
