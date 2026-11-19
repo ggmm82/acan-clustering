@@ -158,6 +158,12 @@ class PairText:
             if together >= plain / n:
                 for f in m.topics:
                     m.topics[f][1] = 0.0
+        # A topic the judgment does not use is not computed any more: its concepts and counts are dropped.
+        for f in [f for f, (_, b) in m.topics.items() if not b]:
+            del m.topics[f]
+            m.encoder.topics.pop(int(f[1:]), None)
+            m.tables.pop(f, None)
+            m.training_weights.pop(f, None)
         return saved
 
     def logp(self, ids, positions=None):
@@ -291,6 +297,8 @@ class PairText:
             data[f"centres{w}"] = centres
         for w, graph in getattr(m.encoder, "topics", {}).items():
             put_graph(f"topic{w}_", graph)
+        if getattr(m.encoder, "topic_vectors", None) is not None and m.encoder.topics:
+            data["topic_vectors"] = m.encoder.topic_vectors
         if getattr(m, "unigram", None) is not None:
             data["unigram"] = m.unigram
         for w, (l, r, d) in m.encoder.exact.items():
@@ -357,9 +365,9 @@ class PairText:
         enc.open_exact = True
         text.model = PairLanguageModel(enc, root, tables, dict(meta["weights"]), dict(meta["memory"]))
         text.model.training_weights = dict(meta["training_weights"])
+        enc.topic_vectors = data["topic_vectors"] if "topic_vectors" in data else None
         for w, k, b in meta.get("topics", []):
             enc.topics[w] = graph(f"topic{w}_")
             text.model.topics[f"t{w}"] = [k, b]
-        enc.width = max([enc.width, *enc.topics])
         text.model.unigram = data["unigram"] if "unigram" in data else None
         return text

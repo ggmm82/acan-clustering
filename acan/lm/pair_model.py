@@ -19,24 +19,48 @@ def shift(values, distance, ages):
     return out
 
 
-def span_means(vectors, row, width):
-    """For every position i, the mean vector of the tokens (i-width, i] of its document: what it talks about."""
+def stride(width):
+    """How often the topic of a scale is recognized again: what W tokens talk about changes slowly."""
+    return max(1, width // 8)
+
+
+def span_means(vectors, row, width, at=None):
+    """The mean vector of the tokens (i-width, i] of the document of each position i (or of ``at``)."""
     n = len(row.y)
+    at = np.arange(n) if at is None else np.asarray(at)
     total = np.cumsum(np.vstack([np.zeros(vectors.shape[1]), vectors[row.y]]), 0)
-    end = np.arange(n) + 1
-    begin = np.maximum(end - width, end - 1 - row.age)
+    end = at + 1
+    begin = np.maximum(end - width, end - 1 - row.age[at])
     return (total[end] - total[begin]) / (end - begin)[:, None]
 
 
 def topic_codes(graph, vectors, row, width):
-    """The concept of what the last ``width`` tokens talk about, for every position (0 before any token)."""
-    means = span_means(vectors, row, width)
-    codes = np.zeros(len(row.y), np.uint32)
+    """The concept of what the last ``width`` tokens talk about, recognized every ``stride(width)`` tokens of a
+    document and kept in between: position i reads the topic of the span ending at its last anchor."""
+    step = stride(width)
+    anchor = np.arange(len(row.y)) - row.age % step
+    points, back = np.unique(anchor, return_inverse=True)
+    means = span_means(vectors, row, width, points)
+    codes = np.zeros(len(points), np.uint32)
     columns = graph.encoder.numeric
     for i in range(0, len(codes), 65536):
         part = slice(i, i + 65536)
         codes[part] = graph.assignments(pd.DataFrame(means[part], columns=columns)).argmax(1) + 1
-    return codes
+    return codes[back]
+
+
+def topic_of(graph, vectors, recent, age, width):
+    """The topic column of the last token read, as ``topic_codes`` gives it in bulk.
+
+    ``recent`` are the last tokens of the document (at least ``width + stride(width)`` of them, or all
+    since it began) and ``age`` is the position of the last one in its document.
+    """
+    if age < 0 or not len(recent):
+        return 0
+    first = max(0, len(recent) - 1 - age)                       # where the document begins inside ``recent``
+    end = len(recent) - age % stride(width)
+    span = vectors[np.asarray(recent[max(end - width, first):end])]
+    return int(graph.assignments(pd.DataFrame(span.mean(0)[None], columns=graph.encoder.numeric)).argmax(1)[0]) + 1
 
 
 def topic_factor(model, f, key):
@@ -137,9 +161,10 @@ class PairEncoder:
         self.width = max([6, *nodes])
         self._memo = {}
         self.open_exact = False
-        self.topics = {}                                        # W -> concept model of the mean of W token vectors
+        self.topics = {}                                        # W -> concept model of the mean of W topic vectors
+        self.topic_vectors = None                               # tokens by the documents they appear in (LSA)
 
-    def encode(self, ids, starts=None):
+    def encode(self, ids, starts=None, topics=True):
         starts = np.asarray([0] if starts is None else starts, dtype=int)
         row = EncodedPrefix(ids, starts)
         row.spans["c1"] = self.token_classes[row.y]
@@ -192,8 +217,9 @@ class PairEncoder:
                 seen = code > 0
                 result[seen] = offset + code[seen]
             row.spans[f"s{w}"] = result
-        for w, graph in getattr(self, "topics", {}).items():
-            row.spans[f"t{w}"] = topic_codes(graph, self.vectors, row, w)
+        if topics:
+            for w, graph in getattr(self, "topics", {}).items():
+                row.spans[f"t{w}"] = topic_codes(graph, self.topic_vectors, row, w)
         return row
 
 
@@ -228,6 +254,8 @@ class PairCursor:
         self.tables = {}
         self.next_keys = None
         self.overlay = {f: {} for f in model.memory}
+        # What the document talks about: its last tokens and the topic of every scale, kept as bulk does.
+        self.age, self.recent, self.topic = -1, np.empty(0, np.int32), {}
 
     def prefill(self, ids):
         if not len(ids):
@@ -263,16 +291,36 @@ class PairCursor:
                 )
         self.tail = ids[-self.model.encoder.width :].copy()
         self.next_keys = None
+        self.age, self.recent = len(ids) - 1, ids[-self._keep():].copy()
+        self._topics()
         return self
+
+    def _keep(self):
+        topics = getattr(self.model.encoder, "topics", {})
+        return max([1, *(w + stride(w) for w in topics)])
+
+    def _topics(self):
+        enc = self.model.encoder
+        for w, graph in getattr(enc, "topics", {}).items():
+            if self.age >= 0 and self.age % stride(w) == 0 or w not in self.topic:
+                self.topic[w] = topic_of(graph, enc.topic_vectors, self.recent, self.age, w)
 
     def fork(self):
         other = copy(self)
+        other.topic = dict(self.topic)
         other.overlay = {f: {k: c.copy() for k, c in vals.items()} for f, vals in self.overlay.items()}
         return other
 
     def _keys(self):
         if self.next_keys is None:
-            row = self.model.encoder.encode(np.r_[self.tail, np.int32(0)])
+            row = self.model.encoder.encode(np.r_[self.tail, np.int32(0)], topics=False)
+            if any(w not in self.topic for w in getattr(self.model.encoder, "topics", {})):
+                self._topics()
+            for w in getattr(self.model.encoder, "topics", {}):  # the topics come from the state, as in bulk
+                column = np.zeros(len(row.y), np.uint32)
+                if len(row.y) > 1:
+                    column[-2] = self.topic[w]
+                row.spans[f"t{w}"] = column
             self.next_keys = {
                 f: int(row.feature(f)[-1])
                 for f in dict.fromkeys([*self.model.weights, *self.model.memory, *getattr(self.model, "topics", {})])
@@ -289,6 +337,9 @@ class PairCursor:
                 if key:
                     values.setdefault(key, Counter())[int(token)] += 1
         self.tail = np.r_[self.tail, np.int32(token)][-self.model.encoder.width :]
+        self.age += 1
+        self.recent = np.r_[self.recent, np.int32(token)][-self._keep():]
+        self._topics()
         self.next_keys = None
 
     def distribution(self):
