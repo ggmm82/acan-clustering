@@ -29,8 +29,9 @@ def document_stats(row, name):
 
 
 class PairText:
-    def __init__(self, vocabulary, eos, budget):
+    def __init__(self, vocabulary, eos, budget, max_context=512):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), eos, int(budget)
+        self.max_context = int(max_context)                     # longest scale the validation may choose
         self.tokens = 0
         self.model = None
         self.target_mass = None
@@ -39,7 +40,7 @@ class PairText:
 
     def add(self, ids, train, tune, check, documents=None, starts_in_piece=None):
         if self.model is None:
-            self.model = learn(train, self.vocabulary, self.eos, tune, check, documents)
+            self.model = learn(train, self.vocabulary, self.eos, tune, check, documents, self.max_context)
             self.model.training_weights = dict(self.model.weights)
             self.target_kappa = self.model.root.observed_targets["token"]["kappa"]
             self.target_mass = np.zeros_like(self.model.head)

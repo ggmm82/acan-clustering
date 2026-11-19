@@ -191,7 +191,7 @@ def validation_rows(pieces, eos):
     )
 
 
-def learn(tokens, vocabulary, eos, tuning, check, documents=None):
+def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=512):
     """Discover the geometry on train and select predictors on held-out next-token likelihood."""
     ids, starts = sample_documents(tokens, eos, documents=documents)
     tr = EncodedPrefix(ids, starts)
@@ -224,7 +224,7 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None):
     misses = 0
     for width in (1, 2, 3, 4, 5, 6, 8, 16, 32, 64, 128, 256, 512):
         check()
-        if width > 1 and tr.age.max() < width - 1:
+        if width > max(max_context, 6) or (width > 1 and tr.age.max() < width - 1):
             break
         if width > 1:
             right = 2 ** ((width - 1).bit_length() - 1)

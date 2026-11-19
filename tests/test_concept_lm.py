@@ -1,4 +1,5 @@
 """The generative concept model: document memory, and a long learning of the queue from start to end."""
+import importlib.util
 import json
 import tempfile
 import threading
@@ -47,6 +48,8 @@ class DocumentMemoryTests(unittest.TestCase):
         self.assertIn('Riaddestra', OLD_CHECKPOINT)
 
 
+@unittest.skipUnless(all(importlib.util.find_spec(name) for name in ('transformers', 'tokenizers', 'torch')),
+                     'Worker dependencies required')
 class ConceptLongLearningTests(unittest.TestCase):
     def test_pair_graph_queue_resume_generation_and_export(self):
         self._exercise_queue('concept-pairs-v1')
@@ -71,7 +74,7 @@ class ConceptLongLearningTests(unittest.TestCase):
             store = Store(root); owner = owner_key('a'*64)
             first, second = corpus(store, owner, 'uno.jsonl', 1500), corpus(store, owner, 'due.jsonl', 300)
             base = dict(protocol='controlled-v1', architecture='concepts', routing_profile=profile, vocabulary=4000,
-                        sequence_length=64, validation_batches=4, save_steps=2, concept_piece=10_000,
+                        sequence_length=64, validation_batches=4, save_steps=2, concept_piece=10_000, concept_context=8,
                         chat_probes=True, probe_prompts=['Ciao!'], device='cpu')
             job = store.create_job(owner, validate_options(dict(base, corpus_id=first['id'], name='Coda · 1')))
             store.update(job['id'], status='queued')

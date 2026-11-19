@@ -180,7 +180,7 @@ def concept_model(train, tune, vocabulary, eos, check):
     import numpy as np
     from .pair_text import PairText
     train = np.asarray(train, np.int32)
-    model = PairText(vocabulary, eos, 256 << 20)
+    model = PairText(vocabulary, eos, 256 << 20, max_context=64)   # the small test reads blocks of at most 128 tokens
     for start in range(0, len(train), 200_000):
         check()
         model.add(train[start:start+200_000], train, tune, check)
