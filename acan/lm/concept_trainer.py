@@ -182,9 +182,10 @@ def run_training(root, identifier, stop_event=None):
             store.record(identifier, 0, dict(state))           # the chart starts from the error before reading
         store.update(identifier, checkpoint=previous.name, progress=state, status='running')
 
-        def structure(phase, width, seconds):
-            # Before the first piece is counted the model learns its scales: the page says which one.
-            store.update(identifier, progress=dict(state, structure=dict(phase=phase, width=int(width), seconds=float(seconds))))
+        def structure(phase, width, seconds, **facts):
+            # Before the first piece is counted the model learns its scales: the page says which one and how far.
+            store.update(identifier, progress=dict(state, structure=dict(phase=phase, width=int(width), seconds=float(seconds),
+                                                                          **{key: int(value) for key, value in facts.items()})))
         model.report = structure
         started, initial = time.monotonic(), state['tokens_trained']
         last_save = time.monotonic()

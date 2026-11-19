@@ -5,6 +5,7 @@ through the same ``backend`` helper as the rest of the generative tab, and reads
 ``lm-state``, which that tab refreshes every five seconds.
 """
 import dash
+import numpy as np
 from dash import Input, Output, State, dcc, html
 import dash_bootstrap_components as dbc
 
@@ -120,6 +121,25 @@ def _tile(title, value, note=None):
                    xs=6, md=4, className='mb-2')
 
 
+def structure_progress(learning):
+    """How far the structure is (0 to 1) and the seconds left, estimated from the time so far.
+
+    The scales are the steps; inside a scale the concepts are joined from ``start`` down to one, each
+    round joining a share of them, so the part done is the share of the way on a logarithmic scale.
+    """
+    steps, done = max(learning.get('steps') or 1, 1), max((learning.get('step') or 1)-1, 0)
+    inside = 0.
+    if learning.get('phase') in ('subconcepts', 'readings'):
+        inside = 1.
+    elif 'inside_permille' in learning:
+        inside = learning['inside_permille']/1000
+    elif learning.get('start', 0) > 1:
+        inside = 1-np.log(max(learning.get('concepts', 1), 1))/np.log(learning['start'])
+    part = min(max((done+inside)/steps, 0.), 1.)
+    seconds = learning.get('seconds') or 0.
+    return part, (seconds*(1-part)/part if part > .02 else None)
+
+
 def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     """The few numbers that say how the concept model is doing, as tiles: progress, time, speed, error, size, concepts."""
     step, total = progress.get('step', 0), config.get('total_steps') or 0
@@ -134,11 +154,19 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     when = lambda seconds: '—' if seconds is None else f'{seconds/3600:,.1f} ore' if seconds > 3600 else f'{max(seconds, 0)/60:,.0f} minuti'
     learning = progress.get('structure') if ready and step == 0 and status not in ('completed',) else None
     if learning and learning.get('phase') != 'done':
-        doing = {'scale': f"concetti dei tratti di {learning['width']:,} token",
+        part, left = structure_progress(learning)
+        doing = {'tokens': 'concetti dei token',
+                 'scale': f"concetti dei tratti di {learning['width']:,} token",
                  'subconcepts': f"sotto-concetti dei tratti di {learning['width']:,} token",
                  'readings': f"quali letture usare fino a {learning['width']:,} token"}.get(learning['phase'], 'struttura')
-        first = _tile('Avanzamento', 'impara la struttura',
-                      f"prima di leggere il testo: {doing} · da {learning['seconds']/60:,.0f} minuti")
+        if learning.get('start') and learning['phase'] in ('tokens', 'scale'):
+            doing += f" ({learning['concepts']:,} concetti da unire, partiti da {learning['start']:,})"
+        where = f"scala {learning['step']} di {learning['steps']} al massimo · " if learning.get('steps') else ''
+        first = _tile('Avanzamento', f'struttura {100*part:.0f}%',
+                      f"prima di leggere il testo: {where}{doing} · da {learning['seconds']/60:,.0f} minuti")
+        tiles = [first, _tile('Tempo che manca', when(left), 'per la struttura, al massimo: la validazione può fermarsi prima')]
+        bar = dbc.Progress(value=100*part, className='mb-2', style={'height': '8px'}, color='info')
+        return html.Div([bar, dbc.Row(tiles)])
     else:
         first = _tile('Avanzamento', f'{share:.0f}%' if ready else 'prepara i token',
                       f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' if ready else 'il totale si conosce quando i token sono pronti')

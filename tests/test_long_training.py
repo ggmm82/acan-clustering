@@ -455,3 +455,19 @@ class FfmpegOnDemandTest(unittest.TestCase):
             self.assertTrue(Path(first).read_text().startswith('#!/bin/sh'))
             self.assertEqual(sorted(path.name for path in (Path(folder)/'tools').iterdir() if not path.name.endswith('.lock')),
                              [Path(first).name])                               # the package itself is removed
+
+
+class StructureProgressTest(unittest.TestCase):
+    def test_the_structure_shows_how_far_it_is_and_what_is_left(self):
+        from acan.vis.long_training import concept_summary, structure_progress
+        start = dict(phase='tokens', width=1, seconds=0., step=1, steps=4)
+        self.assertEqual(structure_progress(start), (0., None))
+        half, left = structure_progress(dict(phase='scale', width=4, seconds=60., step=3, steps=4, inside_permille=0))
+        self.assertAlmostEqual(half, .5)
+        self.assertAlmostEqual(left, 60.)
+        self.assertEqual(structure_progress(dict(phase='subconcepts', width=8, seconds=120., step=4, steps=4))[0], 1.)
+        progress = dict(graft=dict(vocabulary=8), step=0,
+                        structure=dict(phase='scale', width=4, seconds=60., step=3, steps=4, concepts=10, start=100))
+        text = str(concept_summary(progress, dict(total_steps=45), status='running'))
+        self.assertIn('struttura', text)
+        self.assertIn('scala 3 di 4', text)

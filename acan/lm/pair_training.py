@@ -50,9 +50,11 @@ def reading_score(train_keys, train_y, tune_keys, tune_y, vocabulary):
                key=lambda logp: logp.mean())
 
 
-def concept_model(rows):
-    return ConceptModel(max_concepts=256, bins=24, judged_rows=max(rows//2, 1), refine_rows=rows,
-                        covariance=False, seed=42)
+def concept_model(rows, progress=None):
+    model = ConceptModel(max_concepts=256, bins=24, judged_rows=max(rows//2, 1), refine_rows=rows,
+                         covariance=False, seed=42)
+    model.report = progress                                     # how far the search of the levels is
+    return model
 
 
 def semantic_vectors(ids, vocabulary, dimensions=32, top=512, seed=0, starts=None):
@@ -76,7 +78,7 @@ def semantic_vectors(ids, vocabulary, dimensions=32, top=512, seed=0, starts=Non
     return ((profile-center)@directions.T).astype(np.float32),singular
 
 
-def geometry(splits, vectors, width):
+def geometry(splits, vectors, width, progress=None):
     half = width // 2
 
     def keys(row):
@@ -117,7 +119,7 @@ def geometry(splits, vectors, width):
         return reading_score(rows["train"].feature(f"c{width}"), rows["train"].y,
                              rows["tune"].feature(f"c{width}"), rows["tune"].y, vocabulary)
 
-    graph = enough_rows(lambda rows: concept_model(rows).fit_counted_numeric(x, counts), int(counts.sum()), score)
+    graph = enough_rows(lambda rows: concept_model(rows, progress).fit_counted_numeric(x, counts), int(counts.sum()), score)
     found = graph._found
     del graph._found
     for name, row in splits.items():
@@ -286,12 +288,34 @@ def validation_rows(pieces, eos):
 def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CONTEXT, report=None):
     """Discover the geometry on train and select predictors on held-out next-token likelihood.
 
-    ``report(phase, width, seconds)`` is told when each scale starts and ends, so the page can say what
-    the model is learning before it reads the text.
+    ``report(phase, width, seconds, **facts)`` is told when each scale starts and ends and, while the
+    concepts of a scale are searched, how many are left (``concepts`` of ``start``), so the page can show
+    how far the structure is before the model reads the text. ``step`` of ``steps`` counts the scales
+    with concepts, the last one being the longest allowed: the validation may stop earlier.
     """
     import time
-    tell = report or (lambda *args: None)
+    say = report or (lambda *args, **facts: None)
     started = time.monotonic()
+    planned = [1, *(1 << k for k in range(1, 21) if 1 << k <= max(max_context, 8))]
+    where = dict(step=1, steps=len(planned))
+    last = [0.]
+
+    def tell(phase, width, seconds, **facts):
+        say(phase, width, seconds, **where, **facts)
+
+    def searching(width):
+        # Inside a scale the sample may double and the search start again: the part shown never goes back.
+        best = [0.]
+
+        def progress(facts):
+            now = time.monotonic()
+            if facts.get('phase') == 'levels' and facts.get('start', 0) > 1:
+                best[0] = max(best[0], 1-np.log(max(facts['concepts'], 1))/np.log(facts['start']))
+                if now-last[0] >= 2:
+                    last[0] = now
+                    tell('scale' if width > 1 else 'tokens', width, now-started, concepts=int(facts['concepts']),
+                         start=int(facts['start']), inside_permille=int(1000*best[0]))
+        return progress
     # A scale of w tokens is learned only from windows longer than w: the sample grows with the
     # longest scale allowed, and keeps its windows long enough to contain it.
     limit = max(int(__import__('os').environ.get('ACAN_PAIR_SAMPLE', 262144)), 4 * max_context)
@@ -310,7 +334,8 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
         previous = {name: shift(found[row.y].astype(np.uint32), 1, row.age) for name, row in (("train", tr), ("tune", va))}
         return reading_score(previous["train"], tr.y, previous["tune"], va.y, vocabulary)
 
-    root = enough_rows(lambda rows: concept_model(rows).fit(tokens), len(tokens), token_score)
+    tell('tokens', 1, time.monotonic()-started)
+    root = enough_rows(lambda rows: concept_model(rows, searching(1)).fit(tokens), len(tokens), token_score)
     classes = root.assignments(every).argmax(1) + 1
     padded = np.vstack([np.full(vectors.shape[1], np.nan), vectors])
 
@@ -349,8 +374,9 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
                     shift(row.spans[l], right, row.age), row.spans[r]
                 )
             if width & (width - 1) == 0:
+                where['step'] = planned.index(width) + 1
                 tell('scale', width, time.monotonic()-started)
-                graph, old_vectors, _ = geometry(rows, old_vectors, width)
+                graph, old_vectors, _ = geometry(rows, old_vectors, width, searching(width))
                 enc.nodes[width] = graph, old_vectors
                 enc.local[width] = []
                 tell('subconcepts', width, time.monotonic()-started)
@@ -380,6 +406,7 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
             misses = 0 if gain else misses + 1
             if misses == 2:
                 break
+    where['step'] = where['steps']
     tell('done', max([6, *enc.nodes]), time.monotonic()-started)
     enc.width = max([6, *enc.nodes])
     # Every training target is subsequently counted exactly once by the streaming worker.
