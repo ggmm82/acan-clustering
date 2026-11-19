@@ -158,8 +158,7 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
         doing = {'tokens': 'concetti dei token',
                  'scale': f"concetti dei tratti di {learning['width']:,} token",
                  'subconcepts': f"sotto-concetti dei tratti di {learning['width']:,} token",
-                 'readings': f"quali letture usare fino a {learning['width']:,} token",
-                 'question': 'quanto la risposta dipende dalla domanda'}.get(learning['phase'], 'struttura')
+                 'readings': f"quali letture usare fino a {learning['width']:,} token"}.get(learning['phase'], 'struttura')
         if learning.get('start') and learning['phase'] in ('tokens', 'scale'):
             doing += f" ({learning['concepts']:,} concetti da unire, partiti da {learning['start']:,})"
         where = f"scala {learning['step']} di {learning['steps']} al massimo · " if learning.get('steps') else ''

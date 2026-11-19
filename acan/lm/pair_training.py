@@ -10,7 +10,7 @@ from acan.core.category_table import Table
 from acan.core.concepts import ConceptModel
 from acan.core.conditional import calibrated_weights
 from acan.concept_algebra import categorical_reading
-from .pair_model import QUESTION_EXACT, QUESTION_SCALES, EncodedPrefix, PairEncoder, PairLanguageModel, question_columns, shift
+from .pair_model import EncodedPrefix, PairEncoder, PairLanguageModel, shift
 
 
 CONTEXT = 512                                                    # longest scale tried by default (concept_context sets more)
@@ -285,7 +285,7 @@ def validation_rows(pieces, eos):
     )
 
 
-def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CONTEXT, report=None, turns=None):
+def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CONTEXT, report=None):
     """Discover the geometry on train and select predictors on held-out next-token likelihood.
 
     ``report(phase, width, seconds, **facts)`` is told when each scale starts and ends and, while the
@@ -406,25 +406,6 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
             misses = 0 if gain else misses + 1
             if misses == 2:
                 break
-    if turns is not None:
-        # The question: the concepts and the last exact tokens of the last completed user turn, alone and with
-        # the last tokens written, judged on validation after every other reading, from the general to the
-        # particular. A chat whose answers do not depend on the question selects none.
-        enc.turns = turns
-        scales = [w for w in sorted(QUESTION_SCALES, reverse=True) if w in enc.nodes]
-        for row in rows.values():
-            question_columns(row, turns, scales)
-        names = [f"q{w}" for w in scales] + [f"qe{w}" for w in QUESTION_EXACT]
-        features = names + [f"{q}+e1" for q in names] + [f"{q}+e2" for q in names]
-        stats = []
-        for f in features:
-            t = Table.count_regions([(tr.feature(f), tr.y)], vocabulary)
-            stats.append(t.lookup(va.feature(f), va.y))
-        for f, k, (m, n, d) in zip(features, calibrated_weights(stats, [1.0] * len(stats), base), stats):
-            if np.isfinite(k):
-                base = categorical_reading(n, m, d, base, k, np)
-                model.weights[f] = k
-        tell('question', 0, time.monotonic()-started)
     where['step'] = where['steps']
     tell('done', max([6, *enc.nodes]), time.monotonic()-started)
     enc.width = max([6, *enc.nodes])

@@ -19,59 +19,6 @@ def shift(values, distance, ages):
     return out
 
 
-QUESTION_SCALES = (8, 32, 128)                                  # concepts of the question read by the answer
-QUESTION_EXACT = (2, 4)                                         # exact last tokens of the question
-
-
-def question_columns(row, turns, scales):
-    """Columns that carry the last completed user turn to every later position of its document.
-
-    A chat is written ``<|im_start|>user ... <|im_end|> <|im_start|>assistant ...``. At the token that
-    closes a user turn, the spans ending at its last word describe the question: its concepts at the
-    given scales (``q{w}``) and its exact last tokens (``qe{w}``). From there they stay, unchanged, until
-    the next user turn closes or the document ends, so the row that predicts any token of the answer sees
-    the question however far back it is. Value 0: no question yet.
-    """
-    if turns is None:
-        return
-    start, user, end = turns
-    y = row.y
-    n = len(y)
-    # The turn each <|im_end|> closes: the latest <|im_start|> before it, if its role is the user.
-    opens = np.flatnonzero(y == start)
-    closes = np.flatnonzero(y == end)
-    before = np.searchsorted(opens, closes) - 1
-    ok = before >= 0
-    closes, opener = closes[ok], opens[before[ok]]
-    doc = np.cumsum(row.age == 0)
-    user_turn = (opener + 1 < closes) & (y[np.minimum(opener + 1, n - 1)] == user) & (doc[opener] == doc[closes])
-    closes = closes[user_turn & (closes >= 1)]
-    last = np.full(n, -1)
-    last[closes] = closes - 1                                   # the last token of the question
-    last = np.maximum.accumulate(last)
-    # Not across documents: a question belongs to the document it was asked in.
-    first = np.flatnonzero(row.age == 0)
-    begin = first[np.searchsorted(first, np.arange(n), side="right") - 1]
-    last[last < begin] = -1
-    have = last >= 0
-    for name, source in [*((f"q{w}", f"c{w}") for w in scales), *((f"qe{w}", f"e{w}") for w in QUESTION_EXACT)]:
-        if source not in row.spans:
-            continue
-        column = np.zeros(n, np.uint32)
-        column[have] = row.spans[source][last[have]]
-        row.spans[name] = column
-
-
-def is_question(name):
-    return name.startswith("qe") or (name.startswith("q") and name[1:].isdigit())
-
-
-def question_sources(row):
-    """(question column, the span it copies) for the columns this row can have."""
-    pairs = [*((f"q{w}", f"c{w}") for w in QUESTION_SCALES), *((f"qe{w}", f"e{w}") for w in QUESTION_EXACT)]
-    return [(name, source) for name, source in pairs if source in row.spans]
-
-
 class EncodedPrefix:
     def __init__(self, ids, starts):
         self.y = np.asarray(ids, dtype=np.int32)
@@ -83,9 +30,6 @@ class EncodedPrefix:
     def feature(self, f):
         if f == "root":
             return np.ones(len(self.y), np.uint32)
-        if "+" in f:                                            # two columns read at the same position
-            first, second = (shift(self.spans[name], 1, self.age) for name in f.split("+"))
-            return CategoryPairs.keys(first, second)
         parts = f.split("|")
         recent = parts[-1]
         if len(parts) == 1 and recent in self.exact_columns:
@@ -110,7 +54,6 @@ class PairEncoder:
         self.width = max([6, *nodes])
         self._memo = {}
         self.open_exact = False
-        self.turns = None                                       # (<|im_start|>, user, <|im_end|>) ids, if a chat
 
     def encode(self, ids, starts=None):
         starts = np.asarray([0] if starts is None else starts, dtype=int)
@@ -165,7 +108,6 @@ class PairEncoder:
                 seen = code > 0
                 result[seen] = offset + code[seen]
             row.spans[f"s{w}"] = result
-        question_columns(row, getattr(self, "turns", None), [w for w in QUESTION_SCALES if w in self.nodes])
         return row
 
 
@@ -198,9 +140,6 @@ class PairCursor:
         self.tables = {}
         self.next_keys = None
         self.overlay = {f: {} for f in model.memory}
-        # The last completed user turn, carried as the bulk columns carry it (question_columns).
-        self.question = {}
-        self.role, self.asking, self.words = False, False, 0
 
     def prefill(self, ids):
         if not len(ids):
@@ -216,9 +155,6 @@ class PairCursor:
             end = min(len(ids), start + 131072)
             row = self.model.encoder.encode(ids[left:end])
             select = slice(start - left, None)
-            for name, _ in question_sources(row):              # the question the prompt has asked so far
-                if name in row.spans and row.spans[name][-1]:
-                    self.question[name] = int(row.spans[name][-1])
             layer = {
                 f: Table.count_regions([(row.feature(f)[select], row.y[select])], self.model.vocabulary)
                 for f in self.model.memory
@@ -239,52 +175,16 @@ class PairCursor:
                 )
         self.tail = ids[-self.model.encoder.width :].copy()
         self.next_keys = None
-        if getattr(self.model.encoder, "turns", None) is not None:
-            for token in ids[-4096:]:                          # where the prompt ends: inside which turn
-                self._follow(int(token))
         return self
-
-    def _follow(self, token):
-        start, user, end = self.model.encoder.turns
-        if token == start:
-            self.role, self.asking, self.words = True, False, 0
-        elif self.role:
-            self.role, self.asking, self.words = False, token == user, 0
-        elif token == end:
-            self.asking = False
-        elif self.asking:
-            self.words += 1
 
     def fork(self):
         other = copy(self)
         other.overlay = {f: {k: c.copy() for k, c in vals.items()} for f, vals in self.overlay.items()}
-        other.question = dict(self.question)
         return other
-
-    def _turn(self, token):
-        """Follow the chat turns; when a user turn closes, keep the columns of its last word."""
-        turns = getattr(self.model.encoder, "turns", None)
-        if turns is None:
-            return
-        start, user, end = turns
-        if token == start:
-            self.role, self.asking, self.words = True, False, 0
-        elif self.role:
-            self.role, self.asking, self.words = False, token == user, 0
-        elif token == end:
-            if self.asking and self.words and len(self.tail):
-                row = self.model.encoder.encode(self.tail)    # the tail ends with the last word of the question
-                self.question = {name: int(row.spans[source][-1]) for name, source in question_sources(row)}
-            self.asking = False
-        elif self.asking:
-            self.words += 1
 
     def _keys(self):
         if self.next_keys is None:
             row = self.model.encoder.encode(np.r_[self.tail, np.int32(0)])
-            for name in list(row.spans):                         # the question comes from the state, not the tail
-                if is_question(name):
-                    row.spans[name][-2 if len(row.y) > 1 else -1:] = self.question.get(name, 0)
             self.next_keys = {
                 f: int(row.feature(f)[-1])
                 for f in dict.fromkeys([*self.model.weights, *self.model.memory])
@@ -300,7 +200,6 @@ class PairCursor:
                 key = keys[f]
                 if key:
                     values.setdefault(key, Counter())[int(token)] += 1
-        self._turn(int(token))
         self.tail = np.r_[self.tail, np.int32(token)][-self.model.encoder.width :]
         self.next_keys = None
 

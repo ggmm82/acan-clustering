@@ -29,10 +29,9 @@ def document_stats(row, name):
 
 
 class PairText:
-    def __init__(self, vocabulary, eos, budget, max_context=512, turns=None):
+    def __init__(self, vocabulary, eos, budget, max_context=512):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), eos, int(budget)
         self.max_context = int(max_context)                     # longest scale the validation may choose
-        self.turns = turns                                      # (<|im_start|>, user, <|im_end|>) ids of a chat
         self.tokens = 0
         self.model = None
         self.target_mass = None
@@ -42,7 +41,7 @@ class PairText:
     def add(self, ids, train, tune, check, documents=None, starts_in_piece=None):
         if self.model is None:
             self.model = learn(train, self.vocabulary, self.eos, tune, check, documents, self.max_context,
-                               getattr(self, 'report', None), getattr(self, 'turns', None))
+                               getattr(self, 'report', None))
             self.model.training_weights = dict(self.model.weights)
             self.target_kappa = self.model.root.observed_targets["token"]["kappa"]
             self.target_mass = np.zeros_like(self.model.head)
@@ -214,7 +213,6 @@ class PairText:
             "exact": [],
             "local": [],
             "tables": list(m.tables),
-            "turns": list(m.encoder.turns) if getattr(m.encoder, "turns", None) is not None else None,
         }
 
         def put_graph(key, graph):
@@ -308,8 +306,6 @@ class PairText:
             for i, f in enumerate(meta["tables"])
         }
         enc.open_exact = True
-        enc.turns = tuple(meta["turns"]) if meta.get("turns") else None
-        text.turns = enc.turns
         text.model = PairLanguageModel(enc, root, tables, dict(meta["weights"]), dict(meta["memory"]))
         text.model.training_weights = dict(meta["training_weights"])
         return text
