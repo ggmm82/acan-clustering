@@ -511,18 +511,6 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
             continue
         enc.topics[width] = graph
         model.topics[f"t{width}"] = [1.0, 0.0]                  # beta 0 until judged on the counts
-    # What follows depends on the topic and on where one is: the same topic is followed by its own words
-    # inside a sentence and by something else after the last token of a turn. Every topic is offered also
-    # together with the last token and the last two (exact), read in the chain right after them, so that
-    # a reading can learn what follows this local context when the text talks about this topic. The
-    # judgment keeps the ones that help.
-    joint = {}
-    for f, k in model.weights.items():
-        joint[f] = k
-        if f in ("e1", "e2"):
-            for w in sorted(enc.topics):
-                joint[f"t{w}&{f}"] = 1.0
-    model.weights = joint
     tell('done', max([6, *enc.nodes]), time.monotonic()-started)
     enc.width = max([6, *enc.nodes])                          # the topics keep their own tokens (PairCursor)
     # Every training target is subsequently counted exactly once by the streaming worker.

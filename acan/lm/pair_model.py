@@ -107,8 +107,6 @@ def reach(f):
     """How many tokens before the next one a field looks at: the sum of the spans it joins."""
     if f == "root":
         return 0
-    if "&" in f:                                                # topic & local context: as far as the topic
-        return max(reach(part) for part in f.split("&"))
     return sum(int(part[1:]) for part in f.split("|"))
 
 
@@ -191,13 +189,6 @@ class EncodedPrefix:
     def feature(self, f):
         if f == "root":
             return np.ones(len(self.y), np.uint32)
-        if "&" in f:                                            # a topic read together with the local context
-            topic, local = f.split("&")
-            t, e = self.feature(topic).astype(np.uint64), self.feature(local).astype(np.uint64)
-            with np.errstate(over="ignore"):                    # 64-bit keys: mixed, wrapping around
-                key = e * np.uint64(0x9E3779B97F4A7C15) + t * np.uint64(0xC2B2AE3D27D4EB4F) + np.uint64(1)
-            key[(t == 0) | (e == 0) | (key == 0)] = 0
-            return key
         parts = f.split("|")
         recent = parts[-1]
         if len(parts) == 1 and recent in self.exact_columns:
