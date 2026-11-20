@@ -11,7 +11,7 @@ from acan.core.concepts import ConceptModel, Encoder
 from acan.core.conditional import calibrated_weights
 from acan.concept_algebra import categorical_reading
 from .concept_lm import document_counts
-from .pair_model import PairEncoder, PairLanguageModel
+from .pair_model import PairEncoder, PairLanguageModel, chain, merged_chain
 from .pair_training import add_chunk, flush, learn
 
 PROFILE = "concept-pairs-v1"
@@ -104,24 +104,22 @@ class PairText:
         rows = [self._scores(np.asarray(p, np.int32)) for p in pieces if len(p)]
         base = np.concatenate([p for _, p in rows])
 
-        def fit(names, statistics, prior, initial):
-            stats = [
-                tuple(np.concatenate(col) for col in zip(*(statistics(row, f) for row, _ in rows)))
-                for f in names
-            ]
-            weights = calibrated_weights(stats, [initial.get(f, 1.0) for f in names], prior)
-            chosen = {}
-            for f, k, (mass, counts, distinct) in zip(names, weights, stats):
-                if np.isfinite(k):
-                    prior = categorical_reading(counts, mass, distinct, prior, k, np)
-                    chosen[f] = float(k)
-            return chosen, prior
-
+        # One chain from the general to the particular: at every distance, first what the corpus says, then
+        # what the document says. A short context seen once in the document is corrected by the longer
+        # contexts after it, as every reading is by the more particular ones.
         fields = [f for f in fields if f not in m.topics]
-        m.weights, base = fit(
-            fields, lambda r, f: m.tables[f].lookup(r.feature(f), r.y), base, m.weights
-        )
-        m.memory, _ = fit(doc, document_stats, base, m.memory)
+        order = merged_chain(fields, doc)
+        stats = []
+        for kind, f in order:
+            parts = [m.tables[f].lookup(r.feature(f), r.y) if kind == "corpus" else document_stats(r, f)
+                     for r, _ in rows]
+            stats.append(tuple(np.concatenate(col) for col in zip(*parts)))
+        old = {"corpus": m.weights, "memory": m.memory}
+        weights = calibrated_weights(stats, [old[kind].get(f, 1.0) for kind, f in order], base)
+        chosen = [(kind, f, float(k)) for (kind, f), k in zip(order, weights) if np.isfinite(k)]
+        m.weights = {f: k for kind, f, k in chosen if kind == "corpus"}
+        m.memory = {f: k for kind, f, k in chosen if kind == "memory"}
+        m.order = [(kind, f) for kind, f, _ in chosen]
         if m.topics and (final or not getattr(self, "topics_judged", False)):
             self._judge_topics([row for row, _ in rows])
 
@@ -227,11 +225,13 @@ class PairText:
             return np.log(values[pos])
         row, p = self._scores(ids)
         p = p[pos]
-        for f, k in self.model.weights.items():
-            mass, counts, d = self.model.tables[f].lookup(row.feature(f)[pos], ids[pos])
-            p = categorical_reading(counts, mass, d, p, k, np)
-        for f, k in self.model.memory.items():
-            mass, counts, d = document_stats(row, f)[:, pos]
+        for kind, f in chain(self.model):
+            if kind == "corpus":
+                mass, counts, d = self.model.tables[f].lookup(row.feature(f)[pos], ids[pos])
+                k = self.model.weights[f]
+            else:
+                mass, counts, d = document_stats(row, f)[:, pos]
+                k = self.model.memory[f]
             p = categorical_reading(counts, mass, d, p, k, np)
         return np.log(p)
 
@@ -306,6 +306,7 @@ class PairText:
             "training_weights": list(m.training_weights.items()),
             "weights": list(m.weights.items()),
             "memory": list(m.memory.items()),
+            "order": [list(item) for item in chain(m)],
             "nodes": [],
             "exact": [],
             "local": [],
@@ -412,6 +413,8 @@ class PairText:
         enc.open_exact = True
         text.model = PairLanguageModel(enc, root, tables, dict(meta["weights"]), dict(meta["memory"]))
         text.model.training_weights = dict(meta["training_weights"])
+        if "order" in meta:
+            text.model.order = [tuple(item) for item in meta["order"]]
         enc.topic_vectors = data["topic_vectors"] if "topic_vectors" in data else None
         for w, k, b in meta.get("topics", []):
             enc.topics[w] = graph(f"topic{w}_")

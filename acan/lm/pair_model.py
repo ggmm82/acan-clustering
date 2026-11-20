@@ -98,27 +98,54 @@ def topic_chain(model, keys):
     return q / model.unigram if seen else None
 
 
+def reach(f):
+    """How many tokens before the next one a field looks at: the sum of the spans it joins."""
+    return 0 if f == "root" else sum(int(part[1:]) for part in f.split("|"))
+
+
+def merged_chain(corpus, memory):
+    """One chain from the general to the particular: corpus readings and memory of the document, each
+    in its own order, merged by how far back they look. A reading of the document on a short context is
+    followed by the readings of the longer contexts, which correct it where they know better."""
+    out, i = [], 0
+    corpus = list(corpus)
+    for f in memory:
+        while i < len(corpus) and reach(corpus[i]) <= reach(f):
+            out.append(("corpus", corpus[i])); i += 1
+        out.append(("memory", f))
+    return out + [("corpus", f) for f in corpus[i:]]
+
+
+def chain(model):
+    order = getattr(model, "order", None)
+    if order is None:  # models saved before the merged chain: corpus first, then the document
+        order = [("corpus", f) for f in model.weights] + [("memory", f) for f in model.memory]
+    return order
+
+
 def read_distribution(model, previous, keys, memory):
-    """The probability of every token: the corpus readings, from the general to the particular, then the
-    memory of the document, then what the topics say: Bayes' rule, the reading times q(topic) / q(general)
-    (topic_chain), normalized."""
+    """The probability of every token: one chain from the general to the particular, where every step is
+    a reading of the corpus or of the memory of the document (chain), then what the topics say: Bayes'
+    rule, the reading times q(topic) / q(general) (topic_chain), normalized."""
     p = model.leaf_weights[previous] @ model.head
-    for f, k in model.weights.items():
-        table = model.tables[f]
-        ix = table.find(np.array([keys[f]], np.uint64))[0]
-        if ix >= 0:
+    for kind, f in chain(model):
+        if kind == "corpus":
+            k, table = model.weights[f], model.tables[f]
+            ix = table.find(np.array([keys[f]], np.uint64))[0]
+            if ix < 0:
+                continue
             targets, counts = table.followers(ix)
             weight = k * max(table.D[ix], 1)
             denom = table.C[ix] + weight
             p = p * (weight / denom)
             p[targets] += counts / denom
-    for f, k in model.memory.items():
-        counts = memory(f, keys[f])
-        if counts:
-            weight = k * len(counts)
-            denom = sum(counts.values()) + weight
-            p = p * (weight / denom)
-            p[list(counts)] += np.fromiter(counts.values(), float) / denom
+        else:
+            counts = memory(f, keys[f])
+            if counts:
+                weight = model.memory[f] * len(counts)
+                denom = sum(counts.values()) + weight
+                p = p * (weight / denom)
+                p[list(counts)] += np.fromiter(counts.values(), float) / denom
     ratio = topic_chain(model, keys) if getattr(model, "topics", None) else None
     if ratio is not None:
         p = p * ratio
