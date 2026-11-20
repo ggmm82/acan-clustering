@@ -14,6 +14,33 @@ import torch.nn.functional as F
 from .concept_net import ConceptNet
 
 
+def memberships_logits(q, g, log_s, log_c):
+    """log C_k + log N(q; g_k, s_k) up to a constant, for every position and concept of every head, with the square
+    expanded into products of matrices (no table position x concept x dimension). q: ... x H x d; g, log_s: H x K x d."""
+    inv = torch.exp(-2 * log_s)                                              # H K d
+    quad = torch.einsum('...hd,hkd->...hk', q * q, inv) - 2 * torch.einsum('...hd,hkd->...hk', q, g * inv) \
+        + (g * g * inv).sum(-1)
+    return log_c - .5 * quad - log_s.sum(-1)
+
+
+def causal_read(weight, t, v, chunk):
+    """read_i = sum_k weight_ik S_k(i), S_k(i) = sum_{j<=i} t_jk v_j, without building S for every position: inside a
+    block of positions with a product of matrices, across blocks with the sums of the concepts carried along.
+    weight, t: B x T x H x K;  v: B x T x H x d."""
+    B, T, H, K = t.shape
+    d = v.shape[-1]
+    out = []
+    state = v.new_zeros(B, H, K, d)
+    causal = torch.tril(torch.ones(chunk, chunk, dtype=v.dtype, device=v.device))
+    for start in range(0, T, chunk):
+        w, tc, vc = (x[:, start:start + chunk].transpose(1, 2) for x in (weight, t, v))   # B H C .
+        C = w.shape[2]
+        scores = (w @ tc.transpose(-1, -2)) * causal[:C, :C]                               # B H C C
+        out.append((scores @ vc + w @ state).transpose(1, 2))
+        state = state + tc.transpose(-1, -2) @ vc
+    return torch.cat(out, 1)
+
+
 class ConceptAttention(nn.Module):
     def __init__(self, dim, heads, concepts, window):
         super().__init__()
@@ -28,17 +55,16 @@ class ConceptAttention(nn.Module):
         self.out = nn.Linear(2 * dim, dim)
         self.norm1, self.norm2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
         self.window = window
+        self.chunk = 64
 
     def forward(self, h, mask):
         B, T, D = h.shape
         q = self.query(h).view(B, T, self.h, self.d)
         v = self.value(h).view(B, T, self.h, self.d)
-        z = (q[..., None, :] - self.g) * torch.exp(-self.log_s)
-        t = torch.softmax(self.log_c - .5 * (z * z).sum(-1) - self.log_s.sum(-1), -1) * mask[:, :, None, None]
+        t = torch.softmax(memberships_logits(q, self.g, self.log_s, self.log_c), -1) * mask[:, :, None, None]
         mass = torch.cumsum(t, 1) + 1e-6
-        sums = torch.cumsum(t[..., None] * v[:, :, :, None, :], 1)
         weight = torch.einsum('bthk,hkj->bthj', t, torch.softmax(self.A, -1)) / mass
-        read = torch.einsum('bthj,bthjd->bthd', weight, sums).reshape(B, T, D)
+        read = causal_read(weight, t, v, self.chunk).reshape(B, T, D)
         near = sum(F.pad(h, (0, 0, w, 0))[:, :T] @ self.near[w - 1] for w in range(1, self.window + 1))
         h = self.norm1(h + self.out(torch.cat([read, near], -1)))
         return self.norm2(h)

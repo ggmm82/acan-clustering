@@ -55,8 +55,9 @@ class ConceptNet:
     # ---- one layer -------------------------------------------------------------------------------------
     def _memberships(self, i, q):
         g, log_s, log_c = self.p[f'layers.{i}.g'], self.p[f'layers.{i}.log_s'], self.p[f'layers.{i}.log_c']
-        z = (q[..., None, :] - g) * np.exp(-log_s)
-        return _softmax(log_c - .5 * (z * z).sum(-1) - log_s.sum(-1))
+        inv = np.exp(-2 * log_s)                                             # the square expanded: no position x concept x d
+        quad = np.einsum('...hd,hkd->...hk', q * q, inv) - 2 * np.einsum('...hd,hkd->...hk', q, g * inv) + (g * g * inv).sum(-1)
+        return _softmax(log_c - .5 * quad - log_s.sum(-1))
 
     def _project(self, i, h):
         H, d = self.heads, self.dim // self.heads

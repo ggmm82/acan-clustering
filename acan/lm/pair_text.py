@@ -31,7 +31,7 @@ def document_stats(row, name):
 
 class PairText:
     # The concept network learned as a language model (acan/lm/concept_net.py): the start of the chain of readings.
-    NETWORK = dict(dim=96, layers=3, heads=4, concepts=64, window=3)
+    NETWORK = dict(dim=96, layers=3, heads=4, concepts=64, window=3, grouped=False)
 
     def __init__(self, vocabulary, eos, budget, max_context=512, network=False):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), eos, int(budget)
@@ -101,8 +101,8 @@ class PairText:
             else:
                 config = dict(self.NETWORK, vocabulary=self.vocabulary, **(self.network if isinstance(self.network, dict) else {}))
                 frequency = m.unigram
-                network = Network(config, centres=m.encoder.vectors, frequency=frequency,
-                                  groups=output_groups(m.encoder.token_classes[:self.vocabulary], frequency))
+                groups = output_groups(m.encoder.token_classes[:self.vocabulary], frequency) if config["grouped"] else None
+                network = Network(config, centres=m.encoder.vectors, frequency=frequency, groups=groups)
             self._learner = Learner(network)
         self.network_loss = self._learner.learn(ids, self.eos, check)
         self.model.net = self._learner.network.export()
