@@ -2,21 +2,56 @@
 
 ## Matematica
 
-### L'idea in una frase
+### 1 · Introduzione
 
-Il modello impara da una **tabella** e completa le colonne che mancano in una riga
-nuova. Lo stesso modello serve per due lavori:
+Presentiamo un modello che impara da una **tabella** e completa le colonne che
+mancano in una riga nuova. Lo stesso modello risolve due problemi:
 
-- **tabelle**: date alcune colonne (peso, cilindrata) completa la colonna target (prezzo);
-- **testo**: dati i token già scritti completa la colonna «prossimo token», poi la
-  riga successiva, e così via. Così scrive.
+- **predizione tabellare**: date alcune colonne di una riga (peso, cilindrata) si
+  stima una colonna target (prezzo);
+- **generazione di testo**: dati i token già scritti si stima la colonna «prossimo
+  token»; il token scelto diventa parte della riga successiva, e così via.
 
-Non c'è una rete neurale e non c'è un gradiente: il modello conserva solo **somme**
-delle righe che ha visto, raggruppate in **concetti**.
+Il modello non contiene una rete neurale e non usa la discesa del gradiente. Conserva
+soltanto **somme** delle righe osservate, raggruppate in **concetti** organizzati in
+livelli dal generale al particolare. Ogni scelta strutturale (quanti concetti, quanti
+livelli, quante coordinate, quali letture, con quale forza) è presa dai dati con un
+unico criterio, descritto nella sezione 2.
 
-### Passo 1 · Una tabella piccola
+Lungo tutto il testo seguiamo due esempi: una tabella di quattro automobili e la frase
+«il gatto nero dorme sul tappeto del salotto .».
 
-Seguiamo una tabella di quattro automobili (numeri inventati, per l'esempio):
+### 2 · Il criterio di scelta
+
+Ogni volta che il modello deve decidere fra un'alternativa più semplice e una più
+ricca, le confronta su dati che non ha usato per costruirle. Per ogni osservazione $t$
+di validazione calcola il guadagno di log-verosimiglianza
+
+$$
+g_t=\log p_{\rm ricca}(y_t)-\log p_{\rm semplice}(y_t)
+$$
+
+e sceglie l'alternativa più ricca solo se il guadagno medio supera il suo errore
+standard:
+
+$$
+\bar g>\frac{s_g}{\sqrt{n-1}} ,
+$$
+
+con $s_g$ la deviazione standard dei guadagni e $n$ il numero di osservazioni. Il
+confronto è appaiato: le due alternative si misurano sulle stesse osservazioni, quindi
+la variabilità comune non conta. Non ci sono soglie fissate a mano: la grandezza del
+guadagno richiesto dipende solo da quanto è rumorosa la misura.
+
+Lo stesso criterio decide quante righe servono per imparare una struttura (il campione
+raddoppia finché il guadagno è significativo), quante coordinate descrivono un token,
+quanti sotto-concetti tenere, quali scale di contesto e quali argomenti usare. Quando
+una quantità è continua, come la forza $\kappa$ della sezione 6, si sceglie invece il
+valore che massimizza la verosimiglianza di validazione.
+
+### 3 · Concetti: statistiche sufficienti
+
+Consideriamo la tabella (numeri inventati, per l'esempio):
 
 | riga | peso (t) | cilindrata (cc) | prezzo (k€) |
 |---:|---:|---:|---:|
@@ -25,62 +60,56 @@ Seguiamo una tabella di quattro automobili (numeri inventati, per l'esempio):
 | 3 | 1,9 | 2800 | 40 |
 | 4 | 2,0 | 3000 | 44 |
 
-A occhio ci sono due gruppi: le utilitarie (righe 1 e 2) e le auto grandi (righe 3
-e 4). Il modello li trova da solo, con i passi seguenti.
-
-### Passo 2 · Che cosa conserva un concetto
-
-Un concetto è un gruppo di righe. Non conserva le righe, ma solo tre somme per ogni
-colonna numerica: quante righe ci sono, la somma dei valori e la somma dei quadrati.
-Per una colonna di categorie conserva quante volte compare ciascun valore.
-
-Una riga può appartenere un po' a più concetti. Se $T_{ri}$ è la quota della riga
-$r$ nel concetto $i$, la massa e la media del concetto sono
+Un **concetto** è un gruppo di righe, rappresentato da statistiche sufficienti: per
+ogni colonna numerica la massa, la somma dei valori e la somma dei quadrati; per ogni
+colonna di categorie la massa di ciascun valore. Una riga può appartenere in parte a più
+concetti. Indicando con $T_{ri}\in[0,1]$ la quota della riga $r$ nel concetto $i$,
+massa e media sono
 
 $$
 C_i=\sum_r T_{ri},\qquad
-\mu_{ij}=\frac{\sum_{r}T_{ri}\,x_{rj}}{\sum_{r}T_{ri}} .
+\mu_{ij}=\frac{\sum_{r}T_{ri}\,x_{rj}}{\sum_{r}T_{ri}} ,
 $$
 
-Dalla somma dei quadrati si ricava la dispersione, cioè quanto i membri si
-allontanano dalla media. Nell'esempio il concetto «utilitarie» ha massa 2, peso medio
-1,05 t, cilindrata media 1100 cc e prezzo medio 13 k€. Unire due concetti vuol dire
-**sommare** le loro somme. Un valore mancante non entra nelle somme della sua colonna.
+e dalla somma dei quadrati si ricava la dispersione $\sigma_{ij}^2$. Il concetto
+«utilitarie» (righe 1 e 2) ha massa 2, peso medio 1,05 t, cilindrata media 1100 cc,
+prezzo medio 13 k€.
 
-### Passo 3 · A quale concetto appartiene una riga
+Le statistiche sono **additive**: unire due concetti significa sommare le loro somme, e
+imparare su una tabella divisa in pezzi dà lo stesso risultato che impararla intera. Un
+valore mancante non entra nelle somme della sua colonna.
 
-Una riga nuova appartiene di più al concetto che la «spiega» meglio: un valore
-vicino al centro di un concetto stretto è molto probabile; un concetto disperso
-spiega valori più lontani ma ciascuno con meno probabilità. Se $L_i(x)$ è questa
-probabilità per le colonne note della riga $x$, la sua quota nel concetto $i$ è
+### 4 · Appartenenza
+
+Sia $L_i(x)$ la densità del concetto $i$ sulle colonne note della riga $x$: gaussiana
+con media $\mu_{ij}$ e dispersione $\sigma_{ij}$ per i numeri, frequenza relativa per
+le categorie, con le colonne trattate come indipendenti dentro il concetto. La quota di
+$x$ nel concetto $i$ è la probabilità a posteriori
 
 $$
 T_i(x)=\frac{C_i\,L_i(x)}{\sum_h C_h\,L_h(x)} .
 $$
 
-Conta anche la massa $C_i$: a parità di somiglianza pesa di più il concetto che ha
-visto più righe. Le quote di una riga sommano a 1.
+Un valore vicino al centro di un concetto stretto è molto probabile; un concetto
+disperso spiega valori più lontani, ciascuno con meno probabilità. La massa $C_i$ fa da
+probabilità a priori. Un'auto di 1,2 t e 1300 cc ha
+$T_{\rm utilitarie}\approx 0{,}98$ e $T_{\rm grandi}\approx 0{,}02$.
 
-Esempio: un'auto di 1,2 t e 1300 cc è molto vicina alle utilitarie e lontanissima
-dalle auto grandi: $T_{\rm utilitarie}\approx 0{,}98$, $T_{\rm grandi}\approx 0{,}02$.
+### 5 · Gerarchia dei concetti
 
-### Passo 4 · Quanti concetti e quanti livelli: li sceglie il modello
-
-Il modello parte da tanti piccoli gruppi e li unisce a due a due, cominciando dalle
-coppie che costano meno. Il **raggio** $\rho$ di un gruppo è la sua dispersione media
-(la radice), misurata rispetto al livello sopra. Il costo di unire i gruppi $i$ e
-$j$ è quanto cresce il raggio pesato per la massa:
+**Unioni.** Si parte da molti piccoli gruppi e si uniscono a due a due, prima le
+coppie che costano meno. Con $\rho$ il raggio di un gruppo (la radice della sua
+dispersione media, relativa al livello superiore), il costo di unire $i$ e $j$ è
+l'aumento del raggio pesato per la massa:
 
 $$
 \Delta_{ij}=(C_i+C_j)\,\rho_{i\cup j}-C_i\,\rho_i-C_j\,\rho_j .
 $$
 
-Unire le righe 1 e 2 costa poco (si somigliano); unire le utilitarie con le auto
-grandi costa molto. Ogni momento di questa sequenza di unioni è un possibile modo di
-tagliare la tabella in gruppi. Per scegliere il taglio il modello usa la **CP a
-coppie**: prende due membri diversi dello stesso gruppo e chiede se si somigliano più
-di due righe qualunque del livello sopra. Con $r_{ij}$ la dispersione dell'attributo
-$j$ nel gruppo $i$ divisa per quella di tutta la tabella, il punteggio di un taglio è
+**Taglio.** Ogni istante della sequenza di unioni è una partizione candidata. Il
+punteggio di una partizione è la **coesione a coppie**: due membri distinti dello
+stesso gruppo si somigliano più di due righe qualunque? Con $r_{ij}$ la dispersione
+dell'attributo $j$ nel gruppo $i$ divisa per quella dell'intera tabella,
 
 $$
 \mathrm{CP}^{\circ}=
@@ -88,30 +117,28 @@ $$
      {\max(n(n-1),\epsilon)} .
 $$
 
-In parole: ogni gruppo porta tante coppie di membri quante ne contiene, e ogni coppia
-vale di più se il gruppo è stretto rispetto alla tabella. Un gruppo piccolo porta
-poche coppie; un gruppo grande disperso come tutta la tabella non aggiunge
-somiglianza. Per una colonna di categorie la dispersione è la probabilità che due
-membri presi a caso abbiano valori diversi.
+Ogni gruppo contribuisce con le sue coppie di membri, pesate da quanto il gruppo è
+stretto. Per una categoria la dispersione è la probabilità che due membri presi a caso
+abbiano valori diversi.
 
-Il modello poi **giudica** la scelta su righe che non ha usato: legge ogni riga
-togliendone il contributo dalle somme. Fra i tagli che stanno entro un errore
-standard dal migliore sceglie il più semplice. Dentro ogni gruppo può ripetere la
-ricerca e trovare un livello più specifico, se ce n'è la prova. Anche un solo gruppo è
-un risultato possibile. Nell'esempio il risultato è: due concetti.
+**Giudizio.** Le partizioni migliori vengono confrontate su righe non usate per
+costruirle, lette togliendo dalle somme il contributo della riga stessa (stima
+*leave-one-out*). Fra le partizioni entro un errore standard dalla migliore si sceglie
+la più semplice. Dentro ogni gruppo la ricerca si ripete e produce un livello più
+specifico, se i dati lo giustificano; anche un solo gruppo è un esito possibile. Sulla
+tabella dell'esempio il risultato è di due concetti.
 
-### Passo 5 · Predire la colonna che manca
+### 6 · Predizione
 
-Per un numero (il prezzo) si leggono le medie dei concetti, pesate con le quote della
-riga (in k€):
+**Colonna numerica.** Si pesano le medie dei concetti con le quote della riga:
 
 $$
-\hat y = \sum_i T_i(x)\,\mu_{i,\rm prezzo}\approx 0{,}98\cdot 13+0{,}02\cdot 42\approx 13{,}6 .
+\hat y = \sum_i T_i(x)\,\mu_{i,\rm prezzo}\approx 0{,}98\cdot 13+0{,}02\cdot 42\approx 13{,}6\ \text{k€}.
 $$
 
-Per una categoria (come il prossimo token) ogni concetto dà la sua distribuzione dei
-valori. Con $N_i(y)$ la massa del valore $y$ nel concetto, $M_i$ la massa totale e
-$D_i$ il numero di valori diversi osservati, il modello legge
+**Colonna di categorie: la lettura gerarchica.** Siano $N_i(y)$ la massa del valore
+$y$ nel concetto, $M_i$ la massa totale e $D_i$ il numero di valori distinti osservati.
+Data una stima più generale $q^{\rm sopra}$, il concetto la aggiorna così:
 
 $$
 q_i(y)=\frac{N_i(y)+a_i\,q^{\rm sopra}(y)}{M_i+a_i},
@@ -119,17 +146,23 @@ q_i(y)=\frac{N_i(y)+a_i\,q^{\rm sopra}(y)}{M_i+a_i},
 p(y\mid x)=\sum_i T_i(x)\,q_i(y).
 $$
 
-$q^{\rm sopra}$ è la stima del livello più generale: quando un concetto ha visto poco,
-la sua lettura resta vicina a quella stima. Il numero $\kappa$ si sceglie su righe di
-validazione. Esempio: un concetto ha visto dopo di sé «.», «.» ed «e» (tre
-osservazioni, due valori diversi); con $\kappa=1$ e una stima generale del punto pari a
-$1/4$, il punto riceve $(2+2\cdot\tfrac14)/(3+2)=\tfrac12$.
+È la media a posteriori di una distribuzione di Dirichlet centrata sulla stima più
+generale. Un concetto che ha visto poco resta vicino a $q^{\rm sopra}$; uno che ha
+visto molto la sostituisce. Il termine $D_i$ rende la fiducia più bassa dove i seguiti
+osservati sono molto vari (come nel metodo di Witten e Bell). La forza $\kappa$ si
+sceglie sulla validazione.
 
-### Passo 6 · Il testo diventa una tabella
+Esempio: un concetto ha visto «.», «.» ed «e» (tre osservazioni, due valori). Con
+$\kappa=1$ e $q^{\rm sopra}(.)=1/4$ si ottiene $q(.)=(2+2\cdot\tfrac14)/(3+2)=\tfrac12$.
 
-Seguiamo la frase **«il gatto nero dorme sul tappeto del salotto .»** e supponiamo,
-per semplicità, che ogni parola sia un token. Ogni posizione del testo è una riga. Per
-la posizione del punto finale la riga è:
+Più letture si applicano **in catena**: ognuna usa come $q^{\rm sopra}$ il risultato
+della precedente, dalla più generale alla più particolare.
+
+### 7 · Il testo come tabella
+
+Ogni posizione di un testo è una riga; la colonna da completare è il token successivo,
+e le colonne note descrivono il contesto **all'indietro**, a scale diadiche. Per la
+posizione del punto finale di «il gatto nero dorme sul tappeto del salotto .»:
 
 | colonna nota | che cosa descrive |
 |---|---|
@@ -137,172 +170,261 @@ la posizione del punto finale la riga è:
 | scala 2 | il concetto di «del salotto» |
 | scala 4 | il concetto di «sul tappeto del salotto» |
 | scala 8 | il concetto di «il gatto nero dorme sul tappeto del salotto» |
+| argomento | di che cosa parlano gli ultimi token (sezione 10) |
 | **da completare** | **il prossimo token: «.»** |
 
-Le colonne guardano sempre **indietro** dal token da predire: la colonna di scala
-$2^k$ sono gli ultimi $2^k$ token. Così la posizione è relativa per costruzione, e il
-token da predire non è mai fra le colonne note. Con venti scale la riga copre circa
-mezzo milione di token, con venti colonne.
+La colonna di scala $2^k$ copre gli ultimi $2^k$ token. La posizione è quindi relativa
+per costruzione e il token da predire non compare mai fra le colonne note. Con $k$
+scale la riga copre $2^k$ token con $k$ colonne: venti scale coprono circa un milione
+di token.
 
-### Passo 7 · Dai token ai concetti dei tratti
+### 8 · Rappresentazione dei token e dei tratti
 
-**Un token diventa numeri.** Per ogni token il modello conta quali token compaiono
-subito prima e subito dopo, e comprime questi conteggi in otto numeri con la SVD.
-Token usati allo stesso modo hanno numeri vicini: «salotto» e «cucina» stanno vicini,
-«corre» lontano. Il modello tiene anche l'identità esatta del token.
+**Coordinate dei token.** Per ogni token si misura la distribuzione dei token che lo
+precedono e lo seguono (fra i più frequenti), se ne prende la radice quadrata (distanza
+di Hellinger) e si comprime il profilo con la decomposizione ai valori singolari. Token
+usati allo stesso modo ricevono coordinate vicine: «salotto» e «cucina» stanno vicini,
+«corre» lontano. Il numero di coordinate non è fissato: parte da 8 e raddoppia finché i
+concetti dei token, trovati su quelle coordinate, prevedono meglio il token successivo
+secondo il criterio della sezione 2. Accanto alle coordinate il modello conserva
+l'identità esatta del token.
 
-**Una coppia diventa una riga.** «del salotto» è una riga di sedici numeri: gli otto
-di «del» seguiti dagli otto di «salotto». L'ordine conta: «salotto del» sarebbe
-un'altra riga. Su tutte le coppie del testo il modello fa i passi 2–4 e trova i
-concetti delle coppie: «del salotto», «della cucina», «nel bagno» finiscono nello
-stesso concetto «preposizione + stanza».
+**Coppie ordinate.** «del salotto» è la riga formata dalle coordinate di «del»
+seguite da quelle di «salotto»; l'ordine conta. Su tutte le coppie del campione si
+applicano le sezioni 3–5 e si ottengono i concetti delle coppie: «del salotto», «della
+cucina», «nel bagno» cadono nello stesso concetto «preposizione + stanza».
 
-**Due concetti formano un tratto più lungo.** Il concetto di una coppia è descritto
-dal suo **centro**, la media delle righe che contiene. «sul tappeto del salotto» è una
-riga fatta del centro di «sul tappeto» seguito dal centro di «del salotto»; il modello
-ne trova i concetti, e così via raddoppiando: due tratti di 4 formano un tratto di 8.
-Quando un centro supera 32 numeri si tengono le 32 direzioni in cui i centri
-differiscono di più. Per ogni tratto si usa il concetto a cui appartiene di più.
+**Composizione ricorsiva.** Un concetto è descritto dal suo **centro**, la media delle
+sue righe. Un tratto di 4 token è la riga formata dai centri delle sue due metà; due
+tratti di 4 formano un tratto di 8, e così via. Oltre 32 numeri si tengono le 32
+direzioni in cui i centri differiscono di più. Ogni tratto viene assegnato al concetto
+a cui appartiene di più.
 
-### Passo 8 · Dal contesto alla probabilità del prossimo token
+**Sotto-concetti.** Dentro un concetto si provano combinazioni più precise (per
+esempio «stanza» seguita proprio da «salotto»); ciascuna resta solo se supera il
+criterio della sezione 2 su documenti tenuti da parte ed è stata letta almeno due
+volte.
 
-La previsione si costruisce **dal generale al particolare**, con la formula del
-passo 5 applicata più volte: ogni lettura usa come $q^{\rm sopra}$ la stima della
-lettura precedente.
+### 9 · La catena di letture: corpus e documento
 
-1. Si parte dai concetti dell'ultimo token: che cosa segue di solito i token come
-   «salotto».
-2. Si legge l'identità esatta «salotto».
-3. Si legge il concetto della coppia, poi le combinazioni: concetto + identità
-   («del» esatto + «stanza»), identità + concetto, e infine la coppia esatta «del
-   salotto».
-4. Lo stesso per le scale 4, 8, 16…: concetto del tratto, metà come concetti o come
-   identità, tratto esatto.
+Per ogni posizione il modello dispone di due fonti di conteggi:
 
-Esempio: la stima del punto dopo i passi precedenti è 0,10. La coppia esatta «del
-salotto» è stata vista 20 volte, seguita 12 volte da «.», 5 da «,» e 3 da «e» (tre
-valori diversi). Con $\kappa=1$: $q(.)=(12+3\cdot0{,}10)/(20+3)\approx0{,}53$. Una
-combinazione mai vista lascia la stima com'è: 0,10. Una vista una volta sola, seguita
-da «e», la sposta poco: $q(.)=(0+1\cdot0{,}10)/(1+1)=0{,}05$.
+- il **corpus**: quante volte, in tutto l'addestramento, un contesto (un'identità
+  esatta, un concetto o una loro combinazione) è stato seguito da ciascun token;
+- il **documento in corso**: gli stessi conteggi, limitati alla parte del documento
+  già letta. Una frase detta molte pagine prima può così tornare, a qualunque distanza.
 
-Così, quando il testo esatto non è mai stato visto, il modello non accorcia il
-contesto: lo **astrae**, sostituendo i pezzi rari con il loro concetto.
-
-**Sotto-concetti.** Dentro un concetto il modello prova le combinazioni più precise
-(per esempio «stanza» seguita proprio da «salotto»). Le misura su documenti del
-training tenuti da parte: per ogni osservazione calcola il guadagno
+Entrambe si leggono con la formula della sezione 6, in **un'unica catena ordinata per
+distanza**, dal contesto più corto al più lungo; a parità di distanza viene prima il
+corpus, poi il documento:
 
 $$
-g=\log p_{\rm figlio}(y)-\log p_{\rm padre}(y)
+\underbrace{q_{\rm radice}}_{\text{concetto dell'ultimo token}}
+\;\to\;\text{corpus}(1)\;\to\;\text{documento}(1)
+\;\to\;\text{corpus}(2)\;\to\;\text{documento}(2)\;\to\;\cdots
 $$
 
-e tiene il figlio solo se è stato letto almeno due volte e il guadagno medio supera il
-suo errore standard. Il numero di sotto-concetti lo decidono i dati.
+Così ogni contesto corrisponde a uno stato di conoscenza più specifico del precedente,
+e una prova raccolta su un contesto corto viene corretta dai contesti più lunghi che la
+seguono. Le forze $\kappa$ di tutte le letture si scelgono **congiuntamente** sulla
+validazione: ogni lettura è affine nella stima che riceve, quindi l'effetto di una
+modifica su tutta la catena si calcola in forma chiusa.
 
-**Quali scale tenere.** Il modello aggiunge una scala alla volta (8, 16, 32, …) e
-la tiene se migliora la previsione su testo di validazione. Si ferma dopo due scale di
-fila senza guadagno, o quando i documenti sono più corti della scala.
+*Perché l'ordine conta.* In un dialogo, dopo «`assistant` a capo», il documento
+contiene un solo «a capo» già seguito da una parola: quello dopo «`user`», seguito
+dalla prima parola della domanda. Se il documento fosse letto dopo tutto il corpus,
+quella singola osservazione su un contesto di un token arriverebbe per ultima e
+sposterebbe circa il 10% della probabilità sulla prima parola della domanda: il modello
+tenderebbe a ricopiarla. Nella catena per distanza la lettura successiva, il contesto
+di due token «`assistant` a capo», è stata vista migliaia di volte nel corpus e conserva
+solo il 16% della stima ricevuta: l'abbinamento spurio scompare.
 
-### Passo 9 · La memoria del testo in corso
+**Quali scale.** Il modello aggiunge una scala alla volta (8, 16, 32, …) e la conserva
+se migliora la previsione; si ferma dopo due scale di fila senza guadagno o quando i
+documenti sono più corti della scala.
 
-Mentre legge un documento il modello applica la stessa formula ai **conteggi del
-documento stesso**: $N_i(y)$ conta quante volte, **prima** della posizione corrente, lo
-stesso contesto (identità esatte o concetti) è stato seguito da $y$. La stima di
-riferimento è la previsione ottenuta dal corpus. Così una frase detta molte pagine
-prima può tornare, a qualunque distanza. Il token corrente entra nei conteggi solo
-dopo che ha ricevuto la sua probabilità.
+### 10 · Gli argomenti
 
-### Come si misura la qualità sul testo
+I concetti dei tratti descrivono l'**ordine** dei token. Per descrivere **di che
+cosa** parla il testo, il modello usa una seconda rappresentazione dei token.
 
-Con la **NLL**: la media, sui token veri di un testo mai visto, di $-\log p$(token
-vero). Più è bassa, meglio è; $e^{\rm NLL}$ dice fra quanti token, in media, il modello
-è incerto.
+**Vettori di argomento.** Si costruisce la matrice dei conteggi token × documento, si
+applica $\log(1+n)$, si pesa ogni token con $\log\frac{\text{documenti}}{1+\text{documenti che lo contengono}}$
+(un token presente ovunque dice poco) e la si comprime con la decomposizione ai valori
+singolari, normalizzando ogni vettore. Due token sono vicini quando compaiono negli
+stessi documenti, in qualunque posizione: è l'analisi semantica latente. Il numero di
+dimensioni parte da 16 e raddoppia secondo il criterio della sezione 2.
+
+**Argomento di una scala.** Per la scala $W$ si fa la media dei vettori di argomento
+degli ultimi $W$ token e la si assegna a un concetto, appreso con le sezioni 3–5 sulle
+medie del campione. Il concetto si ricalcola ogni $\max(1,W/8)$ token, quindi
+l'argomento cambia lentamente, come il testo.
+
+**Lettura per la regola di Bayes.** L'argomento non sostituisce la previsione locale,
+la **modula**. Siano $p_{\rm loc}$ la previsione della catena della sezione 9, $q_0$ la
+frequenza generale dei token e $q_A$ la lettura dei seguiti osservati per gli argomenti
+$A_{W_1},\dots,A_{W_k}$ delle scale scelte, letti in catena dalla scala più corta alla
+più lunga con la formula della sezione 6 (partendo da $q_0$). Allora
+
+$$
+p(y)\;\propto\;p_{\rm loc}(y)\,\frac{q_A(y)}{q_0(y)} .
+$$
+
+Il rapporto vale 1 per i token che l'argomento non rende né più né meno probabili,
+più di 1 per quelli tipici dell'argomento. È la regola di Bayes se si assume che,
+noto il prossimo token, contesto locale e argomento siano indipendenti. Una
+combinazione lineare al posto del prodotto peggiora la previsione: un argomento non dice
+quale token viene adesso, dice quali sono plausibili.
+
+**Quali argomenti e con quale forza.** Le scale di argomento si aggiungono una alla
+volta, la più utile prima, finché il criterio della sezione 2 lo consente. Tutte
+condividono una sola forza $\kappa$, il valore che massimizza la verosimiglianza di
+validazione (ricerca a sezione aurea su $\log\kappa$). Per ogni posizione la
+verosimiglianza in funzione di $\kappa$ si calcola da poche somme precalcolate,
+quindi la scelta richiede una sola lettura della validazione.
+
+### 11 · Generazione
+
+Il modello sceglie un token dalla distribuzione $p$: il più probabile a temperatura 0,
+altrimenti un'estrazione da $p^{1/\tau}$ normalizzata. Il token scelto entra nel
+contesto e negli argomenti, ma **non** nei conteggi del documento: il testo che il
+modello scrive non è una prova di che cosa dice il documento, e lasciarlo entrare
+farebbe rinforzare al modello le proprie ripetizioni.
+
+### 12 · Misura della qualità
+
+Sul testo si usa la log-verosimiglianza negativa media dei token veri di testo mai
+visto, in nat per token:
+
+$$
+\mathrm{NLL}=-\frac1n\sum_{t=1}^{n}\log p(y_t\mid y_{<t}) .
+$$
+
+Più è bassa, meglio è; $e^{\rm NLL}$ (la perplessità) dice fra quanti token, in media,
+il modello è incerto. Sulle tabelle si usano l'accuratezza e l'errore quadratico.
+
+### 13 · Limiti noti
+
+- **La risposta dipende poco dalla domanda.** All'inizio di una risposta i contesti
+  esatti vedono solo l'intestazione del turno; gli argomenti riconoscono la domanda ma
+  predicono come continua il testo di quell'argomento, non come comincia una risposta.
+  L'ipotesi di indipendenza della sezione 10 qui non vale: lo stesso argomento ha
+  seguiti diversi dentro la domanda e all'inizio della risposta.
+- **Coerenza a lungo raggio.** I contesti esatti utili arrivano a poche decine di token;
+  oltre, i concetti dei tratti aggiungono poco.
+- **Composizione.** Il modello non combina il significato di parti lontane del testo
+  in una rappresentazione nuova, come fanno gli strati di attenzione.
 
 ## Informatica
 
-Il codice del modello è uno solo: `acan/core/concepts.py` (`ConceptModel`). La
-scheda tabulare lo usa direttamente; il generativo lo usa attraverso
-`acan/lm/pair_text.py`, che trasforma il testo in righe.
+### 1 · Panoramica
 
-### Una tabella: dall'apprendimento alla predizione
+Un solo modello serve la scheda tabulare e quella generativa. Nel caso tabulare le
+righe sono quelle del file; nel caso generativo ogni posizione del testo diventa una
+riga, come descritto in Matematica (sezione 7). Questa scheda descrive gli algoritmi,
+il loro costo e le misure.
 
-1. **Caricamento.** Si carica un file (CSV, JSON, XLSX, Parquet, ARFF o MAT) e si sceglie la colonna da
-   predire. Le colonne numeriche restano numeri; le altre diventano categorie.
-2. **Codifica.** Il modello ricava dalla tabella la scala di ogni colonna numerica
-   e l'elenco dei valori di ogni categoria.
-3. **Apprendimento.** Assegna le righe ai concetti, unisce quelli che costano meno,
-   sceglie il taglio con la CP e lo giudica su righe tenute da parte (Matematica,
-   passi 2–4). Una tabella grande si legge a pezzi: le somme di pezzi diversi si
-   sommano, quindi il risultato non dipende da come la tabella è stata divisa.
-4. **Salvataggio.** Il modello salvato contiene solo le somme dei concetti, i loro
-   livelli e la codifica delle colonne: nessuna riga della tabella.
-5. **Predizione.** Per una riga nuova calcola le quote $T_i$ dalle colonne note e
-   legge la colonna mancante dai concetti (passo 5). La pagina mostra anche a quali
-   concetti appartiene la riga.
+### 2 · Apprendimento e predizione su una tabella
 
-### Un testo: dalla coda al checkpoint
+1. **Lettura.** Si carica un file (CSV, JSON, XLSX, Parquet, ARFF o MAT) e si sceglie la
+   colonna da predire. Le colonne numeriche restano numeri; le altre diventano
+   categorie.
+2. **Codifica.** Si ricavano la scala di ogni colonna numerica e l'elenco dei valori
+   di ogni categoria.
+3. **Apprendimento.** Le righe vengono assegnate ai concetti, i concetti uniti per costo
+   crescente, il taglio scelto con la coesione a coppie e giudicato con la stima
+   *leave-one-out* (Matematica, sezioni 3–5). Una tabella grande si legge a pezzi: per
+   l'additività delle statistiche il risultato non dipende dalla divisione.
+4. **Modello salvato.** Contiene solo le somme dei concetti, i loro livelli e la
+   codifica delle colonne: nessuna riga della tabella.
+5. **Predizione.** Per una riga nuova si calcolano le quote $T_i$ dalle colonne note e si
+   legge la colonna mancante (sezione 6). La pagina mostra anche a quali concetti la
+   riga appartiene.
 
-1. **La coda.** Si caricano uno o più file di testo (anche PDF, DOCX, EPUB, ZIP), che
-   il modello legge uno dopo l'altro.
-2. **I token.** Un tokenizer BPE impara dai testi della coda a dividere le parole in
-   pezzi (32.000 di default). Ogni documento va per intero in training, validazione o
-   test: il modello non viene mai misurato su testo che ha letto.
-3. **Il primo pezzo: la struttura.** Su un campione del primo file (almeno 262.144
-   token, in finestre lunghe almeno il doppio della scala più lunga ammessa) il
-   modello impara:
-   - gli otto numeri di ogni token (SVD) e i concetti dei token;
-   - scala dopo scala, i concetti dei tratti (passo 7) e i sotto-concetti (passo 8);
-   - quali letture usare e con quale peso, scegliendo sulla validazione (passo 8).
-   Il contesto massimo ammesso è un'impostazione (`concept_context`, da 8 a
-   1.048.576 token, di default 512): la validazione sceglie fin dove salire.
-   Ogni scala costa da qualche decina di secondi a un paio di minuti; un contesto
-   massimo più alto allarga anche il campione, quindi la coda parte più tardi.
-4. **Tutti i pezzi: i conteggi.** Il modello legge il testo a pezzi di un milione di
-   token. Per ogni posizione aggiunge il token vero ai conteggi delle chiavi lette
-   (identità e concetti delle scale scelte). I conteggi stanno in tabelle sparse,
-   dentro un budget di memoria (un quarto della RAM del server, al massimo 2 GB, se
-   non impostato): quando una tabella supera la sua quota tiene le chiavi con più
-   osservazioni per byte; le altre leggono il concetto più generale.
-5. **Misure e salvataggi.** Circa venti volte per file il modello riceglie i pesi
-   delle letture su una parte della validazione e misura la NLL sull'altra. Salva un
-   checkpoint ogni N passi e ogni cinque minuti, e risponde alle domande di prova.
-6. **Il checkpoint.** Contiene i concetti (somme e centri), i dizionari delle
-   identità, i conteggi, i pesi delle letture e gli ultimi token letti, così da
-   riprendere esattamente da dove si era fermato. Il tokenizer è nella cartella del
-   progetto.
-7. **Il file successivo.** Riparte dal checkpoint del precedente: tiene concetti e
-   conteggi e aggiunge quelli nuovi.
+### 3 · Addestramento su un testo
 
-### Una domanda: dal prompt al prossimo token
+1. **La coda.** Uno o più file di testo (anche PDF, DOCX, EPUB, ZIP) letti uno dopo
+   l'altro.
+2. **Tokenizzazione.** Un tokenizzatore BPE impara dai testi della coda a dividere le
+   parole in pezzi (32.000 di default). Ogni documento va per intero in addestramento,
+   validazione o test: il modello non viene mai misurato su testo che ha letto.
+3. **Struttura.** Su un campione del primo file, in finestre lunghe almeno il doppio
+   della scala più lunga ammessa, il modello impara in quest'ordine:
+   1. le coordinate dei token e il loro numero, poi i concetti dei token;
+   2. scala dopo scala, i concetti dei tratti, i sotto-concetti e le letture da usare;
+   3. i vettori di argomento e il loro numero, poi i concetti di argomento di ogni
+      scala.
 
-1. **Il prompt diventa token.** Una domanda in chat viene avvolta nel formato della
-   conversazione, poi il tokenizer la trasforma in identificatori.
-2. **La lettura del prompt.** Un cursore legge i token uno dopo l'altro: per ogni
-   scala ricorda la metà più vecchia del tratto e calcola il concetto del tratto
-   nuovo componendo due concetti già noti. Intanto aggiorna la memoria del
-   documento.
-3. **La probabilità.** Per la posizione successiva applica le letture scelte
-   (passo 8) e poi quelle della memoria (passo 9). Il risultato è una probabilità per
-   ogni token del vocabolario, anche per quelli mai visti dopo questo contesto.
-4. **La scelta.** A temperatura 0 prende il token più probabile; con temperatura
-   positiva pesca a caso secondo le probabilità. Si ferma a un token di fine o al
-   numero massimo di token.
-5. **Avanti.** Il token scelto entra nel prefisso e nella memoria, e si torna al
-   punto 3.
+   La dimensione del campione di ogni fase raddoppia finché serve (Matematica,
+   sezione 2). La pagina mostra la fase in corso e la parte svolta, che non torna mai
+   indietro anche quando una ricerca riparte con più righe o più coordinate.
+4. **Conteggi in flusso.** Il testo si legge a pezzi di un milione di token. Per ogni
+   posizione si calcolano le chiavi di contesto (identità, concetti, argomenti) e si
+   aggiunge il token vero ai conteggi. I conteggi di più pezzi si fondono a livelli,
+   come un contatore binario: ogni conteggio viene fuso $O(\log n)$ volte. Stanno in
+   tabelle sparse entro un budget di memoria; quando una tabella supera la sua quota
+   conserva le chiavi con più osservazioni per byte, e le altre leggono il concetto
+   più generale. Gli argomenti non vengono potati.
+5. **Giudizio periodico.** Una ventina di volte per file si scelgono di nuovo le forze
+   $\kappa$ della catena su metà della validazione e si misura la NLL sull'altra metà. Le
+   scale di argomento e la loro forza si scelgono la prima volta e alla fine
+   dell'addestramento. Le scale non scelte vengono tolte e non si calcolano più.
+6. **Checkpoint.** Contiene concetti (somme e centri), dizionari delle identità,
+   conteggi, forze delle letture, ordine della catena, vettori e concetti di argomento,
+   e gli ultimi token letti, così che l'addestramento riprenda esattamente dove si era
+   fermato. Il file successivo della coda riparte dal checkpoint e aggiunge i suoi
+   conteggi.
 
-**Costo.** Per ogni token il cursore fa una composizione per scala (circa venti al
-massimo) e qualche lettura di tabella: nessun confronto con tutti i token
-precedenti, come fa invece l'attenzione. Tiene in memoria gli ultimi token fino alla
-scala più lunga e i conteggi del documento.
+### 4 · Inferenza
 
-### Le misure
+1. **Prompt.** Una domanda in chat viene avvolta nel formato della conversazione e
+   trasformata in token.
+2. **Lettura del prompt.** Un cursore legge il prompt e costruisce lo stato: gli ultimi
+   token fino alla scala più lunga, la metà più vecchia di ogni tratto, l'argomento di
+   ogni scala e i conteggi del documento. Un prompt lungo si legge a blocchi, con
+   conteggi fusi come nell'addestramento.
+3. **Distribuzione.** Per la posizione successiva si applica la catena di corpus e
+   documento (Matematica, sezione 9) e poi il rapporto degli argomenti (sezione 10).
+   Il risultato è una probabilità per ogni token del vocabolario.
+4. **Scelta e avanzamento.** Si sceglie il token (sezione 11), lo si aggiunge allo stato
+   senza aggiungerlo ai conteggi del documento, e si ripete fino a un token di fine o
+   al numero massimo di token.
 
-WikiText-2, tokenizer BPE da 8.000 token, 32.704 token di test, NLL in nat/token,
-memoria del documento spenta. Il confronto è con un contatore di suffissi esatti,
-il modello generativo usato prima dal sito: oggi non fa più parte del prodotto e resta
-solo come riferimento negli esperimenti.
+La lettura token per token e la lettura di un testo intero producono la stessa
+distribuzione in ogni posizione: è la stessa funzione applicata allo stesso stato.
 
-| Scala provata | Coppie sul controllo | Coppie sul test | Contatore sul test |
+### 5 · Costo
+
+- **Per token, in inferenza:** una composizione di concetti per scala (al più una
+  ventina), qualche ricerca in tabella per lettura e un aggiornamento dell'argomento
+  ogni $W/8$ token per scala. Non c'è confronto con tutti i token precedenti, come
+  nell'attenzione: il costo per token non cresce con la lunghezza del contesto.
+- **Memoria in inferenza:** gli ultimi token fino alla scala più lunga e i conteggi del
+  documento, che crescono con il documento ma solo per i contesti effettivamente visti.
+- **Addestramento:** lineare nel numero di token per i conteggi; la struttura si impara
+  una volta, su un campione la cui dimensione la stabiliscono i dati.
+
+### 6 · Risultati
+
+**Dialoghi (SYNTH, italiano e inglese).** 12.000 dialoghi di addestramento, tokenizzatore
+da 32.000 token, 200 dialoghi di test, NLL in nat per token.
+
+| Versione | NLL sul test | Passo 0 | Lettura |
+|---|---:|---:|---:|
+| senza argomenti, catena separata | 4,4362 | 564 s | 117.000 token/s |
+| con argomenti | 4,3722 | 817 s | 55.800 token/s |
+| con argomenti e catena unica | **4,3647** | 1.001 s | 48.700 token/s |
+
+Con la catena separata le risposte ricopiano la prima parola della domanda; con la
+catena unica non la ricopiano più, ma cominciano in modo simile per domande diverse
+(Matematica, sezione 13). Gli argomenti costano tempo: la struttura impiega quasi il
+doppio e la lettura procede a meno della metà della velocità.
+
+**WikiText-2** (versione senza argomenti). Tokenizzatore BPE da 8.000 token, 32.704
+token di test, memoria del documento spenta. Il riferimento è un contatore di suffissi
+esatti, il modello generativo usato in precedenza.
+
+| Scala provata | Concetti, controllo | Concetti, test | Contatore, test |
 |---:|---:|---:|---:|
 | 6 | 4,91266 | 4,84475 | 4,91300 |
 | 8 | 4,91098 | 4,84207 | 4,91300 |
@@ -313,16 +435,15 @@ solo come riferimento negli esperimenti.
 | 256 | 4,90913 | 4,84216 | 4,91300 |
 | 512 | 4,90913 | 4,84216 | 4,91300 |
 
-- Il modello a concetti è sotto il contatore a ogni scala. Quasi tutto il vantaggio
-  c'è già a sei token; da 6 a 32 si guadagnano 0,004 nat/token e oltre non cambia.
-  Gli articoli di WikiText-2 sono brevi: scale più lunghe vanno provate su testi lunghi.
+- Il modello a concetti è sotto il contatore a ogni scala; quasi tutto il vantaggio c'è
+  già a sei token. Gli articoli di WikiText-2 sono brevi: le scale lunghe vanno provate
+  su testi lunghi.
 - Con la memoria del documento, a 32 token: 4,08543 contro 4,11082 del contatore.
-  La memoria delle identità esatte fa quasi tutto (4,08816 da sola); quella dei
-  concetti da sola dà 4,30614.
 - Richiamo: un fatto ripetuto con le stesse parole torna fino a 300.000 token di
-  distanza; con un sinonimo la risposta è fra i candidati 2 volte su 16 e al primo
-  posto 0 volte su 16.
-- Sui dieci dataset tabulari di prova le predizioni sono le stesse di prima.
+  distanza; con un sinonimo la risposta è fra i candidati 2 volte su 16 e al primo posto
+  0 volte su 16.
+- Sui dieci dataset tabulari di prova le predizioni sono le stesse della versione
+  precedente.
 
-[Risultati per blocco, scala e compito](../experiments/text_table/results/native-long-context.json) ·
-[Protocolli e comandi per ripetere le prove](../experiments/text_table/README.md).
+[Materiale supplementare: risultati per blocco, scala e compito](../experiments/text_table/results/native-long-context.json) ·
+[Protocolli sperimentali](../experiments/text_table/README.md).
