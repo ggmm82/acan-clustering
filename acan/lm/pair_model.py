@@ -37,13 +37,8 @@ def span_means(vectors, row, width, at=None):
 def recognize(graph, x):
     """The most probable concept (1-based) of numeric rows: the steps of ``graph.assignments(...).argmax(1)``
     without the table, the encoding of a frame and the last normalization, which do not change the maximum."""
-    x = np.asarray(x, float)
-    known = x.shape[1]                                     # the columns of what follows are not known yet
-    full = np.zeros((len(x), len(graph.encoder.mean)))
-    full[:, :known] = (x - graph.encoder.mean[:known]) / graph.encoder.std[:known]
-    mask = np.zeros_like(full)
-    mask[:, :known] = 1.
-    data = (full, mask, np.zeros((len(x), graph.encoder.width)))
+    x = (np.asarray(x, float) - graph.encoder.mean) / graph.encoder.std
+    data = (x, np.ones_like(x), np.zeros((len(x), graph.encoder.width)))
     seen = graph._seen(data)[0]
     s = graph.statistics
     logits = graph._log_density(s, seen, graph._weights(0.)) + np.log(np.maximum(s['C'], 1e-300) / s['C'].sum())
@@ -105,9 +100,7 @@ def topic_chain(model, keys):
 
 def reach(f):
     """How many tokens before the next one a field looks at: the sum of the spans it joins."""
-    if f == "root":
-        return 0
-    return sum(int(part[1:]) for part in f.split("|"))
+    return 0 if f == "root" else sum(int(part[1:]) for part in f.split("|"))
 
 
 def merged_chain(corpus, memory):
@@ -246,7 +239,7 @@ class PairEncoder:
                 right = (typ[ix] & 0xFFFFFFFF).astype(int) - int(w == 2)
                 x = np.column_stack((vectors[left], vectors[right]))
                 codes[ix] = (
-                    graph.assignments(pd.DataFrame(x, columns=graph.encoder.numeric[:x.shape[1]])).argmax(1) + 1
+                    graph.assignments(pd.DataFrame(x, columns=graph.encoder.numeric)).argmax(1) + 1
                 )
             keys[slot[missing]] = typ[missing]
             values[slot[missing]] = codes[missing]

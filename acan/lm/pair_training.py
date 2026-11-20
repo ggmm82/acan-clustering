@@ -459,14 +459,11 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
         return reading_score(shift(codes["train"], 1, tr.age), tr.y, shift(codes["tune"], 1, va.age), va.y, vocabulary)
 
     def topic_concepts(width, space, label, offset=0., span=1.):
-        # As for the spans: the topic of the last W tokens and the topic vector of the token after it, so
-        # that two topics fall together only if what follows them is alike. Recognized without it.
         means = span_means(space, tr, width)
-        draw = np.random.default_rng(42).permutation(np.flatnonzero(np.r_[tr.age[1:] > 0, False]))
-        names_t = [f"x{i}" for i in range(space.shape[1])] + [f"f{i}" for i in range(space.shape[1])]
-        rows_of = lambda n: pd.DataFrame(np.hstack([means[draw[:n]], space[tr.y[draw[:n] + 1]]]), columns=names_t)
+        draw = np.random.default_rng(42).permutation(len(tr.y))
+        names_t = [f"x{i}" for i in range(space.shape[1])]
         return enough_rows(lambda rows_: concept_model(rows_, searching(label, 'topics', offset, span)).fit(
-            rows_of(rows_)), len(draw), lambda g: topic_score_for(g, width, space))
+            pd.DataFrame(means[draw[:rows_]], columns=names_t)), len(tr.y), lambda g: topic_score_for(g, width, space))
 
     # How many numbers describe the topic of a token: they double while the topic of all that the document
     # has said so far, as a concept, predicts the next token of held-out text better (the same judgment).
@@ -486,25 +483,14 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
             break
         size, space, best = 2 * size, trial, score
     enc.topic_vectors = space
-    # The scales of the topics are added from the shortest, as the scales of the context: a scale whose topic
-    # does not read the next token better than the best one so far, by more than one standard error, is a
-    # miss, and after two misses in a row the longer scales are not learned.
-    best, misses = None, 0
     for i, width in enumerate(sorted(enc.nodes)):
         check()
         tell('topics', width, time.monotonic()-started, inside_permille=int(1000 * (i + 1) * share))
         graph = topic_concepts(width, space, width, (i + 1) * share, share)
-        score = topic_score_for(graph, width, space)
-        gain = score - best if best is not None else None
-        if best is None or gain.mean() > gain.std(ddof=1) / np.sqrt(max(len(gain) - 1, 1)):
-            best, misses = score, 0
-        else:
-            misses += 1
-        if graph.concepts >= 2:
-            enc.topics[width] = graph
-            model.topics[f"t{width}"] = [1.0, 0.0]
-        if misses == 2:
-            break
+        if graph.concepts < 2:
+            continue
+        enc.topics[width] = graph
+        model.topics[f"t{width}"] = [1.0, 0.0]                  # beta 0 until judged on the counts
     tell('done', max([6, *enc.nodes]), time.monotonic()-started)
     enc.width = max([6, *enc.nodes])                          # the topics keep their own tokens (PairCursor)
     # Every training target is subsequently counted exactly once by the streaming worker.
