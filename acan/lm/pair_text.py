@@ -11,7 +11,7 @@ from acan.core.concepts import ConceptModel, Encoder
 from acan.core.conditional import calibrated_weights
 from acan.concept_algebra import categorical_reading
 from .concept_lm import document_counts
-from .pair_model import PairEncoder, PairLanguageModel
+from .pair_model import PairEncoder, PairLanguageModel, chain, merged_chain
 from .pair_training import add_chunk, flush, learn
 
 PROFILE = "concept-pairs-v1"
@@ -42,7 +42,7 @@ class PairText:
         if self.model is None:
             self.model = learn(train, self.vocabulary, self.eos, tune, check, documents, self.max_context,
                                getattr(self, 'report', None))
-            self.model.training_weights = dict(self.model.weights)
+            self.model.training_weights = {**self.model.weights, **{f: 1.0 for f in self.model.topics}}
             self.target_kappa = self.model.root.observed_targets["token"]["kappa"]
             self.target_mass = np.zeros_like(self.model.head)
         pending, bigrams = {}, None                             # counted per chunk, added to the tables once
@@ -81,13 +81,14 @@ class PairText:
             np,
         )
         self.model.root.observed_targets["token"]["probability"] = self.model.head
+        self.model.unigram = frequency / frequency.sum()        # what a topic is compared with
 
     def _scores(self, ids):
         row = self.model.encoder.encode(ids, document_starts(ids, self.eos))
         p = self.model.root_probability(row, np.arange(len(ids)))
         return row, p
 
-    def judge(self, pieces):
+    def judge(self, pieces, final=False):
         if self.model is None:
             return
         m = self.model
@@ -103,23 +104,118 @@ class PairText:
         rows = [self._scores(np.asarray(p, np.int32)) for p in pieces if len(p)]
         base = np.concatenate([p for _, p in rows])
 
-        def fit(names, statistics, prior, initial):
-            stats = [
-                tuple(np.concatenate(col) for col in zip(*(statistics(row, f) for row, _ in rows)))
-                for f in names
-            ]
-            weights = calibrated_weights(stats, [initial.get(f, 1.0) for f in names], prior)
-            chosen = {}
-            for f, k, (mass, counts, distinct) in zip(names, weights, stats):
-                if np.isfinite(k):
-                    prior = categorical_reading(counts, mass, distinct, prior, k, np)
-                    chosen[f] = float(k)
-            return chosen, prior
+        # One chain from the general to the particular: at every distance, first what the corpus says, then
+        # what the document says. A short context seen once in the document is corrected by the longer
+        # contexts after it, as every reading is by the more particular ones.
+        fields = [f for f in fields if f not in m.topics]
+        order = merged_chain(fields, doc)
+        stats = []
+        for kind, f in order:
+            parts = [m.tables[f].lookup(r.feature(f), r.y) if kind == "corpus" else document_stats(r, f)
+                     for r, _ in rows]
+            stats.append(tuple(np.concatenate(col) for col in zip(*parts)))
+        old = {"corpus": m.weights, "memory": m.memory}
+        weights = calibrated_weights(stats, [old[kind].get(f, 1.0) for kind, f in order], base)
+        chosen = [(kind, f, float(k)) for (kind, f), k in zip(order, weights) if np.isfinite(k)]
+        m.weights = {f: k for kind, f, k in chosen if kind == "corpus"}
+        m.memory = {f: k for kind, f, k in chosen if kind == "memory"}
+        m.order = [(kind, f) for kind, f, _ in chosen]
+        if m.topics and (final or not getattr(self, "topics_judged", False)):
+            self._judge_topics([row for row, _ in rows])
 
-        m.weights, base = fit(
-            fields, lambda r, f: m.tables[f].lookup(r.feature(f), r.y), base, m.weights
-        )
-        m.memory, _ = fit(doc, document_stats, base, m.memory)
+    def _judge_topics(self, rows):
+        """Which scales the topic chain reads, and how far their concepts move the reading.
+
+        The topics multiply the reading by q(chain) / q(general), Bayes' rule with exponent 1. Two things
+        come from held-out text, as every choice of the model: the scales of the chain, added one at a time,
+        the one that reads best first, while the improvement exceeds one standard error of the paired
+        difference; and kappa, the weight of the level above against a concept's observations, the value
+        that maximizes the held-out likelihood (a continuous search, no grid). The normalization splits into
+        sums that do not depend on kappa or on the scales, so everything is judged from one pass. Scales left
+        out are dropped, with their concepts and counts, and are not computed any more.
+        """
+        from .pair_model import walk
+        m = self.model
+        saved = {f: list(v) for f, v in m.topics.items()}
+        order = sorted(m.topics, key=lambda name: int(name[1:]))
+        for f in order:
+            m.topics[f][1] = 0.0
+        P, C, D, S, N = [], [], [], [], []                      # per position: p(y); per scale: C, D, s, n(y)
+        for row in rows:
+            keys = {f: row.feature(f) for f in order}
+            for i, p in enumerate(walk(m, row)):
+                y = int(row.y[i])
+                P.append(p[y]); c, d, sv, ny = [], [], [], []
+                for f in order:
+                    table = m.tables.get(f)
+                    ix = table.find(np.array([keys[f][i]], np.uint64))[0] if table is not None and keys[f][i] else -1
+                    if ix < 0:
+                        c.append(0.); d.append(1.); sv.append(0.); ny.append(0.)
+                        continue
+                    targets, counts = table.followers(ix)
+                    share = counts / m.unigram[targets]
+                    c.append(table.C[ix]); d.append(max(table.D[ix], 1)); sv.append(float(p[targets] @ share))
+                    ny.append(float(share[targets == y].sum()))
+                C.append(c); D.append(d); S.append(sv); N.append(ny)
+        if not P:
+            return saved
+        P, C, D, S, N = map(np.asarray, (P, C, D, S, N))
+
+        def losses(scales, kappa):
+            ratio, norm = np.ones(len(P)), np.ones(len(P))      # q(y)/q0(y) and sum_v p(v) q(v)/q0(v)
+            for j in scales:                                    # from the shortest span to the longest
+                a = kappa * D[:, j]
+                seen = C[:, j] > 0
+                keep = np.where(seen, a / (C[:, j] + a), 1.)
+                add = np.where(seen, 1. / (C[:, j] + a), 0.)
+                ratio, norm = ratio * keep + add * N[:, j], norm * keep + add * S[:, j]
+            return -np.log(P * ratio / norm)
+
+        def fit(scales):
+            """The kappa with the best held-out likelihood: golden-section search on log kappa."""
+            lo, hi = np.log(1e-3), np.log(1e4)
+            g = (np.sqrt(5) - 1) / 2
+            x1, x2 = hi - g * (hi - lo), lo + g * (hi - lo)
+            f1, f2 = losses(scales, np.exp(x1)).mean(), losses(scales, np.exp(x2)).mean()
+            for _ in range(40):
+                if f1 < f2:
+                    hi, x2, f2 = x2, x1, f1
+                    x1 = hi - g * (hi - lo); f1 = losses(scales, np.exp(x1)).mean()
+                else:
+                    lo, x1, f1 = x1, x2, f2
+                    x2 = lo + g * (hi - lo); f2 = losses(scales, np.exp(x2)).mean()
+            kappa = float(np.exp((lo + hi) / 2))
+            return kappa, losses(scales, kappa)
+
+        chosen, current, kappa = [], -np.log(P), 1.
+        while True:
+            trials = [(j, *fit(sorted(chosen + [j]))) for j in range(len(order)) if j not in chosen]
+            if not trials:
+                break
+            j, k, loss = min(trials, key=lambda item: item[2].mean())
+            gain = current - loss
+            if gain.mean() <= gain.std(ddof=1) / np.sqrt(max(len(gain) - 1, 1)):
+                break
+            chosen, current, kappa = sorted(chosen + [j]), loss, k
+        if __import__("os").environ.get("ACAN_PAIR_DEBUG"):
+            print("catena degli argomenti: scale", [order[j] for j in chosen], f"κ {kappa:.3g}",
+                  f"perdita {current.mean():.4f} senza {-np.log(P).mean():.4f}", flush=True)
+        for j, f in enumerate(order):
+            if j in chosen:
+                m.topics[f] = [kappa, 1.0]
+            else:                                               # not read: not computed any more
+                del m.topics[f]
+                m.encoder.topics.pop(int(f[1:]), None)
+                m.tables.pop(f, None)
+                m.training_weights.pop(f, None)
+                for g in [g for g in m.tables if g.startswith(f + "&")]:   # read with the local context
+                    m.tables.pop(g, None)
+                    m.training_weights.pop(g, None)
+                    m.weights.pop(g, None)
+                if getattr(m, "order", None) is not None:
+                    m.order = [(kind, g) for kind, g in m.order if not g.startswith(f + "&")]
+        self.topics_judged = True
+        return saved
 
     def logp(self, ids, positions=None):
         ids = np.asarray(ids, np.int32)
@@ -128,13 +224,20 @@ class PairText:
             return np.full(len(pos), -np.log(self.vocabulary))
         if not len(ids):
             return np.empty(0)
+        if any(active for _, active in getattr(self.model, "topics", {}).values()):
+            from .pair_model import walk
+            row = self.model.encoder.encode(ids, document_starts(ids, self.eos))
+            values = np.fromiter((p[y] for p, y in zip(walk(self.model, row), ids)), float, len(ids))
+            return np.log(values[pos])
         row, p = self._scores(ids)
         p = p[pos]
-        for f, k in self.model.weights.items():
-            mass, counts, d = self.model.tables[f].lookup(row.feature(f)[pos], ids[pos])
-            p = categorical_reading(counts, mass, d, p, k, np)
-        for f, k in self.model.memory.items():
-            mass, counts, d = document_stats(row, f)[:, pos]
+        for kind, f in chain(self.model):
+            if kind == "corpus":
+                mass, counts, d = self.model.tables[f].lookup(row.feature(f)[pos], ids[pos])
+                k = self.model.weights[f]
+            else:
+                mass, counts, d = document_stats(row, f)[:, pos]
+                k = self.model.memory[f]
             p = categorical_reading(counts, mass, d, p, k, np)
         return np.log(p)
 
@@ -166,7 +269,7 @@ class PairText:
                 if token == self.eos:
                     cursor = self.model.cursor()
                 else:
-                    cursor.observe(token)
+                    cursor.observe(token, remember=False)   # its own words do not reinforce the memory
         return result
 
     def concepts(self):
@@ -209,10 +312,12 @@ class PairText:
             "training_weights": list(m.training_weights.items()),
             "weights": list(m.weights.items()),
             "memory": list(m.memory.items()),
+            "order": [list(item) for item in chain(m)],
             "nodes": [],
             "exact": [],
             "local": [],
             "tables": list(m.tables),
+            "topics": [(int(f[1:]), float(k), float(b)) for f, (k, b) in getattr(m, "topics", {}).items()],
         }
 
         def put_graph(key, graph):
@@ -244,6 +349,12 @@ class PairText:
             meta["nodes"].append(w)
             put_graph(f"g{w}_", g)
             data[f"centres{w}"] = centres
+        for w, graph in getattr(m.encoder, "topics", {}).items():
+            put_graph(f"topic{w}_", graph)
+        if getattr(m.encoder, "topic_vectors", None) is not None and m.encoder.topics:
+            data["topic_vectors"] = m.encoder.topic_vectors
+        if getattr(m, "unigram", None) is not None:
+            data["unigram"] = m.unigram
         for w, (l, r, d) in m.encoder.exact.items():
             meta["exact"].append((w, l, r))
             data[f"exact{w}"] = d.observed
@@ -308,4 +419,11 @@ class PairText:
         enc.open_exact = True
         text.model = PairLanguageModel(enc, root, tables, dict(meta["weights"]), dict(meta["memory"]))
         text.model.training_weights = dict(meta["training_weights"])
+        if "order" in meta:
+            text.model.order = [tuple(item) for item in meta["order"]]
+        enc.topic_vectors = data["topic_vectors"] if "topic_vectors" in data else None
+        for w, k, b in meta.get("topics", []):
+            enc.topics[w] = graph(f"topic{w}_")
+            text.model.topics[f"t{w}"] = [k, b]
+        text.model.unigram = data["unigram"] if "unigram" in data else None
         return text
