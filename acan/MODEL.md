@@ -45,7 +45,8 @@ guadagno richiesto dipende solo da quanto è rumorosa la misura.
 
 Lo stesso criterio decide quante righe servono per imparare una struttura (il campione
 raddoppia finché il guadagno è significativo), quante coordinate descrivono un token,
-quanti sotto-concetti tenere, quali scale di contesto e quali argomenti usare. Quando
+quanti sotto-concetti tenere, quali scale di contesto, quali letture e quali argomenti
+usare. Quando
 una quantità è continua, come la forza $\kappa$ della sezione 6, si sceglie invece il
 valore che massimizza la verosimiglianza di validazione.
 
@@ -212,6 +213,9 @@ Per ogni posizione il modello dispone di due fonti di conteggi:
   esatta, un concetto o una loro combinazione) è stato seguito da ciascun token;
 - il **documento in corso**: gli stessi conteggi, limitati alla parte del documento
   già letta. Una frase detta molte pagine prima può così tornare, a qualunque distanza.
+  Il documento si legge anche **per contenuto**: con l'argomento come contesto, la memoria
+  ritrova le posizioni del documento che parlavano della stessa cosa, ovunque siano, e
+  ciò che le seguiva.
 
 Entrambe si leggono con la formula della sezione 6, in **un'unica catena ordinata per
 distanza**, dal contesto più corto al più lungo; a parità di distanza viene prima il
@@ -227,7 +231,9 @@ Così ogni contesto corrisponde a uno stato di conoscenza più specifico del pre
 e una prova raccolta su un contesto corto viene corretta dai contesti più lunghi che la
 seguono. Le forze $\kappa$ di tutte le letture si scelgono **congiuntamente** sulla
 validazione: ogni lettura è affine nella stima che riceve, quindi l'effetto di una
-modifica su tutta la catena si calcola in forma chiusa.
+modifica su tutta la catena si calcola in forma chiusa. Una lettura resta nella catena
+solo se, con le altre come sono, il suo guadagno sulla validazione supera l'errore
+standard (sezione 2); le altre non si leggono e non si calcolano.
 
 *Esempio.* All'inizio di una risposta, in un dialogo, il contesto è «`assistant` a
 capo». Il documento contiene un solo «a capo» già seguito da una parola: quello dopo
