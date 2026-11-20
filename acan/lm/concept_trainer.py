@@ -218,7 +218,7 @@ def run_training(root, identifier, stop_event=None):
             last = due or should_pause() or state['step'] == config['total_steps']
             measured = last or state['step'] % measure_every(config['total_steps']) == 0
             if measured:                                         # the error on unseen text, about twenty times per text
-                model.judge(tune)
+                model.judge(tune, final=state['step'] == config['total_steps'])
                 state['validation_nll'] = measure(model, judge)
                 state['validation_perplexity'] = math.exp(state['validation_nll']) if state['validation_nll'] < 700 else None
                 following = np.asarray(train[state['step']*piece:state['step']*piece+4096], np.int64)
