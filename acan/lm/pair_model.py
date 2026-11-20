@@ -34,6 +34,17 @@ def span_means(vectors, row, width, at=None):
     return (total[end] - total[begin]) / (end - begin)[:, None]
 
 
+def recognize(graph, x):
+    """The most probable concept (1-based) of numeric rows: the steps of ``graph.assignments(...).argmax(1)``
+    without the table, the encoding of a frame and the last normalization, which do not change the maximum."""
+    x = (np.asarray(x, float) - graph.encoder.mean) / graph.encoder.std
+    data = (x, np.ones_like(x), np.zeros((len(x), graph.encoder.width)))
+    seen = graph._seen(data)[0]
+    s = graph.statistics
+    logits = graph._log_density(s, seen, graph._weights(0.)) + np.log(np.maximum(s['C'], 1e-300) / s['C'].sum())
+    return logits.argmax(1) + 1
+
+
 def topic_codes(graph, vectors, row, width):
     """The concept of what the last ``width`` tokens talk about, recognized every ``stride(width)`` tokens of a
     document and kept in between: position i reads the topic of the span ending at its last anchor."""
@@ -42,10 +53,8 @@ def topic_codes(graph, vectors, row, width):
     points, back = np.unique(anchor, return_inverse=True)
     means = span_means(vectors, row, width, points)
     codes = np.zeros(len(points), np.uint32)
-    columns = graph.encoder.numeric
     for i in range(0, len(codes), 65536):
-        part = slice(i, i + 65536)
-        codes[part] = graph.assignments(pd.DataFrame(means[part], columns=columns)).argmax(1) + 1
+        codes[i:i + 65536] = recognize(graph, means[i:i + 65536])
     return codes[back]
 
 
@@ -60,7 +69,7 @@ def topic_of(graph, vectors, recent, age, width):
     first = max(0, len(recent) - 1 - age)                       # where the document begins inside ``recent``
     end = len(recent) - age % stride(width)
     span = vectors[np.asarray(recent[max(end - width, first):end])]
-    return int(graph.assignments(pd.DataFrame(span.mean(0)[None], columns=graph.encoder.numeric)).argmax(1)[0]) + 1
+    return int(recognize(graph, span.mean(0)[None])[0])
 
 
 def topic_factor(model, f, key):
