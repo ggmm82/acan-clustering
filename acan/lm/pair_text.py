@@ -101,6 +101,8 @@ class PairText:
             doc += [f"c{w}"] if w == 1 or w in m.encoder.nodes else []
             doc += [f"s{w}"] if w in m.encoder.nodes else []
             doc += [f"e{w}"]
+            # By content: the positions of this document that talked about the same thing, at any distance.
+            doc += [f"t{w}"] if w in getattr(m.encoder, "topics", {}) else []
         rows = [self._scores(np.asarray(p, np.int32)) for p in pieces if len(p)]
         base = np.concatenate([p for _, p in rows])
 
@@ -122,6 +124,11 @@ class PairText:
         m.order = [(kind, f) for kind, f, _ in chosen]
         if m.topics and (final or not getattr(self, "topics_judged", False)):
             self._judge_topics([row for row, _ in rows])
+        gone = [f for f in m.memory if f.startswith("t") and f not in m.topics]   # topics not read any more
+        for f in gone:
+            del m.memory[f]
+        if gone and getattr(m, "order", None) is not None:
+            m.order = [(kind, f) for kind, f in m.order if not (kind == "memory" and f in gone)]
 
     def _judge_topics(self, rows):
         """Which scales the topic chain reads, and how far their concepts move the reading.
