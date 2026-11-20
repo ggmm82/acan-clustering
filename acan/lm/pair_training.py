@@ -36,6 +36,7 @@ def enough_rows(fit, available, score, first=2048):
         if gain.mean() <= gain.std(ddof=1)/np.sqrt(max(len(gain)-1, 1)):
             break
         model, best = bigger, trial
+    model.report = None                                         # the page follows the learning, not the model
     return model
 
 
