@@ -98,7 +98,7 @@ def topic_vectors(ids, starts, vocabulary, dimensions, seed=42):
     return vectors / np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-12)
 
 
-def geometry(splits, vectors, width, progress=None):
+def geometry(splits, vectors, width, progress=None, tokens=None):
     half = width // 2
 
     def keys(row):
@@ -112,9 +112,22 @@ def geometry(splits, vectors, width, progress=None):
         x = np.column_stack((vectors[(key >> 32).astype(int)], vectors[(key & 0xFFFFFFFF).astype(int)]))
         return pd.DataFrame(x, columns=[f"x{i}" for i in range(x.shape[1])])
 
-    packed = keys(splits["train"])
-    types, counts = np.unique(packed[packed > 0], return_counts=True)
+    # A concept of spans is learned from what precedes and what follows: every row is the span (its two
+    # halves) and the mean coordinates of the token after it. Two spans fall together only if they look
+    # alike and are followed alike. The token after is not known when a span is recognized: there the
+    # columns of what follows are missing, and the concept is found from the span alone.
+    tr = splits["train"]
+    packed = keys(tr)
+    after = np.zeros(len(packed), bool)
+    after[:-1] = tr.age[1:] > 0
+    used = (packed > 0) & after
+    types, inverse, counts = np.unique(packed[used], return_inverse=True, return_counts=True)
+    tokens = vectors if tokens is None else tokens          # coordinates of a token, 1-based like e1
+    following = np.zeros((len(types), tokens.shape[1]))
+    np.add.at(following, inverse, tokens[tr.y[1:][used[:-1]] + 1])
+    following /= counts[:, None]
     x = frame(types)
+    x[[f"f{i}" for i in range(following.shape[1])]] = following
     vocabulary = int(max(int(row.y.max()) for row in splits.values()))+1
 
     def assign(graph):
@@ -144,7 +157,11 @@ def geometry(splits, vectors, width, progress=None):
     del graph._found
     for name, row in splits.items():
         row.spans[f"c{width}"] = found[name][0]
-    train_codes = found["train"][1]
+    # The centre of a concept, passed to the next scale, is over all its columns, what follows included.
+    train_codes = np.zeros(len(types), np.int64)
+    for idx in np.array_split(np.arange(len(types)), max(1, (len(types) + 1023) // 1024)):
+        if len(idx):
+            train_codes[idx] = graph.assignments(frame(types[idx])).argmax(1) + 1
     mass = np.bincount(train_codes, weights=counts, minlength=graph.concepts + 1)
     means = np.zeros((len(mass), x.shape[1]))
     for j, col in enumerate(x.to_numpy().T):
@@ -419,7 +436,7 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
             if width & (width - 1) == 0:
                 where['step'] = planned.index(width) + 1
                 tell('scale', width, time.monotonic()-started)
-                graph, old_vectors, _ = geometry(rows, old_vectors, width, searching(width))
+                graph, old_vectors, _ = geometry(rows, old_vectors, width, searching(width), np.nan_to_num(padded))
                 enc.nodes[width] = graph, old_vectors
                 enc.local[width] = []
                 tell('subconcepts', width, time.monotonic()-started)
@@ -459,11 +476,14 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
         return reading_score(shift(codes["train"], 1, tr.age), tr.y, shift(codes["tune"], 1, va.age), va.y, vocabulary)
 
     def topic_concepts(width, space, label, offset=0., span=1.):
+        # As for the spans: the topic of the last W tokens and the topic vector of the token after it, so
+        # that two topics fall together only if what follows them is alike. Recognized without it.
         means = span_means(space, tr, width)
-        draw = np.random.default_rng(42).permutation(len(tr.y))
-        names_t = [f"x{i}" for i in range(space.shape[1])]
+        draw = np.random.default_rng(42).permutation(np.flatnonzero(np.r_[tr.age[1:] > 0, False]))
+        names_t = [f"x{i}" for i in range(space.shape[1])] + [f"f{i}" for i in range(space.shape[1])]
+        rows_of = lambda n: pd.DataFrame(np.hstack([means[draw[:n]], space[tr.y[draw[:n] + 1]]]), columns=names_t)
         return enough_rows(lambda rows_: concept_model(rows_, searching(label, 'topics', offset, span)).fit(
-            pd.DataFrame(means[draw[:rows_]], columns=names_t)), len(tr.y), lambda g: topic_score_for(g, width, space))
+            rows_of(rows_)), len(draw), lambda g: topic_score_for(g, width, space))
 
     # How many numbers describe the topic of a token: they double while the topic of all that the document
     # has said so far, as a concept, predicts the next token of held-out text better (the same judgment).
@@ -491,6 +511,18 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
             continue
         enc.topics[width] = graph
         model.topics[f"t{width}"] = [1.0, 0.0]                  # beta 0 until judged on the counts
+    # What follows depends on the topic and on where one is: the same topic is followed by its own words
+    # inside a sentence and by something else after the last token of a turn. Every topic is offered also
+    # together with the last token and the last two (exact), read in the chain right after them, so that
+    # a reading can learn what follows this local context when the text talks about this topic. The
+    # judgment keeps the ones that help.
+    joint = {}
+    for f, k in model.weights.items():
+        joint[f] = k
+        if f in ("e1", "e2"):
+            for w in sorted(enc.topics):
+                joint[f"t{w}&{f}"] = 1.0
+    model.weights = joint
     tell('done', max([6, *enc.nodes]), time.monotonic()-started)
     enc.width = max([6, *enc.nodes])                          # the topics keep their own tokens (PairCursor)
     # Every training target is subsequently counted exactly once by the streaming worker.

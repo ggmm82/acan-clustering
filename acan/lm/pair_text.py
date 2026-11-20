@@ -208,6 +208,12 @@ class PairText:
                 m.encoder.topics.pop(int(f[1:]), None)
                 m.tables.pop(f, None)
                 m.training_weights.pop(f, None)
+                for g in [g for g in m.tables if g.startswith(f + "&")]:   # read with the local context
+                    m.tables.pop(g, None)
+                    m.training_weights.pop(g, None)
+                    m.weights.pop(g, None)
+                if getattr(m, "order", None) is not None:
+                    m.order = [(kind, g) for kind, g in m.order if not g.startswith(f + "&")]
         self.topics_judged = True
         return saved
 
