@@ -92,3 +92,13 @@ class PairTextWithNetworkTest(unittest.TestCase):
         np.testing.assert_allclose(prefilled, stepped.distribution(), atol=1e-6)
         restored = from_checkpoint_arrays(model.arrays())
         np.testing.assert_allclose(restored.logp(doc), q, atol=1e-6)
+
+
+class QueueOptionTest(unittest.TestCase):
+    def test_the_queue_can_learn_the_network_and_refuses_anything_but_a_choice(self):
+        from acan.lm.research_options import validate_options
+        base = dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1')
+        self.assertFalse(validate_options(base)['concept_network'])
+        self.assertTrue(validate_options(dict(base, concept_network=True))['concept_network'])
+        with self.assertRaises(ValueError):
+            validate_options(dict(base, concept_network='sì'))
