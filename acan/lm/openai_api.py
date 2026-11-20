@@ -229,7 +229,7 @@ def write(model, tokenizer, prompt, settings):
             break
         produced.append(token)
         if cursor is not None:
-            cursor.observe(token)
+            cursor.observe(token, remember=False)          # its own words do not reinforce the memory
         text = tokenizer.decode(produced, skip_special_tokens=True)
         found = [text.find(item, max(sent-hold, 0)) for item in settings['stop']]
         found = [at for at in found if at >= 0]

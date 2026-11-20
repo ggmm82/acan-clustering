@@ -94,12 +94,18 @@ def calibrated_weights(stats, initial, mass_prior):
         prior = mass_prior
         changed = False
         for i, ((m, n, d), (a, b)) in enumerate(zip(stats, reversed(after))):
-            winner, best, result = np.inf, -np.log(a * prior + b).mean(), prior
+            without = -np.log(a * prior + b)
+            winner, best, result, chosen = np.inf, without.mean(), prior, without
             for k in KAPPA_GRID:
                 candidate = categorical_reading(n, m, d, prior, k, np)
-                loss = -np.log(a * candidate + b).mean()
-                if loss < best - 1e-12:
-                    winner, best, result = k, loss, candidate
+                loss = -np.log(a * candidate + b)
+                if loss.mean() < best - 1e-12:
+                    winner, best, result, chosen = k, loss.mean(), candidate, loss
+            # A reading is kept as every choice of the model: only if what it gains on held-out text is more
+            # than one standard error of the paired difference (with the readings after it as they are).
+            gain = without - chosen
+            if np.isfinite(winner) and gain.mean() <= gain.std(ddof=1) / np.sqrt(max(len(gain) - 1, 1)):
+                winner, result = np.inf, prior
             changed |= weights[i] != winner
             weights[i], prior = winner, result
         if not changed:
