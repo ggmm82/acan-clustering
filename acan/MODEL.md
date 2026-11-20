@@ -149,8 +149,7 @@ $$
 È la media a posteriori di una distribuzione di Dirichlet centrata sulla stima più
 generale. Un concetto che ha visto poco resta vicino a $q^{\rm sopra}$; uno che ha
 visto molto la sostituisce. Il termine $D_i$ rende la fiducia più bassa dove i seguiti
-osservati sono molto vari (come nel metodo di Witten e Bell). La forza $\kappa$ si
-sceglie sulla validazione.
+osservati sono molto vari. La forza $\kappa$ si sceglie sulla validazione.
 
 Esempio: un concetto ha visto «.», «.» ed «e» (tre osservazioni, due valori). Con
 $\kappa=1$ e $q^{\rm sopra}(.)=1/4$ si ottiene $q(.)=(2+2\cdot\tfrac14)/(3+2)=\tfrac12$.
@@ -230,14 +229,14 @@ seguono. Le forze $\kappa$ di tutte le letture si scelgono **congiuntamente** su
 validazione: ogni lettura è affine nella stima che riceve, quindi l'effetto di una
 modifica su tutta la catena si calcola in forma chiusa.
 
-*Perché l'ordine conta.* In un dialogo, dopo «`assistant` a capo», il documento
-contiene un solo «a capo» già seguito da una parola: quello dopo «`user`», seguito
-dalla prima parola della domanda. Se il documento fosse letto dopo tutto il corpus,
-quella singola osservazione su un contesto di un token arriverebbe per ultima e
-sposterebbe circa il 10% della probabilità sulla prima parola della domanda: il modello
-tenderebbe a ricopiarla. Nella catena per distanza la lettura successiva, il contesto
-di due token «`assistant` a capo», è stata vista migliaia di volte nel corpus e conserva
-solo il 16% della stima ricevuta: l'abbinamento spurio scompare.
+*Esempio.* All'inizio di una risposta, in un dialogo, il contesto è «`assistant` a
+capo». Il documento contiene un solo «a capo» già seguito da una parola: quello dopo
+«`user`», seguito dalla prima parola della domanda. La lettura del documento sul
+contesto di un token sposta su quella parola circa il 10% della probabilità. La lettura
+successiva della catena è il contesto di due token «`assistant` a capo», visto migliaia
+di volte nel corpus: con $a/(M+a)\approx0{,}16$ conserva solo il 16% della stima
+ricevuta e porta il resto sui seguiti osservati di quel contesto. Una prova su un
+contesto corto pesa quindi solo per ciò che i contesti più lunghi non dicono già.
 
 **Quali scale.** Il modello aggiunge una scala alla volta (8, 16, 32, …) e la conserva
 se migliora la previsione; si ferma dopo due scale di fila senza guadagno o quando i
@@ -272,9 +271,9 @@ $$
 
 Il rapporto vale 1 per i token che l'argomento non rende né più né meno probabili,
 più di 1 per quelli tipici dell'argomento. È la regola di Bayes se si assume che,
-noto il prossimo token, contesto locale e argomento siano indipendenti. Una
-combinazione lineare al posto del prodotto peggiora la previsione: un argomento non dice
-quale token viene adesso, dice quali sono plausibili.
+noto il prossimo token, contesto locale e argomento siano indipendenti: il contesto
+locale dice quale token viene adesso, l'argomento quali sono plausibili, e le due
+prove si moltiplicano.
 
 **Quali argomenti e con quale forza.** Le scale di argomento si aggiungono una alla
 volta, la più utile prima, finché il criterio della sezione 2 lo consente. Tutte
@@ -313,7 +312,7 @@ il modello è incerto. Sulle tabelle si usano l'accuratezza e l'errore quadratic
 - **Coerenza a lungo raggio.** I contesti esatti utili arrivano a poche decine di token;
   oltre, i concetti dei tratti aggiungono poco.
 - **Composizione.** Il modello non combina il significato di parti lontane del testo
-  in una rappresentazione nuova, come fanno gli strati di attenzione.
+  in una rappresentazione nuova.
 
 ## Informatica
 
@@ -397,53 +396,29 @@ distribuzione in ogni posizione: è la stessa funzione applicata allo stesso sta
 
 - **Per token, in inferenza:** una composizione di concetti per scala (al più una
   ventina), qualche ricerca in tabella per lettura e un aggiornamento dell'argomento
-  ogni $W/8$ token per scala. Non c'è confronto con tutti i token precedenti, come
-  nell'attenzione: il costo per token non cresce con la lunghezza del contesto.
+  ogni $W/8$ token per scala. Non c'è confronto con tutti i token precedenti: il costo
+  per token non cresce con la lunghezza del contesto.
 - **Memoria in inferenza:** gli ultimi token fino alla scala più lunga e i conteggi del
   documento, che crescono con il documento ma solo per i contesti effettivamente visti.
 - **Addestramento:** lineare nel numero di token per i conteggi; la struttura si impara
   una volta, su un campione la cui dimensione la stabiliscono i dati.
 
-### 6 · Risultati
+### 6 · Misure
 
-**Dialoghi (SYNTH, italiano e inglese).** 12.000 dialoghi di addestramento, tokenizzatore
-da 32.000 token, 200 dialoghi di test, NLL in nat per token.
+Dialoghi in italiano e inglese (SYNTH): 12.000 dialoghi di addestramento, tokenizzatore
+da 32.000 token, 200 dialoghi di test mai visti.
 
-| Versione | NLL sul test | Passo 0 | Lettura |
-|---|---:|---:|---:|
-| senza argomenti, catena separata | 4,4362 | 564 s | 117.000 token/s |
-| con argomenti | 4,3722 | 817 s | 55.800 token/s |
-| con argomenti e catena unica | **4,3647** | 1.001 s | 48.700 token/s |
+| Misura | Valore |
+|---|---:|
+| NLL sul test | 4,3647 nat/token (perplessità circa 79) |
+| Struttura (passo 0) | 1.001 s |
+| Lettura dei conteggi | 48.700 token/s |
+| Coordinate dei token scelte | 8 |
+| Scale di contesto scelte | fino a 256 token |
+| Scale di argomento scelte | 8, 16, 32, 64, 128, 256 token, con $\kappa\approx70$ |
+| Memoria di picco | 2,7 GB |
 
-Con la catena separata le risposte ricopiano la prima parola della domanda; con la
-catena unica non la ricopiano più, ma cominciano in modo simile per domande diverse
-(Matematica, sezione 13). Gli argomenti costano tempo: la struttura impiega quasi il
-doppio e la lettura procede a meno della metà della velocità.
+Le risposte di prova non ripetono la domanda, ma cominciano in modo simile per domande
+diverse (Matematica, sezione 13).
 
-**WikiText-2** (versione senza argomenti). Tokenizzatore BPE da 8.000 token, 32.704
-token di test, memoria del documento spenta. Il riferimento è un contatore di suffissi
-esatti, il modello generativo usato in precedenza.
-
-| Scala provata | Concetti, controllo | Concetti, test | Contatore, test |
-|---:|---:|---:|---:|
-| 6 | 4,91266 | 4,84475 | 4,91300 |
-| 8 | 4,91098 | 4,84207 | 4,91300 |
-| 16 | 4,90990 | 4,84097 | 4,91300 |
-| 32 | 4,90987 | 4,84090 | 4,91300 |
-| 64 | 4,90987 | 4,84090 | 4,91300 |
-| 128 | 4,90913 | 4,84216 | 4,91300 |
-| 256 | 4,90913 | 4,84216 | 4,91300 |
-| 512 | 4,90913 | 4,84216 | 4,91300 |
-
-- Il modello a concetti è sotto il contatore a ogni scala; quasi tutto il vantaggio c'è
-  già a sei token. Gli articoli di WikiText-2 sono brevi: le scale lunghe vanno provate
-  su testi lunghi.
-- Con la memoria del documento, a 32 token: 4,08543 contro 4,11082 del contatore.
-- Richiamo: un fatto ripetuto con le stesse parole torna fino a 300.000 token di
-  distanza; con un sinonimo la risposta è fra i candidati 2 volte su 16 e al primo posto
-  0 volte su 16.
-- Sui dieci dataset tabulari di prova le predizioni sono le stesse della versione
-  precedente.
-
-[Materiale supplementare: risultati per blocco, scala e compito](../experiments/text_table/results/native-long-context.json) ·
 [Protocolli sperimentali](../experiments/text_table/README.md).
