@@ -11,7 +11,8 @@ from acan.core.concepts import ConceptModel, Encoder
 from acan.core.conditional import calibrated_weights
 from acan.concept_algebra import categorical_reading
 from .concept_lm import document_counts
-from .pair_model import PairEncoder, PairLanguageModel, chain, merged_chain
+from .pair_model import PairEncoder, PairLanguageModel, chain, merged_chain, network_targets
+from .concept_net import ConceptNet
 from .pair_training import add_chunk, flush, learn
 
 PROFILE = "concept-pairs-v1"
@@ -29,8 +30,13 @@ def document_stats(row, name):
 
 
 class PairText:
-    def __init__(self, vocabulary, eos, budget, max_context=512):
+    # The concept network learned as a language model (acan/lm/concept_net.py): the start of the chain of readings.
+    NETWORK = dict(dim=96, layers=3, heads=4, concepts=64, window=3)
+
+    def __init__(self, vocabulary, eos, budget, max_context=512, network=False):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), eos, int(budget)
+        self.network = network                                  # learn the concept network while reading
+        self._learner = None
         self.max_context = int(max_context)                     # longest scale the validation may choose
         self.tokens = 0
         self.model = None
@@ -82,11 +88,32 @@ class PairText:
         )
         self.model.root.observed_targets["token"]["probability"] = self.model.head
         self.model.unigram = frequency / frequency.sum()        # what a topic is compared with
+        if self.network:
+            self._learn_network(ids, check)
+
+    def _learn_network(self, ids, check):
+        """One pass of the concept network over the piece just counted."""
+        from .concept_net_training import Learner, Network, output_groups
+        if self._learner is None:
+            m = self.model
+            if getattr(m, "net", None) is not None:              # a queue that goes on: the network learned so far
+                network = Network.restore(m.net)
+            else:
+                config = dict(self.NETWORK, vocabulary=self.vocabulary, **(self.network if isinstance(self.network, dict) else {}))
+                frequency = m.unigram
+                network = Network(config, centres=m.encoder.vectors, frequency=frequency,
+                                  groups=output_groups(m.encoder.token_classes[:self.vocabulary], frequency))
+            self._learner = Learner(network)
+        self.network_loss = self._learner.learn(ids, self.eos, check)
+        self.model.net = self._learner.network.export()
 
     def _scores(self, ids):
+        """The start of the chain at every position: the concept network where it has read the document, the concepts
+        of the previous token otherwise."""
         row = self.model.encoder.encode(ids, document_starts(ids, self.eos))
         p = self.model.root_probability(row, np.arange(len(ids)))
-        return row, p
+        net = network_targets(self.model, row)
+        return row, np.where(np.isnan(net), p, net)
 
     def judge(self, pieces, final=False):
         if self.model is None:
@@ -309,6 +336,8 @@ class PairText:
         if self.model is None:
             return data
         m = self.model
+        if getattr(m, "net", None) is not None:
+            data.update(m.net.arrays())
         meta = {
             "training_weights": list(m.training_weights.items()),
             "weights": list(m.weights.items()),
@@ -427,4 +456,6 @@ class PairText:
             enc.topics[w] = graph(f"topic{w}_")
             text.model.topics[f"t{w}"] = [k, b]
         text.model.unigram = data["unigram"] if "unigram" in data else None
+        text.model.net = ConceptNet.from_arrays(data)
+        text.network = text.model.net is not None
         return text
