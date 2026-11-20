@@ -104,7 +104,6 @@ class TopicTest(unittest.TestCase):
 
 class StructureReportTest(unittest.TestCase):
     def test_the_part_of_the_structure_done_never_goes_back(self):
-        from acan.vis.long_training import structure_progress
         rng = np.random.default_rng(2)
         eos, docs = 40, []
         for i in range(60):
@@ -113,8 +112,7 @@ class StructureReportTest(unittest.TestCase):
         ids = np.array(docs)
         seen = []
         model = PairText(41, eos, 1 << 22, max_context=8)
-        model.report = lambda phase, width, seconds, **facts: seen.append(
-            (phase, structure_progress(dict(phase=phase, width=width, seconds=seconds, **facts))[0]))
+        model.report = lambda phase, width, seconds, **facts: seen.append((phase, facts['part_permille'] / 1000))
         model.add(ids, ids, [ids[:300], ids[300:600]], lambda: None)
         parts = [part for _, part in seen]
         self.assertEqual(parts, sorted(parts))                  # the bar only moves forward
