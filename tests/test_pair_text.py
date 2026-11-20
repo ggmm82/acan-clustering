@@ -48,3 +48,55 @@ class PairTextTest(unittest.TestCase):
         fork.observe(0)
         np.testing.assert_array_equal(bulk.distribution(), before)
         self.assertAlmostEqual(np.log(before[ids[6]]), q[6])
+
+
+class OwnWordsTest(unittest.TestCase):
+    def test_the_words_the_model_writes_do_not_feed_the_memory_of_the_document(self):
+        model = PairText(11, 10, 1 << 20)
+        ids = np.tile([1, 2, 3, 1, 2, 4, 10, 5, 6, 7, 1, 5, 7, 10], 24)
+        tune = [ids[14:70], ids[70:126]]
+        model.add(ids, ids, tune, lambda: None)
+        model.judge(tune)
+        model.model.memory = model.model.memory or {'e1': 1.0}
+        cursor = model.model.cursor(ids[:20])
+        before = cursor.distribution()
+        quiet = cursor.fork()
+        quiet.observe(3, remember=False)
+        self.assertEqual({f: dict(v) for f, v in quiet.overlay.items()}, {f: dict(v) for f, v in cursor.overlay.items()})
+        loud = cursor.fork()
+        loud.observe(3)
+        self.assertNotEqual({f: dict(v) for f, v in loud.overlay.items()}, {f: dict(v) for f, v in cursor.overlay.items()})
+        np.testing.assert_array_equal(cursor.distribution(), before)
+
+
+class TopicTest(unittest.TestCase):
+    """What the text talks about multiplies the reading; writing and scoring agree, and checkpoints keep it."""
+
+    def test_topics_are_judged_read_by_multiplying_and_agree_token_by_token(self):
+        rng = np.random.default_rng(1)
+        eos, docs = 40, []
+        for i in range(80):                                    # two subjects with their own words, shared grammar
+            words = np.arange(1, 20) if i % 2 else np.arange(20, 39)
+            body = []
+            for _ in range(12):
+                body += [int(rng.choice(words)), int(rng.choice(words)), 39]   # 39: a full stop in both
+            docs += body + [eos]
+        ids = np.array(docs)
+        tune = [ids[:370], ids[370:740]]
+        model = PairText(41, eos, 1 << 22, max_context=8)
+        model.add(ids, ids, tune, lambda: None)
+        model.judge(tune)
+        self.assertTrue(model.model.topics)                     # the scales have topic concepts
+        for f in model.model.topics:
+            model.model.topics[f] = [4.0, 1.0]                 # read them, to check the reading itself
+        doc = ids[:ids.tolist().index(eos)+1]
+        q = model.logp(doc)
+        cursor = model.model.cursor()
+        for i, t in enumerate(doc[:-1]):
+            p = cursor.distribution()
+            self.assertAlmostEqual(p.sum(), 1.0)
+            self.assertAlmostEqual(np.log(p[t]), q[i])
+            cursor.observe(t)
+        restored = from_checkpoint_arrays(model.arrays())
+        np.testing.assert_allclose(restored.logp(doc), q)
+        self.assertEqual(restored.model.topics, model.model.topics)

@@ -10,7 +10,7 @@ from acan.core.category_table import Table
 from acan.core.concepts import ConceptModel
 from acan.core.conditional import calibrated_weights
 from acan.concept_algebra import categorical_reading
-from .pair_model import EncodedPrefix, PairEncoder, PairLanguageModel, shift
+from .pair_model import EncodedPrefix, PairEncoder, PairLanguageModel, shift, span_means, topic_codes
 
 
 CONTEXT = 512                                                    # longest scale tried by default (concept_context sets more)
@@ -36,6 +36,7 @@ def enough_rows(fit, available, score, first=2048):
         if gain.mean() <= gain.std(ddof=1)/np.sqrt(max(len(gain)-1, 1)):
             break
         model, best = bigger, trial
+    model.report = None                                         # the page follows the learning, not the model
     return model
 
 
@@ -76,6 +77,25 @@ def semantic_vectors(ids, vocabulary, dimensions=32, top=512, seed=0, starts=Non
     center=profile[frequency>0].mean(0)
     _,singular,directions=randomized_svd((profile if starts is None else profile[frequency>0])-center,n_components=min(dimensions,profile.shape[1]),n_iter=5,random_state=seed)
     return ((profile-center)@directions.T).astype(np.float32),singular
+
+
+def topic_vectors(ids, starts, vocabulary, dimensions, seed=42):
+    """Tokens described by the documents they appear in: counts token x document, log-scaled, weighted so
+    that a token found in few documents says more, compressed by SVD and normalized (latent semantic
+    analysis). Two tokens are close when they are used about the same things, wherever they stand."""
+    from scipy import sparse
+    from sklearn.utils.extmath import randomized_svd
+    ids = np.asarray(ids, np.int64)
+    position = np.arange(len(ids))
+    document = np.searchsorted(np.asarray(starts), position, side="right") - 1
+    counts = sparse.coo_matrix((np.ones(len(ids)), (ids, document)), shape=(vocabulary, document[-1] + 1)).tocsr()
+    counts.data = np.log1p(counts.data)
+    spread = np.asarray((counts > 0).sum(1)).ravel()
+    counts = sparse.diags(np.log((document[-1] + 1) / (1 + spread))) @ counts
+    rank = min(dimensions, min(counts.shape) - 1)
+    u, singular, _ = randomized_svd(counts, n_components=max(rank, 1), n_iter=5, random_state=seed)
+    vectors = u * singular
+    return vectors / np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-12)
 
 
 def geometry(splits, vectors, width, progress=None):
@@ -234,7 +254,9 @@ def add_chunk(model, ids, starts, tail, tables, budget, pending=None):
 def flush(model, tables, pending, budget):
     """Add the queued counts to the tables and keep each table inside its share of the budget."""
     strengths = getattr(model, "training_weights", model.weights)
-    total_weight = sum(k**-0.5 for k in strengths.values())
+    topics = getattr(model, "topics", {})
+    # Topic tables hold at most concepts x vocabulary cells: they are never pruned and take no share.
+    total_weight = sum(k**-0.5 for f, k in strengths.items() if f not in topics)
     for feature, levels in pending.items():
         parts = [t for t in levels if t is not None]
         if not parts:
@@ -244,7 +266,7 @@ def flush(model, tables, pending, budget):
             total = total + part
         total = total if feature not in tables else tables[feature] + total
         # Each table inherits through its preceding readout when a rare key is removed.
-        limit = int(budget * strengths[feature] ** -0.5 / total_weight)
+        limit = np.inf if feature in topics else int(budget * strengths[feature] ** -0.5 / total_weight)
         if total.nbytes() > limit:
             sizes = 24 + 16 * total.D
             at = np.argsort(-total.C / (sizes + 0.0), kind="stable")
@@ -324,18 +346,35 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
     tr = EncodedPrefix(ids, starts)
     va = validation_rows(tuning, eos)
     rows = {"train": tr, "tune": va}
-    vectors, _ = semantic_vectors(ids, vocabulary, dimensions=8, top=96, seed=42, starts=starts)
-    names = [f"x{i}" for i in range(vectors.shape[1])]
-    tokens = pd.DataFrame(vectors[np.unique(ids)], columns=names)
-    every = pd.DataFrame(vectors, columns=names)
-
-    def token_score(model):
-        found = model.assignments(every).argmax(1) + 1
-        previous = {name: shift(found[row.y].astype(np.uint32), 1, row.age) for name, row in (("train", tr), ("tune", va))}
-        return reading_score(previous["train"], tr.y, previous["tune"], va.y, vocabulary)
-
     tell('tokens', 1, time.monotonic()-started)
-    root = enough_rows(lambda rows: concept_model(rows, searching(1)).fit(tokens), len(tokens), token_score)
+
+    def token_space(dimensions):
+        """Token coordinates with this many dimensions, and the concepts of the tokens found on them."""
+        vectors, _ = semantic_vectors(ids, vocabulary, dimensions=dimensions, top=96, seed=42, starts=starts)
+        names = [f"x{i}" for i in range(vectors.shape[1])]
+        tokens = pd.DataFrame(vectors[np.unique(ids)], columns=names)
+        every = pd.DataFrame(vectors, columns=names)
+
+        def token_score(model):
+            found = model.assignments(every).argmax(1) + 1
+            previous = {name: shift(found[row.y].astype(np.uint32), 1, row.age) for name, row in (("train", tr), ("tune", va))}
+            return reading_score(previous["train"], tr.y, previous["tune"], va.y, vocabulary)
+
+        root = enough_rows(lambda rows: concept_model(rows, searching(1)).fit(tokens), len(tokens), token_score)
+        return vectors, names, every, root, token_score(root)
+
+    # How many numbers describe a token is not fixed: the coordinates double while the concepts of the
+    # tokens found on them predict the next token of held-out text better, by more than one standard error
+    # of the paired difference (the judgment used for the rows of every sample).
+    dimensions = 8
+    vectors, names, every, root, best = token_space(dimensions)
+    while 2 * dimensions <= 2 * 97:                              # the profile has 2 x (96 neighbours + 1) columns
+        trial = token_space(2 * dimensions)
+        gain = trial[-1] - best
+        if gain.mean() <= gain.std(ddof=1) / np.sqrt(max(len(gain) - 1, 1)):
+            break
+        dimensions *= 2
+        vectors, names, every, root, best = trial
     classes = root.assignments(every).argmax(1) + 1
     padded = np.vstack([np.full(vectors.shape[1], np.nan), vectors])
 
@@ -406,9 +445,49 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
             misses = 0 if gain else misses + 1
             if misses == 2:
                 break
+    # What the text talks about, at every scale the model learned: the concept of the mean topic vector of
+    # the last W tokens, kept where its concepts make the next token of held-out text more predictable. It
+    # is read by multiplying (topic / general)^beta, with beta chosen on validation once the counts are made
+    # (PairText.judge). Every scale offers both readings, the ordered halves and the topic; the judgment
+    # decides which ones help, scale by scale.
+    def topic_score_for(graph, width, space):
+        codes = {name: topic_codes(graph, space, row, width) for name, row in rows.items()}
+        return reading_score(shift(codes["train"], 1, tr.age), tr.y, shift(codes["tune"], 1, va.age), va.y, vocabulary)
+
+    def topic_concepts(width, space, label):
+        means = span_means(space, tr, width)
+        draw = np.random.default_rng(42).permutation(len(tr.y))
+        names_t = [f"x{i}" for i in range(space.shape[1])]
+        return enough_rows(lambda rows_: concept_model(rows_, searching(label)).fit(
+            pd.DataFrame(means[draw[:rows_]], columns=names_t)), len(tr.y), lambda g: topic_score_for(g, width, space))
+
+    # How many numbers describe the topic of a token: they double while the topic of all that the document
+    # has said so far, as a concept, predicts the next token of held-out text better (the same judgment).
+    tell('topics', 0, time.monotonic()-started)
+    whole = int(tr.age.max()) + 1
+    size = 16
+    space = topic_vectors(tr.y, np.flatnonzero(tr.age == 0), vocabulary, size)
+    best = topic_score_for(topic_concepts(whole, space, 0), whole, space)
+    while 2 * size <= 256:
+        check()
+        trial = topic_vectors(tr.y, np.flatnonzero(tr.age == 0), vocabulary, 2 * size)
+        score = topic_score_for(topic_concepts(whole, trial, 0), whole, trial)
+        gain = score - best
+        if gain.mean() <= gain.std(ddof=1) / np.sqrt(max(len(gain) - 1, 1)):
+            break
+        size, space, best = 2 * size, trial, score
+    enc.topic_vectors = space
+    for width in sorted(enc.nodes):
+        check()
+        tell('topics', width, time.monotonic()-started)
+        graph = topic_concepts(width, space, width)
+        if graph.concepts < 2:
+            continue
+        enc.topics[width] = graph
+        model.topics[f"t{width}"] = [1.0, 0.0]                  # beta 0 until judged on the counts
     where['step'] = where['steps']
     tell('done', max([6, *enc.nodes]), time.monotonic()-started)
-    enc.width = max([6, *enc.nodes])
+    enc.width = max([6, *enc.nodes])                          # the topics keep their own tokens (PairCursor)
     # Every training target is subsequently counted exactly once by the streaming worker.
-    model.tables = {f: Table.empty(vocabulary) for f in model.weights}
+    model.tables = {f: Table.empty(vocabulary) for f in [*model.weights, *model.topics]}
     return model
