@@ -100,3 +100,23 @@ class TopicTest(unittest.TestCase):
         restored = from_checkpoint_arrays(model.arrays())
         np.testing.assert_allclose(restored.logp(doc), q)
         self.assertEqual(restored.model.topics, model.model.topics)
+
+
+class StructureReportTest(unittest.TestCase):
+    def test_the_part_of_the_structure_done_never_goes_back(self):
+        from acan.vis.long_training import structure_progress
+        rng = np.random.default_rng(2)
+        eos, docs = 40, []
+        for i in range(60):
+            words = np.arange(1, 20) if i % 2 else np.arange(20, 39)
+            docs += [int(rng.choice(words)) for _ in range(30)] + [eos]
+        ids = np.array(docs)
+        seen = []
+        model = PairText(41, eos, 1 << 22, max_context=8)
+        model.report = lambda phase, width, seconds, **facts: seen.append(
+            (phase, structure_progress(dict(phase=phase, width=width, seconds=seconds, **facts))[0]))
+        model.add(ids, ids, [ids[:300], ids[300:600]], lambda: None)
+        parts = [part for _, part in seen]
+        self.assertEqual(parts, sorted(parts))                  # the bar only moves forward
+        self.assertEqual(seen[-1], ('done', 1.))
+        self.assertIn('topics', {phase for phase, _ in seen})

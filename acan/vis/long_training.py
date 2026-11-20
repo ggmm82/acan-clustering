@@ -127,6 +127,10 @@ def structure_progress(learning):
     The scales are the steps; inside a scale the concepts are joined from ``start`` down to one, each
     round joining a share of them, so the part done is the share of the way on a logarithmic scale.
     """
+    if 'part_permille' in learning:                      # computed where it is learned, never going back
+        part = min(max(learning['part_permille']/1000, 0.), 1.)
+        seconds = learning.get('seconds') or 0.
+        return part, (seconds*(1-part)/part if part > .02 else None)
     steps, done = max(learning.get('steps') or 1, 1), max((learning.get('step') or 1)-1, 0)
     inside = 0.
     if learning.get('phase') in ('subconcepts', 'readings'):
@@ -159,8 +163,9 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
                  'scale': f"concetti dei tratti di {learning['width']:,} token",
                  'subconcepts': f"sotto-concetti dei tratti di {learning['width']:,} token",
                  'readings': f"quali letture usare fino a {learning['width']:,} token",
-                 'topics': f"di cosa parlano gli ultimi {learning['width']:,} token"}.get(learning['phase'], 'struttura')
-        if learning.get('start') and learning['phase'] in ('tokens', 'scale'):
+                 'topics': (f"di cosa parlano gli ultimi {learning['width']:,} token" if learning['width']
+                            else "di cosa parla il documento")}.get(learning['phase'], 'struttura')
+        if learning.get('start') and learning['phase'] in ('tokens', 'scale', 'topics'):
             doing += f" ({learning['concepts']:,} concetti da unire, partiti da {learning['start']:,})"
         where = f"scala {learning['step']} di {learning['steps']} al massimo · " if learning.get('steps') else ''
         first = _tile('Avanzamento', f'struttura {100*part:.0f}%',

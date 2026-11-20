@@ -319,14 +319,17 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
     say = report or (lambda *args, **facts: None)
     started = time.monotonic()
     planned = [1, *(1 << k for k in range(1, 21) if 1 << k <= max(max_context, 8))]
-    where = dict(step=1, steps=len(planned))
-    last = [0.]
+    where = dict(step=1, steps=len(planned) + 1)                # the scales, then the topics
+    last, shown = [0.], [0.]
 
     def tell(phase, width, seconds, **facts):
-        say(phase, width, seconds, **where, **facts)
+        # The part done never goes back: the coordinates may double, the sample too, and a search start
+        # again; the bar waits until the new search passes the point already shown.
+        inside = facts.get('inside_permille', 1000 if phase in ('subconcepts', 'readings', 'done') else 0) / 1000
+        shown[0] = max(shown[0], min((where['step'] - 1 + inside) / where['steps'], 1.))
+        say(phase, width, seconds, **where, **facts, part_permille=int(1000 * shown[0]))
 
-    def searching(width):
-        # Inside a scale the sample may double and the search start again: the part shown never goes back.
+    def searching(width, phase=None, offset=0., span=1.):
         best = [0.]
 
         def progress(facts):
@@ -335,8 +338,9 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
                 best[0] = max(best[0], 1-np.log(max(facts['concepts'], 1))/np.log(facts['start']))
                 if now-last[0] >= 2:
                     last[0] = now
-                    tell('scale' if width > 1 else 'tokens', width, now-started, concepts=int(facts['concepts']),
-                         start=int(facts['start']), inside_permille=int(1000*best[0]))
+                    tell(phase or ('scale' if width > 1 else 'tokens'), width, now-started,
+                         concepts=int(facts['concepts']), start=int(facts['start']),
+                         inside_permille=int(1000*(offset + span*best[0])))
         return progress
     # A scale of w tokens is learned only from windows longer than w: the sample grows with the
     # longest scale allowed, and keeps its windows long enough to contain it.
@@ -454,38 +458,39 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
         codes = {name: topic_codes(graph, space, row, width) for name, row in rows.items()}
         return reading_score(shift(codes["train"], 1, tr.age), tr.y, shift(codes["tune"], 1, va.age), va.y, vocabulary)
 
-    def topic_concepts(width, space, label):
+    def topic_concepts(width, space, label, offset=0., span=1.):
         means = span_means(space, tr, width)
         draw = np.random.default_rng(42).permutation(len(tr.y))
         names_t = [f"x{i}" for i in range(space.shape[1])]
-        return enough_rows(lambda rows_: concept_model(rows_, searching(label)).fit(
+        return enough_rows(lambda rows_: concept_model(rows_, searching(label, 'topics', offset, span)).fit(
             pd.DataFrame(means[draw[:rows_]], columns=names_t)), len(tr.y), lambda g: topic_score_for(g, width, space))
 
     # How many numbers describe the topic of a token: they double while the topic of all that the document
     # has said so far, as a concept, predicts the next token of held-out text better (the same judgment).
+    where['step'] = where['steps']
+    share = 1 / (len(enc.nodes) + 1)                            # the topic coordinates, then every scale
     tell('topics', 0, time.monotonic()-started)
     whole = int(tr.age.max()) + 1
     size = 16
     space = topic_vectors(tr.y, np.flatnonzero(tr.age == 0), vocabulary, size)
-    best = topic_score_for(topic_concepts(whole, space, 0), whole, space)
+    best = topic_score_for(topic_concepts(whole, space, 0, 0., share), whole, space)
     while 2 * size <= 256:
         check()
         trial = topic_vectors(tr.y, np.flatnonzero(tr.age == 0), vocabulary, 2 * size)
-        score = topic_score_for(topic_concepts(whole, trial, 0), whole, trial)
+        score = topic_score_for(topic_concepts(whole, trial, 0, 0., share), whole, trial)
         gain = score - best
         if gain.mean() <= gain.std(ddof=1) / np.sqrt(max(len(gain) - 1, 1)):
             break
         size, space, best = 2 * size, trial, score
     enc.topic_vectors = space
-    for width in sorted(enc.nodes):
+    for i, width in enumerate(sorted(enc.nodes)):
         check()
-        tell('topics', width, time.monotonic()-started)
-        graph = topic_concepts(width, space, width)
+        tell('topics', width, time.monotonic()-started, inside_permille=int(1000 * (i + 1) * share))
+        graph = topic_concepts(width, space, width, (i + 1) * share, share)
         if graph.concepts < 2:
             continue
         enc.topics[width] = graph
         model.topics[f"t{width}"] = [1.0, 0.0]                  # beta 0 until judged on the counts
-    where['step'] = where['steps']
     tell('done', max([6, *enc.nodes]), time.monotonic()-started)
     enc.width = max([6, *enc.nodes])                          # the topics keep their own tokens (PairCursor)
     # Every training target is subsequently counted exactly once by the streaming worker.
