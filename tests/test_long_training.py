@@ -466,6 +466,8 @@ class StructureProgressTest(unittest.TestCase):
         self.assertAlmostEqual(half, .5)
         self.assertAlmostEqual(left, 60.)
         self.assertEqual(structure_progress(dict(phase='subconcepts', width=8, seconds=120., step=4, steps=4))[0], 1.)
+        self.assertAlmostEqual(structure_progress(dict(phase='topics', width=0, seconds=60., step=4, steps=4,
+                                                       part_permille=750))[0], .75)   # as learned, never back
         progress = dict(graft=dict(vocabulary=8), step=0,
                         structure=dict(phase='scale', width=4, seconds=60., step=3, steps=4, concepts=10, start=100))
         text = str(concept_summary(progress, dict(total_steps=45), status='running'))
