@@ -88,7 +88,7 @@ class TopicTest(unittest.TestCase):
         model.judge(tune)
         self.assertTrue(model.model.topics)                     # the scales have topic concepts
         for f in model.model.topics:
-            model.model.topics[f][1] = 0.5                     # read them, to check the reading itself
+            model.model.topics[f] = [4.0, 1.0]                 # read them, to check the reading itself
         doc = ids[:ids.tolist().index(eos)+1]
         q = model.logp(doc)
         cursor = model.model.cursor()

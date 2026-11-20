@@ -125,56 +125,61 @@ class PairText:
         if m.topics and (final or not getattr(self, "topics_judged", False)):
             self._judge_topics([row for row, _ in rows])
 
-    BETAS = (0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0)
-
     def _judge_topics(self, rows):
-        """Choose how strongly each topic multiplies the reading, on held-out text.
+        """How far the topics move the reading: the kappa of their chain with the best held-out likelihood.
 
-        Topics at different scales say much the same thing, so their weights are not chosen one by one as if
-        each were alone: the topic that helps most alone is chosen first, then each other one is judged with
-        those already chosen in the reading, and keeps beta 0 if it adds nothing. Topics left at 0 are
-        dropped, with their concepts and counts.
+        The topics multiply the reading by q(topic) / q(general) (Bayes' rule, exponent 1); the only choice is
+        kappa, the weight of the level above against the observations, as in every reading of the model. The
+        normalization splits into sums that do not depend on kappa, so every kappa is judged in one pass. If
+        no kappa reads the held-out text better than the reading without topics, the topics are dropped.
         """
-        from .pair_model import topic_factor, walk
+        from acan.concept_algebra import KAPPA_GRID
+        from .pair_model import walk
         m = self.model
         saved = {f: list(v) for f, v in m.topics.items()}
-        debug = __import__("os").environ.get("ACAN_PAIR_DEBUG")
-
-        def losses(candidates):
-            """Held-out loss of each candidate topic for every beta, on the reading as it stands now."""
-            loss = {f: np.zeros(len(self.BETAS)) for f in candidates}
-            n = 0
-            for row in rows:
-                keys = {f: row.feature(f) for f in candidates}
-                for i, p in enumerate(walk(m, row)):
-                    y = int(row.y[i]); n += 1
-                    for f in candidates:
-                        ratio = topic_factor(m, f, int(keys[f][i]))
-                        if ratio is None:
-                            loss[f] -= np.log(p[y])
-                            continue
-                        lr = np.log(ratio)
-                        loss[f] += [-(np.log(p[y]) + b*lr[y] - np.log(p @ np.exp(b*lr))) for b in self.BETAS]
-            return {f: v / max(n, 1) for f, v in loss.items()}
-
-        for f in m.topics:
+        order = sorted(m.topics, key=lambda name: int(name[1:]))
+        for f in order:
             m.topics[f][1] = 0.0
-        alone = losses(list(m.topics))
-        order = sorted((f for f in alone if alone[f].argmin() > 0), key=lambda f: alone[f].min())
-        if debug:
-            print("argomenti da soli:", {f: (self.BETAS[int(v.argmin())], round(float(v.min()), 4)) for f, v in alone.items()},
-                  "senza:", round(float(next(iter(alone.values()))[0]), 4) if alone else None, flush=True)
-        for position, f in enumerate(order):
-            loss = alone[f] if position == 0 else losses([f])[f]
-            m.topics[f][1] = float(self.BETAS[int(loss.argmin())])
-            if debug:
-                print(f"  {f}: beta {m.topics[f][1]} con i precedenti, perdita {loss.min():.4f}", flush=True)
-        # A topic the judgment does not use is not computed any more: its concepts and counts are dropped.
-        for f in [f for f, (_, b) in m.topics.items() if not b]:
-            del m.topics[f]
-            m.encoder.topics.pop(int(f[1:]), None)
-            m.tables.pop(f, None)
-            m.training_weights.pop(f, None)
+        facts = []                                              # per position: p(y) and, per scale, C, D, s, n(y)
+        for row in rows:
+            keys = {f: row.feature(f) for f in order}
+            for i, p in enumerate(walk(m, row)):
+                y = int(row.y[i])
+                scales = []
+                for f in order:
+                    table = m.tables.get(f)
+                    ix = table.find(np.array([keys[f][i]], np.uint64))[0] if table is not None and keys[f][i] else -1
+                    if ix < 0:
+                        continue
+                    targets, counts = table.followers(ix)
+                    share = counts / m.unigram[targets]
+                    scales.append((table.C[ix], max(table.D[ix], 1), float(p[targets] @ share),
+                                   float(share[targets == y].sum())))
+                facts.append((p[y], scales))
+        plain = -np.mean([np.log(py) for py, _ in facts]) if facts else 0.
+        losses = []
+        for kappa in KAPPA_GRID:
+            total = 0.
+            for py, scales in facts:
+                ratio, norm = 1., 1.                            # q(y)/q0(y) and sum_v p(v) q(v)/q0(v), scale by scale
+                for C, D, s, ny in scales:
+                    a = kappa * D
+                    keep, add = a / (C + a), 1. / (C + a)
+                    ratio, norm = ratio * keep + add * ny, norm * keep + add * s
+                total -= np.log(py * ratio / norm)
+            losses.append(total / max(len(facts), 1))
+        best = int(np.argmin(losses))
+        if __import__("os").environ.get("ACAN_PAIR_DEBUG"):
+            print("catena degli argomenti:", dict(zip(KAPPA_GRID, np.round(losses, 4))), "senza:", round(plain, 4), flush=True)
+        if facts and losses[best] < plain:
+            for f in order:
+                m.topics[f] = [float(KAPPA_GRID[best]), 1.0]
+        else:                                                   # no topic reads better: not computed any more
+            for f in order:
+                del m.topics[f]
+                m.encoder.topics.pop(int(f[1:]), None)
+                m.tables.pop(f, None)
+                m.training_weights.pop(f, None)
         self.topics_judged = True
         return saved
 
@@ -185,7 +190,7 @@ class PairText:
             return np.full(len(pos), -np.log(self.vocabulary))
         if not len(ids):
             return np.empty(0)
-        if any(beta for _, beta in getattr(self.model, "topics", {}).values()):
+        if any(active for _, active in getattr(self.model, "topics", {}).values()):
             from .pair_model import walk
             row = self.model.encoder.encode(ids, document_starts(ids, self.eos))
             values = np.fromiter((p[y] for p, y in zip(walk(self.model, row), ids)), float, len(ids))

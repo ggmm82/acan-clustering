@@ -72,25 +72,36 @@ def topic_of(graph, vectors, recent, age, width):
     return int(recognize(graph, span.mean(0)[None])[0])
 
 
-def topic_factor(model, f, key):
-    """(q_topic / q_general) for every token, from the counts of a topic concept; None if never seen."""
-    table = model.tables.get(f)
-    if table is None or not key:
-        return None
-    ix = table.find(np.array([key], np.uint64))[0]
-    if ix < 0:
-        return None
-    kappa = model.topics[f][0]
-    targets, counts = table.followers(ix)
-    a = kappa * max(table.D[ix], 1)
-    ratio = np.full(model.vocabulary, a / (table.C[ix] + a))
-    ratio[targets] += counts / (table.C[ix] + a) / model.unigram[targets]
-    return ratio
+def topic_chain(model, keys):
+    """q(topic) / q(general) for every token, or None when no topic concept has been seen.
+
+    The topics of all scales are read as a chain, from the shortest span to the longest: each scale is the
+    categorical reading of its concept with the scale before as level above, the general frequency first,
+    so every scale adds only what the shorter ones did not say. The concept's evidence sets how far the
+    reading moves (kappa pseudo-observations per distinct token, as in every reading of the model).
+    """
+    topics = getattr(model, "topics", {})
+    q, seen = model.unigram, False
+    for f in sorted(topics, key=lambda name: int(name[1:])):
+        kappa, active = topics[f]
+        table = model.tables.get(f)
+        if not active or table is None or not keys[f]:
+            continue
+        ix = table.find(np.array([keys[f]], np.uint64))[0]
+        if ix < 0:
+            continue
+        targets, counts = table.followers(ix)
+        a = kappa * max(table.D[ix], 1)
+        q = q * (a / (table.C[ix] + a))
+        q[targets] += counts / (table.C[ix] + a)
+        seen = True
+    return q / model.unigram if seen else None
 
 
 def read_distribution(model, previous, keys, memory):
     """The probability of every token: the corpus readings, from the general to the particular, then the
-    memory of the document, then what the topics say, each multiplying by (q_topic / q_general)^beta."""
+    memory of the document, then what the topics say: Bayes' rule, the reading times q(topic) / q(general)
+    (topic_chain), normalized."""
     p = model.leaf_weights[previous] @ model.head
     for f, k in model.weights.items():
         table = model.tables[f]
@@ -108,12 +119,10 @@ def read_distribution(model, previous, keys, memory):
             denom = sum(counts.values()) + weight
             p = p * (weight / denom)
             p[list(counts)] += np.fromiter(counts.values(), float) / denom
-    for f, (_, beta) in getattr(model, "topics", {}).items():
-        if beta:
-            ratio = topic_factor(model, f, keys[f])
-            if ratio is not None:
-                p = p * ratio ** beta
-                p /= p.sum()
+    ratio = topic_chain(model, keys) if getattr(model, "topics", None) else None
+    if ratio is not None:
+        p = p * ratio
+        p /= p.sum()
     return p
 
 
