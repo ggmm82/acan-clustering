@@ -126,56 +126,86 @@ class PairText:
             self._judge_topics([row for row, _ in rows])
 
     def _judge_topics(self, rows):
-        """How far the topics move the reading: the kappa of their chain with the best held-out likelihood.
+        """Which scales the topic chain reads, and how far their concepts move the reading.
 
-        The topics multiply the reading by q(topic) / q(general) (Bayes' rule, exponent 1); the only choice is
-        kappa, the weight of the level above against the observations, as in every reading of the model. The
-        normalization splits into sums that do not depend on kappa, so every kappa is judged in one pass. If
-        no kappa reads the held-out text better than the reading without topics, the topics are dropped.
+        The topics multiply the reading by q(chain) / q(general), Bayes' rule with exponent 1. Two things
+        come from held-out text, as every choice of the model: the scales of the chain, added one at a time,
+        the one that reads best first, while the improvement exceeds one standard error of the paired
+        difference; and kappa, the weight of the level above against a concept's observations, the value
+        that maximizes the held-out likelihood (a continuous search, no grid). The normalization splits into
+        sums that do not depend on kappa or on the scales, so everything is judged from one pass. Scales left
+        out are dropped, with their concepts and counts, and are not computed any more.
         """
-        from acan.concept_algebra import KAPPA_GRID
         from .pair_model import walk
         m = self.model
         saved = {f: list(v) for f, v in m.topics.items()}
         order = sorted(m.topics, key=lambda name: int(name[1:]))
         for f in order:
             m.topics[f][1] = 0.0
-        facts = []                                              # per position: p(y) and, per scale, C, D, s, n(y)
+        P, C, D, S, N = [], [], [], [], []                      # per position: p(y); per scale: C, D, s, n(y)
         for row in rows:
             keys = {f: row.feature(f) for f in order}
             for i, p in enumerate(walk(m, row)):
                 y = int(row.y[i])
-                scales = []
+                P.append(p[y]); c, d, sv, ny = [], [], [], []
                 for f in order:
                     table = m.tables.get(f)
                     ix = table.find(np.array([keys[f][i]], np.uint64))[0] if table is not None and keys[f][i] else -1
                     if ix < 0:
+                        c.append(0.); d.append(1.); sv.append(0.); ny.append(0.)
                         continue
                     targets, counts = table.followers(ix)
                     share = counts / m.unigram[targets]
-                    scales.append((table.C[ix], max(table.D[ix], 1), float(p[targets] @ share),
-                                   float(share[targets == y].sum())))
-                facts.append((p[y], scales))
-        plain = -np.mean([np.log(py) for py, _ in facts]) if facts else 0.
-        losses = []
-        for kappa in KAPPA_GRID:
-            total = 0.
-            for py, scales in facts:
-                ratio, norm = 1., 1.                            # q(y)/q0(y) and sum_v p(v) q(v)/q0(v), scale by scale
-                for C, D, s, ny in scales:
-                    a = kappa * D
-                    keep, add = a / (C + a), 1. / (C + a)
-                    ratio, norm = ratio * keep + add * ny, norm * keep + add * s
-                total -= np.log(py * ratio / norm)
-            losses.append(total / max(len(facts), 1))
-        best = int(np.argmin(losses))
+                    c.append(table.C[ix]); d.append(max(table.D[ix], 1)); sv.append(float(p[targets] @ share))
+                    ny.append(float(share[targets == y].sum()))
+                C.append(c); D.append(d); S.append(sv); N.append(ny)
+        if not P:
+            return saved
+        P, C, D, S, N = map(np.asarray, (P, C, D, S, N))
+
+        def losses(scales, kappa):
+            ratio, norm = np.ones(len(P)), np.ones(len(P))      # q(y)/q0(y) and sum_v p(v) q(v)/q0(v)
+            for j in scales:                                    # from the shortest span to the longest
+                a = kappa * D[:, j]
+                seen = C[:, j] > 0
+                keep = np.where(seen, a / (C[:, j] + a), 1.)
+                add = np.where(seen, 1. / (C[:, j] + a), 0.)
+                ratio, norm = ratio * keep + add * N[:, j], norm * keep + add * S[:, j]
+            return -np.log(P * ratio / norm)
+
+        def fit(scales):
+            """The kappa with the best held-out likelihood: golden-section search on log kappa."""
+            lo, hi = np.log(1e-3), np.log(1e4)
+            g = (np.sqrt(5) - 1) / 2
+            x1, x2 = hi - g * (hi - lo), lo + g * (hi - lo)
+            f1, f2 = losses(scales, np.exp(x1)).mean(), losses(scales, np.exp(x2)).mean()
+            for _ in range(40):
+                if f1 < f2:
+                    hi, x2, f2 = x2, x1, f1
+                    x1 = hi - g * (hi - lo); f1 = losses(scales, np.exp(x1)).mean()
+                else:
+                    lo, x1, f1 = x1, x2, f2
+                    x2 = lo + g * (hi - lo); f2 = losses(scales, np.exp(x2)).mean()
+            kappa = float(np.exp((lo + hi) / 2))
+            return kappa, losses(scales, kappa)
+
+        chosen, current, kappa = [], -np.log(P), 1.
+        while True:
+            trials = [(j, *fit(sorted(chosen + [j]))) for j in range(len(order)) if j not in chosen]
+            if not trials:
+                break
+            j, k, loss = min(trials, key=lambda item: item[2].mean())
+            gain = current - loss
+            if gain.mean() <= gain.std(ddof=1) / np.sqrt(max(len(gain) - 1, 1)):
+                break
+            chosen, current, kappa = sorted(chosen + [j]), loss, k
         if __import__("os").environ.get("ACAN_PAIR_DEBUG"):
-            print("catena degli argomenti:", dict(zip(KAPPA_GRID, np.round(losses, 4))), "senza:", round(plain, 4), flush=True)
-        if facts and losses[best] < plain:
-            for f in order:
-                m.topics[f] = [float(KAPPA_GRID[best]), 1.0]
-        else:                                                   # no topic reads better: not computed any more
-            for f in order:
+            print("catena degli argomenti: scale", [order[j] for j in chosen], f"κ {kappa:.3g}",
+                  f"perdita {current.mean():.4f} senza {-np.log(P).mean():.4f}", flush=True)
+        for j, f in enumerate(order):
+            if j in chosen:
+                m.topics[f] = [kappa, 1.0]
+            else:                                               # not read: not computed any more
                 del m.topics[f]
                 m.encoder.topics.pop(int(f[1:]), None)
                 m.tables.pop(f, None)
