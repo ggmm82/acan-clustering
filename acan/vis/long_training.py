@@ -24,11 +24,8 @@ QUEUE_NAME = 'Modello a concetti'
 
 
 def profile(cuda, size=None):
-    """The settings of the concept language model: the training text is a table of concepts, no neural network.
-
-    There is no size to choose: the model grows with what it reads (its concepts), up to its memory budget,
-    a quarter of the server's memory unless set. ``size`` is accepted for earlier callers and ignored.
-    """
+    """The settings of the concept language model: the concept network, its concepts learned along the gradient.
+    ``size`` is accepted for earlier callers and ignored."""
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='cpu',
                 chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000)
@@ -157,7 +154,8 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     size, budget = progress.get('statistics_bytes'), progress.get('budget_bytes')
     when = lambda seconds: '—' if seconds is None else f'{seconds/3600:,.1f} ore' if seconds > 3600 else f'{max(seconds, 0)/60:,.0f} minuti'
     learning = progress.get('structure') if ready and step == 0 and status not in ('completed',) else None
-    if learning and learning.get('phase') != 'done':
+    network = progress.get('structure') if (progress.get('structure') or {}).get('phase') == 'network' and status != 'completed' else None
+    if learning and learning.get('phase') not in ('done', 'network'):
         part, left = structure_progress(learning)
         doing = {'tokens': 'concetti dei token',
                  'scale': f"concetti dei tratti di {learning['width']:,} token",
@@ -174,8 +172,15 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
         bar = dbc.Progress(value=100*part, className='mb-2', style={'height': '8px'}, color='info')
         return html.Div([bar, dbc.Row(tiles)])
     else:
+        inside = ''
+        if network:                                             # the network inside the step: how far it is
+            inside = (f" · la rete rilegge tutto il testo: {network.get('learned', 0):,} token imparati" if network.get('again')
+                      else f" · la rete impara il pezzo: {network.get('learned', 0):,} token imparati")
+            if network.get('held_milli'):
+                inside += f", validazione migliore {network['held_milli'] / 1000:.3f}"
+            inside += f", da {network['seconds'] / 60:,.0f} minuti"
         first = _tile('Avanzamento', f'{share:.0f}%' if ready else 'prepara i token',
-                      f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' if ready else 'il totale si conosce quando i token sono pronti')
+                      (f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' + inside) if ready else 'il totale si conosce quando i token sono pronti')
     tiles = [
         first,
         _tile('Tempo che manca', 'finito' if status == 'completed' else when(remaining), 'stima dalla velocità finora'),
@@ -185,7 +190,7 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
         _tile('Errore su testo mai visto', '—' if error is None else f'{error:.3f}',
               (f'esita fra circa {perplexity:,.0f} token' if perplexity else '') + (f' · prima di leggere {before:.3f}' if before is not None else '')),
         _tile('Dimensione del modello', _bytes(size) if size else '—',
-              (f'di {_bytes(budget)} di memoria per i concetti' if budget else '') + (f' · file scaricabile {_bytes(checkpoint_bytes)}' if checkpoint_bytes else '')),
+              'i parametri della rete' + (f' · file scaricabile {_bytes(checkpoint_bytes)}' if checkpoint_bytes else '')),
         _tile('Concetti', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—',
               f"contesto fino a {progress['context_tokens']:,} token" if progress.get('context_tokens') else None),
     ]
@@ -205,29 +210,33 @@ def concept_footprint_view(item):
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
     rows = [
         ('Modello', [
-            ('Tipo', 'modello a concetti: nessuna rete neurale, nessun peso addestrato'),
+            ('Tipo', 'rete a concetti: i concetti dei token e di ogni strato imparati col gradiente prevedendo il token che segue'),
             ('Vocabolario', f"{(progress.get('graft') or {}).get('vocabulary', 0):,} token" if progress.get('graft') else
              (f"{config.get('vocabulary', 32000):,} token, lo stesso del testo precedente della coda (si stanno preparando i token di questo testo)"
               if config.get('warm_start') else f"{config.get('vocabulary', 32000):,} token (si sta imparando dai testi della coda)")),
-            ('Contesto letto', f"fino a {progress['context_tokens']:,} token precedenti (scale scelte sulla validazione)"
-             if progress.get('context_tokens') else '— (si sceglie dopo il primo pezzo di testo)'),
-            ('Concetti per scala', ' · '.join(f'{count:,}' for count in levels)
-             + ' (token, poi tratti di 2, 4, 8… token)' if levels else '—'),
+            ('Contesto letto', 'tutto il documento, attraverso le somme dei concetti di ogni strato'),
+            ('Concetti per strato', ' · '.join(f'{count:,}' for count in levels) if levels else '— (dopo il primo pezzo di testo)'),
             ('Concetti in tutto', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—'),
-            ('Memoria dei conteggi', (_bytes(progress['statistics_bytes']) if progress.get('statistics_bytes') else '—')
-             + (f' di {_bytes(budget)} disponibili' if budget else ''))]),
+            ('Parametri della rete', _bytes(progress['statistics_bytes']) if progress.get('statistics_bytes') else '—')]),
         ('Avanzamento e velocità', [
             ('Passo', f'{step:,} di {total:,}' if progress.get('graft') else '— (il totale si conosce quando i token del testo sono pronti)'),
             ('Token letti', f"{progress.get('tokens_trained', 0):,}"),
             ('Velocità', f'{speed:,.0f} token al secondo' if speed else '—'),
-            ('Struttura (passo 0)', f"imparata in {progress['structure_seconds']/60:,.1f} minuti" if progress.get('structure_seconds') else '—'),
+            ('Primo pezzo', f"imparato in {progress['structure_seconds']/60:,.1f} minuti" if progress.get('structure_seconds') else '—'),
             ('Tempo che manca, stima', '—' if remaining is None else f'{remaining/3600:,.1f} ore' if remaining > 3600 else f'{remaining/60:,.0f} minuti'),
-            ('Token per passo', f'{piece:,} (un pezzo del testo, contato e aggiunto)')]),
+            ('Token per passo', f'{piece:,} (un pezzo del testo, letto e riletto finché la validazione migliora)')]),
         ('Qualità', [
             ('Errore sul testo che sta per leggere', number(progress.get('training_nll'))),
             ('Errore su testo mai visto', number(progress.get('validation_nll'))),
             ('Migliore finora', number(progress.get('best_validation_nll'))),
             ('Prima di leggere questo testo', number(progress.get('baseline_nll')))]),
+        *([('Rete a concetti', [
+            ('Apprendimento', 'si è fermata: la validazione non migliorava più' if progress.get('network_stopped') else 'impara a ogni pezzo'),
+            *[(f"Strato {layer['layer']}",
+               f"{' · '.join(f'{a:.0f}' for a in layer['active'])} concetti attivi per gruppo; "
+               + (f"in un concetto il token più frequente è il {layer['tied']:.0%}. " if layer['tied'] is not None else '')
+               + ' '.join(f"Concetto {c['concept']} ({c['mass']:.0%}): " + ' | '.join(c['examples']) for c in layer['concepts']))
+              for layer in progress['network_concepts']]])] if progress.get('network_concepts') else []),
         ('Memoria e disco', [
             ('Memoria del processo (picco)', _bytes(progress['memory_peak_bytes']) if progress.get('memory_peak_bytes') else '—'),
             ('Un checkpoint', _bytes(item['checkpoint_bytes'])),
@@ -383,13 +392,8 @@ layout = html.Div([
              dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Salva ogni'), dbc.Input(id='lm-long-save', type='number', value=10, min=1, max=10000), dbc.InputGroupText('passi')]), md=6),
                       dbc.Col(dbc.InputGroup([dbc.InputGroupText('Tieni per sempre ogni'), dbc.Input(id='lm-long-milestone', type='number', value=100, min=0, max=10000000), dbc.InputGroupText('passi')]), md=6)],
                      className='mb-1'),
-             html.Small("Un passo conta un milione di token: un testo di 300 MB sono circa 40 passi, e si legge una volta sola. Si salva anche "
-                        "ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
-             dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Memoria massima dei concetti'), dbc.Input(id='lm-long-memory', type='number', value=0, min=0, max=262144, step=256), dbc.InputGroupText('MB')]), md=6),
-                      dbc.Col(html.Small("0 = automatica: un quarto della memoria del server (o del suo contenitore), al massimo 2 GB; con il "
-                                         "contenitore da 4 GB sono 1.024 MB. Il limite riguarda le statistiche: ordinamento, stima dei concetti e worker usano altra RAM. Imposta al massimo "
-                                         "un quarto della memoria del contenitore. Oltre il limite si tengono i conteggi "
-                                         "con più osservazioni per byte; gli altri leggono il concetto più generale.", className='text-muted'), md=6)], className='mb-2'),
+             html.Small("Un passo è un pezzo di un milione di token: la rete lo legge e lo rilegge finché il testo tenuto da parte migliora. "
+                        "Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
          html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),
@@ -568,16 +572,14 @@ def register(app):
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
-                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'),
-                  prevent_initial_call=True)
-    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0):
+                  State('lm-long-length', 'value'), prevent_initial_call=True)
+    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
-                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0),
-                        probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
+                        milestone_steps=int(milestone or 0), probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             return result.get('message', 'Coda creata.'), result['queue']
         except ValueError as exc:
