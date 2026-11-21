@@ -37,6 +37,7 @@ class PairText:
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), eos, int(budget)
         self.network = network                                  # learn the concept network while reading
         self._learner = None
+        self.network_done = False                               # it stopped learning: it no longer read better
         self.max_context = int(max_context)                     # longest scale the validation may choose
         self.tokens = 0
         self.model = None
@@ -88,11 +89,23 @@ class PairText:
         )
         self.model.root.observed_targets["token"]["probability"] = self.model.head
         self.model.unigram = frequency / frequency.sum()        # what a topic is compared with
-        if self.network:
-            self._learn_network(ids, check)
+        if self.network and not self.network_done:
+            self._learn_network(ids, check, tune)
 
-    def _learn_network(self, ids, check):
-        """One pass of the concept network over the piece just counted."""
+    def _network_scores(self, net, tune):
+        out = []
+        for piece in tune:
+            piece = np.asarray(piece, np.int64)
+            starts = np.r_[document_starts(piece, self.eos), len(piece)]
+            for a, b in zip(starts[:-1], starts[1:]):
+                if b - a >= 2:
+                    out.append(np.log(np.maximum(net.targets(piece[a:b]), 1e-300)))
+        return np.concatenate(out) if out else np.zeros(0)
+
+    def _learn_network(self, ids, check, tune=()):
+        """One pass of the concept network over the piece just counted. It learns while it reads held-out text better:
+        when a piece does not improve it by more than one standard error of the paired difference (the rule of every
+        choice of the model), the network before that piece is kept and the network stops learning; the counts go on."""
         from .concept_net_training import Learner, Network, output_groups
         if self._learner is None:
             m = self.model
@@ -104,8 +117,15 @@ class PairText:
                 groups = output_groups(m.encoder.token_classes[:self.vocabulary], frequency) if config["grouped"] else None
                 network = Network(config, centres=m.encoder.vectors, frequency=frequency, groups=groups)
             self._learner = Learner(network)
+        before = self.model.net if getattr(self.model, "net", None) is not None else None
         self.network_loss = self._learner.learn(ids, self.eos, check)
-        self.model.net = self._learner.network.export()
+        after = self._learner.network.export()
+        if before is not None and len(tune):
+            gain = self._network_scores(after, tune) - self._network_scores(before, tune)
+            if len(gain) > 1 and gain.mean() <= gain.std(ddof=1) / np.sqrt(len(gain) - 1):
+                self.network_done, self._learner = True, None
+                return
+        self.model.net = after
 
     def _scores(self, ids):
         """The start of the chain at every position: the concept network where it has read the document, the concepts
@@ -338,6 +358,7 @@ class PairText:
         m = self.model
         if getattr(m, "net", None) is not None:
             data.update(m.net.arrays())
+            data["net_done"] = np.array([int(self.network_done)])
         meta = {
             "training_weights": list(m.training_weights.items()),
             "weights": list(m.weights.items()),
@@ -458,4 +479,5 @@ class PairText:
         text.model.unigram = data["unigram"] if "unigram" in data else None
         text.model.net = ConceptNet.from_arrays(data)
         text.network = text.model.net is not None
+        text.network_done = bool(data["net_done"][0]) if "net_done" in data else False
         return text
