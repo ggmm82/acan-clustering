@@ -117,3 +117,28 @@ class DescribeTest(unittest.TestCase):
             self.assertEqual(len(layer['active']), 2)
             self.assertTrue(all(0 < a <= 8 for a in layer['active']))
             self.assertTrue(layer['concepts'] and all(c['examples'] for c in layer['concepts']))
+
+
+@unittest.skipUnless(TORCH, 'torch is needed to learn the network')
+class GrowthTest(unittest.TestCase):
+    def test_more_concepts_or_one_more_layer_read_as_before_and_go_on_learning(self):
+        import torch
+        from acan.lm.concept_net_training import Learner, Network
+        torch.manual_seed(0)
+        net = Network(config(layers=1, concepts=4))
+        ids = np.r_[np.random.default_rng(3).integers(0, 49, 60), 49]
+        Learner(net, tokens=64).learn(np.tile(ids, 5), eos=49)
+        before = net.export().document(ids[:-1])
+        net.split_concepts(0)
+        self.assertEqual(net.config['concepts'], [8])
+        np.testing.assert_allclose(net.export().document(ids[:-1]), before, atol=2e-3)
+        net.add_layer()
+        self.assertEqual((net.config['layers'], net.config['concepts']), (2, [8, 8]))
+        grown = net.export()
+        np.testing.assert_allclose(grown.document(ids[:-1]), before, atol=2e-3)
+        cursor = grown.cursor()
+        for t in ids[:10]:
+            cursor.observe(t)
+        np.testing.assert_allclose(cursor.distribution(), grown.document(ids[:11])[9], atol=1e-5)
+        again = Network.restore(grown)
+        self.assertTrue(np.isfinite(Learner(again, tokens=64).learn(np.tile(ids, 5), eos=49)))

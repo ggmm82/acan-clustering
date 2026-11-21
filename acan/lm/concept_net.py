@@ -196,9 +196,9 @@ class NetCursor:
     def __init__(self, net):
         self.net = net
         H, d = net.heads, net.dim // net.heads
-        K = net.p['layers.0.g'].shape[1] if net.layers else 0
-        self.mass = [np.full((H, K), EPS_MASS, np.float32) for _ in range(net.layers)]
-        self.sums = [np.zeros((H, K, d), np.float32) for _ in range(net.layers)]
+        K = [net.p[f'layers.{i}.g'].shape[1] for i in range(net.layers)]      # concepts of every layer
+        self.mass = [np.full((H, k), EPS_MASS, np.float32) for k in K]
+        self.sums = [np.zeros((H, k, d), np.float32) for k in K]
         self.recent = [[] for _ in range(net.layers)]                       # inputs of the layer, newest last
         self.state = None
 

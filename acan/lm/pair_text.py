@@ -31,7 +31,8 @@ def document_stats(row, name):
 
 class PairText:
     # The concept network learned as a language model (acan/lm/concept_net.py): the start of the chain of readings.
-    NETWORK = dict(dim=96, layers=3, heads=4, concepts=64, window=3, grouped=False)
+    # It starts small and grows while the data justify it (concept_net_training.Grower).
+    NETWORK = dict(dim=96, layers=1, heads=4, concepts=16, window=3, grouped=False)
 
     def __init__(self, vocabulary, eos, budget, max_context=512, network=False):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), eos, int(budget)
@@ -103,10 +104,10 @@ class PairText:
         return np.concatenate(out) if out else np.zeros(0)
 
     def _learn_network(self, ids, check, tune=()):
-        """One pass of the concept network over the piece just counted. It learns while it reads held-out text better:
-        when a piece does not improve it by more than one standard error of the paired difference (the rule of every
-        choice of the model), the network before that piece is kept and the network stops learning; the counts go on."""
-        from .concept_net_training import Learner, Network, output_groups
+        """One pass of the concept network over the piece just counted. Its size comes from the data: it learns while
+        it reads held-out text better, grows (more concepts, then one more layer) when it stops improving, and stops
+        when growing does not help either (concept_net_training.Grower); the counts go on."""
+        from .concept_net_training import Grower, Network, output_groups
         if self._learner is None:
             m = self.model
             if getattr(m, "net", None) is not None:              # a queue that goes on: the network learned so far
@@ -116,16 +117,15 @@ class PairText:
                 frequency = m.unigram
                 groups = output_groups(m.encoder.token_classes[:self.vocabulary], frequency) if config["grouped"] else None
                 network = Network(config, centres=m.encoder.vectors, frequency=frequency, groups=groups)
-            self._learner = Learner(network)
-        before = self.model.net if getattr(self.model, "net", None) is not None else None
-        self.network_loss = self._learner.learn(ids, self.eos, check)
-        after = self._learner.network.export()
-        if before is not None and len(tune):
-            gain = self._network_scores(after, tune) - self._network_scores(before, tune)
-            if len(gain) > 1 and gain.mean() <= gain.std(ddof=1) / np.sqrt(len(gain) - 1):
-                self.network_done, self._learner = True, None
-                return
-        self.model.net = after
+            self._learner = Grower(network)
+            if getattr(m, "net", None) is not None and len(tune):
+                self._learner.best, self._learner.best_scores = m.net, self._network_scores(m.net, tune)
+        score = (lambda net: self._network_scores(net, tune)) if len(tune) else (lambda net: np.zeros(2))
+        self.model.net = self._learner.learn(ids, self.eos, score, check)
+        self.network_history = self._learner.history
+        self.network_loss = self._learner.history[-1]["loss"]
+        if self._learner.done:
+            self.network_done, self._learner = True, None
 
     def _scores(self, ids):
         """The start of the chain at every position: the concept network where it has read the document, the concepts

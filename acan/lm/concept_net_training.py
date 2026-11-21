@@ -85,8 +85,9 @@ class Network(nn.Module):
         f = torch.as_tensor(np.asarray(frequency, np.float32)) if frequency is not None else torch.full((V,), 1. / V)
         self.log_mass = nn.Parameter(torch.log(f / f.sum()))
         self.log_scale = nn.Parameter(torch.zeros(()))
-        self.layers = nn.ModuleList([ConceptAttention(dim, config['heads'], config['concepts'], config['window'])
-                                     for _ in range(config['layers'])])
+        concepts = config['concepts'] if isinstance(config['concepts'], list) else [config['concepts']] * config['layers']
+        self.config['concepts'] = list(concepts)
+        self.layers = nn.ModuleList([ConceptAttention(dim, config['heads'], k, config['window']) for k in concepts])
         self.final = nn.Linear(dim, dim)
         self.grouped = groups is not None
         if self.grouped:
@@ -126,6 +127,31 @@ class Network(nn.Module):
             logits = self._logits(flat[sel], self.centre.weight[members], self.log_mass[members])
             inside = inside.index_put((sel,), torch.log_softmax(logits, -1).gather(1, self._rank[tgt[sel]][:, None])[:, 0])
         return (lp + inside).view(targets.shape)
+
+    # ---- growth: a bigger network that reads exactly as the smaller one did -----------------------------------------
+    def split_concepts(self, i, scale=1e-3):
+        """Every concept of layer i becomes two, with nearly the same centre and half the mass each: the memberships
+        split in halves, the sums too, and the reading of the layer is the same. The gradient can then pull them apart."""
+        layer = self.layers[i]
+        with torch.no_grad():
+            g = torch.cat([layer.g, layer.g + torch.randn_like(layer.g) * scale], 1)
+            log_s = torch.cat([layer.log_s, layer.log_s], 1)
+            log_c = torch.cat([layer.log_c, layer.log_c], 1) - math.log(2)
+            A = torch.cat([torch.cat([layer.A, layer.A], 2)] * 2, 1)    # a concept looks at both halves as at the whole
+        layer.g, layer.log_s, layer.log_c, layer.A = (nn.Parameter(x.contiguous()) for x in (g, log_s, log_c, A))
+        self.config['concepts'][i] = int(g.shape[1])
+
+    def add_layer(self):
+        """A new last layer that leaves the states as they are: what it adds starts at zero."""
+        dim, last = self.config['dim'], self.layers[-1]
+        layer = ConceptAttention(dim, self.config['heads'], int(last.g.shape[1]), self.config['window'])
+        with torch.no_grad():
+            layer.out.weight.zero_(); layer.out.bias.zero_()
+            for norm in (layer.norm1, layer.norm2):                    # a state normalized twice is the same state
+                norm.weight.fill_(1.); norm.bias.zero_()
+        self.layers.append(layer)
+        self.config['layers'] = len(self.layers)
+        self.config['concepts'].append(int(last.g.shape[1]))
 
     def export(self):
         """The parameters as numpy arrays, read by ConceptNet."""
@@ -210,3 +236,54 @@ class Learner:
         self.network.eval()
         return total / max(n, 1)
 
+
+
+class Grower:
+    """Learns a piece at a time and lets the size come from the data, by the rule of every choice of the model.
+
+    After every piece the network is scored on held-out text (``score(net)``: the log-probability of every held-out
+    token). If it reads better than the best network so far by more than one standard error of the paired difference,
+    it goes on. If not, the best network is taken again and grown, first by splitting every concept in two, then, if
+    that did not help either, by one more layer; a growth is kept if the next piece makes it read better. When neither
+    helps, the network stops learning (``done``) and ``best`` is the network to keep.
+    """
+
+    def __init__(self, network, **learner):
+        self.learner_options = learner
+        self.learner = Learner(network, **learner)
+        self.best, self.best_scores, self.trial, self.done = None, None, None, False
+        self.history = []
+
+    def _better(self, scores):
+        gain = scores - self.best_scores
+        return len(gain) > 1 and gain.mean() > gain.std(ddof=1) / math.sqrt(len(gain) - 1)
+
+    def _grow(self, kind):
+        network = Network.restore(self.best)
+        if kind == 'concepts':
+            for i in range(len(network.layers)):
+                network.split_concepts(i)
+        else:
+            network.add_layer()
+        self.learner = Learner(network, **self.learner_options)
+        self.trial = kind
+
+    def learn(self, ids, eos, score, check=None):
+        if self.done:
+            return self.best
+        loss = self.learner.learn(ids, eos, check)
+        net = self.learner.network.export()
+        scores = score(net)
+        size = dict(layers=net.config['layers'], concepts=list(net.config['concepts']))
+        if self.best is None or self._better(scores):
+            self.best, self.best_scores, self.trial = net, scores, None
+            self.history.append(dict(size, loss=loss, held_out=float(-scores.mean()), kept=True))
+            return self.best
+        self.history.append(dict(size, loss=loss, held_out=float(-scores.mean()), kept=False, trial=self.trial))
+        if self.trial is None:
+            self._grow('concepts')
+        elif self.trial == 'concepts':
+            self._grow('layer')
+        else:
+            self.done, self.learner = True, None
+        return self.best
