@@ -32,7 +32,7 @@ def document_stats(row, name):
 class PairText:
     # The concept network learned as a language model (acan/lm/concept_net.py): the start of the chain of readings.
     # It starts small and grows while the data justify it (concept_net_training.Grower).
-    NETWORK = dict(dim=96, layers=1, heads=4, concepts=16, window=3, grouped=False)
+    NETWORK = dict(dim=2, layers=1, heads=1, concepts=2, window=1, grouped=False)   # the smallest: it grows from the data
 
     def __init__(self, vocabulary, eos, budget, max_context=512, network=False):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), eos, int(budget)

@@ -169,5 +169,5 @@ class CalendarTest(unittest.TestCase):
         decisions = [h['tokens'] for h in grower.history]
         self.assertGreaterEqual(len(decisions), 3)
         self.assertTrue(all(b > a for a, b in zip(decisions, decisions[1:])))
-        self.assertTrue(all(h['choice'] in ("com'è", 'concepts', 'layer') for h in grower.history))
+        self.assertTrue(all(h['choice'] in ("com'è", *Grower.KINDS) for h in grower.history))
         self.assertIsNotNone(grower.best)

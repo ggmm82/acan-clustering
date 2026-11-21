@@ -59,8 +59,13 @@ class ConceptNet:
         quad = np.einsum('...hd,hkd->...hk', q * q, inv) - 2 * np.einsum('...hd,hkd->...hk', q, g * inv) + (g * g * inv).sum(-1)
         return _softmax(log_c - .5 * quad - log_s.sum(-1))
 
+    def shape(self, i):
+        """Groups, coordinates of a group and nearby distances of layer i."""
+        H, _, d = self.p[f'layers.{i}.g'].shape
+        return H, d, self.p[f'layers.{i}.near'].shape[0]
+
     def _project(self, i, h):
-        H, d = self.heads, self.dim // self.heads
+        H, d, _ = self.shape(i)
         q = (h @ self.p[f'layers.{i}.query.weight'].T).reshape(*h.shape[:-1], H, d)
         v = (h @ self.p[f'layers.{i}.value.weight'].T).reshape(*h.shape[:-1], H, d)
         return q, v
@@ -87,9 +92,9 @@ class ConceptNet:
             mass = np.cumsum(t, 0) + EPS_MASS
             sums = np.cumsum(t[..., None] * v[:, :, None, :], 0)              # T H K d
             weight = np.einsum('thk,hkj->thj', t, self._looked(i)) / mass
-            read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, self.dim)
+            read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
             near = np.zeros_like(h)
-            for w in range(1, self.window + 1):
+            for w in range(1, self.shape(i)[2] + 1):
                 if w < T:
                     near[w:] += h[:-w] @ self.p[f'layers.{i}.near'][w - 1]
             h = self._finish(i, h, read, near)
@@ -119,7 +124,8 @@ class ConceptNet:
         return h @ self.p['cache_query.weight'].T, h @ self.p['cache_key.weight'].T
 
     def _valve(self, h):
-        return 1 / (1 + np.exp(-(h @ self.p['cache_valve.weight'].T + self.p['cache_valve.bias'])[..., 0]))
+        z = (h @ self.p['cache_valve.weight'].T + self.p['cache_valve.bias'])[..., 0]
+        return 1 / (1 + np.exp(-np.clip(z, -60, 60)))
 
     def _mix(self, probs, h, ids, start):
         """The memory of the document: positions start.. of h read the tokens that followed the earlier positions."""
@@ -224,10 +230,9 @@ class NetCursor:
 
     def __init__(self, net):
         self.net = net
-        H, d = net.heads, net.dim // net.heads
-        K = [net.p[f'layers.{i}.g'].shape[1] for i in range(net.layers)]      # concepts of every layer
-        self.mass = [np.full((H, k), EPS_MASS, np.float32) for k in K]
-        self.sums = [np.zeros((H, k, d), np.float32) for k in K]
+        shapes = [net.p[f'layers.{i}.g'].shape for i in range(net.layers)]   # groups, concepts, coordinates
+        self.mass = [np.full((H, k), EPS_MASS, np.float32) for H, k, _ in shapes]
+        self.sums = [np.zeros((H, k, d), np.float32) for H, k, d in shapes]
         self.recent = [[] for _ in range(net.layers)]                       # inputs of the layer, newest last
         self.state = None
         self.keys, self.after = [], []                                       # the memory of the document
@@ -256,14 +261,15 @@ class NetCursor:
             mass = np.cumsum(t, 0) + self.mass[i]
             sums = np.cumsum(t[..., None] * v[:, :, None, :], 0) + self.sums[i]
             weight = np.einsum('thk,hkj->thj', t, net._looked(i)) / mass
-            read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, net.dim)
-            before = np.array(self.recent[i][-net.window:]).reshape(-1, net.dim)
-            padded = np.vstack([np.zeros((net.window - len(before), net.dim), np.float32), before, h])
+            read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
+            W = net.shape(i)[2]
+            before = np.array(self.recent[i][-W:]).reshape(-1, net.dim)
+            padded = np.vstack([np.zeros((W - len(before), net.dim), np.float32), before, h])
             near = np.zeros_like(h)
-            for w in range(1, net.window + 1):
-                near += padded[net.window - w:net.window - w + T] @ net.p[f'layers.{i}.near'][w - 1]
+            for w in range(1, W + 1):
+                near += padded[W - w:W - w + T] @ net.p[f'layers.{i}.near'][w - 1]
             self.mass[i], self.sums[i] = mass[-1], sums[-1]
-            self.recent[i] = list(padded[-net.window:])
+            self.recent[i] = list(padded[-W:])
             h = net._finish(i, h, read, near)
         states = h @ net.p['final.weight'].T + net.p['final.bias']
         if net.cached:
@@ -284,11 +290,12 @@ class NetCursor:
             self.mass[i] += t
             self.sums[i] += t[..., None] * v[:, None, :]
             weight = np.einsum('hk,hkj->hj', t, net._looked(i)) / self.mass[i]
-            read = np.einsum('hj,hjd->hd', weight, self.sums[i]).reshape(net.dim)
+            read = np.einsum('hj,hjd->hd', weight, self.sums[i]).reshape(-1)
+            W = net.shape(i)[2]
             near = np.zeros_like(h)
-            for w, previous in enumerate(reversed(self.recent[i][-net.window:]), 1):
+            for w, previous in enumerate(reversed(self.recent[i][-W:]), 1):
                 near += previous @ net.p[f'layers.{i}.near'][w - 1]
-            self.recent[i] = (self.recent[i] + [h])[-net.window:]
+            self.recent[i] = (self.recent[i] + [h])[-W:]
             h = net._finish(i, h, read, near)
         self.state = h @ net.p['final.weight'].T + net.p['final.bias']
 

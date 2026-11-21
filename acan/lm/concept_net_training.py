@@ -43,17 +43,17 @@ def causal_read(weight, t, v, chunk):
 
 
 class ConceptAttention(nn.Module):
-    def __init__(self, dim, heads, concepts, window):
+    def __init__(self, dim, heads, concepts, window, head_dim=None):
         super().__init__()
-        self.h, self.d = heads, dim // heads
+        self.h, self.d = heads, int(head_dim or dim // heads)
         self.g = nn.Parameter(torch.randn(heads, concepts, self.d) * .5)
         self.log_s = nn.Parameter(torch.zeros(heads, concepts, self.d))
         self.log_c = nn.Parameter(torch.zeros(heads, concepts))
         self.A = nn.Parameter(torch.zeros(heads, concepts, concepts))
-        self.query = nn.Linear(dim, dim, bias=False)
-        self.value = nn.Linear(dim, dim, bias=False)
+        self.query = nn.Linear(dim, heads * self.d, bias=False)
+        self.value = nn.Linear(dim, heads * self.d, bias=False)
         self.near = nn.Parameter(torch.randn(window, dim, dim) * .02)
-        self.out = nn.Linear(2 * dim, dim)
+        self.out = nn.Linear(heads * self.d + dim, dim)
         self.norm1, self.norm2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
         self.window = window
         self.chunk = 64
@@ -65,7 +65,7 @@ class ConceptAttention(nn.Module):
         t = torch.softmax(memberships_logits(q, self.g, self.log_s, self.log_c), -1) * mask[:, :, None, None]
         mass = torch.cumsum(t, 1) + 1e-6
         weight = torch.einsum('bthk,hkj->bthj', t, torch.softmax(self.A, -1)) / mass
-        read = causal_read(weight, t, v, self.chunk).reshape(B, T, D)
+        read = causal_read(weight, t, v, self.chunk).reshape(B, T, self.h * self.d)
         near = sum(F.pad(h, (0, 0, w, 0))[:, :T] @ self.near[w - 1] for w in range(1, self.window + 1))
         h = self.norm1(h + self.out(torch.cat([read, near], -1)))
         return self.norm2(h)
@@ -88,12 +88,14 @@ class Network(nn.Module):
         self.log_scale = nn.Parameter(torch.zeros(()))
         concepts = config['concepts'] if isinstance(config['concepts'], list) else [config['concepts']] * config['layers']
         self.config['concepts'] = list(concepts)
-        self.layers = nn.ModuleList([ConceptAttention(dim, config['heads'], k, config['window']) for k in concepts])
+        self.config.setdefault('head_dim', dim // config['heads'])
+        self.layers = nn.ModuleList([ConceptAttention(dim, config['heads'], k, config['window'], self.config['head_dim'])
+                                     for k in concepts])
         self.final = nn.Linear(dim, dim)
         # The memory of the document, learned: every position read leaves an address (a projection of its state) with
         # the token that followed it; a position reads the tokens that followed the addresses most like its own, and
         # a valve (learned from its state) says how much that reading counts.
-        self.config.setdefault('cache', 32)
+        self.config.setdefault('cache', dim)                   # its addresses are as wide as the state
         c = self.config['cache']
         if c:
             self.cache_query = nn.Linear(dim, c, bias=False)
@@ -174,7 +176,7 @@ class Network(nn.Module):
     def add_layer(self):
         """A new last layer that leaves the states as they are: what it adds starts at zero."""
         dim, last = self.config['dim'], self.layers[-1]
-        layer = ConceptAttention(dim, self.config['heads'], int(last.g.shape[1]), self.config['window'])
+        layer = ConceptAttention(dim, self.config['heads'], int(last.g.shape[1]), self.config['window'], self.config['head_dim'])
         with torch.no_grad():
             layer.out.weight.zero_(); layer.out.bias.zero_()
             for norm in (layer.norm1, layer.norm2):                    # a state normalized twice is the same state
@@ -182,6 +184,95 @@ class Network(nn.Module):
         self.layers.append(layer)
         self.config['layers'] = len(self.layers)
         self.config['concepts'].append(int(last.g.shape[1]))
+
+    def _like(self, **change):
+        """A network with the configuration changed, its own parameters at their start (to be filled)."""
+        config = dict(self.config, **change)
+        groups = self.group.numpy() if self.grouped else None
+        return Network(config, groups=groups)
+
+    def widened(self, noise=1e-3):
+        """Twice as wide (the state and every group of concepts): every coordinate is copied, so the states are the old
+        ones written twice; the maps that read them take half from each copy, the dispersions grow by sqrt 2 and the
+        masses of the concepts are corrected, so memberships, readings and the next token are the same."""
+        D, H, d = self.config['dim'], self.config['heads'], self.config['head_dim']
+        c = self.config.get('cache') or 0
+        two = lambda x: torch.cat([x, x], -1)
+        half_in = lambda W: torch.cat([W, W], -1) / 2                 # out x in: reads both copies of the input
+        rows = lambda W: torch.cat([W, W], 0)                          # writes its output twice
+        heads_rows = lambda W: torch.cat([W.view(H, d, -1)] * 2, 1).reshape(2 * H * d, -1)
+        new = {}
+        for k, v in self.state_dict().items():
+            v = v.detach().clone()
+            name = k.split('.')[-1] if k.startswith('layers.') else k
+            if k in ('centre.weight', 'group_centre'):
+                v = two(v)
+            elif k == 'log_scale':
+                v = v + math.log(2) / 2                                # |h|, |e|: the products count twice
+            elif k.startswith('layers.'):
+                part = k.split('.', 2)[2]
+                if part == 'g':
+                    v = two(v)
+                elif part == 'log_s':
+                    v = two(v + math.log(2) / 2)
+                elif part == 'log_c':
+                    log_s = self.state_dict()[k.replace('log_c', 'log_s')]
+                    v = v + log_s.sum(-1) + d * math.log(2)
+                elif part in ('query.weight', 'value.weight'):
+                    v = half_in(heads_rows(v))
+                elif part == 'near':
+                    v = torch.cat([torch.cat([v, v], -1)] * 2, -2) / 2
+                elif part == 'out.weight':
+                    read, near = v[:, :H * d], v[:, H * d:]
+                    read = torch.cat([read.view(D, H, d) / 2] * 2, -1).reshape(D, 2 * H * d)
+                    v = rows(torch.cat([read, half_in(near)], -1))
+                elif part in ('out.bias', 'norm1.weight', 'norm1.bias', 'norm2.weight', 'norm2.bias'):
+                    v = two(v)
+            elif k == 'final.weight':
+                v = rows(half_in(v))
+            elif k == 'final.bias':
+                v = two(v)
+            elif k in ('cache_query.weight', 'cache_key.weight'):
+                v = rows(half_in(v)) * (1 / math.sqrt(2) if k == 'cache_key.weight' else 1)
+            elif k == 'cache_valve.weight':
+                v = half_in(v)
+            new[k] = v
+        grown = self._like(dim=2 * D, head_dim=2 * d, cache=2 * c)
+        grown.load_state_dict(new)
+        with torch.no_grad():                                          # the copies may then part
+            for k, p in grown.named_parameters():
+                if p.dim() > 1:
+                    p.add_(torch.randn_like(p) * noise * (p.std() + 1e-6))
+        return grown
+
+    def more_heads(self):
+        """Twice the groups of concepts in every layer: the new groups start with nothing to say (their reading enters
+        the layer with zero weight), so the network reads as before; the gradient decides what they hold."""
+        H, d, D = self.config['heads'], self.config['head_dim'], self.config['dim']
+        grown = self._like(heads=2 * H)
+        fresh = grown.state_dict()
+        new = {}
+        for k, v in self.state_dict().items():
+            if not k.startswith('layers.'):
+                new[k] = v; continue
+            part, f = k.split('.', 2)[2], fresh[k]
+            if part in ('g', 'log_s', 'log_c', 'A'):
+                v = torch.cat([v, f[H:]], 0)
+            elif part in ('query.weight', 'value.weight'):
+                v = torch.cat([v, f[H * d:]], 0)
+            elif part == 'out.weight':
+                v = torch.cat([v[:, :H * d], torch.zeros(D, H * d), v[:, H * d:]], -1)
+            new[k] = v
+        grown.load_state_dict(new)
+        return grown
+
+    def wider_window(self):
+        """One more distance among the nearby states, whose map starts at zero."""
+        grown = self._like(window=self.config['window'] + 1)
+        new = {k: (torch.cat([v, torch.zeros_like(v[:1])], 0) if k.endswith('.near') else v)
+               for k, v in self.state_dict().items()}
+        grown.load_state_dict(new)
+        return grown
 
     def export(self):
         """The parameters as numpy arrays, read by ConceptNet."""
@@ -192,7 +283,8 @@ class Network(nn.Module):
     def restore(cls, net):
         """A network that goes on learning from a ConceptNet (the parameters saved in a checkpoint)."""
         groups = net.p['group'].astype(np.int64) if 'group' in net.p else None
-        model = cls(net.config, groups=groups)
+        config = dict(net.config, cache=net.config.get('cache', 0) if 'cache_query.weight' in net.p else 0)
+        model = cls(config, groups=groups)
         state = {k: torch.as_tensor(v) for k, v in net.p.items()}
         if groups is not None:
             state['group'] = torch.as_tensor(groups)
@@ -271,27 +363,57 @@ class Learner:
 
 
 
+class _Cycle:
+    """The documents of a piece in order, then again and again (every pass in a new order)."""
+
+    def __init__(self, docs, rng):
+        self.docs, self.rng = docs, rng
+        self.order, self.i, self.passes = list(range(len(docs))), 0, 0
+
+    @property
+    def fresh(self):
+        return self.passes == 0
+
+    def take(self, tokens, within_pass=False):
+        out, size = [], 0
+        while size < tokens and self.docs:
+            if self.i == len(self.order):
+                if within_pass:
+                    break
+                self.order, self.i, self.passes = list(self.rng.permutation(len(self.docs))), 0, self.passes + 1
+            doc = self.docs[self.order[self.i]]; self.i += 1
+            out.append(doc); size += len(doc)
+            if within_pass and self.i == len(self.order):
+                break
+        return out, size
+
+
 class Grower:
-    """Learns a piece at a time and lets the size come from the data, reconfiguring often at first and ever more
+    """Learns a piece at a time and lets every size come from the data, reconfiguring often at first and ever more
     rarely after, by the rule of every choice of the model.
 
-    The decisions follow a doubling calendar of the tokens learned (65,536, then 131,072, 262,144, ...). At a decision
-    the network as it is and its grown copies (every concept split in two; one more layer: both read exactly as the
-    network did) learn the same next stretch of text; a copy wins only if it then reads held-out text better than the
-    network that did not grow, by more than one standard error of the paired difference: the size that learns more
-    from the same text. When at a decision the network no longer reads better than at the previous one and no
-    growth helps, it stops learning (``done``); ``best`` is the network to keep.
+    The network starts as small as it can be. The decisions follow a doubling calendar of the tokens learned: after
+    one batch, two, four, ... At a decision the network as it is and its grown copies (every concept split in two;
+    one more layer; twice as wide; twice the groups of concepts; one more nearby distance: all read exactly as the
+    network did) learn the same next stretch of text, as long as all the text learned so far (at most ``TRIAL``
+    tokens, what a decision may cost); a copy wins only if it then reads held-out text better than the network that
+    did not grow, by more than one standard error of the paired difference: the size that learns more from the same
+    text. When the new text of a piece is over, the piece is read again, with decisions after one more pass, two,
+    four, ..., while held-out text is read better; the passes that did not help are undone. When a decision on new
+    text does not improve and no growth helps, the network stops learning (``done``); ``best`` is the network to keep.
     """
 
-    TRIAL = 65536                                              # tokens of a trial, and the first decision
+    TRIAL = 65536                                              # longest trial of a decision: its cost
+    KINDS = ('concepts', 'layer', 'width', 'heads', 'window')
 
     def __init__(self, network, trial=None, passes=True, **learner):
         self.passes = passes                                   # read a piece again while it helps
         self.learner_options = learner
         self.learner = Learner(network, **learner)
-        self.best, self.best_scores, self.done = None, None, False
+        self.best, self.best_scores, self.best_learner, self.done = None, None, None, False
         self.trial = int(trial or self.TRIAL)
-        self.seen, self.decision = 0, self.trial
+        self.learned = 0                                       # tokens learned, passes included
+        self.decision = self.learner.tokens                    # the first decision: after one batch
         self.history, self.passes_made = [], []
 
     @staticmethod
@@ -300,19 +422,24 @@ class Grower:
         return len(gain) > 1 and gain.mean() > gain.std(ddof=1) / math.sqrt(len(gain) - 1)
 
     def _grown(self, kind):
-        network = Network.restore(self.learner.network.export())
+        network = copy.deepcopy(self.learner.network)
         if kind == 'concepts':
             for i in range(len(network.layers)):
                 network.split_concepts(i)
-        else:
+            return network
+        if kind == 'layer':
             network.add_layer()
-        return network
+            return network
+        return {'width': network.widened, 'heads': network.more_heads, 'window': network.wider_window}[kind]()
+
+    def _keep(self, net, scores):
+        self.best, self.best_scores = net, scores
+        self.best_learner = copy.deepcopy(self.learner)
 
     def _decide(self, trial, score, check):
-        """The network and its grown copies learn the same stretch; the best one goes on."""
-        before = self.learner.network.export()
-        candidates = [('com\'è', self.learner)]
-        for kind in ('concepts', 'layer'):
+        """The network and its grown copies learn the same stretch; the best one goes on. True if it improved."""
+        candidates = [("com'è", self.learner)]
+        for kind in self.KINDS:
             learner = Learner(self._grown(kind), **self.learner_options)
             learner.steps = self.learner.steps                 # the same pace: no warm-up again, or it could not win
             candidates.append((kind, learner))
@@ -321,60 +448,63 @@ class Grower:
             learner.learn_documents(trial, check)
             net = learner.network.export()
             results.append((kind, learner, net, score(net)))
-        _, _, kept_net, kept_scores = results[0]
         winner = results[0]
         for result in results[1:]:
             if self._better(result[3], winner[3]):
                 winner = result
         kind, self.learner, net, scores = winner
         improved = self.best_scores is None or self._better(scores, self.best_scores)
-        self.history.append(dict(tokens=self.seen, layers=net.config['layers'], concepts=list(net.config['concepts']),
-                                 choice=kind, held_out=float(-scores.mean())))
+        c = net.config
+        self.history.append(dict(tokens=self.learned, layers=c['layers'], concepts=list(c['concepts']), dim=c['dim'],
+                                 heads=c['heads'], window=c['window'], choice=kind, held_out=float(-scores.mean())))
         if improved:
-            self.best, self.best_scores = net, scores
-        elif kind == "com'è":
-            self.done = True                                   # it no longer learns and growing does not help
-        self.decision *= 2
+            self._keep(net, scores)
+        return improved
+
+    def _stretch_and_decide(self, cycle, tokens, score, check, within_pass):
+        stretch, size = cycle.take(tokens, within_pass)
+        if stretch:
+            self.learner.learn_documents(stretch, check); self.learned += size
+        trial, size = cycle.take(min(self.trial, self.learned))
+        self.learned += size
+        return self._decide(trial, score, check)
 
     def learn(self, ids, eos, score, check=None):
         if self.done:
             return self.best
         docs = documents(ids, eos, self.learner.longest)
-        i = 0
-        while i < len(docs) and not self.done:
-            stretch = []
-            while i < len(docs) and self.seen < self.decision:
-                stretch.append(docs[i]); self.seen += len(docs[i]); i += 1
+        if not docs:
+            return self.best
+        cycle = _Cycle(docs, self.learner.rng)
+        decided = False
+        while cycle.fresh and not self.done:                   # the new text, on the calendar of the tokens learned
+            stretch, size = cycle.take(self.decision - self.learned, within_pass=True)
             if stretch:
-                self.learner.learn_documents(stretch, check)
-            if self.seen >= self.decision and i < len(docs):
-                trial, size = [], 0
-                while i < len(docs) and size < self.trial:
-                    trial.append(docs[i]); size += len(docs[i]); i += 1
-                self.seen += size
-                self._decide(trial, score, check)
-        if not self.done:                                      # the network at the end of the piece, if better
+                self.learner.learn_documents(stretch, check); self.learned += size
+            if self.learned < self.decision or not cycle.fresh or cycle.i == len(cycle.order):
+                break                                          # the new text is over before the decision
+            trial, size = cycle.take(min(self.trial, self.learned), within_pass=True)
+            self.learned += size; decided = True
+            if not self._decide(trial, score, check):
+                self.done = True                               # it no longer learns and growing does not help
+            self.decision *= 2
+        if self.done:
+            return self.best
+        if not decided:                                        # the network at the end of the new text, if better
             net = self.learner.network.export()
             scores = score(net)
-            if self.passes:
-                net, scores = self._again(docs, net, scores, score, check)
             if self.best_scores is None or self._better(scores, self.best_scores):
-                self.best, self.best_scores = net, scores
+                self._keep(net, scores)
+        if self.passes:
+            piece, made = sum(map(len, docs)), 0
+            interval = piece
+            cycle.i, cycle.passes = len(cycle.order), 0       # the next take starts a new pass
+            while True:
+                made += interval / piece
+                if not self._stretch_and_decide(cycle, interval, score, check, False):
+                    break
+                interval *= 2
+            self.passes_made.append(round(made, 2))
+            if self.best_learner is not None:
+                self.learner = copy.deepcopy(self.best_learner)   # undo what did not help
         return self.best
-
-    def _again(self, docs, net, scores, score, check):
-        """Read the piece again while held-out text is read better by more than one standard error; the pass that
-        does not help is undone (network and optimizer), and the reading stops."""
-        made = 1
-        while True:
-            network, opt = self.learner.network, self.learner.opt
-            saved = copy.deepcopy(network.state_dict()), copy.deepcopy(opt.state_dict()), self.learner.steps
-            self.learner.learn_documents(docs, check)
-            again = network.export()
-            more = score(again)
-            if not self._better(more, scores):
-                network.load_state_dict(saved[0]); opt.load_state_dict(saved[1]); self.learner.steps = saved[2]
-                break
-            net, scores, made = again, more, made + 1
-        self.passes_made.append(made)
-        return net, scores
