@@ -76,7 +76,7 @@ class PairTextWithNetworkTest(unittest.TestCase):
         model.add(ids, ids, tune, lambda: None)
         model.judge(tune)
         self.assertIsNotNone(model.model.net)
-        self.assertTrue(np.isfinite(model.network_loss))
+        self.assertTrue(model.network_history is not None)
         doc = ids[:ids.tolist().index(eos) + 1]
         q = model.logp(doc)
         cursor = model.model.cursor()
@@ -142,3 +142,32 @@ class GrowthTest(unittest.TestCase):
         np.testing.assert_allclose(cursor.distribution(), grown.document(ids[:11])[9], atol=1e-5)
         again = Network.restore(grown)
         self.assertTrue(np.isfinite(Learner(again, tokens=64).learn(np.tile(ids, 5), eos=49)))
+
+
+@unittest.skipUnless(TORCH, 'torch is needed to learn the network')
+class CalendarTest(unittest.TestCase):
+    def test_decisions_double_and_a_growth_wins_only_if_it_reads_better(self):
+        import torch
+        from acan.lm.concept_net_training import Grower, Network
+        torch.manual_seed(0)
+        rng = np.random.default_rng(4)
+        docs = []
+        for i in range(300):                                   # two kinds of documents: something to learn
+            words = np.arange(1, 25) if i % 2 else np.arange(25, 49)
+            docs += list(rng.choice(words, 30)) + [49]
+        ids, held = np.array(docs[:-1500]), np.array(docs[-1500:])
+
+        def score(net):
+            out = []
+            for doc in np.split(held, np.flatnonzero(held == 49) + 1):
+                if len(doc) > 2:
+                    out.append(np.log(net.targets(doc)))
+            return np.concatenate(out)
+        grower = Grower(Network(config(layers=1, concepts=4)), trial=512, tokens=128)
+        for start in range(0, len(ids), 2000):
+            grower.learn(ids[start:start + 2000], 49, score)
+        decisions = [h['tokens'] for h in grower.history]
+        self.assertGreaterEqual(len(decisions), 3)
+        self.assertTrue(all(b > a for a, b in zip(decisions, decisions[1:])))
+        self.assertTrue(all(h['choice'] in ("com'è", 'concepts', 'layer') for h in grower.history))
+        self.assertIsNotNone(grower.best)

@@ -124,7 +124,6 @@ class PairText:
         score = (lambda net: self._network_scores(net, tune)) if len(tune) else (lambda net: np.zeros(2))
         self.model.net = self._learner.learn(ids, self.eos, score, check)
         self.network_history = self._learner.history
-        self.network_loss = self._learner.history[-1]["loss"]
         if self._learner.done:
             self.network_done, self._learner = True, None
 

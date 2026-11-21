@@ -219,9 +219,12 @@ class Learner:
 
     def learn(self, ids, eos, check=None, warmup=200):
         """One pass over a piece of text, in batches of about ``tokens`` tokens. Returns the training loss."""
+        return self.learn_documents(documents(ids, eos, self.longest), check, warmup)
+
+    def learn_documents(self, docs, check=None, warmup=200):
         self.network.train()
         total, n = 0., 0
-        for ids_, mask in batches(documents(ids, eos, self.longest), self.tokens, True, self.rng):
+        for ids_, mask in batches(docs, self.tokens, True, self.rng):
             if check is not None:
                 check()
             for group in self.opt.param_groups:
@@ -239,51 +242,86 @@ class Learner:
 
 
 class Grower:
-    """Learns a piece at a time and lets the size come from the data, by the rule of every choice of the model.
+    """Learns a piece at a time and lets the size come from the data, reconfiguring often at first and ever more
+    rarely after, by the rule of every choice of the model.
 
-    After every piece the network is scored on held-out text (``score(net)``: the log-probability of every held-out
-    token). If it reads better than the best network so far by more than one standard error of the paired difference,
-    it goes on. If not, the best network is taken again and grown, first by splitting every concept in two, then, if
-    that did not help either, by one more layer; a growth is kept if the next piece makes it read better. When neither
-    helps, the network stops learning (``done``) and ``best`` is the network to keep.
+    The decisions follow a doubling calendar of the tokens learned (65,536, then 131,072, 262,144, ...). At a decision
+    the network as it is and its grown copies (every concept split in two; one more layer: both read exactly as the
+    network did) learn the same next stretch of text; a copy wins only if it then reads held-out text better than the
+    network that did not grow, by more than one standard error of the paired difference: the size that learns more
+    from the same text. When at a decision the network no longer reads better than at the previous one and no
+    growth helps, it stops learning (``done``); ``best`` is the network to keep.
     """
 
-    def __init__(self, network, **learner):
+    TRIAL = 65536                                              # tokens of a trial, and the first decision
+
+    def __init__(self, network, trial=None, **learner):
         self.learner_options = learner
         self.learner = Learner(network, **learner)
-        self.best, self.best_scores, self.trial, self.done = None, None, None, False
+        self.best, self.best_scores, self.done = None, None, False
+        self.trial = int(trial or self.TRIAL)
+        self.seen, self.decision = 0, self.trial
         self.history = []
 
-    def _better(self, scores):
-        gain = scores - self.best_scores
+    @staticmethod
+    def _better(scores, than):
+        gain = scores - than
         return len(gain) > 1 and gain.mean() > gain.std(ddof=1) / math.sqrt(len(gain) - 1)
 
-    def _grow(self, kind):
-        network = Network.restore(self.best)
+    def _grown(self, kind):
+        network = Network.restore(self.learner.network.export())
         if kind == 'concepts':
             for i in range(len(network.layers)):
                 network.split_concepts(i)
         else:
             network.add_layer()
-        self.learner = Learner(network, **self.learner_options)
-        self.trial = kind
+        return network
+
+    def _decide(self, trial, score, check):
+        """The network and its grown copies learn the same stretch; the best one goes on."""
+        before = self.learner.network.export()
+        candidates = [('com\'è', self.learner)] + [(kind, Learner(self._grown(kind), **self.learner_options))
+                                                    for kind in ('concepts', 'layer')]
+        results = []
+        for kind, learner in candidates:
+            learner.learn_documents(trial, check)
+            net = learner.network.export()
+            results.append((kind, learner, net, score(net)))
+        _, _, kept_net, kept_scores = results[0]
+        winner = results[0]
+        for result in results[1:]:
+            if self._better(result[3], winner[3]):
+                winner = result
+        kind, self.learner, net, scores = winner
+        improved = self.best_scores is None or self._better(scores, self.best_scores)
+        self.history.append(dict(tokens=self.seen, layers=net.config['layers'], concepts=list(net.config['concepts']),
+                                 choice=kind, held_out=float(-scores.mean())))
+        if improved:
+            self.best, self.best_scores = net, scores
+        elif kind == "com'è":
+            self.done = True                                   # it no longer learns and growing does not help
+        self.decision *= 2
 
     def learn(self, ids, eos, score, check=None):
         if self.done:
             return self.best
-        loss = self.learner.learn(ids, eos, check)
-        net = self.learner.network.export()
-        scores = score(net)
-        size = dict(layers=net.config['layers'], concepts=list(net.config['concepts']))
-        if self.best is None or self._better(scores):
-            self.best, self.best_scores, self.trial = net, scores, None
-            self.history.append(dict(size, loss=loss, held_out=float(-scores.mean()), kept=True))
-            return self.best
-        self.history.append(dict(size, loss=loss, held_out=float(-scores.mean()), kept=False, trial=self.trial))
-        if self.trial is None:
-            self._grow('concepts')
-        elif self.trial == 'concepts':
-            self._grow('layer')
-        else:
-            self.done, self.learner = True, None
+        docs = documents(ids, eos, self.learner.longest)
+        i = 0
+        while i < len(docs) and not self.done:
+            stretch = []
+            while i < len(docs) and self.seen < self.decision:
+                stretch.append(docs[i]); self.seen += len(docs[i]); i += 1
+            if stretch:
+                self.learner.learn_documents(stretch, check)
+            if self.seen >= self.decision and i < len(docs):
+                trial, size = [], 0
+                while i < len(docs) and size < self.trial:
+                    trial.append(docs[i]); size += len(docs[i]); i += 1
+                self.seen += size
+                self._decide(trial, score, check)
+        if not self.done:                                      # the network at the end of the piece, if better
+            net = self.learner.network.export()
+            scores = score(net)
+            if self.best_scores is None or self._better(scores, self.best_scores):
+                self.best, self.best_scores = net, scores
         return self.best
