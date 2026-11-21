@@ -55,6 +55,9 @@ class ConceptAttention(nn.Module):
         self.near = nn.Parameter(torch.randn(window, dim, dim) * .02)
         self.out = nn.Linear(heads * self.d + dim, dim)
         self.norm1, self.norm2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
+        # how open the layer is: its state is h + gate (layer(h) - h). An existing layer is open (1); a layer just
+        # added is closed (0), so it leaves the state as it is, whatever the state is, and the gradient opens it
+        self.gate = nn.Parameter(torch.ones(()))
         self.window = window
         self.chunk = 64
 
@@ -67,8 +70,8 @@ class ConceptAttention(nn.Module):
         weight = torch.einsum('bthk,hkj->bthj', t, torch.softmax(self.A, -1)) / mass
         read = causal_read(weight, t, v, self.chunk).reshape(B, T, self.h * self.d)
         near = sum(F.pad(h, (0, 0, w, 0))[:, :T] @ self.near[w - 1] for w in range(1, self.window + 1))
-        h = self.norm1(h + self.out(torch.cat([read, near], -1)))
-        return self.norm2(h)
+        new = self.norm2(self.norm1(h + self.out(torch.cat([read, near], -1))))
+        return h + self.gate * (new - h)
 
 
 class Network(nn.Module):
@@ -174,13 +177,12 @@ class Network(nn.Module):
         self.config['concepts'][i] = int(g.shape[1])
 
     def add_layer(self):
-        """A new last layer that leaves the states as they are: what it adds starts at zero."""
+        """A new last layer that leaves the states as they are: it starts closed, and what it adds starts at zero."""
         dim, last = self.config['dim'], self.layers[-1]
         layer = ConceptAttention(dim, self.config['heads'], int(last.g.shape[1]), self.config['window'], self.config['head_dim'])
         with torch.no_grad():
             layer.out.weight.zero_(); layer.out.bias.zero_()
-            for norm in (layer.norm1, layer.norm2):                    # a state normalized twice is the same state
-                norm.weight.fill_(1.); norm.bias.zero_()
+            layer.gate.zero_()                                         # closed: the state goes through as it is
         self.layers.append(layer)
         self.config['layers'] = len(self.layers)
         self.config['concepts'].append(int(last.g.shape[1]))
@@ -286,6 +288,8 @@ class Network(nn.Module):
         config = dict(net.config, cache=net.config.get('cache', 0) if 'cache_query.weight' in net.p else 0)
         model = cls(config, groups=groups)
         state = {k: torch.as_tensor(v) for k, v in net.p.items()}
+        for i in range(len(model.layers)):                             # older networks: every layer open
+            state.setdefault(f'layers.{i}.gate', torch.ones(()))
         if groups is not None:
             state['group'] = torch.as_tensor(groups)
         model.load_state_dict(state)

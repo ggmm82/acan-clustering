@@ -72,8 +72,10 @@ class ConceptNet:
 
     def _finish(self, i, h, read, near):
         out = np.concatenate([read, near], -1) @ self.p[f'layers.{i}.out.weight'].T + self.p[f'layers.{i}.out.bias']
-        h = _layer_norm(h + out, self.p[f'layers.{i}.norm1.weight'], self.p[f'layers.{i}.norm1.bias'])
-        return _layer_norm(h, self.p[f'layers.{i}.norm2.weight'], self.p[f'layers.{i}.norm2.bias'])
+        new = _layer_norm(h + out, self.p[f'layers.{i}.norm1.weight'], self.p[f'layers.{i}.norm1.bias'])
+        new = _layer_norm(new, self.p[f'layers.{i}.norm2.weight'], self.p[f'layers.{i}.norm2.bias'])
+        gate = self.p.get(f'layers.{i}.gate')                      # how open the layer is (older networks: open)
+        return new if gate is None else h + gate * (new - h)
 
     def _looked(self, i):
         return _softmax(self.p[f'layers.{i}.A'])
