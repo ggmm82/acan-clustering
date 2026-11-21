@@ -422,8 +422,8 @@ class Grower:
     one batch, two, four, ... At a decision the network as it is and its grown copies (every concept split in two;
     one more layer; twice as wide; twice the groups of concepts; twice the nearby distances: all read exactly as the
     network did) learn the same next stretch of text, each at its step and at half of it, the network as it is also at
-    twice its step (the pace is chosen as the size is; a wider copy moves faster at the same step, since its
-    coordinates move in pairs, so it wins only if it needs the room; the pace is raced once the start is over, since
+    twice its step (the pace is chosen as the size is; a wider copy starts from half the step, since its coordinates
+    move in pairs and at the same step it would move twice as much; the pace is raced once the start is over, since
     during the start every larger step would look better). The stretch is so long
     that a decision costs at most as much as all the text learned so far (at most ``TRIAL`` tokens and one pass over
     the piece); the race is judged on as much held-out text. A copy wins only if it then reads held-out text better
@@ -482,6 +482,11 @@ class Grower:
             learner.steps = self.learner.steps                 # the same pace: no warm-up again, or it could not win
             learner.tokens, learner.warmup = self.learner.tokens, self.learner.warmup
             learner.lr = self.learner.lr
+            if kind == 'width':
+                # every coordinate is now two that move together: at the same step the network would move twice as
+                # much, and after a few widenings it is unstable. Half the step moves it as before; if it needs more,
+                # it wins the faster pace at a later race
+                learner.lr /= 2
             candidates.append((kind, learner))
         # the pace is chosen as the size is: every candidate also learns the stretch at half its step, and the network
         # as it is also at twice its step. A wider copy moves faster at the same step (its coordinates move in pairs):
