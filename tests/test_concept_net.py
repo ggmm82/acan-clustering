@@ -94,6 +94,7 @@ class PairTextWithNetworkTest(unittest.TestCase):
         np.testing.assert_allclose(restored.logp(doc), q, atol=1e-6)
 
 
+@unittest.skipUnless(TORCH, 'the queue options load the trainer, which needs torch')
 class QueueOptionTest(unittest.TestCase):
     def test_the_queue_can_learn_the_network_and_refuses_anything_but_a_choice(self):
         from acan.lm.research_options import validate_options
