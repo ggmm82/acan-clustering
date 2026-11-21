@@ -333,8 +333,11 @@ def _pad(chunk):
 class Learner:
     """The network and its optimizer across the pieces of a queue (the state is kept between pieces)."""
 
-    def __init__(self, network, lr=3e-3, tokens=2048, longest=512, seed=0):
+    def __init__(self, network, lr=3e-3, tokens=2048, longest=512, seed=0, weight=None):
+        """``weight``: how much every token weighs when it is the one to read (one per token of the vocabulary),
+        as the concept model weighs its attributes: a target as much as all the features together."""
         self.network, self.tokens, self.longest = network, tokens, longest
+        self.weight = None if weight is None else torch.as_tensor(np.asarray(weight, np.float32))
         self.opt = torch.optim.AdamW(network.parameters(), lr=lr, weight_decay=.01)
         self.lr, self.steps = lr, 0
         self.rng = np.random.default_rng(seed)
@@ -352,7 +355,7 @@ class Learner:
             for group in self.opt.param_groups:
                 group['lr'] = self.lr * min(1., (self.steps + 1) / warmup)
             lp = self.network.target_log_probs(ids_[:, :-1], mask[:, :-1], ids_[:, 1:])
-            m = mask[:, 1:]
+            m = mask[:, 1:] if self.weight is None else mask[:, 1:] * self.weight[ids_[:, 1:]]
             loss = -(lp * m).sum() / m.sum()
             self.opt.zero_grad(); loss.backward()
             torch.nn.utils.clip_grad_norm_(self.network.parameters(), 1.)
@@ -434,7 +437,7 @@ class Grower:
         return {'width': network.widened, 'heads': network.more_heads, 'window': network.wider_window}[kind]()
 
     def _keep(self, net, scores):
-        self.best, self.best_scores = net, scores
+        self.best, self.best_scores, self.best_learned = net, scores, self.learned   # with the tokens it had learned
         self.best_learner = copy.deepcopy(self.learner)
 
     def _decide(self, trial, score, check):
