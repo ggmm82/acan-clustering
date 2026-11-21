@@ -72,7 +72,7 @@ class PairTextWithNetworkTest(unittest.TestCase):
             docs += body + [eos]
         ids = np.array(docs)
         tune = [ids[:370], ids[370:740]]
-        model = PairText(41, eos, 1 << 22, max_context=8, network=dict(dim=16, layers=2, heads=2, concepts=8))
+        model = PairText(41, eos, 1 << 22, max_context=8, network=dict(dim=16, layers=2, heads=2, concepts=8, passes=False))
         model.add(ids, ids, tune, lambda: None)
         model.judge(tune)
         self.assertIsNotNone(model.model.net)
@@ -163,7 +163,7 @@ class CalendarTest(unittest.TestCase):
                 if len(doc) > 2:
                     out.append(np.log(net.targets(doc)))
             return np.concatenate(out)
-        grower = Grower(Network(config(layers=1, concepts=4)), trial=512, tokens=128)
+        grower = Grower(Network(config(dim=4, heads=1, layers=1, concepts=2, window=1)), trial=512, passes=False, tokens=128)
         for start in range(0, len(ids), 2000):
             grower.learn(ids[start:start + 2000], 49, score)
         decisions = [h['tokens'] for h in grower.history]
@@ -171,3 +171,53 @@ class CalendarTest(unittest.TestCase):
         self.assertTrue(all(b > a for a, b in zip(decisions, decisions[1:])))
         self.assertTrue(all(h['choice'] in ("com'è", *Grower.KINDS) for h in grower.history))
         self.assertIsNotNone(grower.best)
+
+
+@unittest.skipUnless(TORCH, 'torch is needed to learn the network')
+class DirectionsTest(unittest.TestCase):
+    def test_wider_more_groups_and_a_longer_window_read_as_before(self):
+        import torch
+        from acan.lm.concept_net_training import Network, output_groups
+        torch.manual_seed(0)
+        rng = np.random.default_rng(5)
+        ids = rng.integers(0, 50, 30)
+        for grouped in (False, True):
+            groups = output_groups(rng.integers(0, 4, 50), rng.random(50), limit=6) if grouped else None
+            net = Network(config(dim=4, layers=2, heads=1, concepts=2, window=1), groups=groups)
+            with torch.no_grad():
+                for p in net.parameters():
+                    p.add_(torch.randn_like(p) * .3)
+            before = net.export().document(ids)
+            for grown, change in ((net.widened(), dict(dim=8, head_dim=8)), (net.more_heads(), dict(heads=2)),
+                                  (net.wider_window(), dict(window=2))):
+                self.assertTrue(all(grown.config[k] == v for k, v in change.items()))
+                reading = grown.export()
+                np.testing.assert_allclose(reading.document(ids), before, atol=2e-3)
+                cursor = reading.cursor()
+                for t in ids[:-1]:
+                    cursor.observe(t)
+                np.testing.assert_allclose(cursor.distribution(), reading.document(ids)[-1], atol=1e-5)
+
+
+@unittest.skipUnless(TORCH, 'torch is needed to learn the network')
+class PassesTest(unittest.TestCase):
+    def test_a_small_piece_is_read_again_while_it_helps_and_the_last_pass_is_undone(self):
+        import torch
+        from acan.lm.concept_net_training import Grower, Network
+        torch.manual_seed(0)
+        rng = np.random.default_rng(6)
+        docs = []
+        for i in range(60):
+            words = np.arange(1, 25) if i % 2 else np.arange(25, 49)
+            docs += list(rng.choice(words, 8)) + [49]
+        ids, held = np.array(docs[:450]), np.array(docs[450:])
+        held_docs = [d for d in np.split(held, np.flatnonzero(held == 49) + 1) if len(d) > 2]
+        score = lambda net: np.concatenate([np.log(net.targets(d)) for d in held_docs])
+        grower = Grower(Network(config(dim=4, layers=1, heads=1, concepts=2, window=1)), trial=256, tokens=256)
+        Grower.KINDS, kinds = ('width',), Grower.KINDS
+        try:
+            best = grower.learn(ids, 49, score)
+        finally:
+            Grower.KINDS = kinds
+        self.assertGreater(grower.passes_made[0], 1)
+        np.testing.assert_allclose(score(grower.learner.network.export()), score(best), atol=1e-5)

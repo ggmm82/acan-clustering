@@ -267,16 +267,16 @@ class Network(nn.Module):
         return grown
 
     def wider_window(self):
-        """One more distance among the nearby states, whose map starts at zero."""
-        grown = self._like(window=self.config['window'] + 1)
-        new = {k: (torch.cat([v, torch.zeros_like(v[:1])], 0) if k.endswith('.near') else v)
+        """Twice the distances among the nearby states; the maps of the new ones start at zero."""
+        grown = self._like(window=2 * self.config['window'])
+        new = {k: (torch.cat([v, torch.zeros_like(v)], 0) if k.endswith('.near') else v)
                for k, v in self.state_dict().items()}
         grown.load_state_dict(new)
         return grown
 
     def export(self):
         """The parameters as numpy arrays, read by ConceptNet."""
-        keep = {k: v.detach().cpu().numpy() for k, v in self.state_dict().items()}
+        keep = {k: v.detach().cpu().numpy().copy() for k, v in self.state_dict().items()}   # a copy: it must not change as the network learns on
         return ConceptNet(self.config, keep)
 
     @classmethod
@@ -394,9 +394,9 @@ class Grower:
 
     The network starts as small as it can be. The decisions follow a doubling calendar of the tokens learned: after
     one batch, two, four, ... At a decision the network as it is and its grown copies (every concept split in two;
-    one more layer; twice as wide; twice the groups of concepts; one more nearby distance: all read exactly as the
+    one more layer; twice as wide; twice the groups of concepts; twice the nearby distances: all read exactly as the
     network did) learn the same next stretch of text, as long as all the text learned so far (at most ``TRIAL``
-    tokens, what a decision may cost); a copy wins only if it then reads held-out text better than the network that
+    tokens, what a decision may cost, and at most one pass over the piece); a copy wins only if it then reads held-out text better than the network that
     did not grow, by more than one standard error of the paired difference: the size that learns more from the same
     text. When the new text of a piece is over, the piece is read again, with decisions after one more pass, two,
     four, ..., while held-out text is read better; the passes that did not help are undone. When a decision on new
@@ -412,6 +412,7 @@ class Grower:
         self.learner = Learner(network, **learner)
         self.best, self.best_scores, self.best_learner, self.done = None, None, None, False
         self.trial = int(trial or self.TRIAL)
+        self.batch = self.learner.tokens                       # the largest batch
         self.learned = 0                                       # tokens learned, passes included
         self.decision = self.learner.tokens                    # the first decision: after one batch
         self.history, self.passes_made = [], []
@@ -442,6 +443,7 @@ class Grower:
         for kind in self.KINDS:
             learner = Learner(self._grown(kind), **self.learner_options)
             learner.steps = self.learner.steps                 # the same pace: no warm-up again, or it could not win
+            learner.tokens = self.learner.tokens
             candidates.append((kind, learner))
         results = []
         for kind, learner in candidates:
@@ -465,7 +467,7 @@ class Grower:
         stretch, size = cycle.take(tokens, within_pass)
         if stretch:
             self.learner.learn_documents(stretch, check); self.learned += size
-        trial, size = cycle.take(min(self.trial, self.learned))
+        trial, size = cycle.take(min(self.trial, self.learned, self.piece))
         self.learned += size
         return self._decide(trial, score, check)
 
@@ -477,13 +479,18 @@ class Grower:
             return self.best
         cycle = _Cycle(docs, self.learner.rng)
         decided = False
+        # as many batches in a pass as tokens in a batch: a small piece is learned in many small steps
+        self.piece = sum(map(len, docs))                       # a trial is at most one pass over the piece
+        self.learner.tokens = min(self.batch, max(1, math.isqrt(self.piece)))
+        if not self.learned:
+            self.decision = self.learner.tokens
         while cycle.fresh and not self.done:                   # the new text, on the calendar of the tokens learned
             stretch, size = cycle.take(self.decision - self.learned, within_pass=True)
             if stretch:
                 self.learner.learn_documents(stretch, check); self.learned += size
             if self.learned < self.decision or not cycle.fresh or cycle.i == len(cycle.order):
                 break                                          # the new text is over before the decision
-            trial, size = cycle.take(min(self.trial, self.learned), within_pass=True)
+            trial, size = cycle.take(min(self.trial, self.learned, self.piece), within_pass=True)
             self.learned += size; decided = True
             if not self._decide(trial, score, check):
                 self.done = True                               # it no longer learns and growing does not help
