@@ -307,7 +307,7 @@ def validation_rows(pieces, eos):
     )
 
 
-def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CONTEXT, report=None):
+def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CONTEXT, report=None, exact_only=False):
     """Discover the geometry on train and select predictors on held-out next-token likelihood.
 
     ``report(phase, width, seconds, **facts)`` is told when each scale starts and ends and, while the
@@ -416,7 +416,7 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
                 row.spans[f"e{width}"] = dictionary.transform(
                     shift(row.spans[l], right, row.age), row.spans[r]
                 )
-            if width & (width - 1) == 0:
+            if width & (width - 1) == 0 and not exact_only:
                 where['step'] = planned.index(width) + 1
                 tell('scale', width, time.monotonic()-started)
                 graph, old_vectors, _ = geometry(rows, old_vectors, width, searching(width))
@@ -424,7 +424,12 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
                 enc.local[width] = []
                 tell('subconcepts', width, time.monotonic()-started)
                 finer_spans(rows, reading, width, graph.concepts, enc.local[width])
-        if width <= 6:
+        if exact_only:                                           # the network generalizes: the exact contexts only
+            features = [f for f in dict(stages(True))[width] if all(p[0] == "e" or p == "c1" for p in f.split("|"))] \
+                if width <= 6 else [f"e{width}"]
+            where['step'] = min(where['steps'], width.bit_length())
+            tell('readings', width, time.monotonic()-started)
+        elif width <= 6:
             features = dict(stages(True))[width]
         else:
             h = width // 2
@@ -467,6 +472,14 @@ def learn(tokens, vocabulary, eos, tuning, check, documents=None, max_context=CO
 
     # How many numbers describe the topic of a token: they double while the topic of all that the document
     # has said so far, as a concept, predicts the next token of held-out text better (the same judgment).
+    if exact_only:
+        # With the concept network the concepts of the spans and the topics add 0.4% for most of the time of the
+        # structure (measured on 2,000 dialogues, the network on top): only the exact contexts are learned.
+        where['step'] = where['steps']
+        tell('done', max([6, *enc.exact]), time.monotonic()-started)
+        enc.width = max([6, *enc.exact])
+        model.tables = {f: Table.empty(vocabulary) for f in model.weights}
+        return model
     where['step'] = where['steps']
     share = 1 / (len(enc.nodes) + 1)                            # the topic coordinates, then every scale
     tell('topics', 0, time.monotonic()-started)
