@@ -48,8 +48,9 @@ class PairText:
 
     def add(self, ids, train, tune, check, documents=None, starts_in_piece=None):
         if self.model is None:
+            # With the concept network on top, the concepts of the spans and the topics are not learned (see learn).
             self.model = learn(train, self.vocabulary, self.eos, tune, check, documents, self.max_context,
-                               getattr(self, 'report', None))
+                               getattr(self, 'report', None), exact_only=bool(self.network))
             self.model.training_weights = {**self.model.weights, **{f: 1.0 for f in self.model.topics}}
             self.target_kappa = self.model.root.observed_targets["token"]["kappa"]
             self.target_mass = np.zeros_like(self.model.head)

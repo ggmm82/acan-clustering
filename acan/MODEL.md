@@ -346,11 +346,35 @@ la rete si misura sulla validazione: se non migliora più di un errore standard 
 2), si tiene la rete del pezzo prima e la rete smette di imparare, mentre i conteggi
 proseguono.
 
+**Le dimensioni della rete vengono dai dati.** La rete parte piccola: uno strato, gruppi
+di 16 concetti. Quando un pezzo di testo non la migliora più di un errore standard, si
+riprende la rete migliore e la si fa crescere. Prima ogni concetto si divide in due:
+due centri quasi uguali che si spartiscono la massa, così la lettura resta identica e il
+gradiente può poi separarli. Se non basta, si aggiunge uno strato che all'inizio lascia
+gli stati come sono. Una crescita resta se il pezzo successivo migliora la rete; se
+nessuna delle due aiuta, la rete smette di imparare.
+
 **Perché la catena resta.** La rete generalizza dove i dati sono pochi; i conteggi
 ricordano con esattezza ciò che il corpus e il documento hanno detto. Nella catena la
 rete fornisce la stima generale e i contesti esatti la correggono con la formula della
 sezione 6, tanto più quanto più li hanno visti. Il peso fra le due fonti non è fissato:
 lo stabiliscono, posizione per posizione, le osservazioni di ciascun contesto.
+
+**Quali parti della catena restano con la rete.** Misurato su 2.000 dialoghi con la stessa
+rete in cima, togliendo una parte alla volta e ricalcolando le forze:
+
+| Catena sopra la rete | NLL |
+|---|---:|
+| completa: concetti dei tratti, contesti esatti, memoria, argomenti | 4,658 |
+| senza argomenti | 4,662 |
+| solo contesti esatti e memoria del documento | 4,677 |
+| solo contesti esatti, senza memoria | 5,250 |
+
+Con la rete, i concetti dei tratti e gli argomenti valgono lo 0,4%: generalizzare dove i
+contesti esatti mancano è ciò che la rete fa meglio. La memoria del documento invece vale
+più di tutta la rete. Per questo, quando la coda impara la rete, il modello impara solo i
+concetti dei token e i contesti esatti, non i concetti dei tratti e gli argomenti, e la
+struttura dura circa quattro volte meno.
 
 ### 12 · Generazione
 
@@ -425,7 +449,8 @@ le misure.
    parole in pezzi (32.000 di default). Ogni documento va per intero in addestramento,
    validazione o test: il modello non viene mai misurato su testo che ha letto.
 3. **Struttura.** Su un campione del primo file, in finestre lunghe almeno il doppio
-   della scala più lunga ammessa, il modello impara in quest'ordine:
+   della scala più lunga ammessa, il modello impara in quest'ordine (con la rete a
+   concetti, solo il punto 1 e i contesti esatti del punto 2: Matematica, sezione 11):
    1. le coordinate dei token e il loro numero, poi i concetti dei token;
    2. scala dopo scala, i concetti dei tratti, i sotto-concetti e le letture da usare;
    3. i vettori di argomento e il loro numero, poi i concetti di argomento di ogni
@@ -444,6 +469,8 @@ le misure.
 5. **Rete a concetti (opzione della coda, attiva per default nella pagina).** Dopo i
    conteggi, ogni pezzo insegna alla rete in un solo passaggio. Si procede a lotti di
    circa 2.048 token di documenti interi, con AdamW e un breve riscaldamento del passo.
+   La rete parte con uno strato di gruppi da 16 concetti e cresce come descritto in
+   Matematica, sezione 11.
    Le somme dei concetti si leggono a blocchi di 64 posizioni: dentro il blocco con un
    prodotto di matrici, fra un blocco e l'altro con le somme correnti. Le appartenenze
    sviluppano il quadrato in prodotti di matrici. Dopo il pezzo la rete si misura sulla
