@@ -112,7 +112,7 @@ class OpenAICompatibleTests(unittest.TestCase):
         self.assertTrue(any(chunk['choices'] and chunk['choices'][0]['finish_reason'] for chunk in chunks))
 
     def test_stop_strings_end_the_answer_before_them(self):
-        body = dict(model=self.job['id'], prompt='il gatto', temperature=0, max_tokens=40)
+        body = dict(model=self.job['id'], prompt='il gatto dorme sul tetto e la luna', temperature=0, max_tokens=40)
         free = self.call('/v1/completions', body).get_json()['choices'][0]['text']
         words = free.split()
         self.assertGreater(len(words), 3)
