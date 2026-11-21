@@ -1,8 +1,8 @@
 """Checkpoints of the generative concept model and the counts of the document being read.
 
-The generative model is the tabular concept model applied to text (acan/lm/pair_text.py, explained in
-acan/MODEL.md). This module saves and loads its checkpoints in the format every project uses, and
-counts, for the memory of the document, what followed each context earlier in the same text.
+The generative model is the concept network (acan/lm/net_text.py, explained in acan/MODEL.md); checkpoints of the
+earlier model of counts (acan/lm/pair_text.py) are still read. This module saves and loads the checkpoints in the
+format every project uses, and counts what followed each context earlier in the same text for that earlier model.
 """
 import json
 import time

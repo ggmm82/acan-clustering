@@ -150,14 +150,13 @@ def load_export(directory, device='cpu', cache_dir=None):
 
 CONCEPT_README = """Modello linguistico a concetti ACAN.
 
-concepts.safetensors   i concetti dei token e dei tratti di testo, i loro conteggi e i pesi scelti dal giudizio;
-                       se la coda ha imparato la rete a concetti, anche i suoi parametri (le voci net.*): la catena
-                       dei conteggi parte dalla sua previsione. Tutto si legge con numpy, senza PyTorch.
+concepts.safetensors   i parametri della rete a concetti (le voci net.*): i concetti dei token e di ogni strato,
+                       imparati col gradiente, e la memoria del documento. Tutto si legge con numpy, senza PyTorch.
                        (safetensors: un formato standard e sicuro per tabelle di numeri)
 tokenizer/             il tokenizer che trasforma il testo in token e viceversa
 scrivi.py              uno script pronto: carica il modello e scrive
 config.json            le impostazioni dell'apprendimento
-training-summary.json  passi, token letti, errore su testo mai visto, concetti per scala, contesto letto
+training-summary.json  passi, token letti, errore su testo mai visto, concetti per strato
 export-manifest.json   le impronte SHA-256 di ogni file
 
 Non contiene il testo di addestramento.
