@@ -11,7 +11,8 @@ from acan.core.concepts import ConceptModel, Encoder
 from acan.core.conditional import calibrated_weights
 from acan.concept_algebra import categorical_reading
 from .concept_lm import document_counts
-from .pair_model import PairEncoder, PairLanguageModel, chain, merged_chain
+from .pair_model import PairEncoder, PairLanguageModel, chain, merged_chain, network_targets
+from .concept_net import ConceptNet
 from .pair_training import add_chunk, flush, learn
 
 PROFILE = "concept-pairs-v1"
@@ -29,8 +30,15 @@ def document_stats(row, name):
 
 
 class PairText:
-    def __init__(self, vocabulary, eos, budget, max_context=512):
+    # The concept network learned as a language model (acan/lm/concept_net.py): the start of the chain of readings.
+    # It starts small and grows while the data justify it (concept_net_training.Grower).
+    NETWORK = dict(dim=96, layers=1, heads=4, concepts=16, window=3, grouped=False)
+
+    def __init__(self, vocabulary, eos, budget, max_context=512, network=False):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), eos, int(budget)
+        self.network = network                                  # learn the concept network while reading
+        self._learner = None
+        self.network_done = False                               # it stopped learning: it no longer read better
         self.max_context = int(max_context)                     # longest scale the validation may choose
         self.tokens = 0
         self.model = None
@@ -40,8 +48,9 @@ class PairText:
 
     def add(self, ids, train, tune, check, documents=None, starts_in_piece=None):
         if self.model is None:
+            # With the concept network on top, the concepts of the spans and the topics are not learned (see learn).
             self.model = learn(train, self.vocabulary, self.eos, tune, check, documents, self.max_context,
-                               getattr(self, 'report', None))
+                               getattr(self, 'report', None), exact_only=bool(self.network))
             self.model.training_weights = {**self.model.weights, **{f: 1.0 for f in self.model.topics}}
             self.target_kappa = self.model.root.observed_targets["token"]["kappa"]
             self.target_mass = np.zeros_like(self.model.head)
@@ -82,11 +91,50 @@ class PairText:
         )
         self.model.root.observed_targets["token"]["probability"] = self.model.head
         self.model.unigram = frequency / frequency.sum()        # what a topic is compared with
+        if self.network and not self.network_done:
+            self._learn_network(ids, check, tune)
+
+    def _network_scores(self, net, tune):
+        out = []
+        for piece in tune:
+            piece = np.asarray(piece, np.int64)
+            starts = np.r_[document_starts(piece, self.eos), len(piece)]
+            for a, b in zip(starts[:-1], starts[1:]):
+                if b - a >= 2:
+                    out.append(np.log(np.maximum(net.targets(piece[a:b]), 1e-300)))
+        return np.concatenate(out) if out else np.zeros(0)
+
+    def _learn_network(self, ids, check, tune=()):
+        """One pass of the concept network over the piece just counted. Its size comes from the data: it learns while
+        it reads held-out text better, grows (more concepts, then one more layer) when it stops improving, and stops
+        when growing does not help either (concept_net_training.Grower); the counts go on."""
+        from .concept_net_training import Grower, Network, output_groups
+        if self._learner is None:
+            m = self.model
+            if getattr(m, "net", None) is not None:              # a queue that goes on: the network learned so far
+                network = Network.restore(m.net)
+            else:
+                config = dict(self.NETWORK, vocabulary=self.vocabulary, **(self.network if isinstance(self.network, dict) else {}))
+                frequency = m.unigram
+                groups = output_groups(m.encoder.token_classes[:self.vocabulary], frequency) if config["grouped"] else None
+                network = Network(config, centres=m.encoder.vectors, frequency=frequency, groups=groups)
+            self._learner = Grower(network)
+            if getattr(m, "net", None) is not None and len(tune):
+                self._learner.best, self._learner.best_scores = m.net, self._network_scores(m.net, tune)
+        score = (lambda net: self._network_scores(net, tune)) if len(tune) else (lambda net: np.zeros(2))
+        self.model.net = self._learner.learn(ids, self.eos, score, check)
+        self.network_history = self._learner.history
+        self.network_loss = self._learner.history[-1]["loss"]
+        if self._learner.done:
+            self.network_done, self._learner = True, None
 
     def _scores(self, ids):
+        """The start of the chain at every position: the concept network where it has read the document, the concepts
+        of the previous token otherwise."""
         row = self.model.encoder.encode(ids, document_starts(ids, self.eos))
         p = self.model.root_probability(row, np.arange(len(ids)))
-        return row, p
+        net = network_targets(self.model, row)
+        return row, np.where(np.isnan(net), p, net)
 
     def judge(self, pieces, final=False):
         if self.model is None:
@@ -309,6 +357,9 @@ class PairText:
         if self.model is None:
             return data
         m = self.model
+        if getattr(m, "net", None) is not None:
+            data.update(m.net.arrays())
+            data["net_done"] = np.array([int(self.network_done)])
         meta = {
             "training_weights": list(m.training_weights.items()),
             "weights": list(m.weights.items()),
@@ -427,4 +478,7 @@ class PairText:
             enc.topics[w] = graph(f"topic{w}_")
             text.model.topics[f"t{w}"] = [k, b]
         text.model.unigram = data["unigram"] if "unigram" in data else None
+        text.model.net = ConceptNet.from_arrays(data)
+        text.network = text.model.net is not None
+        text.network_done = bool(data["net_done"][0]) if "net_done" in data else False
         return text
