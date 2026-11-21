@@ -3,12 +3,14 @@
 Every object is the concept network's (acan/lm/concept_net.py): the tokens are concepts, the layers of concept
 attention read the document through the sums of their concepts, the memory of the document is learned, and the next
 token is the membership of the final state to the concepts of the tokens. Everything is learned along the gradient
-of the log-likelihood of the next token. A piece of the queue is read again while held-out text is read better by
-more than one standard error (concept_net_training.Grower, with its sizes fixed); every document starts after an
-``eos``, so its first token is read as in training. The interface is the one of the text model of the queue
+of the log-likelihood of the next token. Every piece of the queue is read once, and the text goes on; with the last
+piece the network reads the whole text of the queue again, pass after pass, while held-out text is read better by
+more than one standard error (concept_net_training.Grower, with its sizes fixed): reading again is how it remembers
+what it saw. Every document starts after an ``eos``, so its first token is read as in training. The interface is the one of the text model of the queue
 (add, judge, logp, prediction_cursor, generate, arrays), so training, generation, evaluation, the API and the export
 read it as they read the other one.
 """
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -54,6 +56,7 @@ class NetText:
         self.model = None                                      # SimpleNamespace(net=ConceptNet, tables={})
         self._learner = None
         self.network_done, self.network_history = False, []
+        self.read = 0                                          # tokens of the current text read so far
 
     # ---- learning ------------------------------------------------------------------------------------
     def _held(self, pieces):
@@ -66,6 +69,8 @@ class NetText:
     def add(self, ids, train, tune, check, documents=None, starts_in_piece=None):
         from .concept_net_training import Grower, Network, held_out
         ids = np.asarray(ids, np.int64)
+        if not len(self.tail):                                  # a new text of the queue begins
+            self.read = 0
         if self._learner is None:
             if self.model is not None:                          # a queue that goes on: the network learned so far
                 network = Network.restore(self.model.net)
@@ -78,9 +83,25 @@ class NetText:
             self._learner.begin = True
         held = self._held(tune)
         score = (lambda net, tokens=None: held_out(net, held, tokens)) if held else (lambda net, tokens=None: np.zeros(2))
-        best = self._learner.learn(ids, self.eos, score, check)
+        started, last = time.monotonic(), [0.]
+        again = self.read + len(ids) >= len(train) and self.network.get('passes', True)
+
+        def watched():
+            check()
+            now = time.monotonic()
+            if self.report is not None and now - last[0] >= 15:   # how far the network is, for the page
+                last[0] = now
+                best = self._learner.best_scores
+                self.report('network', 0, now - started, learned=int(self._learner.learned), again=int(again),
+                            held_milli=int(1000 * -best.mean()) if best is not None and len(best) else 0)
+        self._learner.passes = False                            # every piece once ...
+        best = self._learner.learn(ids, self.eos, score, watched)
+        if again and not self._learner.done:                    # ... and with the last one, the whole text again
+            self._learner.passes = True
+            best = self._learner.learn(np.asarray(train, np.int64), self.eos, score, watched)
         if best is not None:
             self.model = SimpleNamespace(net=best, tables={})
+        self.read += len(ids)
         self.tokens += len(ids)
         self.tail = ids[-max(self.max_context, 1):]
         self.network_history, self.network_done = self._learner.history, self._learner.done

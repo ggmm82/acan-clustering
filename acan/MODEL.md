@@ -209,8 +209,8 @@ calcolata dallo stato. Indirizzi e valvola si imparano con il resto della rete.
 **Come si imparano i concetti.** Centri, dispersioni, masse, attenzioni, aperture,
 memoria e centri dei token si muovono lungo il gradiente della log-verosimiglianza del
 token che segue, la misura della sezione 9. Ogni concetto di ogni strato si piega così a
-servire la previsione finale. Un pezzo di testo non si legge una volta sola: dopo la
-prima lettura lo si rilegge dopo uno, due, quattro passaggi, finché il testo tenuto da
+servire la previsione finale. Il testo si legge a pezzi, una volta ciascuno; finito il
+testo, la rete lo rilegge tutto dopo uno, due, quattro passaggi, finché il testo tenuto da
 parte migliora più di un errore standard (sezione 2), e il passaggio che non aiuta si
 annulla. È rileggendo che la rete **ricorda** ciò che ha visto, oltre a generalizzarlo.
 Quando due decisioni di fila sul testo nuovo non migliorano, la rete smette di imparare.
@@ -283,13 +283,14 @@ le misure.
 2. **Tokenizzazione.** Un tokenizzatore BPE impara dai testi della coda a dividere le
    parole in pezzi (32.000 di default). Ogni documento va per intero in addestramento,
    validazione o test: il modello non viene mai misurato su testo che ha letto.
-3. **Apprendimento a pezzi.** Il testo si legge a pezzi di un milione di token. Ogni pezzo
-   insegna alla rete con AdamW, a lotti di documenti interi: tanti token per lotto quanti
-   lotti in un passaggio, al più 2.048, con un avvio del passo che dura al più un
-   passaggio. Finito il pezzo, lo si rilegge dopo uno, due, quattro passaggi finché la
-   validazione migliora più di un errore standard; il passaggio che non aiuta si annulla
-   (Matematica, sezione 7). Quando due decisioni di fila sul testo nuovo non migliorano,
-   la rete smette di imparare.
+3. **Apprendimento a pezzi.** Il testo si legge a pezzi di un milione di token, una volta
+   ciascuno. Ogni pezzo insegna alla rete con AdamW, a lotti di documenti interi: tanti
+   token per lotto quanti lotti in un passaggio, al più 2.048, con un avvio del passo che
+   dura al più un passaggio. Con l'ultimo pezzo la rete rilegge tutto il testo dopo uno,
+   due, quattro passaggi finché la validazione migliora più di un errore standard; il
+   passaggio che non aiuta si annulla (Matematica, sezione 7). Quando due decisioni di
+   fila sul testo nuovo non migliorano, la rete smette di imparare. La pagina mostra,
+   dentro il passo, i token imparati, se la rete sta rileggendo e la validazione migliore.
 4. **Calcolo.** Le somme dei concetti si leggono a blocchi di 64 posizioni: dentro il
    blocco con un prodotto di matrici, fra un blocco e l'altro con le somme correnti. Le
    appartenenze sviluppano il quadrato in prodotti di matrici. La validazione si legge a

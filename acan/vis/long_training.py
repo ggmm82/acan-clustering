@@ -154,7 +154,8 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     size, budget = progress.get('statistics_bytes'), progress.get('budget_bytes')
     when = lambda seconds: '—' if seconds is None else f'{seconds/3600:,.1f} ore' if seconds > 3600 else f'{max(seconds, 0)/60:,.0f} minuti'
     learning = progress.get('structure') if ready and step == 0 and status not in ('completed',) else None
-    if learning and learning.get('phase') != 'done':
+    network = progress.get('structure') if (progress.get('structure') or {}).get('phase') == 'network' and status != 'completed' else None
+    if learning and learning.get('phase') not in ('done', 'network'):
         part, left = structure_progress(learning)
         doing = {'tokens': 'concetti dei token',
                  'scale': f"concetti dei tratti di {learning['width']:,} token",
@@ -171,8 +172,15 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
         bar = dbc.Progress(value=100*part, className='mb-2', style={'height': '8px'}, color='info')
         return html.Div([bar, dbc.Row(tiles)])
     else:
+        inside = ''
+        if network:                                             # the network inside the step: how far it is
+            inside = (f" · la rete rilegge tutto il testo: {network.get('learned', 0):,} token imparati" if network.get('again')
+                      else f" · la rete impara il pezzo: {network.get('learned', 0):,} token imparati")
+            if network.get('held_milli'):
+                inside += f", validazione migliore {network['held_milli'] / 1000:.3f}"
+            inside += f", da {network['seconds'] / 60:,.0f} minuti"
         first = _tile('Avanzamento', f'{share:.0f}%' if ready else 'prepara i token',
-                      f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' if ready else 'il totale si conosce quando i token sono pronti')
+                      (f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' + inside) if ready else 'il totale si conosce quando i token sono pronti')
     tiles = [
         first,
         _tile('Tempo che manca', 'finito' if status == 'completed' else when(remaining), 'stima dalla velocità finora'),
