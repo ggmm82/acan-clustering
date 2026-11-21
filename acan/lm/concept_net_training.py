@@ -423,7 +423,8 @@ class Grower:
     one more layer; twice as wide; twice the groups of concepts; twice the nearby distances: all read exactly as the
     network did) learn the same next stretch of text, each at its step and at half of it, the network as it is also at
     twice its step (the pace is chosen as the size is; a wider copy moves faster at the same step, since its
-    coordinates move in pairs, so it wins only if it needs the room). The stretch is so long
+    coordinates move in pairs, so it wins only if it needs the room; the pace is raced once the start is over, since
+    during the start every larger step would look better). The stretch is so long
     that a decision costs at most as much as all the text learned so far (at most ``TRIAL`` tokens and one pass over
     the piece); the race is judged on as much held-out text. A copy wins only if it then reads held-out text better
     than the network that did not grow, by more than one standard error of the paired difference: the size that
@@ -486,7 +487,7 @@ class Grower:
         # as it is also at twice its step. A wider copy moves faster at the same step (its coordinates move in pairs):
         # with the faster network as it is in the race, it wins only if it needs the room, not because it is faster.
         paced = []
-        for kind, learner in candidates:
+        for kind, learner in (candidates if self.learner.steps >= self.learner.warmup else ()):   # after the start
             for factor in ((2., .5) if kind == "com'è" else (.5,)):
                 twin = copy.deepcopy(learner)
                 twin.lr *= factor
