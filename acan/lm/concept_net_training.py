@@ -400,7 +400,8 @@ class Grower:
     The network starts as small as it can be. The decisions follow a doubling calendar of the tokens learned: after
     one batch, two, four, ... At a decision the network as it is and its grown copies (every concept split in two;
     one more layer; twice as wide; twice the groups of concepts; twice the nearby distances: all read exactly as the
-    network did) learn the same next stretch of text, as long as all the text learned so far (at most ``TRIAL``
+    network did) learn the same next stretch of text, each at its step and at half of it (the pace is chosen as the
+    size is; a wider copy starts from half the step, since its coordinates move in pairs), as long as all the text learned so far (at most ``TRIAL``
     tokens, what a decision may cost, and at most one pass over the piece); a copy wins only if it then reads held-out text better than the network that
     did not grow, by more than one standard error of the paired difference: the size that learns more from the same
     text. When the new text of a piece is over, the piece is read again, with decisions after one more pass, two,
@@ -456,20 +457,27 @@ class Grower:
                 # before, or the wider copy would win only because it learns faster, not because it needs to
                 learner.lr /= 2
             candidates.append((kind, learner))
-        results = []
+        # the pace is chosen as the size is: every candidate also learns the stretch at half its step
+        slower = []
         for kind, learner in candidates:
+            twin = copy.deepcopy(learner)
+            twin.lr /= 2
+            slower.append((kind, twin))
+        results = []
+        for half, (kind, learner) in [(False, c) for c in candidates] + [(True, c) for c in slower]:
             learner.learn_documents(trial, check)
             net = learner.network.export()
-            results.append((kind, learner, net, score(net)))
+            results.append((kind, learner, net, score(net), half))
         winner = results[0]
         for result in results[1:]:
             if self._better(result[3], winner[3]):
                 winner = result
-        kind, self.learner, net, scores = winner
+        kind, self.learner, net, scores, half = winner
         improved = self.best_scores is None or self._better(scores, self.best_scores)
         c = net.config
         self.history.append(dict(tokens=self.learned, layers=c['layers'], concepts=list(c['concepts']), dim=c['dim'],
-                                 heads=c['heads'], window=c['window'], choice=kind, held_out=float(-scores.mean())))
+                                 heads=c['heads'], window=c['window'], choice=kind, lr=self.learner.lr,
+                                 held_out=float(-scores.mean())))
         if improved:
             self._keep(net, scores)
         return improved
