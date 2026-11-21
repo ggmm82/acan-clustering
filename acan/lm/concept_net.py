@@ -160,9 +160,25 @@ class ConceptNet:
             return np.zeros(0)
         h = self.states(ids[:-1])
         out = np.empty(len(h))
+        nxt = ids[1:]
+        if self.cached:
+            q, k = self._addresses(h)
+            g = self._valve(h)
         for i in range(0, len(h), block):
-            probs = self._mix(self.probabilities(h[i:i + block]), h, ids, i)
-            out[i:i + block] = probs[np.arange(len(probs)), ids[i + 1:i + 1 + block]]
+            probs = self.probabilities(h[i:i + block])
+            p = probs[np.arange(len(probs)), nxt[i:i + block]]
+            if self.cached:                                  # the memory of the document, a block at a time
+                B, end = len(p), i + len(p)
+                s = q[i:end] @ k[:end].T / np.sqrt(q.shape[1])                     # B x end
+                earlier = np.arange(end)[None, :] < np.arange(i, end)[:, None]
+                s = np.where(earlier, s, -np.inf)
+                top = np.where(earlier.any(1), s.max(1), 0.)
+                a = np.where(earlier, np.exp(s - top[:, None]), 0.)
+                a /= np.maximum(a.sum(1, keepdims=True), 1e-300)
+                cache = (a * (nxt[:end][None, :] == nxt[i:end][:, None])).sum(1)
+                gate = np.where(earlier.any(1), g[i:end], 0.)
+                p = (1 - gate) * p + gate * cache
+            out[i:i + block] = p
         return out
 
     def cursor(self):
