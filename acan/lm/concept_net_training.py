@@ -5,6 +5,7 @@ The objective is the log-likelihood of the next token under the reading of the c
 move along its gradient. The text is read once, in order, a piece at a time: a piece of the queue teaches the
 network after it has been counted. torch is imported here only: reading a trained network needs numpy alone.
 """
+import copy
 import math
 import numpy as np
 import torch
@@ -89,6 +90,17 @@ class Network(nn.Module):
         self.config['concepts'] = list(concepts)
         self.layers = nn.ModuleList([ConceptAttention(dim, config['heads'], k, config['window']) for k in concepts])
         self.final = nn.Linear(dim, dim)
+        # The memory of the document, learned: every position read leaves an address (a projection of its state) with
+        # the token that followed it; a position reads the tokens that followed the addresses most like its own, and
+        # a valve (learned from its state) says how much that reading counts.
+        self.config.setdefault('cache', 32)
+        c = self.config['cache']
+        if c:
+            self.cache_query = nn.Linear(dim, c, bias=False)
+            self.cache_key = nn.Linear(dim, c, bias=False)
+            self.cache_valve = nn.Linear(dim, 1)
+            with torch.no_grad():
+                self.cache_valve.bias.fill_(-2.)                # it starts by counting little
         self.grouped = groups is not None
         if self.grouped:
             group = torch.as_tensor(np.asarray(groups), dtype=torch.long)
@@ -113,11 +125,29 @@ class Network(nn.Module):
     def _logits(self, h, centres, log_mass):
         return (h @ centres.T - .5 * (centres * centres).sum(-1)) * torch.exp(-2 * self.log_scale) + log_mass
 
+    def _cache(self, h, mask, targets, net_lp):
+        """Mix the reading of the network with the memory of the document (only the true token is needed)."""
+        if not self.config.get('cache'):
+            return net_lp
+        B, T, _ = h.shape
+        q, k = self.cache_query(h), self.cache_key(h)
+        scores = q @ k.transpose(1, 2) / math.sqrt(q.shape[-1])                  # B T T
+        earlier = torch.tril(torch.ones(T, T, dtype=torch.bool, device=h.device), -1)
+        allowed = earlier[None] & mask[:, None, :].bool()
+        scores = scores.masked_fill(~allowed, float('-inf'))
+        anything = allowed.any(-1)
+        a = torch.softmax(scores.masked_fill(~anything[..., None], 0.), -1) * anything[..., None]
+        same = (targets[:, None, :] == targets[:, :, None]).to(a.dtype)          # the token after j is the true one
+        p_cache = (a * same).sum(-1)
+        g = torch.sigmoid(self.cache_valve(h))[..., 0] * anything
+        return torch.log((1 - g) * net_lp.exp() + g * p_cache + 1e-30)
+
     def target_log_probs(self, ids, mask, targets):
         h = self.states(ids, mask)
         flat, tgt = h.reshape(-1, h.shape[-1]), targets.reshape(-1)
         if not self.grouped:
-            return torch.log_softmax(self._logits(flat, self.centre.weight, self.log_mass), -1).gather(1, tgt[:, None])[:, 0].view(targets.shape)
+            lp = torch.log_softmax(self._logits(flat, self.centre.weight, self.log_mass), -1).gather(1, tgt[:, None])[:, 0].view(targets.shape)
+            return self._cache(h, mask, targets, lp)
         g = self.group[tgt]
         lp = torch.log_softmax(self._logits(flat, self.group_centre, self.group_log_mass), -1).gather(1, g[:, None])[:, 0]
         inside = torch.zeros_like(lp)
@@ -126,7 +156,7 @@ class Network(nn.Module):
             members = self._order[self._start[k]:self._start[k] + self._size[k]]
             logits = self._logits(flat[sel], self.centre.weight[members], self.log_mass[members])
             inside = inside.index_put((sel,), torch.log_softmax(logits, -1).gather(1, self._rank[tgt[sel]][:, None])[:, 0])
-        return (lp + inside).view(targets.shape)
+        return self._cache(h, mask, targets, (lp + inside).view(targets.shape))
 
     # ---- growth: a bigger network that reads exactly as the smaller one did -----------------------------------------
     def split_concepts(self, i, scale=1e-3):
@@ -255,13 +285,14 @@ class Grower:
 
     TRIAL = 65536                                              # tokens of a trial, and the first decision
 
-    def __init__(self, network, trial=None, **learner):
+    def __init__(self, network, trial=None, passes=True, **learner):
+        self.passes = passes                                   # read a piece again while it helps
         self.learner_options = learner
         self.learner = Learner(network, **learner)
         self.best, self.best_scores, self.done = None, None, False
         self.trial = int(trial or self.TRIAL)
         self.seen, self.decision = 0, self.trial
-        self.history = []
+        self.history, self.passes_made = [], []
 
     @staticmethod
     def _better(scores, than):
@@ -325,6 +356,25 @@ class Grower:
         if not self.done:                                      # the network at the end of the piece, if better
             net = self.learner.network.export()
             scores = score(net)
+            if self.passes:
+                net, scores = self._again(docs, net, scores, score, check)
             if self.best_scores is None or self._better(scores, self.best_scores):
                 self.best, self.best_scores = net, scores
         return self.best
+
+    def _again(self, docs, net, scores, score, check):
+        """Read the piece again while held-out text is read better by more than one standard error; the pass that
+        does not help is undone (network and optimizer), and the reading stops."""
+        made = 1
+        while True:
+            network, opt = self.learner.network, self.learner.opt
+            saved = copy.deepcopy(network.state_dict()), copy.deepcopy(opt.state_dict()), self.learner.steps
+            self.learner.learn_documents(docs, check)
+            again = network.export()
+            more = score(again)
+            if not self._better(more, scores):
+                network.load_state_dict(saved[0]); opt.load_state_dict(saved[1]); self.learner.steps = saved[2]
+                break
+            net, scores, made = again, more, made + 1
+        self.passes_made.append(made)
+        return net, scores

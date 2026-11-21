@@ -114,11 +114,12 @@ class PairText:
             if getattr(m, "net", None) is not None:              # a queue that goes on: the network learned so far
                 network = Network.restore(m.net)
             else:
-                config = dict(self.NETWORK, vocabulary=self.vocabulary, **(self.network if isinstance(self.network, dict) else {}))
+                config = dict(self.NETWORK, vocabulary=self.vocabulary, **{k: v for k, v in (self.network if isinstance(self.network, dict) else {}).items() if k != 'passes'})
                 frequency = m.unigram
                 groups = output_groups(m.encoder.token_classes[:self.vocabulary], frequency) if config["grouped"] else None
                 network = Network(config, centres=m.encoder.vectors, frequency=frequency, groups=groups)
-            self._learner = Grower(network)
+            options = self.network if isinstance(self.network, dict) else {}
+            self._learner = Grower(network, passes=options.get('passes', True))
             if getattr(m, "net", None) is not None and len(tune):
                 self._learner.best, self._learner.best_scores = m.net, self._network_scores(m.net, tune)
         score = (lambda net: self._network_scores(net, tune)) if len(tune) else (lambda net: np.zeros(2))

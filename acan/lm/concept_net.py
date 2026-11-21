@@ -111,12 +111,41 @@ class ConceptNet:
             out[:, members] = pg[:, k:k + 1] * _softmax(self._logits(h, e[members], log_mass[members]).astype(np.float64))
         return out
 
+    @property
+    def cached(self):
+        return 'cache_query.weight' in self.p
+
+    def _addresses(self, h):
+        return h @ self.p['cache_query.weight'].T, h @ self.p['cache_key.weight'].T
+
+    def _valve(self, h):
+        return 1 / (1 + np.exp(-(h @ self.p['cache_valve.weight'].T + self.p['cache_valve.bias'])[..., 0]))
+
+    def _mix(self, probs, h, ids, start):
+        """The memory of the document: positions start.. of h read the tokens that followed the earlier positions."""
+        if not self.cached:
+            return probs
+        q, k = self._addresses(h)
+        nxt = ids[1:]                                                            # the token after every position
+        g = self._valve(h)
+        out = probs.copy()
+        for r in range(len(probs)):
+            i = start + r
+            if i == 0:
+                continue
+            s = k[:i] @ q[i] / np.sqrt(q.shape[1])
+            a = np.exp(s - s.max()); a /= a.sum()
+            cache = np.bincount(nxt[:i], weights=a, minlength=self.vocabulary)
+            out[r] = (1 - g[i]) * probs[r] + g[i] * cache
+        return out
+
     def document(self, ids):
         """p(token i | tokens before it) for i = 1..T-1 of one document: (T-1) x V."""
         ids = np.asarray(ids, np.int64)
         if len(ids) < 2:
             return np.zeros((0, self.vocabulary))
-        return self.probabilities(self.states(ids[:-1]))
+        h = self.states(ids[:-1])
+        return self._mix(self.probabilities(h), h, ids, 0)
 
     def targets(self, ids, block=256):
         """p(token i | tokens before it) of the true token only, for i = 1..T-1 of one document, in blocks."""
@@ -126,7 +155,7 @@ class ConceptNet:
         h = self.states(ids[:-1])
         out = np.empty(len(h))
         for i in range(0, len(h), block):
-            probs = self.probabilities(h[i:i + block])
+            probs = self._mix(self.probabilities(h[i:i + block]), h, ids, i)
             out[i:i + block] = probs[np.arange(len(probs)), ids[i + 1:i + 1 + block]]
         return out
 
@@ -201,6 +230,7 @@ class NetCursor:
         self.sums = [np.zeros((H, k, d), np.float32) for k in K]
         self.recent = [[] for _ in range(net.layers)]                       # inputs of the layer, newest last
         self.state = None
+        self.keys, self.after = [], []                                       # the memory of the document
 
     def copy(self):
         other = NetCursor.__new__(NetCursor)
@@ -209,6 +239,7 @@ class NetCursor:
         other.sums = [s.copy() for s in self.sums]
         other.recent = [list(r) for r in self.recent]
         other.state = None if self.state is None else self.state.copy()
+        other.keys, other.after = list(self.keys), list(self.after)
         return other
 
     def prefill(self, ids):
@@ -234,10 +265,18 @@ class NetCursor:
             self.mass[i], self.sums[i] = mass[-1], sums[-1]
             self.recent[i] = list(padded[-net.window:])
             h = net._finish(i, h, read, near)
-        self.state = h[-1] @ net.p['final.weight'].T + net.p['final.bias']
+        states = h @ net.p['final.weight'].T + net.p['final.bias']
+        if net.cached:
+            if self.state is not None:
+                self.keys.append(net._addresses(self.state)[1]); self.after.append(int(ids[0]))
+            keys = net._addresses(states[:-1])[1]
+            self.keys += list(keys); self.after += [int(t) for t in ids[1:]]
+        self.state = states[-1]
 
     def observe(self, token):
         net = self.net
+        if net.cached and self.state is not None:                           # the last state was followed by token
+            self.keys.append(net._addresses(self.state)[1]); self.after.append(int(token))
         h = net.p['centre.weight'][int(token)]
         for i in range(net.layers):
             q, v = net._project(i, h)
@@ -254,4 +293,13 @@ class NetCursor:
         self.state = h @ net.p['final.weight'].T + net.p['final.bias']
 
     def distribution(self):
-        return None if self.state is None else self.net.probabilities(self.state)[0]
+        if self.state is None:
+            return None
+        p = self.net.probabilities(self.state)[0]
+        if self.net.cached and self.keys:
+            q = self.net._addresses(self.state)[0]
+            s = np.array(self.keys) @ q / np.sqrt(len(q))
+            a = np.exp(s - s.max()); a /= a.sum()
+            g = self.net._valve(self.state)
+            p = (1 - g) * p + g * np.bincount(self.after, weights=a, minlength=self.net.vocabulary)
+        return p
