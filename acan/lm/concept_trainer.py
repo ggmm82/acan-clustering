@@ -227,6 +227,10 @@ def run_training(root, identifier, stop_event=None):
                     state['training_nll'] = float(-model.logp(following, np.arange(1, len(following))).mean())
                 state['best_validation_nll'] = min(state.get('best_validation_nll', state['validation_nll']), state['validation_nll'])
                 state.update(quantities(model, config))
+            if last and model.model is not None and getattr(model.model, 'net', None) is not None:
+                # What the concepts of the network hold, on validation text, for the page
+                state['network_concepts'] = model.model.net.describe([p[:512] for p in tune[:8]], tokenizer.decode)
+                state['network_stopped'] = bool(model.network_done)
             if last:
                 previous = save(root_checkpoints, model, state, identity)
                 saved_step = state['step']

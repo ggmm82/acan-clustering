@@ -103,3 +103,17 @@ class QueueOptionTest(unittest.TestCase):
         self.assertTrue(validate_options(dict(base, concept_network=True))['concept_network'])
         with self.assertRaises(ValueError):
             validate_options(dict(base, concept_network='sì'))
+
+
+@unittest.skipUnless(TORCH, 'torch is needed to learn the network')
+class DescribeTest(unittest.TestCase):
+    def test_every_layer_says_how_many_concepts_work_and_shows_examples(self):
+        from acan.lm.concept_net_training import Network
+        net = Network(config()).export()
+        docs = [np.random.default_rng(i).integers(0, 50, 60) for i in range(5)]
+        described = net.describe(docs, decode=lambda ids: ' '.join(map(str, ids)))
+        self.assertEqual([layer['layer'] for layer in described], [1, 2])
+        for layer in described:
+            self.assertEqual(len(layer['active']), 2)
+            self.assertTrue(all(0 < a <= 8 for a in layer['active']))
+            self.assertTrue(layer['concepts'] and all(c['examples'] for c in layer['concepts']))

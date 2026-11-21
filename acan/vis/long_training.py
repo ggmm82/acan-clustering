@@ -231,6 +231,13 @@ def concept_footprint_view(item):
             ('Errore su testo mai visto', number(progress.get('validation_nll'))),
             ('Migliore finora', number(progress.get('best_validation_nll'))),
             ('Prima di leggere questo testo', number(progress.get('baseline_nll')))]),
+        *([('Rete a concetti', [
+            ('Apprendimento', 'si è fermata: la validazione non migliorava più' if progress.get('network_stopped') else 'impara a ogni pezzo'),
+            *[(f"Strato {layer['layer']}",
+               f"{' · '.join(f'{a:.0f}' for a in layer['active'])} concetti attivi per gruppo; "
+               + (f"in un concetto il token più frequente è il {layer['tied']:.0%}. " if layer['tied'] is not None else '')
+               + ' '.join(f"Concetto {c['concept']} ({c['mass']:.0%}): " + ' | '.join(c['examples']) for c in layer['concepts']))
+              for layer in progress['network_concepts']]])] if progress.get('network_concepts') else []),
         ('Memoria e disco', [
             ('Memoria del processo (picco)', _bytes(progress['memory_peak_bytes']) if progress.get('memory_peak_bytes') else '—'),
             ('Un checkpoint', _bytes(item['checkpoint_bytes'])),

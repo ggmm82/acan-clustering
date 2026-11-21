@@ -74,13 +74,16 @@ class ConceptNet:
         return _softmax(self.p[f'layers.{i}.A'])
 
     # ---- a whole document --------------------------------------------------------------------------------
-    def states(self, ids):
-        """The final state of every position of one document (T x D)."""
+    def states(self, ids, memberships=None):
+        """The final state of every position of one document (T x D). ``memberships``, a list, receives the
+        memberships of every layer (T x H x K)."""
         h = self.p['centre.weight'][np.asarray(ids, np.int64)]
         T = len(h)
         for i in range(self.layers):
             q, v = self._project(i, h)
             t = self._memberships(i, q)                                       # T H K
+            if memberships is not None:
+                memberships.append(t)
             mass = np.cumsum(t, 0) + EPS_MASS
             sums = np.cumsum(t[..., None] * v[:, :, None, :], 0)              # T H K d
             weight = np.einsum('thk,hkj->thj', t, self._looked(i)) / mass
@@ -129,6 +132,48 @@ class ConceptNet:
 
     def cursor(self):
         return NetCursor(self)
+
+    def describe(self, documents, decode=None, concepts=3, examples=4):
+        """What the concepts of every layer hold, on some documents: how many concepts work in every group (e to the
+        entropy of their masses), how much a concept is tied to one token (the share of its most frequent token), and
+        the positions that belong most to the concepts of the first group with the most mass, with their context."""
+        found = [[] for _ in range(self.layers)]
+        where = []
+        for n, doc in enumerate(documents):
+            doc = np.asarray(doc, np.int64)
+            if len(doc) < 2:
+                continue
+            layers = []
+            self.states(doc, layers)
+            for i, t in enumerate(layers):
+                found[i].append(t)
+            where += [(n, j) for j in range(len(doc))]
+        if not where:
+            return []
+        tokens = np.array([int(np.asarray(documents[n])[j]) for n, j in where])
+        show = (lambda n, j: '…' + decode(list(np.asarray(documents[n])[max(0, j - 4):j])) + '[' + decode([int(documents[n][j])]) + ']'
+                ) if decode else (lambda n, j: str(int(documents[n][j])))
+        out = []
+        for i in range(self.layers):
+            t = np.concatenate(found[i])                                       # positions x H x K
+            active, tied = [], []
+            for head in range(t.shape[1]):
+                share = t[:, head].sum(0) / t[:, head].sum()
+                active.append(float(np.exp(-(share * np.log(share + 1e-12)).sum())))
+                hard = t[:, head].argmax(1)
+                for k in np.unique(hard):
+                    sel = hard == k
+                    if sel.sum() >= 20:
+                        tied.append(np.unique(tokens[sel], return_counts=True)[1].max() / sel.sum())
+            mass = t[:, 0].sum(0)
+            shown = []
+            for k in np.argsort(-mass)[:concepts]:
+                best = np.argsort(-t[:, 0, k])[:examples]
+                shown.append(dict(concept=int(k), mass=float(mass[k] / mass.sum()),
+                                  examples=[show(*where[j]).replace('\n', '⏎') for j in best]))
+            out.append(dict(layer=i + 1, active=[round(a, 1) for a in active],
+                            tied=float(np.mean(tied)) if tied else None, concepts=shown))
+        return out
 
     # ---- persistence -------------------------------------------------------------------------------------
     def arrays(self, prefix='net.'):
