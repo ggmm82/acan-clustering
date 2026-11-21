@@ -119,7 +119,11 @@ class PairText:
             if getattr(m, "net", None) is not None:              # a queue that goes on: the network learned so far
                 network = Network.restore(m.net)
             else:
-                config = dict(self.NETWORK, vocabulary=self.vocabulary, **{k: v for k, v in (self.network if isinstance(self.network, dict) else {}).items() if k != 'passes'})
+                # the width starts where the coordinates of the tokens are (their number was chosen by the data); the
+                # network grows from there
+                width = max(self.NETWORK['dim'], int(m.encoder.vectors.shape[1]))
+                config = dict(self.NETWORK, dim=width, vocabulary=self.vocabulary)
+                config.update({k: v for k, v in (self.network if isinstance(self.network, dict) else {}).items() if k != 'passes'})
                 frequency = m.unigram
                 groups = output_groups(m.encoder.token_classes[:self.vocabulary], frequency) if config["grouped"] else None
                 network = Network(config, centres=m.encoder.vectors, frequency=frequency, groups=groups)
