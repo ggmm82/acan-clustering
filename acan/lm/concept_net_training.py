@@ -311,6 +311,19 @@ def documents(ids, eos, longest):
             for i in range(0, len(doc) - 1, longest - 1)]
 
 
+def held_out(network, docs, tokens=4096):
+    """log p of the true token at every position of held-out documents (arrays of ids), in their order: the network
+    reads them in batches, as it learns, without the gradient."""
+    network.eval()
+    out = []
+    with torch.no_grad():
+        for ids, mask in batches([np.asarray(d, np.int64) for d in docs if len(d) >= 2], tokens, False, None):
+            lp = network.target_log_probs(ids[:, :-1], mask[:, :-1], ids[:, 1:])
+            m = mask[:, 1:].bool()
+            out += [lp[r][m[r]].numpy() for r in range(len(ids))]
+    return np.concatenate(out) if out else np.zeros(0)
+
+
 def batches(docs, tokens, shuffle, rng):
     order = rng.permutation(len(docs)) if shuffle else np.arange(len(docs))
     chunk, size = [], 0
@@ -466,8 +479,7 @@ class Grower:
         results = []
         for half, (kind, learner) in [(False, c) for c in candidates] + [(True, c) for c in slower]:
             learner.learn_documents(trial, check)
-            net = learner.network.export()
-            results.append((kind, learner, net, score(net), half))
+            results.append((kind, learner, learner.network.export(), score(learner.network), half))
         winner = results[0]
         for result in results[1:]:
             if self._better(result[3], winner[3]):
@@ -491,6 +503,8 @@ class Grower:
         return self._decide(trial, score, check)
 
     def learn(self, ids, eos, score, check=None):
+        """``score(network)``: the log-probabilities of held-out text under the network that is learning (torch), as
+        ``held_out`` gives them."""
         if self.done:
             return self.best
         docs = documents(ids, eos, self.learner.longest)
@@ -520,10 +534,9 @@ class Grower:
         if self.done:
             return self.best
         if not decided:                                        # the network at the end of the new text, if better
-            net = self.learner.network.export()
-            scores = score(net)
+            scores = score(self.learner.network)
             if self.best_scores is None or self._better(scores, self.best_scores):
-                self._keep(net, scores)
+                self._keep(self.learner.network.export(), scores)
         if self.passes:
             piece, made = sum(map(len, docs)), 0
             interval = piece

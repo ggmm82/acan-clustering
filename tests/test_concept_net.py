@@ -148,7 +148,7 @@ class GrowthTest(unittest.TestCase):
 class CalendarTest(unittest.TestCase):
     def test_decisions_double_and_a_growth_wins_only_if_it_reads_better(self):
         import torch
-        from acan.lm.concept_net_training import Grower, Network
+        from acan.lm.concept_net_training import Grower, Network, held_out
         torch.manual_seed(0)
         rng = np.random.default_rng(4)
         docs = []
@@ -157,12 +157,8 @@ class CalendarTest(unittest.TestCase):
             docs += list(rng.choice(words, 30)) + [49]
         ids, held = np.array(docs[:-1500]), np.array(docs[-1500:])
 
-        def score(net):
-            out = []
-            for doc in np.split(held, np.flatnonzero(held == 49) + 1):
-                if len(doc) > 2:
-                    out.append(np.log(net.targets(doc)))
-            return np.concatenate(out)
+        held_docs = [d for d in np.split(held, np.flatnonzero(held == 49) + 1) if len(d) > 2]
+        score = lambda network: held_out(network, held_docs)
         grower = Grower(Network(config(dim=4, heads=1, layers=1, concepts=2, window=1)), trial=512, passes=False, tokens=128)
         for start in range(0, len(ids), 2000):
             grower.learn(ids[start:start + 2000], 49, score)
@@ -203,7 +199,7 @@ class DirectionsTest(unittest.TestCase):
 class PassesTest(unittest.TestCase):
     def test_a_small_piece_is_read_again_while_it_helps_and_the_last_pass_is_undone(self):
         import torch
-        from acan.lm.concept_net_training import Grower, Network
+        from acan.lm.concept_net_training import Grower, Network, held_out
         torch.manual_seed(0)
         rng = np.random.default_rng(6)
         docs = []
@@ -212,7 +208,7 @@ class PassesTest(unittest.TestCase):
             docs += list(rng.choice(words, 8)) + [49]
         ids, held = np.array(docs[:450]), np.array(docs[450:])
         held_docs = [d for d in np.split(held, np.flatnonzero(held == 49) + 1) if len(d) > 2]
-        score = lambda net: np.concatenate([np.log(net.targets(d)) for d in held_docs])
+        score = lambda network: held_out(network, held_docs)
         grower = Grower(Network(config(dim=4, layers=1, heads=1, concepts=2, window=1)), trial=256, tokens=256)
         Grower.KINDS, kinds = ('width',), Grower.KINDS
         try:
@@ -220,4 +216,5 @@ class PassesTest(unittest.TestCase):
         finally:
             Grower.KINDS = kinds
         self.assertGreater(grower.passes_made[0], 1)
-        np.testing.assert_allclose(score(grower.learner.network.export()), score(best), atol=1e-5)
+        numpy = lambda net: np.concatenate([np.log(net.targets(d)) for d in held_docs])
+        np.testing.assert_allclose(score(grower.learner.network), numpy(best), atol=2e-4)

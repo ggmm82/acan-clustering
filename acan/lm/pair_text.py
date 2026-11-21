@@ -96,21 +96,24 @@ class PairText:
         if self.network and not self.network_done:
             self._learn_network(ids, check, tune)
 
-    def _network_scores(self, net, tune):
+    def _held_documents(self, tune):
+        """The held-out documents of the validation pieces, in order."""
         out = []
         for piece in tune:
             piece = np.asarray(piece, np.int64)
             starts = np.r_[document_starts(piece, self.eos), len(piece)]
-            for a, b in zip(starts[:-1], starts[1:]):
-                if b - a >= 2:
-                    out.append(np.log(np.maximum(net.targets(piece[a:b]), 1e-300)))
+            out += [piece[a:b] for a, b in zip(starts[:-1], starts[1:]) if b - a >= 2]
+        return out
+
+    def _network_scores(self, net, tune):
+        out = [np.log(np.maximum(net.targets(doc), 1e-300)) for doc in self._held_documents(tune)]
         return np.concatenate(out) if out else np.zeros(0)
 
     def _learn_network(self, ids, check, tune=()):
         """One pass of the concept network over the piece just counted. Its size comes from the data: it learns while
         it reads held-out text better, grows (more concepts, then one more layer) when it stops improving, and stops
         when growing does not help either (concept_net_training.Grower); the counts go on."""
-        from .concept_net_training import Grower, Network, output_groups
+        from .concept_net_training import Grower, Network, held_out, output_groups
         if self._learner is None:
             m = self.model
             if getattr(m, "net", None) is not None:              # a queue that goes on: the network learned so far
@@ -124,7 +127,8 @@ class PairText:
             self._learner = Grower(network, passes=options.get('passes', True))
             if getattr(m, "net", None) is not None and len(tune):
                 self._learner.best, self._learner.best_scores = m.net, self._network_scores(m.net, tune)
-        score = (lambda net: self._network_scores(net, tune)) if len(tune) else (lambda net: np.zeros(2))
+        held = self._held_documents(tune)
+        score = (lambda network: held_out(network, held)) if held else (lambda network: np.zeros(2))
         self.model.net = self._learner.learn(ids, self.eos, score, check)
         self.network_history = self._learner.history
         if self._learner.done:
