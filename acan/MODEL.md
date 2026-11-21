@@ -18,8 +18,8 @@ concetti si trovano dalle somme, senza discesa del gradiente. Sul testo i concet
 esistono in due forme. I concetti contati costruiscono la catena di letture (sezioni
 7–10). I concetti di una **rete a concetti** hanno le stesse formule, ma i loro centri,
 dispersioni e masse si imparano come in un modello di linguaggio, cioè lungo il
-gradiente della verosimiglianza del token che segue (sezione 11). La rete fornisce la
-stima da cui parte la catena. Ogni scelta strutturale (quanti concetti, quanti livelli,
+gradiente della verosimiglianza del token che segue (sezione 11). La rete può fornire la
+stima da cui parte la catena, oppure essere da sola il modello del testo. Ogni scelta strutturale (quanti concetti, quanti livelli,
 quante coordinate, quali letture, con quale forza, quando smettere di imparare) è presa
 dai dati con un unico criterio, descritto nella sezione 2.
 
@@ -311,9 +311,6 @@ $$
 p_{\rm rete}(y\mid h)=\frac{C_y\,\mathcal N(h;\,e_y,\sigma)}{\sum_{y'}C_{y'}\,\mathcal N(h;\,e_{y'},\sigma)} .
 $$
 
-I centri partono dalle coordinate dei token della sezione 8 e le masse dalle loro
-frequenze.
-
 **Strati di attenzione fra concetti.** In ogni strato, ciascun gruppo di concetti ha
 $K$ concetti con centro $g_k$, dispersione $s_k$ e massa $C_k$. Una posizione con stato
 $h_i$ vi appartiene con $T_k(h_i)$, la formula della sezione 4. Lungo il documento ogni
@@ -332,49 +329,57 @@ $$
 con $A_{kk'}$ l'attenzione dal concetto $k$ al concetto $k'$. Un token visto 10 o 10.000
 posizioni prima entra nelle stesse somme: è un'attenzione per contenuto, a qualunque
 distanza, il cui costo per token non dipende dalla lunghezza del documento. L'ordine
-delle parole vicine entra con gli stati delle ultime tre posizioni, una trasformazione
-per distanza. Lo stato dello strato successivo combina lo stato, ciò che ha letto e
-l'ordine vicino.
+delle parole vicine entra con gli stati delle ultime $W$ posizioni, una trasformazione
+per distanza. Ogni strato ha un'apertura $a$: il suo stato è
+$h+a\,(\mathrm{strato}(h)-h)$.
 
-**Come si imparano i concetti.** Centri, dispersioni, masse, attenzioni e centri dei
-token si muovono lungo il gradiente della log-verosimiglianza del token che segue, la
-misura della sezione 13. È così che un modello di linguaggio impara le sue
-rappresentazioni: ogni concetto di ogni strato si piega a servire la previsione finale,
-quindi i concetti di uno strato si formano al servizio di quelli dello strato sopra. Il
-testo si legge una volta, nell'ordine della coda, un pezzo alla volta. Dopo ogni pezzo
-la rete si misura sulla validazione: se non migliora più di un errore standard (sezione
-2), si tiene la rete del pezzo prima e la rete smette di imparare, mentre i conteggi
-proseguono.
+**Memoria del documento.** Ogni posizione letta lascia un indirizzo, una proiezione del
+suo stato, insieme al token che l'ha seguita. La posizione corrente confronta il suo
+indirizzo con quelli precedenti e legge i token che seguivano gli indirizzi più simili:
 
-**Le dimensioni della rete vengono dai dati.** La rete parte piccola: uno strato, gruppi
-di 16 concetti. Quando un pezzo di testo non la migliora più di un errore standard, si
-riprende la rete migliore e la si fa crescere. Prima ogni concetto si divide in due:
-due centri quasi uguali che si spartiscono la massa, così la lettura resta identica e il
-gradiente può poi separarli. Se non basta, si aggiunge uno strato che all'inizio lascia
-gli stati come sono. Una crescita resta se il pezzo successivo migliora la rete; se
-nessuna delle due aiuta, la rete smette di imparare.
+$$
+p(y\mid h_i)=(1-\lambda_i)\,p_{\rm rete}(y\mid h_i)+\lambda_i\sum_{j<i}\alpha_{ij}\,[y_{j+1}=y],
+$$
 
-**Perché la catena resta.** La rete generalizza dove i dati sono pochi; i conteggi
-ricordano con esattezza ciò che il corpus e il documento hanno detto. Nella catena la
-rete fornisce la stima generale e i contesti esatti la correggono con la formula della
-sezione 6, tanto più quanto più li hanno visti. Il peso fra le due fonti non è fissato:
-lo stabiliscono, posizione per posizione, le osservazioni di ciascun contesto.
+con $\alpha_{ij}$ la somiglianza normalizzata degli indirizzi e $\lambda_i$ una valvola
+calcolata dallo stato. Indirizzi e valvola si imparano con il resto della rete.
 
-**Quali parti della catena restano con la rete.** Misurato su 2.000 dialoghi con la stessa
-rete in cima, togliendo una parte alla volta e ricalcolando le forze:
+**Come si imparano i concetti.** Centri, dispersioni, masse, attenzioni, aperture,
+memoria e centri dei token si muovono lungo il gradiente della log-verosimiglianza del
+token che segue, la misura della sezione 13. Ogni concetto di ogni strato si piega così a
+servire la previsione finale. Un pezzo di testo non si legge una volta sola: dopo la
+prima lettura lo si rilegge dopo uno, due, quattro passaggi, finché il testo tenuto da
+parte migliora più di un errore standard (sezione 2), e il passaggio che non aiuta si
+annulla. È rileggendo che la rete **ricorda** ciò che ha visto, oltre a generalizzarlo.
+Quando due decisioni di fila sul testo nuovo non migliorano, la rete smette di imparare.
 
-| Catena sopra la rete | NLL |
-|---|---:|
-| completa: concetti dei tratti, contesti esatti, memoria, argomenti | 4,658 |
-| senza argomenti | 4,662 |
-| solo contesti esatti e memoria del documento | 4,677 |
-| solo contesti esatti, senza memoria | 5,250 |
+**Le dimensioni della rete vengono dai dati.** Le decisioni seguono un calendario che
+raddoppia con i token imparati: frequenti all'inizio, sempre più rade. A ogni decisione la
+rete com'è e le sue copie cresciute imparano lo stesso tratto di testo:
 
-Con la rete, i concetti dei tratti e gli argomenti valgono lo 0,4%: generalizzare dove i
-contesti esatti mancano è ciò che la rete fa meglio. La memoria del documento invece vale
-più di tutta la rete. Per questo, quando la coda impara la rete, il modello impara solo i
-concetti dei token e i contesti esatti, non i concetti dei tratti e gli argomenti, e la
-struttura dura circa quattro volte meno.
+- ogni concetto diviso in due, con centri quasi uguali e metà della massa;
+- uno strato in più, con l'apertura chiusa: lascia lo stato com'è;
+- il doppio della larghezza: ogni coordinata scritta due volte, con le dispersioni e le
+  masse dei concetti corrette perché appartenenze e letture restino le stesse;
+- il doppio dei gruppi di concetti, i nuovi con lettura nulla;
+- il doppio delle distanze vicine, le nuove con trasformazione nulla.
+
+Ogni copia legge all'inizio esattamente come la rete. Ognuna impara il tratto finché
+migliora e si tiene al suo meglio, e i suoi parametri sono tirati verso la rete da cui
+parte, come un concetto verso il livello sopra: una copia se ne stacca solo quanto i dati
+la portano. La copia più larga impara a metà passo, perché le sue coordinate si muovono
+a coppie. Una copia vince solo se il suo meglio legge il testo tenuto da parte meglio
+della rete com'è, di più di un errore standard. Una decisione costa al più quanto il
+testo imparato fin lì.
+
+**Due usi.** La rete può essere la stima da cui parte la catena dei conteggi (sezione 9):
+i contesti esatti e la memoria contata la correggono, tanto più quanto più li hanno
+visti; in questo uso la struttura impara solo i concetti dei token e i contesti esatti,
+perché generalizzare dove i contesti mancano è ciò che la rete fa. Oppure può essere
+**da sola** il modello del testo, senza conteggi e senza concetti
+trovati dalle somme. In questo caso le sue dimensioni sono fissate e ogni documento
+comincia dopo il token di fine, così anche il suo primo token si legge come in
+addestramento.
 
 ### 12 · Generazione
 
@@ -406,9 +411,9 @@ parametri.
   il testo di quell'argomento, non come comincia una risposta. Anche la rete a concetti,
   che pure legge la domanda attraverso le somme dei concetti, all'inizio della risposta
   non migliora la catena: il suo guadagno viene dal resto del testo.
-- **Velocità di apprendimento della rete.** La rete impara circa trenta volte più
-  lentamente di quanto i conteggi leggano; per questo smette di imparare quando non
-  migliora più.
+- **Velocità di apprendimento della rete.** Per ogni token la rete calcola l'appartenenza
+  ai concetti di tutto il vocabolario, avanti e indietro lungo il gradiente, e rilegge il
+  testo più volte: impara molto più lentamente di quanto i conteggi leggano.
 - **Interpretabilità.** I concetti contati si leggono come somme dei loro membri; quelli
   della rete sono parametri ottimizzati, che si ispezionano attraverso le posizioni che
   vi appartengono.
@@ -421,7 +426,7 @@ Le stesse formule servono la scheda tabulare e quella generativa. Nel caso tabul
 righe sono quelle del file e i concetti si trovano dalle somme. Nel caso generativo ogni
 posizione del testo diventa una riga (Matematica, sezione 7); i concetti contati formano
 la catena di letture, e la rete a concetti, se la coda la impara, ne fornisce la stima di
-partenza (Matematica, sezione 11). Questa scheda descrive gli algoritmi, il loro costo e
+partenza, oppure è da sola il modello del testo (Matematica, sezione 11). Questa scheda descrive gli algoritmi, il loro costo e
 le misure.
 
 ### 2 · Apprendimento e predizione su una tabella
@@ -467,15 +472,21 @@ le misure.
    conserva le chiavi con più osservazioni per byte, e le altre leggono il concetto
    più generale. Gli argomenti non vengono potati.
 5. **Rete a concetti (opzione della coda, attiva per default nella pagina).** Dopo i
-   conteggi, ogni pezzo insegna alla rete in un solo passaggio. Si procede a lotti di
-   circa 2.048 token di documenti interi, con AdamW e un breve riscaldamento del passo.
-   La rete parte con uno strato di gruppi da 16 concetti e cresce come descritto in
-   Matematica, sezione 11.
-   Le somme dei concetti si leggono a blocchi di 64 posizioni: dentro il blocco con un
-   prodotto di matrici, fra un blocco e l'altro con le somme correnti. Le appartenenze
-   sviluppano il quadrato in prodotti di matrici. Dopo il pezzo la rete si misura sulla
-   validazione e, se non migliora più di un errore standard, smette di imparare. Per
-   imparare usa PyTorch; per leggere, numpy e i parametri salvati.
+   conteggi, ogni pezzo insegna alla rete. Si procede con AdamW a lotti di documenti
+   interi, tanti token per lotto quanti lotti in un passaggio (al più 2.048 token), con un
+   avvio del passo che dura al più un passaggio. La rete parte larga quanto le coordinate
+   dei token, con uno strato, un gruppo e due concetti, e cresce come descritto in
+   Matematica, sezione 11; finito il testo nuovo del pezzo, lo rilegge finché la
+   validazione migliora. Le somme dei concetti si leggono a blocchi di 64 posizioni:
+   dentro il blocco con un prodotto di matrici, fra un blocco e l'altro con le somme
+   correnti; le appartenenze sviluppano il quadrato in prodotti di matrici; la
+   validazione si legge a lotti, senza gradiente. Per imparare usa PyTorch; per leggere,
+   numpy e i parametri salvati.
+
+   **La rete da sola (opzione della coda «Solo la rete a concetti»).** Non si impara né la
+   struttura né i conteggi: il modello del testo è la rete, larga 96, con 3 strati, 4
+   gruppi da 64 concetti e 3 distanze vicine, e i centri dei token partono a caso. Ogni
+   pezzo si legge e si rilegge come sopra; la crescita è spenta.
 6. **Giudizio periodico.** Una ventina di volte per file si scelgono di nuovo le forze
    $\kappa$ della catena su metà della validazione e si misura la NLL sull'altra metà. Le
    scale di argomento e la loro forza si scelgono la prima volta e alla fine
@@ -498,7 +509,8 @@ le misure.
    fusi come nell'addestramento.
 3. **Distribuzione.** Per la posizione successiva la rete dà la stima di partenza
    (Matematica, sezione 11), poi si applicano la catena di corpus e documento (sezione 9)
-   e il rapporto degli argomenti (sezione 10).
+   e il rapporto degli argomenti (sezione 10). Con la rete da sola, la distribuzione è
+   quella della rete con la sua memoria del documento.
    Il risultato è una probabilità per ogni token del vocabolario.
 4. **Scelta e avanzamento.** Si sceglie il token (sezione 12), lo si aggiunge allo stato
    senza aggiungerlo ai conteggi del documento, e si ripete fino a un token di fine o
@@ -521,33 +533,26 @@ distribuzione in ogni posizione: è la stessa funzione applicata allo stesso sta
   dei concetti e gli ultimi stati, a qualunque lunghezza del documento.
 - **Addestramento:** lineare nel numero di token per i conteggi; la struttura si impara
   una volta, su un campione la cui dimensione la stabiliscono i dati. La rete è lineare
-  nei token che legge, ma circa trenta volte più lenta dei conteggi.
+  nei token che legge per ogni passaggio, ma molto più lenta dei conteggi, e rilegge ogni
+  pezzo più volte; le decisioni di crescita costano al più quanto il testo già imparato.
 
 ### 6 · Misure
 
-Dialoghi in italiano e inglese (SYNTH): 12.000 dialoghi di addestramento, tokenizzatore
-da 32.000 token, 200 dialoghi di test mai visti.
+Dialoghi in italiano e inglese (SYNTH): tokenizzatore da 32.000 token, dialoghi di test mai
+visti. NLL in nat per token.
 
-| Misura | Solo conteggi | Con la rete a concetti |
-|---|---:|---:|
-| NLL sul test | 4,3658 nat/token (perplessità ~79) | **4,1486** (perplessità ~63) |
-| Struttura e primo pezzo | 805 s | 1.471 s |
-| Lettura | 61.800 token/s | 1.961 token/s |
-| Memoria di picco | 2,4 GB | 4,8 GB |
+| Modello | Dialoghi di addestramento | Rete | NLL sul test |
+|---|---:|---|---:|
+| catena dei conteggi | 12.000 | — | 4,3658 |
+| rete come stima di partenza della catena | 12.000 | 96 numeri, 3 strati, 4 gruppi da 64 concetti; un passaggio | **4,1486** |
+| catena dei contesti esatti e della memoria | 2.000 | — | 5,022 |
+| la sola rete | 2.000 | 96 numeri, 3 strati, 4 gruppi da 64 concetti; 3 passaggi | **4,877** |
 
-La rete ha 3 strati, ciascuno con 4 gruppi di 64 concetti, e uno stato di 96 numeri.
-Dove il modello migliora la catena, su 2.000 dialoghi:
+Sui 2.000 dialoghi la sola rete, dopo tre passaggi, legge il test meglio della catena che
+conta gli stessi dati, e migliora ancora a ogni passaggio. Con tre passaggi il testo già
+letto scende a 4,086 nat contro 4,767 della validazione: la rete ricorda ciò che ha visto,
+oltre a generalizzarlo.
 
-| Posizioni | Quota | Guadagno |
-|---|---:|---:|
-| ultimi 2 token mai visti nel corpus | 32% | 0,21 nat/token |
-| visti da 1 a 9 volte | 35% | 0,29 |
-| visti 100 volte o più | 13% | 0,12 |
-| primi 5 token di una risposta | 1,5% | 0,00 |
-| token rari | 29% | 0,28 |
-
-Il guadagno viene dalla generalizzazione dove i contesti sono stati visti poco e dalla
-vicinanza dei token simili in uscita. All'inizio di una risposta non c'è guadagno: le
-risposte di prova restano poco legate alla domanda (Matematica, sezione 14).
+La rete con la crescita delle dimensioni non è ancora misurata sul SYNTH.
 
 [Protocolli sperimentali](../experiments/text_table/README.md).

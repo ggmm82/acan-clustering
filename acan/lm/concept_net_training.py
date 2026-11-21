@@ -309,10 +309,14 @@ def output_groups(token_classes, frequency, limit=512):
     return group
 
 
-def documents(ids, eos, longest):
+def documents(ids, eos, longest, begin=False):
+    """The documents of a stream (each ends with ``eos``), in pieces of at most ``longest`` tokens. With ``begin``
+    every document starts with ``eos`` too, so that its first token is read after the end of the one before."""
     ids = np.asarray(ids, np.int64)
-    return [doc[i:i + longest] for doc in np.split(ids, np.flatnonzero(ids == eos) + 1) if len(doc) > 2
-            for i in range(0, len(doc) - 1, longest - 1)]
+    docs = np.split(ids, np.flatnonzero(ids == eos) + 1)
+    if begin:
+        docs = [np.r_[eos, doc] for doc in docs if len(doc)]
+    return [doc[i:i + longest] for doc in docs if len(doc) > 2 for i in range(0, len(doc) - 1, longest - 1)]
 
 
 def held_out(network, docs, limit=None, batch=4096):
@@ -468,6 +472,7 @@ class Grower:
         self.learned = 0                                       # tokens learned, passes included
         self.decision = self.learner.tokens                    # the first decision: after one batch
         self.history, self.passes_made = [], []
+        self.begin = False                                     # documents start after an eos (the network alone)
         self.misses = 0                                        # decisions in a row that did not improve
 
     @staticmethod
@@ -560,7 +565,7 @@ class Grower:
         ``tokens`` of them, when given) under the network that is learning (torch), as ``held_out`` gives them."""
         if self.done:
             return self.best
-        docs = documents(ids, eos, self.learner.longest)
+        docs = documents(ids, eos, self.learner.longest, self.begin)
         if not docs:
             return self.best
         cycle = _Cycle(docs, self.learner.rng)

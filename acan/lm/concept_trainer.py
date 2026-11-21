@@ -165,9 +165,14 @@ def run_training(root, identifier, stop_event=None):
                 start, _ = load(source, budget_bytes=budget)
                 if start.vocabulary != len(tokenizer) or start.eos != tokenizer.eos_token_id:
                     raise ValueError('La coda contiene un checkpoint con un vocabolario diverso.')
-            model = start if start is not None else PairText(len(tokenizer), tokenizer.eos_token_id, budget,
-                                                                 config.get('concept_context', 512),
-                                                                 network=bool(config.get('concept_network', False)))
+            if start is not None:
+                model = start
+            elif config.get('concept_network_only'):            # the concept network alone: no counts, no EM
+                from .net_text import NetText
+                model = NetText(len(tokenizer), tokenizer.eos_token_id, budget, config.get('concept_context', 512))
+            else:
+                model = PairText(len(tokenizer), tokenizer.eos_token_id, budget, config.get('concept_context', 512),
+                                 network=bool(config.get('concept_network', False)))
             model.tail = np.empty(0, np.int64)                   # a new text starts with an empty prefix
             state = dict(step=0, tokens_trained=0, device='cpu', identity=identity, model_contract=contract(profile), profile=profile,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},

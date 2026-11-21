@@ -221,3 +221,44 @@ class PassesTest(unittest.TestCase):
         self.assertGreater(grower.passes_made[0], 1)
         numpy = lambda net: np.concatenate([np.log(net.targets(d)) for d in held_docs])
         np.testing.assert_allclose(score(grower.learner.network), numpy(best), atol=2e-4)
+
+
+@unittest.skipUnless(TORCH, 'torch is needed to learn the network')
+class NetTextTest(unittest.TestCase):
+    def test_the_network_alone_learns_reads_token_by_token_as_in_bulk_and_after_saving(self):
+        from acan.lm.concept_lm import from_checkpoint_arrays
+        from acan.lm.net_text import NetText
+        rng = np.random.default_rng(7)
+        eos, docs = 40, []
+        for i in range(80):
+            words = np.arange(1, 20) if i % 2 else np.arange(20, 39)
+            docs += [int(rng.choice(words)) for _ in range(20)] + [eos]
+        ids = np.array(docs)
+        tune = [ids[:420], ids[420:840]]
+        model = NetText(41, eos, 1 << 22, max_context=64, network=dict(dim=8, layers=1, heads=1, concepts=4, window=1, passes=False))
+        before = model.logp(ids[:60], np.arange(1, 60)).mean()
+        model.add(ids, ids, tune, lambda: None)
+        self.assertIsNotNone(model.model)
+        self.assertGreater(model.logp(ids[:60], np.arange(1, 60)).mean(), before)
+        doc = ids[:ids.tolist().index(eos) + 1]
+        q = model.logp(doc)
+        cursor = model.prediction_cursor(())
+        for i, t in enumerate(doc):
+            p = cursor.distribution()
+            self.assertAlmostEqual(p.sum(), 1.0, places=6)
+            self.assertAlmostEqual(np.log(p[t]), q[i], places=4)
+            cursor.observe(t)
+        np.testing.assert_allclose(model.prediction_cursor(doc[:10]).distribution(),
+                                   model.distribution(doc[:10]), atol=1e-6)
+        restored = from_checkpoint_arrays(model.arrays())
+        np.testing.assert_allclose(restored.logp(doc), q, atol=1e-6)
+        self.assertEqual(len(model.generate(doc[:5], 8, temperature=.7, seed=1)), 8)
+        self.assertEqual(model.concepts(), [4])
+
+    def test_the_queue_accepts_the_network_alone_as_a_choice(self):
+        from acan.lm.research_options import validate_options
+        base = dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1')
+        self.assertFalse(validate_options(base)['concept_network_only'])
+        self.assertTrue(validate_options(dict(base, concept_network_only=True))['concept_network_only'])
+        with self.assertRaises(ValueError):
+            validate_options(dict(base, concept_network_only='sì'))

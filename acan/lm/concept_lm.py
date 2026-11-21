@@ -118,6 +118,9 @@ def load(directory, expected=None, budget_bytes=None):
 
 def from_checkpoint_arrays(arrays, budget_bytes=None):
     """The model of a checkpoint. Only the concept model of text (concept-pairs-v1) is loaded."""
+    if 'net_text' in arrays:                                     # the concept network alone
+        from .net_text import NetText
+        return NetText.from_arrays(arrays, budget_bytes)
     if 'pair_text' not in arrays:
         raise ValueError(OLD_CHECKPOINT)
     from .pair_text import PairText

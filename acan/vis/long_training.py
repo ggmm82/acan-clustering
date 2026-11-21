@@ -206,7 +206,9 @@ def concept_footprint_view(item):
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
     rows = [
         ('Modello', [
-            ('Tipo', 'modello a concetti con la rete a concetti: i concetti di ogni strato imparati prevedendo il token che segue, '
+            ('Tipo', 'la sola rete a concetti: i concetti dei token e di ogni strato imparati col gradiente prevedendo il token '
+                     'che segue, senza conteggi' if config.get('concept_network_only')
+             else 'modello a concetti con la rete a concetti: i concetti di ogni strato imparati prevedendo il token che segue, '
                      'la catena dei conteggi parte dalla loro previsione' if config.get('concept_network')
              else 'modello a concetti: nessuna rete neurale, nessun peso addestrato'),
             ('Vocabolario', f"{(progress.get('graft') or {}).get('vocabulary', 0):,} token" if progress.get('graft') else
@@ -405,6 +407,10 @@ layout = html.Div([
                         "la catena dei conteggi parte dalla loro previsione. Su 12.000 dialoghi prevede il 20% meglio, ma legge "
                         "circa 2.000 token al secondo invece di 60.000; smette da sola di imparare quando non migliora più.",
                         className='text-muted d-block mb-2'),
+             dbc.Checkbox(id='lm-long-network-only', value=False, label='Solo la rete a concetti (senza conteggi e senza EM)'),
+             html.Small("Il modello del testo è la sola rete: i concetti dei token e degli strati si imparano col gradiente, "
+                        "senza la catena dei conteggi, e ogni pezzo si rilegge finché la validazione migliora. Più lenta.",
+                        className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
          html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),
@@ -584,15 +590,16 @@ def register(app):
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
                   State('lm-long-length', 'value'), State('lm-long-memory', 'value'), State('lm-long-network', 'value'),
-                  prevent_initial_call=True)
-    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0, network=True):
+                  State('lm-long-network-only', 'value'), prevent_initial_call=True)
+    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0, network=True,
+              only=False):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
                         milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0), concept_network=bool(network),
-                        probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
+                        concept_network_only=bool(only), probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             return result.get('message', 'Coda creata.'), result['queue']
         except ValueError as exc:
