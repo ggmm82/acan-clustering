@@ -363,7 +363,9 @@ class Learner:
         as the concept model weighs its attributes: a target as much as all the features together."""
         self.network, self.tokens, self.longest = network, tokens, longest
         self.weight = None if weight is None else torch.as_tensor(np.asarray(weight, np.float32))
-        self.opt = torch.optim.AdamW(network.parameters(), lr=lr, weight_decay=.01)
+        self.opt = torch.optim.AdamW(network.parameters(), lr=lr, weight_decay=0.)
+        self.decay = .01
+        self.anchor = None                                     # where the parameters are pulled back to (None: zero)
         self.lr, self.steps = lr, 0
         self.warmup = 200                                      # steps of the start, at most one pass (Grower)
         self.rng = np.random.default_rng(seed)
@@ -387,9 +389,24 @@ class Learner:
             self.opt.zero_grad(); loss.backward()
             torch.nn.utils.clip_grad_norm_(self.network.parameters(), 1.)
             self.opt.step(); self.steps += 1
+            self._pull_back(self.opt.param_groups[0]['lr'])
             total += loss.item() * m.sum().item(); n += m.sum().item()
         self.network.eval()
         return total / max(n, 1)
+
+    def hold(self):
+        """From now on the parameters are pulled back to where they are, not to zero: as a concept of the concept
+        model starts equal to the level above and leaves it only as far as the data take it."""
+        self.anchor = [p.detach().clone() for p in self.network.parameters()]
+
+    def _pull_back(self, lr):
+        with torch.no_grad():
+            if self.anchor is None:
+                for p in self.network.parameters():
+                    p.mul_(1 - lr * self.decay)
+            else:
+                for p, a in zip(self.network.parameters(), self.anchor):
+                    p.sub_(lr * self.decay * (p - a))
 
 
 
@@ -425,17 +442,17 @@ class Grower:
     The network starts as small as it can be. The decisions follow a doubling calendar of the tokens learned: after
     one batch, two, four, ... At a decision the network as it is and its grown copies (every concept split in two;
     one more layer; twice as wide; twice the groups of concepts; twice the nearby distances: all read exactly as the
-    network did) learn the same next stretch of text, each at its step and at half of it, the network as it is also at
-    twice its step (the pace is chosen as the size is; a wider copy starts from half the step, since its coordinates
-    move in pairs and at the same step it would move twice as much; the pace is raced once the start is over, since
-    during the start every larger step would look better). The stretch is so long
-    that a decision costs at most as much as all the text learned so far (at most ``TRIAL`` tokens and one pass over
-    the piece); the race is judged on as much held-out text. A copy wins only if it then reads held-out text better
-    than the network that did not grow, by more than one standard error of the paired difference: the size that
-    learns more from the same text. When the new text of a piece is over, the piece is read again, with decisions
-    after one more pass, two, four, ..., while held-out text is read better; the passes that did not help are undone.
-    When two decisions in a row (the second on twice the text) do not improve, the network stops learning (``done``)
-    or stops reading the piece again; ``best`` is the network to keep.
+    network did) learn the same next stretch of text, so long that a decision costs at most as much as all the text
+    learned so far (at most ``TRIAL`` tokens and one pass over the piece). As the concept model compares its sizes by
+    what each one reaches and not by how fast it gets there, every candidate learns as far as it goes on the stretch
+    (judged after 1/8, 1/4, 1/2 and the whole of it, kept at its best) and is held at the network it starts from, so
+    that a grown copy leaves the smaller network only as far as the data take it; a wider copy starts from half the
+    step, since its coordinates move in pairs. A copy wins only if its best reads held-out text better than the best
+    of the network that did not grow, by more than one standard error of the paired difference. When the new text of
+    a piece is over, the piece is read again, with decisions after one more pass, two, four, ..., while held-out text
+    is read better; the passes that did not help are undone. When two decisions in a row (the second on twice the
+    text) do not improve, the network stops learning (``done``) or stops reading the piece again; ``best`` is the
+    network to keep.
     """
 
     TRIAL = 65536                                              # longest trial of a decision: its cost
@@ -471,7 +488,7 @@ class Grower:
 
     def _trial_tokens(self):
         """A decision costs at most what was learned so far: every candidate learns that much over their number."""
-        racers = 2 * (1 + len(self.KINDS)) + 1
+        racers = 1 + len(self.KINDS)
         return max(1, min(self.trial, self.learned // racers, self.piece))
 
     def _keep(self, net, scores):
@@ -479,7 +496,13 @@ class Grower:
         self.best_learner = copy.deepcopy(self.learner)
 
     def _decide(self, trial, score, check):
-        """The network and its grown copies learn the same stretch; the best one goes on. True if it improved."""
+        """The network and its grown copies learn the same stretch, each as far as it goes; the best one goes on.
+        True if it improved.
+
+        As the concept model compares sizes by what each reaches, not by how fast it gets there, every candidate is
+        judged after 1/8, 1/4, 1/2 and the whole of the stretch, stops after two judgments in a row that do not improve,
+        and is kept at its best; the winner is the best of the bests. Every candidate is held at the network it
+        starts from: a grown copy leaves the smaller network only as far as the data take it."""
         candidates = [("com'è", self.learner)]
         for kind in self.KINDS:
             learner = Learner(self._grown(kind), **self.learner_options)
@@ -487,30 +510,33 @@ class Grower:
             learner.tokens, learner.warmup = self.learner.tokens, self.learner.warmup
             learner.lr = self.learner.lr
             if kind == 'width':
-                # every coordinate is now two that move together: at the same step the network would move twice as
-                # much, and after a few widenings it is unstable. Half the step moves it as before; if it needs more,
-                # it wins the faster pace at a later race
-                learner.lr /= 2
+                learner.lr /= 2                                # its coordinates move in pairs: half the step moves it as much
             candidates.append((kind, learner))
-        # the pace is chosen as the size is: every candidate also learns the stretch at half its step, and the network
-        # as it is also at twice its step. A wider copy moves faster at the same step (its coordinates move in pairs):
-        # with the faster network as it is in the race, it wins only if it needs the room, not because it is faster.
-        paced = []
-        for kind, learner in (candidates if self.learner.steps >= self.learner.warmup else ()):   # after the start
-            for factor in ((2., .5) if kind == "com'è" else (.5,)):
-                twin = copy.deepcopy(learner)
-                twin.lr *= factor
-                paced.append((kind, twin))
+        size = sum(map(len, trial))
+        rounds, done, cut = [], 0, size // 8
+        for d in trial:                                        # the stretch in doubling parts: 1/8, 1/8, 1/4, 1/2
+            if not rounds or (done >= cut and len(rounds) < 4):
+                rounds.append([]); cut = cut * 2 if len(rounds) > 1 else cut
+            rounds[-1].append(d); done += len(d)
         results = []
-        for half, (kind, learner) in [(False, c) for c in candidates] + [(True, c) for c in paced]:
-            learner.learn_documents(trial, check)
-            # the race is judged on as much held-out text as the stretch it learned: quick decisions at first
-            results.append((kind, learner, score(learner.network, sum(map(len, trial))), half))
+        for kind, learner in candidates:
+            learner.hold()
+            best, best_scores, misses = learner, None, 0
+            for part in rounds:
+                learner.learn_documents(part, check)
+                scores = score(learner.network, size)          # on as much held-out text as the stretch
+                if best_scores is None or self._better(scores, best_scores):
+                    best, best_scores, misses = copy.deepcopy(learner), scores, 0
+                else:
+                    misses += 1
+                    if misses >= 2:
+                        break
+            results.append((kind, best, best_scores))
         winner = results[0]
         for result in results[1:]:
             if self._better(result[2], winner[2]):
                 winner = result
-        kind, self.learner, _, half = winner
+        kind, self.learner, _ = winner
         net, scores = self.learner.network.export(), score(self.learner.network)   # the winner, on all of it
         improved = self.best_scores is None or self._better(scores, self.best_scores)
         c = net.config
