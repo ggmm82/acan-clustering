@@ -206,7 +206,9 @@ def concept_footprint_view(item):
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
     rows = [
         ('Modello', [
-            ('Tipo', 'modello a concetti: nessuna rete neurale, nessun peso addestrato'),
+            ('Tipo', 'modello a concetti con la rete a concetti: i concetti di ogni strato imparati prevedendo il token che segue, '
+                     'la catena dei conteggi parte dalla loro previsione' if config.get('concept_network')
+             else 'modello a concetti: nessuna rete neurale, nessun peso addestrato'),
             ('Vocabolario', f"{(progress.get('graft') or {}).get('vocabulary', 0):,} token" if progress.get('graft') else
              (f"{config.get('vocabulary', 32000):,} token, lo stesso del testo precedente della coda (si stanno preparando i token di questo testo)"
               if config.get('warm_start') else f"{config.get('vocabulary', 32000):,} token (si sta imparando dai testi della coda)")),
