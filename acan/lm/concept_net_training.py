@@ -421,8 +421,9 @@ class Grower:
     The network starts as small as it can be. The decisions follow a doubling calendar of the tokens learned: after
     one batch, two, four, ... At a decision the network as it is and its grown copies (every concept split in two;
     one more layer; twice as wide; twice the groups of concepts; twice the nearby distances: all read exactly as the
-    network did) learn the same next stretch of text, each at its step and at half of it (the pace is chosen as the
-    size is; a wider copy starts from half the step, since its coordinates move in pairs). The stretch is so long
+    network did) learn the same next stretch of text, each at its step and at half of it, the network as it is also at
+    twice its step (the pace is chosen as the size is; a wider copy moves faster at the same step, since its
+    coordinates move in pairs, so it wins only if it needs the room). The stretch is so long
     that a decision costs at most as much as all the text learned so far (at most ``TRIAL`` tokens and one pass over
     the piece); the race is judged on as much held-out text. A copy wins only if it then reads held-out text better
     than the network that did not grow, by more than one standard error of the paired difference: the size that
@@ -465,7 +466,7 @@ class Grower:
 
     def _trial_tokens(self):
         """A decision costs at most what was learned so far: every candidate learns that much over their number."""
-        racers = 2 * (1 + len(self.KINDS))
+        racers = 2 * (1 + len(self.KINDS)) + 1
         return max(1, min(self.trial, self.learned // racers, self.piece))
 
     def _keep(self, net, scores):
@@ -480,19 +481,18 @@ class Grower:
             learner.steps = self.learner.steps                 # the same pace: no warm-up again, or it could not win
             learner.tokens, learner.warmup = self.learner.tokens, self.learner.warmup
             learner.lr = self.learner.lr
-            if kind == 'width':
-                # every coordinate is now two that move together: half the step moves the network as much as
-                # before, or the wider copy would win only because it learns faster, not because it needs to
-                learner.lr /= 2
             candidates.append((kind, learner))
-        # the pace is chosen as the size is: every candidate also learns the stretch at half its step
-        slower = []
+        # the pace is chosen as the size is: every candidate also learns the stretch at half its step, and the network
+        # as it is also at twice its step. A wider copy moves faster at the same step (its coordinates move in pairs):
+        # with the faster network as it is in the race, it wins only if it needs the room, not because it is faster.
+        paced = []
         for kind, learner in candidates:
-            twin = copy.deepcopy(learner)
-            twin.lr /= 2
-            slower.append((kind, twin))
+            for factor in ((2., .5) if kind == "com'è" else (.5,)):
+                twin = copy.deepcopy(learner)
+                twin.lr *= factor
+                paced.append((kind, twin))
         results = []
-        for half, (kind, learner) in [(False, c) for c in candidates] + [(True, c) for c in slower]:
+        for half, (kind, learner) in [(False, c) for c in candidates] + [(True, c) for c in paced]:
             learner.learn_documents(trial, check)
             # the race is judged on as much held-out text as the stretch it learned: quick decisions at first
             results.append((kind, learner, score(learner.network, sum(map(len, trial))), half))
