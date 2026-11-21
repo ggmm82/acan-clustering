@@ -280,8 +280,11 @@ class Grower:
     def _decide(self, trial, score, check):
         """The network and its grown copies learn the same stretch; the best one goes on."""
         before = self.learner.network.export()
-        candidates = [('com\'è', self.learner)] + [(kind, Learner(self._grown(kind), **self.learner_options))
-                                                    for kind in ('concepts', 'layer')]
+        candidates = [('com\'è', self.learner)]
+        for kind in ('concepts', 'layer'):
+            learner = Learner(self._grown(kind), **self.learner_options)
+            learner.steps = self.learner.steps                 # the same pace: no warm-up again, or it could not win
+            candidates.append((kind, learner))
         results = []
         for kind, learner in candidates:
             learner.learn_documents(trial, check)
