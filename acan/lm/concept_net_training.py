@@ -340,13 +340,15 @@ class Learner:
         self.weight = None if weight is None else torch.as_tensor(np.asarray(weight, np.float32))
         self.opt = torch.optim.AdamW(network.parameters(), lr=lr, weight_decay=.01)
         self.lr, self.steps = lr, 0
+        self.warmup = 200                                      # steps of the start, at most one pass (Grower)
         self.rng = np.random.default_rng(seed)
 
-    def learn(self, ids, eos, check=None, warmup=200):
+    def learn(self, ids, eos, check=None, warmup=None):
         """One pass over a piece of text, in batches of about ``tokens`` tokens. Returns the training loss."""
         return self.learn_documents(documents(ids, eos, self.longest), check, warmup)
 
-    def learn_documents(self, docs, check=None, warmup=200):
+    def learn_documents(self, docs, check=None, warmup=None):
+        warmup = self.warmup if warmup is None else warmup
         self.network.train()
         total, n = 0., 0
         for ids_, mask in batches(docs, self.tokens, True, self.rng):
@@ -419,6 +421,7 @@ class Grower:
         self.learned = 0                                       # tokens learned, passes included
         self.decision = self.learner.tokens                    # the first decision: after one batch
         self.history, self.passes_made = [], []
+        self.misses = 0                                        # decisions in a row that did not improve
 
     @staticmethod
     def _better(scores, than):
@@ -446,7 +449,12 @@ class Grower:
         for kind in self.KINDS:
             learner = Learner(self._grown(kind), **self.learner_options)
             learner.steps = self.learner.steps                 # the same pace: no warm-up again, or it could not win
-            learner.tokens = self.learner.tokens
+            learner.tokens, learner.warmup = self.learner.tokens, self.learner.warmup
+            learner.lr = self.learner.lr
+            if kind == 'width':
+                # every coordinate is now two that move together: half the step moves the network as much as
+                # before, or the wider copy would win only because it learns faster, not because it needs to
+                learner.lr /= 2
             candidates.append((kind, learner))
         results = []
         for kind, learner in candidates:
@@ -485,6 +493,8 @@ class Grower:
         # as many batches in a pass as tokens in a batch: a small piece is learned in many small steps
         self.piece = sum(map(len, docs))                       # a trial is at most one pass over the piece
         self.learner.tokens = min(self.batch, max(1, math.isqrt(self.piece)))
+        if not self.learned:                                   # the start lasts at most one pass over the piece
+            self.learner.warmup = min(self.learner.warmup, max(1, -(-self.piece // self.learner.tokens)))
         if not self.learned:
             self.decision = self.learner.tokens
         while cycle.fresh and not self.done:                   # the new text, on the calendar of the tokens learned
@@ -495,8 +505,9 @@ class Grower:
                 break                                          # the new text is over before the decision
             trial, size = cycle.take(min(self.trial, self.learned, self.piece), within_pass=True)
             self.learned += size; decided = True
-            if not self._decide(trial, score, check):
-                self.done = True                               # it no longer learns and growing does not help
+            # it no longer learns and growing does not help: confirmed by a second decision, on twice the text
+            self.misses = 0 if self._decide(trial, score, check) else self.misses + 1
+            self.done = self.misses >= 2
             self.decision *= 2
         if self.done:
             return self.best
@@ -509,10 +520,10 @@ class Grower:
             piece, made = sum(map(len, docs)), 0
             interval = piece
             cycle.i, cycle.passes = len(cycle.order), 0       # the next take starts a new pass
-            while True:
+            misses = 0
+            while misses < 2:                                  # a pass that did not help, confirmed by a second
                 made += interval / piece
-                if not self._stretch_and_decide(cycle, interval, score, check, False):
-                    break
+                misses = 0 if self._stretch_and_decide(cycle, interval, score, check, False) else misses + 1
                 interval *= 2
             self.passes_made.append(round(made, 2))
             if self.best_learner is not None:
