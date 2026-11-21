@@ -311,13 +311,21 @@ def documents(ids, eos, longest):
             for i in range(0, len(doc) - 1, longest - 1)]
 
 
-def held_out(network, docs, tokens=4096):
+def held_out(network, docs, limit=None, batch=4096):
     """log p of the true token at every position of held-out documents (arrays of ids), in their order: the network
-    reads them in batches, as it learns, without the gradient."""
+    reads them in batches, as it learns, without the gradient. ``limit``: only the first documents, about that many
+    tokens."""
     network.eval()
+    if limit is not None:
+        kept, size = [], 0
+        for d in docs:
+            if size >= limit:
+                break
+            kept.append(d); size += len(d)
+        docs = kept
     out = []
     with torch.no_grad():
-        for ids, mask in batches([np.asarray(d, np.int64) for d in docs if len(d) >= 2], tokens, False, None):
+        for ids, mask in batches([np.asarray(d, np.int64) for d in docs if len(d) >= 2], batch, False, None):
             lp = network.target_log_probs(ids[:, :-1], mask[:, :-1], ids[:, 1:])
             m = mask[:, 1:].bool()
             out += [lp[r][m[r]].numpy() for r in range(len(ids))]
@@ -479,12 +487,14 @@ class Grower:
         results = []
         for half, (kind, learner) in [(False, c) for c in candidates] + [(True, c) for c in slower]:
             learner.learn_documents(trial, check)
-            results.append((kind, learner, learner.network.export(), score(learner.network), half))
+            # the race is judged on as much held-out text as the stretch it learned: quick decisions at first
+            results.append((kind, learner, score(learner.network, sum(map(len, trial))), half))
         winner = results[0]
         for result in results[1:]:
-            if self._better(result[3], winner[3]):
+            if self._better(result[2], winner[2]):
                 winner = result
-        kind, self.learner, net, scores, half = winner
+        kind, self.learner, _, half = winner
+        net, scores = self.learner.network.export(), score(self.learner.network)   # the winner, on all of it
         improved = self.best_scores is None or self._better(scores, self.best_scores)
         c = net.config
         self.history.append(dict(tokens=self.learned, layers=c['layers'], concepts=list(c['concepts']), dim=c['dim'],
@@ -503,8 +513,8 @@ class Grower:
         return self._decide(trial, score, check)
 
     def learn(self, ids, eos, score, check=None):
-        """``score(network)``: the log-probabilities of held-out text under the network that is learning (torch), as
-        ``held_out`` gives them."""
+        """``score(network, tokens=None)``: the log-probabilities of held-out text (the first documents, about
+        ``tokens`` of them, when given) under the network that is learning (torch), as ``held_out`` gives them."""
         if self.done:
             return self.best
         docs = documents(ids, eos, self.learner.longest)

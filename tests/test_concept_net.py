@@ -158,7 +158,7 @@ class CalendarTest(unittest.TestCase):
         ids, held = np.array(docs[:-1500]), np.array(docs[-1500:])
 
         held_docs = [d for d in np.split(held, np.flatnonzero(held == 49) + 1) if len(d) > 2]
-        score = lambda network: held_out(network, held_docs)
+        score = lambda network, tokens=None: held_out(network, held_docs, tokens)
         grower = Grower(Network(config(dim=4, heads=1, layers=1, concepts=2, window=1)), trial=512, passes=False, tokens=128)
         for start in range(0, len(ids), 2000):
             grower.learn(ids[start:start + 2000], 49, score)
@@ -208,7 +208,7 @@ class PassesTest(unittest.TestCase):
             docs += list(rng.choice(words, 8)) + [49]
         ids, held = np.array(docs[:450]), np.array(docs[450:])
         held_docs = [d for d in np.split(held, np.flatnonzero(held == 49) + 1) if len(d) > 2]
-        score = lambda network: held_out(network, held_docs)
+        score = lambda network, tokens=None: held_out(network, held_docs, tokens)
         grower = Grower(Network(config(dim=4, layers=1, heads=1, concepts=2, window=1)), trial=256, tokens=256)
         Grower.KINDS, kinds = ('width',), Grower.KINDS
         try:

@@ -128,7 +128,7 @@ class PairText:
             if getattr(m, "net", None) is not None and len(tune):
                 self._learner.best, self._learner.best_scores = m.net, self._network_scores(m.net, tune)
         held = self._held_documents(tune)
-        score = (lambda network: held_out(network, held)) if held else (lambda network: np.zeros(2))
+        score = (lambda network, tokens=None: held_out(network, held, tokens)) if held else (lambda network, tokens=None: np.zeros(2))
         self.model.net = self._learner.learn(ids, self.eos, score, check)
         self.network_history = self._learner.history
         if self._learner.done:
