@@ -31,7 +31,8 @@ def profile(cuda, size=None):
     """
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='cpu',
-                chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000)
+                chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000,
+                concept_network=True)
 
 
 def queues(jobs):
@@ -205,7 +206,9 @@ def concept_footprint_view(item):
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
     rows = [
         ('Modello', [
-            ('Tipo', 'modello a concetti: nessuna rete neurale, nessun peso addestrato'),
+            ('Tipo', 'modello a concetti con la rete a concetti: i concetti di ogni strato imparati prevedendo il token che segue, '
+                     'la catena dei conteggi parte dalla loro previsione' if config.get('concept_network')
+             else 'modello a concetti: nessuna rete neurale, nessun peso addestrato'),
             ('Vocabolario', f"{(progress.get('graft') or {}).get('vocabulary', 0):,} token" if progress.get('graft') else
              (f"{config.get('vocabulary', 32000):,} token, lo stesso del testo precedente della coda (si stanno preparando i token di questo testo)"
               if config.get('warm_start') else f"{config.get('vocabulary', 32000):,} token (si sta imparando dai testi della coda)")),
@@ -228,6 +231,13 @@ def concept_footprint_view(item):
             ('Errore su testo mai visto', number(progress.get('validation_nll'))),
             ('Migliore finora', number(progress.get('best_validation_nll'))),
             ('Prima di leggere questo testo', number(progress.get('baseline_nll')))]),
+        *([('Rete a concetti', [
+            ('Apprendimento', 'si è fermata: la validazione non migliorava più' if progress.get('network_stopped') else 'impara a ogni pezzo'),
+            *[(f"Strato {layer['layer']}",
+               f"{' · '.join(f'{a:.0f}' for a in layer['active'])} concetti attivi per gruppo; "
+               + (f"in un concetto il token più frequente è il {layer['tied']:.0%}. " if layer['tied'] is not None else '')
+               + ' '.join(f"Concetto {c['concept']} ({c['mass']:.0%}): " + ' | '.join(c['examples']) for c in layer['concepts']))
+              for layer in progress['network_concepts']]])] if progress.get('network_concepts') else []),
         ('Memoria e disco', [
             ('Memoria del processo (picco)', _bytes(progress['memory_peak_bytes']) if progress.get('memory_peak_bytes') else '—'),
             ('Un checkpoint', _bytes(item['checkpoint_bytes'])),
@@ -390,6 +400,11 @@ layout = html.Div([
                                          "contenitore da 4 GB sono 1.024 MB. Il limite riguarda le statistiche: ordinamento, stima dei concetti e worker usano altra RAM. Imposta al massimo "
                                          "un quarto della memoria del contenitore. Oltre il limite si tengono i conteggi "
                                          "con più osservazioni per byte; gli altri leggono il concetto più generale.", className='text-muted'), md=6)], className='mb-2'),
+             dbc.Checkbox(id='lm-long-network', value=True, label='Impara anche la rete a concetti (più lenta, prevede meglio)'),
+             html.Small("I concetti di ogni strato si imparano come in un modello di linguaggio, prevedendo il token che segue, e "
+                        "la catena dei conteggi parte dalla loro previsione. Su 12.000 dialoghi prevede il 20% meglio, ma legge "
+                        "circa 2.000 token al secondo invece di 60.000; smette da sola di imparare quando non migliora più.",
+                        className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
          html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),
@@ -568,15 +583,15 @@ def register(app):
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
-                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'),
+                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'), State('lm-long-network', 'value'),
                   prevent_initial_call=True)
-    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0):
+    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0, network=True):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
-                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0),
+                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0), concept_network=bool(network),
                         probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             return result.get('message', 'Coda creata.'), result['queue']
