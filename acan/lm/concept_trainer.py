@@ -188,8 +188,11 @@ def run_training(root, identifier, stop_event=None):
 
         def structure(phase, width, seconds, **facts):
             # Before the first piece is counted the model learns its scales: the page says which one and how far.
+            # The network says, inside a step, how far it is and the validation it reached (for the chart).
+            trace = getattr(model, 'trace', None)
             store.update(identifier, progress=dict(state, structure=dict(phase=phase, width=int(width), seconds=float(seconds),
-                                                                          **{key: int(value) for key, value in facts.items()})))
+                                                                          **{key: int(value) for key, value in facts.items()}),
+                                                   **({'network_trace': list(trace)} if trace else {})))
         model.report = structure
         started, initial = time.monotonic(), state['tokens_trained']
         last_save = time.monotonic()
@@ -243,7 +246,9 @@ def run_training(root, identifier, stop_event=None):
                     record_answers(directory, model, tokenizer, state, config.get('probe_prompts') or None)
                 last_save = time.monotonic()
             # A step without a measure does not repeat the last one: the chart draws only what was measured.
-            row = state if measured else {key: value for key, value in state.items() if key not in MEASURES}
+            if getattr(model, 'trace', None):
+                state['network_trace'] = list(model.trace)      # in the job's state for the chart, not in every history row
+            row = {key: value for key, value in state.items() if key != 'network_trace' and (measured or key not in MEASURES)}
             store.record(identifier, state['step'], row, progress=state)
         if state['step'] != saved_step:                          # paused between two saves: keep what was read
             model.judge(tune)

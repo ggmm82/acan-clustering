@@ -240,6 +240,7 @@ class NetTextTest(unittest.TestCase):
         model.add(ids, ids, tune, lambda: None)
         self.assertIsNotNone(model.model)
         self.assertGreater(model.logp(ids[:60], np.arange(1, 60)).mean(), before)
+        self.assertTrue(model.trace and all(len(point) == 2 for point in model.trace))   # the chart inside the steps
         doc = ids[:ids.tolist().index(eos) + 1]
         q = model.logp(doc)
         cursor = model.prediction_cursor(())

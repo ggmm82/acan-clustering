@@ -57,6 +57,8 @@ class NetText:
         self._learner = None
         self.network_done, self.network_history = False, []
         self.read = 0                                          # tokens of the current text read so far
+        self.trace = []                                        # [steps learned, validation NLL] whenever it is measured
+        self.piece = 0
 
     # ---- learning ------------------------------------------------------------------------------------
     def _held(self, pieces):
@@ -82,7 +84,16 @@ class NetText:
             self._learner.KINDS = ()                            # the sizes are fixed
             self._learner.begin = True
         held = self._held(tune)
-        score = (lambda net, tokens=None: held_out(net, held, tokens)) if held else (lambda net, tokens=None: np.zeros(2))
+        self.piece = self.piece or len(ids)
+        done_before = self.tokens - self._learner.learned           # what earlier learners of the queue learned
+
+        def score(net, tokens=None):
+            if not held:
+                return np.zeros(2)
+            values = held_out(net, held, tokens)
+            if tokens is None:                                  # the whole validation: a point of the chart
+                self.trace.append([round((done_before + self._learner.learned) / max(self.piece, 1), 3), float(-values.mean())])
+            return values
         started, last = time.monotonic(), [0.]
         again = self.read + len(ids) >= len(train) and self.network.get('passes', True)
 
