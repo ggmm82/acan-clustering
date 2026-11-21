@@ -422,12 +422,14 @@ class Grower:
     one batch, two, four, ... At a decision the network as it is and its grown copies (every concept split in two;
     one more layer; twice as wide; twice the groups of concepts; twice the nearby distances: all read exactly as the
     network did) learn the same next stretch of text, each at its step and at half of it (the pace is chosen as the
-    size is; a wider copy starts from half the step, since its coordinates move in pairs), as long as all the text learned so far (at most ``TRIAL``
-    tokens, what a decision may cost, and at most one pass over the piece); a copy wins only if it then reads held-out text better than the network that
-    did not grow, by more than one standard error of the paired difference: the size that learns more from the same
-    text. When the new text of a piece is over, the piece is read again, with decisions after one more pass, two,
-    four, ..., while held-out text is read better; the passes that did not help are undone. When a decision on new
-    text does not improve and no growth helps, the network stops learning (``done``); ``best`` is the network to keep.
+    size is; a wider copy starts from half the step, since its coordinates move in pairs). The stretch is so long
+    that a decision costs at most as much as all the text learned so far (at most ``TRIAL`` tokens and one pass over
+    the piece); the race is judged on as much held-out text. A copy wins only if it then reads held-out text better
+    than the network that did not grow, by more than one standard error of the paired difference: the size that
+    learns more from the same text. When the new text of a piece is over, the piece is read again, with decisions
+    after one more pass, two, four, ..., while held-out text is read better; the passes that did not help are undone.
+    When two decisions in a row (the second on twice the text) do not improve, the network stops learning (``done``)
+    or stops reading the piece again; ``best`` is the network to keep.
     """
 
     TRIAL = 65536                                              # longest trial of a decision: its cost
@@ -460,6 +462,11 @@ class Grower:
             network.add_layer()
             return network
         return {'width': network.widened, 'heads': network.more_heads, 'window': network.wider_window}[kind]()
+
+    def _trial_tokens(self):
+        """A decision costs at most what was learned so far: every candidate learns that much over their number."""
+        racers = 2 * (1 + len(self.KINDS))
+        return max(1, min(self.trial, self.learned // racers, self.piece))
 
     def _keep(self, net, scores):
         self.best, self.best_scores, self.best_learned = net, scores, self.learned   # with the tokens it had learned
@@ -508,7 +515,7 @@ class Grower:
         stretch, size = cycle.take(tokens, within_pass)
         if stretch:
             self.learner.learn_documents(stretch, check); self.learned += size
-        trial, size = cycle.take(min(self.trial, self.learned, self.piece))
+        trial, size = cycle.take(self._trial_tokens())
         self.learned += size
         return self._decide(trial, score, check)
 
@@ -535,7 +542,7 @@ class Grower:
                 self.learner.learn_documents(stretch, check); self.learned += size
             if self.learned < self.decision or not cycle.fresh or cycle.i == len(cycle.order):
                 break                                          # the new text is over before the decision
-            trial, size = cycle.take(min(self.trial, self.learned, self.piece), within_pass=True)
+            trial, size = cycle.take(self._trial_tokens(), within_pass=True)
             self.learned += size; decided = True
             # it no longer learns and growing does not help: confirmed by a second decision, on twice the text
             self.misses = 0 if self._decide(trial, score, check) else self.misses + 1
