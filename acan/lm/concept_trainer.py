@@ -112,7 +112,7 @@ def run_training(root, identifier, stop_event=None):
     from transformers import AutoTokenizer
     from .concept_lm import default_budget, load, save
     from .native import resolve
-    from .pair_text import PairText
+    from .net_text import NetText
     from .research_data import Blocks, prepare
     from .retention import retain_with_milestones
     store = Store(root)
@@ -165,8 +165,13 @@ def run_training(root, identifier, stop_event=None):
                 start, _ = load(source, budget_bytes=budget)
                 if start.vocabulary != len(tokenizer) or start.eos != tokenizer.eos_token_id:
                     raise ValueError('La coda contiene un checkpoint con un vocabolario diverso.')
-            model = start if start is not None else PairText(len(tokenizer), tokenizer.eos_token_id, budget,
-                                                                 config.get('concept_context', 512))
+            if start is not None and not isinstance(start, NetText):
+                raise ValueError('Il testo precedente della coda è stato imparato con il modello dei conteggi: '
+                                 'la rete a concetti non può ripartire da lì. Crea una coda nuova.')
+            # the model of a text is the concept network alone: its concepts learned along the gradient
+            model = start if start is not None else NetText(len(tokenizer), tokenizer.eos_token_id, budget,
+                                                            config.get('concept_context', 512),
+                                                            growth=bool(config.get('concept_network_growth', False)))
             model.tail = np.empty(0, np.int64)                   # a new text starts with an empty prefix
             state = dict(step=0, tokens_trained=0, device='cpu', identity=identity, model_contract=contract(profile), profile=profile,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},
@@ -184,8 +189,11 @@ def run_training(root, identifier, stop_event=None):
 
         def structure(phase, width, seconds, **facts):
             # Before the first piece is counted the model learns its scales: the page says which one and how far.
+            # The network says, inside a step, how far it is and the validation it reached (for the chart).
+            trace = getattr(model, 'trace', None)
             store.update(identifier, progress=dict(state, structure=dict(phase=phase, width=int(width), seconds=float(seconds),
-                                                                          **{key: int(value) for key, value in facts.items()})))
+                                                                          **{key: int(value) for key, value in facts.items()}),
+                                                   **({'network_trace': list(trace)} if trace else {})))
         model.report = structure
         started, initial = time.monotonic(), state['tokens_trained']
         last_save = time.monotonic()
@@ -226,6 +234,12 @@ def run_training(root, identifier, stop_event=None):
                     state['training_nll'] = float(-model.logp(following, np.arange(1, len(following))).mean())
                 state['best_validation_nll'] = min(state.get('best_validation_nll', state['validation_nll']), state['validation_nll'])
                 state.update(quantities(model, config))
+            if last and model.model is not None and getattr(model.model, 'net', None) is not None:
+                # What the concepts of the network hold, on validation text, for the page
+                state['network_concepts'] = model.model.net.describe([p[:512] for p in tune[:8]], tokenizer.decode)
+                state['network_stopped'] = bool(model.network_done)
+                if getattr(model, 'races', None):
+                    state['network_races'] = list(model.races)       # what every race of growth chose
             if last:
                 previous = save(root_checkpoints, model, state, identity)
                 saved_step = state['step']
@@ -235,7 +249,9 @@ def run_training(root, identifier, stop_event=None):
                     record_answers(directory, model, tokenizer, state, config.get('probe_prompts') or None)
                 last_save = time.monotonic()
             # A step without a measure does not repeat the last one: the chart draws only what was measured.
-            row = state if measured else {key: value for key, value in state.items() if key not in MEASURES}
+            if getattr(model, 'trace', None):
+                state['network_trace'] = list(model.trace)      # in the job's state for the chart, not in every history row
+            row = {key: value for key, value in state.items() if key != 'network_trace' and (measured or key not in MEASURES)}
             store.record(identifier, state['step'], row, progress=state)
         if state['step'] != saved_step:                          # paused between two saves: keep what was read
             model.judge(tune)
