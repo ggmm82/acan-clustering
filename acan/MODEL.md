@@ -173,6 +173,18 @@ $$
 p_{\rm rete}(y\mid h)=\frac{C_y\,\mathcal N(h;\,e_y,\sigma)}{\sum_{y'}C_{y'}\,\mathcal N(h;\,e_{y'},\sigma)} .
 $$
 
+I token sono riuniti in gruppi per frequenza, dal più frequente in giù, ciascuno di circa
+$\sqrt{V}$ token su un vocabolario di $V$. Ogni gruppo $G$ è a sua volta un concetto,
+con centro e massa propri, e la previsione si legge in due passi, prima il gruppo e poi
+il token dentro il gruppo:
+
+$$
+p_{\rm rete}(y\mid h)=p(G_y\mid h)\;p(y\mid h,G_y),
+$$
+
+entrambi con la formula di appartenenza. Così ogni posizione confronta lo stato con circa
+$2\sqrt{V}$ concetti invece che con $V$.
+
 **Strati di attenzione fra concetti.** In ogni strato, ciascun gruppo di concetti ha
 $K$ concetti con centro $g_k$, dispersione $s_k$ e massa $C_k$. Una posizione con stato
 $h_i$ vi appartiene con $T_k(h_i)$, la formula della sezione 4. Lungo il documento ogni
@@ -215,13 +227,10 @@ parte migliora più di un errore standard (sezione 2), e il passaggio che non ai
 annulla. È rileggendo che la rete **ricorda** ciò che ha visto, oltre a generalizzarlo.
 Quando due decisioni di fila sul testo nuovo non migliorano, la rete smette di imparare.
 
-**Le dimensioni della rete.** La rete ha 96 numeri di stato, 3 strati, 4 gruppi da 64
-concetti per strato e 3 distanze vicine; i centri dei token partono a caso. Ogni documento
-comincia dopo il token di fine, così anche il suo primo token si legge come in
-addestramento.
-
-**Dimensioni dai dati.** In alternativa la rete parte piccola (32 numeri, uno strato, 4
-gruppi da 16 concetti) e cresce. Ogni volta che il testo letto raddoppia, la rete com'è e
+**Dimensioni dai dati.** La rete parte piccola (32 numeri di stato, uno strato, 4
+gruppi da 16 concetti, 3 distanze vicine; i centri dei token partono a caso) e cresce.
+Ogni documento comincia dopo il token di fine, così anche il suo primo token si legge
+come in addestramento. Ogni volta che il testo letto raddoppia, la rete com'è e
 tre copie cresciute rileggono il testo letto fino a lì:
 
 - il doppio della larghezza: ogni coordinata scritta due volte, con dispersioni e masse
@@ -258,7 +267,7 @@ il modello è incerto. Sulle tabelle si usano l'accuratezza e l'errore quadratic
 ### 10 · Limiti noti
 
 - **Velocità di apprendimento della rete.** Per ogni token la rete calcola l'appartenenza
-  ai concetti di tutto il vocabolario, avanti e indietro lungo il gradiente, e rilegge il
+  ai gruppi e ai token di un gruppo, avanti e indietro lungo il gradiente, e rilegge il
   testo più volte: impara lentamente su un processore senza GPU.
 - **Interpretabilità.** I concetti delle tabelle si leggono come somme dei loro membri;
   quelli della rete sono parametri ottimizzati, che si ispezionano attraverso le
@@ -301,18 +310,16 @@ le misure.
 3. **Apprendimento a pezzi.** Il testo si legge a pezzi di un milione di token, una volta
    ciascuno. Ogni pezzo insegna alla rete con AdamW, a lotti di documenti interi: tanti
    token per lotto quanti lotti in un passaggio, al più 2.048, con un avvio del passo che
-   dura al più un passaggio. Con l'ultimo pezzo la rete rilegge tutto il testo dopo uno,
-   due, quattro passaggi finché la validazione migliora più di un errore standard; il
-   passaggio che non aiuta si annulla (Matematica, sezione 7). Quando due decisioni di
-   fila sul testo nuovo non migliorano, la rete smette di imparare. La pagina mostra,
-   dentro il passo, i token imparati, se la rete sta rileggendo e la validazione migliore.
+   dura al più un passaggio. Quando due decisioni di fila sul testo nuovo non migliorano,
+   la rete smette di imparare. La pagina mostra, dentro il passo, i token imparati e la
+   validazione, misurata mentre la rete impara.
 
-   **La rete che cresce (opzione della coda «La rete cresce con i dati»).** Dopo 1, 2, 4…
+   **La rete che cresce.** Dopo 1, 2, 4…
    pezzi e con l'ultimo, quattro candidati rileggono il testo letto fino a lì, uno dopo
    l'altro, come descritto in Matematica, sezione 7. Ogni gara costa quattro
    addestramenti fino a convergenza sul testo letto: le gare sono sempre più rade, ma
    ognuna costa il doppio della precedente. La pagina mostra il candidato in corso e,
-   alla fine, che cosa ha scelto ogni gara.
+   alla fine, che cosa ha scelto ogni gara; nel grafico ogni candidato ha la sua linea.
 4. **Calcolo.** Le somme dei concetti si leggono a blocchi di 64 posizioni: dentro il
    blocco con un prodotto di matrici, fra un blocco e l'altro con le somme correnti. Le
    appartenenze sviluppano il quadrato in prodotti di matrici. La validazione si legge a
@@ -342,7 +349,7 @@ distribuzione in ogni posizione: è la stessa funzione applicata allo stesso sta
 
 - **Per token, in inferenza:** in ogni strato le appartenenze ai concetti,
   l'aggiornamento delle somme e la lettura, più la lettura finale sui token
-  (vocabolario × larghezza dello stato) e il confronto con gli indirizzi della memoria
+  (circa $2\sqrt{V}$ × larghezza dello stato) e il confronto con gli indirizzi della memoria
   del documento.
 - **Memoria in inferenza:** le somme dei concetti e gli ultimi stati di ogni strato, fissi
   a qualunque lunghezza del documento, più un indirizzo per token del documento.
@@ -351,8 +358,8 @@ distribuzione in ogni posizione: è la stessa funzione applicata allo stesso sta
 ### 6 · Misure
 
 Dialoghi in italiano e inglese (SYNTH): tokenizzatore da 32.000 token, 2.000 dialoghi di
-addestramento, dialoghi di test mai visti. La rete ha 96 numeri di stato, 3 strati e 4
-gruppi da 64 concetti (3,4 milioni di parametri).
+addestramento, dialoghi di test mai visti. Rete con 96 numeri di stato, 3 strati e 4
+gruppi da 64 concetti (3,4 milioni di parametri), uscita su tutto il vocabolario.
 
 | Passaggi sul testo | Testo già letto | Validazione | Test |
 |---:|---:|---:|---:|

@@ -171,7 +171,7 @@ def run_training(root, identifier, stop_event=None):
             # the model of a text is the concept network alone: its concepts learned along the gradient
             model = start if start is not None else NetText(len(tokenizer), tokenizer.eos_token_id, budget,
                                                             config.get('concept_context', 512),
-                                                            growth=bool(config.get('concept_network_growth', False)))
+                                                            growth=bool(config.get('concept_network_growth', True)))
             model.tail = np.empty(0, np.int64)                   # a new text starts with an empty prefix
             state = dict(step=0, tokens_trained=0, device='cpu', identity=identity, model_contract=contract(profile), profile=profile,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},

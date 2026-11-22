@@ -399,7 +399,7 @@ layout = html.Div([
                      className='mb-1'),
              html.Small("Un passo è un pezzo di un milione di token: la rete lo legge e lo rilegge finché il testo tenuto da parte migliora. "
                         "Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
-             dbc.Checkbox(id='lm-long-growth', value=False, label='La rete cresce con i dati (molto più lenta)'),
+             dbc.Checkbox(id='lm-long-growth', value=True, label='La rete cresce con i dati'),
              html.Small("La rete parte piccola. Ogni volta che il testo letto raddoppia, la rete com'è e tre copie cresciute "
                         "(più larga, uno strato in più, concetti divisi) rileggono il testo letto finché la validazione "
                         "migliora; resta la più semplice fra quelle che la migliore non batte di più di un errore standard.",

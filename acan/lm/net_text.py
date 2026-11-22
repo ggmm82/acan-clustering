@@ -46,9 +46,9 @@ class NetCursor:
 
 
 class NetText:
-    NETWORK = dict(dim=96, layers=3, heads=4, concepts=64, window=3, grouped=False)
+    NETWORK = dict(dim=96, layers=3, heads=4, concepts=64, window=3, grouped=True)
     # With growth the network starts small and the data choose how it grows (``_race``)
-    GROWING = dict(dim=32, layers=1, heads=4, concepts=16, window=3, grouped=False)
+    GROWING = dict(dim=32, layers=1, heads=4, concepts=16, window=3, grouped=True)
     KINDS = ("com'è", 'larghezza', 'strato', 'concetti')
 
     def __init__(self, vocabulary, eos, budget, max_context=512, network=None, growth=False):
@@ -74,7 +74,7 @@ class NetText:
         return out
 
     def add(self, ids, train, tune, check, documents=None, starts_in_piece=None):
-        from .concept_net_training import Grower, Network, held_out
+        from .concept_net_training import Grower, Network, frequency_groups, held_out
         ids = np.asarray(ids, np.int64)
         if not len(self.tail):                                  # a new text of the queue begins
             self.read = 0
@@ -84,7 +84,8 @@ class NetText:
             else:
                 frequency = np.bincount(ids, minlength=self.vocabulary) + 1.
                 config = {k: v for k, v in self.network.items() if k != 'passes'}
-                network = Network(dict(config, vocabulary=self.vocabulary), frequency=frequency / frequency.sum())
+                network = Network(dict(config, vocabulary=self.vocabulary), frequency=frequency / frequency.sum(),
+                                  groups=frequency_groups(frequency) if config.get('grouped') else None)
             self._learner = Grower(network, passes=self.network.get('passes', True))
             self._learner.KINDS = ()                            # the sizes are fixed
             self._learner.begin = True

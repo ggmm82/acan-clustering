@@ -33,7 +33,7 @@ class OpenAICompatibleTests(unittest.TestCase):
         store.append_corpus(corpus['id'], owner, 0, raw); store.finish_corpus(corpus['id'], owner)
         config = validate_options(dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1',
                                        vocabulary=4000, sequence_length=64, validation_batches=4, save_steps=2,
-                                       concept_piece=10_000, concept_context=8, device='cpu',
+                                       concept_piece=10_000, concept_context=8, device='cpu', concept_network_growth=False,
                                        corpus_id=corpus['id'], name='Prova API'))
         job = store.create_job(owner, config)
         store.update(job['id'], status='queued')
