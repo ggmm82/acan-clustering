@@ -299,6 +299,9 @@ class NetTextGrowthTest(unittest.TestCase):
         model.add(ids[:390], ids, tune, lambda: None)
         model.add(ids[390:], ids, tune, lambda: None)
         self.assertTrue(any(len(point) == 3 for point in model.trace))
+        # the decisions read the validation in stretches as long as in learning, whatever its documents
+        long_text = np.r_[np.arange(1, 39).repeat(30), eos]               # one document of over a thousand tokens
+        self.assertLessEqual(max(map(len, model._held([long_text], 32))), 32)
         # a piece after a race goes on with the calendar of the tokens learned: no decisions at once, no stop
         grower = model._learner
         self.assertGreater(grower.decision, grower.learned)

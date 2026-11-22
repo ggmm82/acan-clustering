@@ -70,11 +70,13 @@ class NetText:
         self.piece = 0
 
     # ---- learning ------------------------------------------------------------------------------------
-    def _held(self, pieces):
+    def _held(self, pieces, longest=1 << 30):
+        """Held-out documents, each cut in stretches of at most ``longest`` tokens: the memory of the document compares
+        every position with all the ones before, and a whole long document would not fit."""
         from .concept_net_training import documents
         out = []
         for piece in pieces:
-            out += documents(np.asarray(piece, np.int64), self.eos, 1 << 30, begin=True)
+            out += documents(np.asarray(piece, np.int64), self.eos, longest, begin=True)
         return out
 
     def add(self, ids, train, tune, check, documents=None, starts_in_piece=None):
@@ -95,7 +97,7 @@ class NetText:
             self._learner.begin = True
         if self.decide_on is not None:                          # all the validation of the queue: small gains are seen
             if getattr(self, '_decide_docs', None) is None:
-                self._decide_docs = self._held([self.decide_on])
+                self._decide_docs = self._held([self.decide_on], self._learner.learner.longest)   # as long as in learning
             held = self._decide_docs
         else:
             held = self._held(tune)
