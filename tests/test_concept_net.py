@@ -288,6 +288,9 @@ class NetTextGrowthTest(unittest.TestCase):
         model.add(ids[:390], ids, tune, lambda: None)
         model.add(ids[390:], ids, tune, lambda: None)
         self.assertTrue(any(len(point) == 3 for point in model.trace))
+        # a piece after a race goes on with the calendar of the tokens learned: no decisions at once, no stop
+        grower = model._learner
+        self.assertGreater(grower.decision, grower.learned)
         self.assertEqual([race['tokens'] for race in model.races], [390, len(ids)])     # after 1 piece, then the last
         self.assertTrue(all(race['choice'] in NetText.KINDS for race in model.races))
         doc = ids[:ids.tolist().index(eos) + 1]

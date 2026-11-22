@@ -186,6 +186,8 @@ class NetText:
         top = max(results, key=lambda r: r[2].mean())
         kind, learner, scores, _ = min((r for r in results if not better(top[2], r[2])), key=lambda r: r[3])
         grower.learner, grower.learned = learner, grower.learned + size
+        while grower.decision <= grower.learned:               # the race was the decision of these tokens
+            grower.decision *= 2
         net = learner.network.export()
         grower.best, grower.best_scores = net, scores
         c = net.config

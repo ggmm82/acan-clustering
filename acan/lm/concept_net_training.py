@@ -601,6 +601,8 @@ class Grower:
             self.learner.warmup = min(self.learner.warmup, max(1, -(-self.piece // self.learner.tokens)))
         if not self.learned:
             self.decision = self.learner.tokens
+        while self.decision <= self.learned:                   # tokens learned elsewhere (a race of growth): the
+            self.decision *= 2                                 # calendar goes on from them, it does not decide at once
         while cycle.fresh and not self.done:                   # the new text, on the calendar of the tokens learned
             stretch, size = cycle.take(self.decision - self.learned, within_pass=True)
             if stretch:
