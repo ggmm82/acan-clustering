@@ -247,6 +247,7 @@ def run_training(root, identifier, stop_event=None):
             if last and model.model is not None and getattr(model.model, 'net', None) is not None:
                 # What the concepts of the network hold, on validation text, for the page
                 state['network_concepts'] = model.model.net.describe([p[:512] for p in tune[:8]], tokenizer.decode)
+                state['network_graph'] = model.model.net.graph([p[:512] for p in tune[:8]], tokenizer.decode)
                 state['network_stopped'] = bool(model.network_done)
                 if getattr(model, 'races', None):
                     state['network_races'] = list(model.races)       # what every race of growth chose
@@ -261,7 +262,8 @@ def run_training(root, identifier, stop_event=None):
             # A step without a measure does not repeat the last one: the chart draws only what was measured.
             if getattr(model, 'trace', None):
                 state['network_trace'] = list(model.trace)      # in the job's state for the chart, not in every history row
-            row = {key: value for key, value in state.items() if key != 'network_trace' and (measured or key not in MEASURES)}
+            row = {key: value for key, value in state.items() if key not in ('network_trace', 'network_graph', 'network_concepts')
+                   and (measured or key not in MEASURES)}
             store.record(identifier, state['step'], row, progress=state)
         if state['step'] != saved_step:                          # paused between two saves: keep what was read
             model.judge(tune)

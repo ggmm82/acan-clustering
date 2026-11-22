@@ -527,7 +527,11 @@ giudizio leave-one-out non rilegge la tabella, perché usa le somme.
 7. **Avanzamento.** La pagina mostra il passo, la velocità, la dimensione della rete
    (strati, numeri di stato, concetti, parametri), la gara in corso e due grafici: l'errore
    su testo mai visto passo dopo passo, e il passo in corso aperto, con la validazione
-   mentre la rete legge il pezzo e una linea per ogni candidato della gara.
+   mentre la rete legge il pezzo e una linea per ogni candidato della gara. Nei dettagli, a
+   ogni salvataggio, il **grafo della rete** misurato sul testo di validazione: un nodo per
+   ogni concetto che lavora, con i token che vi entrano e quelli che vengono dopo, gli
+   archi di attenzione dentro uno strato (la matrice $A$) e, fra uno strato e il successivo,
+   il concetto dove vanno le posizioni di un concetto più di quanto ci andrebbero comunque.
 8. **Checkpoint.** A ogni passo si salvano i parametri della rete e gli ultimi token letti;
    l'addestramento riprende dall'ultimo passo completato.
 

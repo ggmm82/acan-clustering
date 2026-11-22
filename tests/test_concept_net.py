@@ -108,6 +108,17 @@ class QueueOptionTest(unittest.TestCase):
 
 @unittest.skipUnless(TORCH, 'torch is needed to learn the network')
 class DescribeTest(unittest.TestCase):
+    def test_the_graph_names_the_concepts_and_keeps_edges_that_say_something(self):
+        net = ConceptNetTest.network(self, False).export()
+        docs = [np.random.default_rng(i).integers(0, 50, 40) for i in range(4)]
+        g = net.graph(docs)
+        ids = {n['id'] for n in g['nodes']}
+        self.assertTrue(g['nodes'] and all(n['enters'] and n['follows'] for n in g['nodes']))
+        self.assertTrue(all(e['source'] in ids and e['target'] in ids for e in g['edges']))
+        self.assertTrue(all(e['kind'] in ('legge', 'porta a') for e in g['edges']))
+        from acan.vis.long_training import network_graph_view
+        self.assertIsNotNone(network_graph_view(g))
+
     def test_every_layer_says_how_many_concepts_work_and_shows_examples(self):
         from acan.lm.concept_net_training import Network
         net = Network(config()).export()

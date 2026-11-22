@@ -257,9 +257,58 @@ def concept_footprint_view(item):
               for title, values in rows]
     note = html.P("Gli errori sono in nat per token: e elevato all'errore è fra quanti token, in media, il modello è incerto. "
                   "Si misurano solo su testo che il modello non ha letto.", className='small text-muted')
+    graph = network_graph_view(progress.get('network_graph'))
     details = folded('Tutti i dettagli: vocabolario, concetti, contesto, memoria e disco',
-                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note], 'lm-long-details')
+                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note] + ([graph] if graph is not None else []),
+                     'lm-long-details')
     return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')), details])
+
+
+def network_graph_view(graph):
+    """The graph of the network: a column per layer, a node per concept that works (its size is its mass, its name the
+    tokens that enter it and the tokens that follow it), solid edges from a layer to the next (where the positions of
+    a concept go), dotted edges inside a layer (which concepts a concept reads)."""
+    if not graph or not graph.get('nodes'):
+        return None
+    import plotly.graph_objects as go
+    nodes = sorted(graph['nodes'], key=lambda n: (n['layer'], n['group'], n['concept']))
+    rows = {}
+    place = {}
+    for n in nodes:
+        rows[n['layer']] = rows.get(n['layer'], -1) + 1
+        place[n['id']] = (n['layer'], rows[n['layer']])
+    figure = go.Figure()
+    strongest = {}                                              # between layers, each concept's most telling edge
+    for e in graph['edges']:
+        if e['kind'] == 'porta a' and e.get('lift', 0) > strongest.get(e['source'], {}).get('lift', 0):
+            strongest[e['source']] = e
+    shown = [e for e in graph['edges'] if e['kind'] == 'legge'] + list(strongest.values())
+    for e in shown:
+        if e['source'] not in place or e['target'] not in place:
+            continue
+        (x0, y0), (x1, y1) = place[e['source']], place[e['target']]
+        inside = e['kind'] == 'legge'
+        xs = [x0, x0 - .25, x1] if inside else [x0, x1]
+        ys = [y0, (y0 + y1) / 2, y1] if inside else [y0, y1]
+        figure.add_scatter(x=xs, y=ys, mode='lines', hoverinfo='skip', showlegend=False,
+                           line=dict(width=1 + 4 * e['weight'], dash='dot' if inside else 'solid',
+                                     color='rgba(220,90,40,.5)' if inside else 'rgba(60,110,200,.35)'))
+    name = lambda n: f"{' '.join(n['enters'])} → {' '.join(n['follows'])}"
+    figure.add_scatter(x=[place[n['id']][0] for n in nodes], y=[place[n['id']][1] for n in nodes], mode='markers+text',
+                       text=[name(n) for n in nodes], textposition='middle right', showlegend=False,
+                       marker=dict(size=[8 + 40 * n['mass'] for n in nodes], color='#2c6fbb'),
+                       hovertext=[f"concetto {n['id']} · {n['mass']:.0%} del gruppo<br>entrano: {', '.join(n['enters'])}<br>"
+                                  f"poi viene: {', '.join(n['follows'])}" for n in nodes], hoverinfo='text')
+    layers = sorted(rows)
+    figure.update_layout(height=max(320, 26 * max(rows.values()) + 120), margin=dict(l=20, r=20, t=40, b=30),
+                         title='Il grafo della rete: concetti e relazioni, misurati sul testo di validazione',
+                         xaxis=dict(tickvals=layers, ticktext=[f'strato {i}' for i in layers], range=[min(layers) - .35, max(layers) + .9]),
+                         yaxis=dict(visible=False, autorange='reversed'))
+    note = html.P("Un nodo è un concetto che lavora: il nome dice quali token vi entrano → quali token vengono dopo; la grandezza, "
+                  "la sua parte del gruppo. Linee continue: il concetto dello strato dopo dove vanno le posizioni del concetto, "
+                  "più di quanto ci andrebbero comunque. Linee punteggiate: quali concetti dello stesso strato il concetto legge. Si mostrano solo i concetti e gli archi "
+                  "che pesano più di una parte uguale.", className='small text-muted')
+    return html.Div([html.H6('Il grafo della rete', className='mt-3'), dcc.Graph(figure=figure), note])
 
 
 def footprint_view(item):

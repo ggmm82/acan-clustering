@@ -205,6 +205,59 @@ class ConceptNet:
     def cursor(self):
         return NetCursor(self)
 
+    def graph(self, documents, decode=None, labels=3):
+        """The graph of the network, measured on some documents. Nodes: the concepts that hold more than an even share
+        of their group, named by the tokens that enter them most and the tokens that follow them most. Edges: in a
+        layer, the attention from a concept to the concepts it reads (exact, the matrix A); from a layer to the next,
+        how the positions of a concept spread over the concepts of the next layer. An edge is kept when it weighs more
+        than an even share and, between layers, more than the next concept holds anyway: what is shown says something."""
+        found, now, after = [[] for _ in range(self.layers)], [], []
+        for doc in documents:
+            doc = np.asarray(doc, np.int64)
+            if len(doc) < 2:
+                continue
+            layers = []
+            self.states(doc[:-1], layers)
+            for i, t in enumerate(layers):
+                found[i].append(t)
+            now.append(doc[:-1]); after.append(doc[1:])
+        if not now:
+            return dict(nodes=[], edges=[])
+        now, after = np.concatenate(now), np.concatenate(after)
+        word = (lambda ids: [decode([int(x)]).strip() or repr(decode([int(x)])) for x in ids]) if decode else (lambda ids: [str(int(x)) for x in ids])
+        nodes, edges, kept = [], [], []
+        for i in range(self.layers):
+            t = np.concatenate(found[i])                                       # positions x H x K
+            H, K = t.shape[1:]
+            share = t.sum(0) / t.sum((0, 2))[:, None]                          # H x K
+            keep = {(h, k) for h in range(H) for k in range(K) if share[h, k] > 1 / K}
+            kept.append((t, keep))
+            for h, k in sorted(keep):
+                w = t[:, h, k]
+                into = np.bincount(now, weights=w, minlength=self.vocabulary)
+                out = np.bincount(after, weights=w, minlength=self.vocabulary)
+                nodes.append(dict(id=f'{i + 1}.{h + 1}.{k + 1}', layer=i + 1, group=h + 1, concept=k + 1, mass=float(share[h, k]),
+                                  enters=word(np.argsort(-into)[:labels]), follows=word(np.argsort(-out)[:labels])))
+            A = self._looked(i)                                                # H x K x K: k reads k'
+            for h, k in sorted(keep):
+                for k2 in np.flatnonzero(A[h, k] > 1 / K):
+                    if (h, int(k2)) in keep and k2 != k:
+                        edges.append(dict(source=f'{i + 1}.{h + 1}.{k + 1}', target=f'{i + 1}.{h + 1}.{k2 + 1}',
+                                          weight=float(A[h, k, k2]), kind='legge'))
+        for i in range(self.layers - 1):
+            (t1, keep1), (t2, keep2) = kept[i], kept[i + 1]
+            H2, K2 = t2.shape[1:]
+            base = t2.mean(0)                                                  # what a next concept holds anyway
+            for h, k in sorted(keep1):
+                w = t1[:, h, k]
+                spread = (w[:, None, None] * t2).sum(0) / max(w.sum(), 1e-12)  # H2 x K2, each group sums to one
+                for h2, k2 in sorted(keep2):
+                    if spread[h2, k2] > 1 / K2 and spread[h2, k2] > base[h2, k2]:
+                        edges.append(dict(source=f'{i + 1}.{h + 1}.{k + 1}', target=f'{i + 2}.{h2 + 1}.{k2 + 1}',
+                                          weight=float(spread[h2, k2]), kind='porta a',
+                                          lift=float(spread[h2, k2] / max(base[h2, k2], 1e-12))))
+        return dict(nodes=nodes, edges=edges)
+
     def describe(self, documents, decode=None, concepts=3, examples=4):
         """What the concepts of every layer hold, on some documents: how many concepts work in every group (e to the
         entropy of their masses), how much a concept is tied to one token (the share of its most frequent token), and
