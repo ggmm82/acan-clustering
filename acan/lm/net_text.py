@@ -237,6 +237,7 @@ class NetText:
             began = getattr(self, '_race_began', None)
             read = getattr(self, '_race_done', 0) + (learner.seen - start if learner is not None else 0)
             self.report('network', 0, 0., race=number + 1, learned=int(self.read), piece=int(size),
+                        done=int(learner.seen - start) if learner is not None else 0,   # how much of the piece this candidate read
                         speed=int(read / max(now - began, 1e-9)) if began else 0)   # tokens a second, all candidates
 
     def judge(self, pieces, final=False):
