@@ -154,8 +154,9 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     perplexity = progress.get('validation_perplexity')
     size, budget = progress.get('statistics_bytes'), progress.get('budget_bytes')
     when = lambda seconds: '—' if seconds is None else f'{seconds/3600:,.1f} ore' if seconds > 3600 else f'{max(seconds, 0)/60:,.0f} minuti'
-    learning = progress.get('structure') if ready and step == 0 and status not in ('completed',) else None
-    network = progress.get('structure') if (progress.get('structure') or {}).get('phase') == 'network' and status != 'completed' else None
+    structure = (progress.get('structure') or {}) if status in ('running', 'pausing') else {}
+    learning = structure if ready and step == 0 else None
+    network = structure if structure.get('phase') == 'network' else None
     if learning and learning.get('phase') not in ('done', 'network'):
         part, left = structure_progress(learning)
         doing = {'tokens': 'concetti dei token',

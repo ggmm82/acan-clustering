@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -56,6 +57,7 @@ class ConceptLongLearningTests(unittest.TestCase):
 
     def _exercise_queue(self, profile):
         from acan.lm.concept_trainer import evaluate, generate, run_training
+        from acan.lm.net_text import NetText
         from acan.lm.research_options import validate_options
         from acan.lm.store import Store, owner_key
         words = 'il gatto dorme sul tetto e la luna guarda la città mentre il cane abbaia piano'.split()
@@ -85,7 +87,22 @@ class ConceptLongLearningTests(unittest.TestCase):
                     time.sleep(.05)
                 stop.set()
             threading.Thread(target=halt, daemon=True).start()
-            run_training(root, job['id'], stop)
+            original_add = NetText.add
+
+            def report_after_compaction(model, ids, *args):
+                if not model.trace:
+                    model.piece = len(ids)
+                    for position in range(514):
+                        model._point(position, np.array([-4.0]), 'larghezza')
+                    model.report('network', 0, 0., race=2, done=513, piece=len(ids))
+                    live = store.job(job['id'])['progress']
+                    self.assertEqual(live['step'], 0)
+                    self.assertEqual(live['network_trace'], model.trace)
+                    self.assertEqual(live['network_trace'][-1][2], 'larghezza')
+                return original_add(model, ids, *args)
+
+            with patch.object(NetText, 'add', report_after_compaction):
+                run_training(root, job['id'], stop)
             paused = store.job(job['id'])
             self.assertEqual(paused['status'], 'paused', paused['error'])
             run_training(root, job['id'])
@@ -96,9 +113,10 @@ class ConceptLongLearningTests(unittest.TestCase):
             self.assertEqual(progress['tokens_trained'], progress['dataset']['tokens']['train'])
             self.assertTrue(progress['concepts_per_level'] and progress['concepts_total'] > 0)
             from acan.lm.concept_lm import load
-            from acan.lm.net_text import NetText
             saved = store.directory('jobs', job['id'])/'checkpoints'/done['checkpoint']
-            graph, _ = load(saved)
+            graph, saved_state = load(saved)
+            self.assertEqual(saved_state['network_trace'], progress['network_trace'])
+            self.assertNotIn('structure', saved_state)
             self.assertIsInstance(graph, NetText)                                         # the concept network alone
             self.assertIsNotNone(graph.model.net)
             self.assertEqual(graph.tokens, progress['tokens_trained'])

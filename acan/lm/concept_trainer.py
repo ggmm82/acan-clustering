@@ -207,16 +207,10 @@ def run_training(root, identifier, stop_event=None):
             previous = save(root_checkpoints, model, state, identity)
             store.record(identifier, 0, dict(state))           # the chart starts from the error before reading
         model.device = state['device'] = device
+        model.trace = list(state.get('network_trace') or [])
+        state.pop('structure', None)
         store.update(identifier, checkpoint=previous.name, progress=state, status='running')
 
-        def structure(phase, width, seconds, **facts):
-            # Before the first piece is counted the model learns its scales: the page says which one and how far.
-            # The network says, inside a step, how far it is and the validation it reached (for the chart).
-            trace = getattr(model, 'trace', None)
-            store.update(identifier, progress=dict(state, structure=dict(phase=phase, width=int(width), seconds=float(seconds),
-                                                                          **{key: int(value) for key, value in facts.items()}),
-                                                   **({'network_trace': list(trace)} if trace else {})))
-        model.report = structure
         model.watch = judge                                     # the chart inside a step: the same text as its validation
         model.decide_on = decision_text(blocks, config['validation_batches'])   # the decisions: all the validation but the measure
         started, initial = time.monotonic(), state['tokens_trained']
@@ -227,6 +221,14 @@ def run_training(root, identifier, stop_event=None):
             ids = np.asarray(train[begin:min(begin+piece, read)], np.int64)
             # Commit a whole piece or keep the previous sums intact on pause.
             updated = copy(model)
+            updated.trace = model.trace.copy()
+
+            def structure(phase, width, seconds, **facts):
+                live = dict(phase=phase, width=int(width), seconds=float(seconds),
+                            **{key: int(value) for key, value in facts.items()})
+                store.update(identifier, progress=dict(state, structure=live, network_trace=list(updated.trace)))
+
+            updated.report = structure
             if model.model is not None:
                 updated.model = copy(model.model)
                 updated.model.tables = dict(model.model.tables)
@@ -237,7 +239,7 @@ def run_training(root, identifier, stop_event=None):
                 break
             model = updated
             state.update(step=state['step']+1, tokens_trained=state['tokens_trained']+len(ids))
-            state.pop('structure_seconds', None)
+            state['network_trace'] = list(model.trace)  # save the complete trace with the step it describes
             state['tokens_per_second'] = (state['tokens_trained']-initial)/max(time.monotonic()-started, 1e-6)
             due = state['step'] % config['save_steps'] == 0 or time.monotonic()-last_save >= config['save_seconds']
             last = due or should_pause() or state['step'] == config['total_steps']
@@ -267,8 +269,6 @@ def run_training(root, identifier, stop_event=None):
                     record_answers(directory, model, tokenizer, state, config.get('probe_prompts') or None)
                 last_save = time.monotonic()
             # A step without a measure does not repeat the last one: the chart draws only what was measured.
-            if getattr(model, 'trace', None):
-                state['network_trace'] = list(model.trace)      # in the job's state for the chart, not in every history row
             row = {key: value for key, value in state.items() if key not in ('network_trace', 'network_graph', 'network_concepts')
                    and (measured or key not in MEASURES)}
             store.record(identifier, state['step'], row, progress=state)

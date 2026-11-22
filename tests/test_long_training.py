@@ -474,3 +474,6 @@ class StructureProgressTest(unittest.TestCase):
         text = str(concept_summary(progress, dict(total_steps=45), status='running'))
         self.assertIn('struttura', text)
         self.assertIn('scala 3 di 4', text)
+        progress['structure'] = dict(phase='network', race=2, done=500, piece=1000)
+        self.assertIn('gara di crescita', str(concept_summary(progress, dict(total_steps=45), status='running')))
+        self.assertNotIn('gara di crescita', str(concept_summary(progress, dict(total_steps=45), status='paused')))
