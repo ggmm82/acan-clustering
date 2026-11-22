@@ -207,7 +207,8 @@ class ConceptNet:
 
     def graph(self, documents, decode=None, labels=3):
         """The graph of the network, measured on some documents. Nodes: the concepts that hold more than an even share
-        of their group, named by the tokens that enter them most and the tokens that follow them most. Edges: in a
+        of their group, named by their own tokens: those that enter them, and that follow them, much more than in all
+        the text. Edges: in a
         layer, the attention from a concept to the concepts it reads (exact, the matrix A); from a layer to the next,
         how the positions of a concept spread over the concepts of the next layer. An edge is kept when it weighs more
         than an even share and, between layers, more than the next concept holds anyway: what is shown says something."""
@@ -224,6 +225,15 @@ class ConceptNet:
         if not now:
             return dict(nodes=[], edges=[])
         now, after = np.concatenate(now), np.concatenate(after)
+        everywhere_in = np.bincount(now, minlength=self.vocabulary) / len(now)
+        everywhere_out = np.bincount(after, minlength=self.vocabulary) / len(after)
+
+        def telling(mass, everywhere):
+            # the concept's own tokens: much in it, and more in it than in all the text (mass times the log of how
+            # much more): a token found everywhere, as the newline, names no concept
+            share = mass / max(mass.sum(), 1e-12)
+            score = np.where(mass > 0, mass * np.log(np.maximum(share, 1e-300) / np.maximum(everywhere, 1e-300)), -np.inf)
+            return np.argsort(-score)[:labels]
         word = (lambda ids: [decode([int(x)]).strip() or repr(decode([int(x)])) for x in ids]) if decode else (lambda ids: [str(int(x)) for x in ids])
         nodes, edges, kept = [], [], []
         for i in range(self.layers):
@@ -237,7 +247,7 @@ class ConceptNet:
                 into = np.bincount(now, weights=w, minlength=self.vocabulary)
                 out = np.bincount(after, weights=w, minlength=self.vocabulary)
                 nodes.append(dict(id=f'{i + 1}.{h + 1}.{k + 1}', layer=i + 1, group=h + 1, concept=k + 1, mass=float(share[h, k]),
-                                  enters=word(np.argsort(-into)[:labels]), follows=word(np.argsort(-out)[:labels])))
+                                  enters=word(telling(into, everywhere_in)), follows=word(telling(out, everywhere_out))))
             A = self._looked(i)                                                # H x K x K: k reads k'
             for h, k in sorted(keep):
                 for k2 in np.flatnonzero(A[h, k] > 1 / K):
