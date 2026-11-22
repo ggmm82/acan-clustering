@@ -196,6 +196,7 @@ class NetText:
     def _racing(self, number, size, kind=None, learner=None, start=0, shown=None):
         """The page: which candidate of the race is learning the new piece, how far it is, and its validation on
         the chart: every candidate a line over the same step."""
+        from .concept_net_training import held_out
         now = time.monotonic()
         if self.report is not None and now - getattr(self, '_reported', 0.) >= 15:
             self._reported = now

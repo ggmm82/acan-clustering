@@ -282,8 +282,12 @@ class NetTextGrowthTest(unittest.TestCase):
         tune = [ids[:390]]
         model = NetText(41, eos, 1 << 22, max_context=32, growth=True,
                         network=dict(dim=4, layers=1, heads=1, concepts=2, window=1, passes=False))
+        reported = []
+        model.report = lambda *args, **facts: reported.append(facts)   # the page: the race reports, the chart has its lines
+        model._reported = -1e9
         model.add(ids[:390], ids, tune, lambda: None)
         model.add(ids[390:], ids, tune, lambda: None)
+        self.assertTrue(any(len(point) == 3 for point in model.trace))
         self.assertEqual([race['tokens'] for race in model.races], [390, len(ids)])     # after 1 piece, then the last
         self.assertTrue(all(race['choice'] in NetText.KINDS for race in model.races))
         doc = ids[:ids.tolist().index(eos) + 1]
