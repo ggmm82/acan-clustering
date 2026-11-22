@@ -69,12 +69,14 @@ def inside_figure(trace):
         return None
     names = {None: 'La rete che impara', "com'è": "Gara · la rete com'è", 'larghezza': 'Gara · il doppio della larghezza',
              'strato': 'Gara · uno strato in più', 'concetti': 'Gara · concetti divisi in due'}
+    racing = any(len(point) > 2 for point in points)
+    if racing:                                                  # in a race the network itself only starts and ends the step
+        names[None] = 'La rete: prima della gara e la vincitrice'
     figure = go.Figure()
     for kind in dict.fromkeys(point[2] if len(point) > 2 else None for point in points):
         line = [point for point in points if (point[2] if len(point) > 2 else None) == kind]
         figure.add_scatter(x=[100 * (point[0] - step) for point in line], y=[point[1] for point in line],
                            mode='lines+markers', name=names.get(kind, f'Gara · {kind}'))
-    racing = any(len(point) > 2 for point in points)
     figure.update_layout(title=f'Dentro il passo {step + 1}: la validazione mentre la rete legge il pezzo'
                          + (' · gara: ogni candidato legge tutto il pezzo, da 0 a 100%' if racing else ''),
                          xaxis_title='Pezzo letto (%)', yaxis_title='NLL', margin=dict(t=50, b=40), height=360)
