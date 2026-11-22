@@ -209,14 +209,21 @@ $h+a\,(\mathrm{strato}(h)-h)$.
 
 **Memoria del documento.** Ogni posizione letta lascia un indirizzo, una proiezione del
 suo stato, insieme al token che l'ha seguita. La posizione corrente confronta il suo
-indirizzo con quelli precedenti e legge i token che seguivano gli indirizzi più simili:
+indirizzo con quelli precedenti e legge i token che seguivano gli indirizzi più simili.
+Fra gli indirizzi ce n'è uno in più, «nessuno somiglia al mio», che sta per la lettura
+della rete:
 
 $$
-p(y\mid h_i)=(1-\lambda_i)\,p_{\rm rete}(y\mid h_i)+\lambda_i\sum_{j<i}\alpha_{ij}\,[y_{j+1}=y],
+p(y\mid h_i)=\alpha_{i0}\,p_{\rm rete}(y\mid h_i)+\sum_{j<i}\alpha_{ij}\,[y_{j+1}=y],
+\qquad
+\alpha_{ij}=\frac{e^{s_{ij}}}{e^{s_{i0}}+\sum_{j'<i}e^{s_{ij'}}},
 $$
 
-con $\alpha_{ij}$ la somiglianza normalizzata degli indirizzi e $\lambda_i$ una valvola
-calcolata dallo stato. Indirizzi e valvola si imparano con il resto della rete.
+con $s_{ij}$ la somiglianza degli indirizzi delle posizioni $i$ e $j$, e $s_{i0}$ la
+somiglianza dell'indirizzo in più, calcolata dallo stato. La memoria conta solo quanto
+qualche indirizzo somiglia più di quello. Pochi indirizzi poco simili, come una domanda
+breve all'inizio di una risposta, lasciano la parola alla rete. Gli indirizzi si
+imparano con il resto della rete.
 
 **Come si imparano i concetti.** Centri, dispersioni, masse, attenzioni, aperture,
 memoria e centri dei token si muovono lungo il gradiente della log-verosimiglianza del

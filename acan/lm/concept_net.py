@@ -129,22 +129,33 @@ class ConceptNet:
         z = (h @ self.p['cache_valve.weight'].T + self.p['cache_valve.bias'])[..., 0]
         return 1 / (1 + np.exp(-np.clip(z, -60, 60)))
 
+    def _share(self, h, s):
+        """How much the memory counts and how it divides among the addresses (scores s, the last axis): with
+        "none is like mine" as one more address, whose likeness is learned from the state; else a valve."""
+        if self.config.get('sentinel'):
+            z = (h @ self.p['cache_valve.weight'].T + self.p['cache_valve.bias'])[..., 0]
+            top = np.maximum(np.max(s, -1, initial=-np.inf), z)
+            e, e0 = np.exp(s - top[..., None]), np.exp(z - top)
+            total = e.sum(-1) + e0
+            return 1 - e0 / total, e / total[..., None]
+        a = np.exp(s - np.max(s, -1, keepdims=True)); a /= a.sum(-1, keepdims=True)
+        return self._valve(h), a * 1.
+
     def _mix(self, probs, h, ids, start):
         """The memory of the document: positions start.. of h read the tokens that followed the earlier positions."""
         if not self.cached:
             return probs
         q, k = self._addresses(h)
         nxt = ids[1:]                                                            # the token after every position
-        g = self._valve(h)
         out = probs.copy()
         for r in range(len(probs)):
             i = start + r
             if i == 0:
                 continue
             s = k[:i] @ q[i] / np.sqrt(q.shape[1])
-            a = np.exp(s - s.max()); a /= a.sum()
+            g, a = self._share(h[i], s)
             cache = np.bincount(nxt[:i], weights=a, minlength=self.vocabulary)
-            out[r] = (1 - g[i]) * probs[r] + g[i] * cache
+            out[r] = (1 - g) * probs[r] + (cache if self.config.get('sentinel') else g * cache)
         return out
 
     def document(self, ids):
@@ -166,6 +177,7 @@ class ConceptNet:
         if self.cached:
             q, k = self._addresses(h)
             g = self._valve(h)
+            z = (h @ self.p['cache_valve.weight'].T + self.p['cache_valve.bias'])[..., 0]
         for i in range(0, len(h), block):
             probs = self.probabilities(h[i:i + block])
             p = probs[np.arange(len(probs)), nxt[i:i + block]]
@@ -174,12 +186,19 @@ class ConceptNet:
                 s = q[i:end] @ k[:end].T / np.sqrt(q.shape[1])                     # B x end
                 earlier = np.arange(end)[None, :] < np.arange(i, end)[:, None]
                 s = np.where(earlier, s, -np.inf)
-                top = np.where(earlier.any(1), s.max(1), 0.)
-                a = np.where(earlier, np.exp(s - top[:, None]), 0.)
-                a /= np.maximum(a.sum(1, keepdims=True), 1e-300)
-                cache = (a * (nxt[:end][None, :] == nxt[i:end][:, None])).sum(1)
-                gate = np.where(earlier.any(1), g[i:end], 0.)
-                p = (1 - gate) * p + gate * cache
+                same = nxt[:end][None, :] == nxt[i:end][:, None]
+                if self.config.get('sentinel'):              # "none is like mine" is one more address
+                    top = np.maximum(s.max(1), z[i:end])
+                    e, e0 = np.where(earlier, np.exp(s - top[:, None]), 0.), np.exp(z[i:end] - top)
+                    total = e.sum(1) + e0
+                    p = e0 / total * p + (e * same).sum(1) / total
+                else:
+                    top = np.where(earlier.any(1), s.max(1), 0.)
+                    a = np.where(earlier, np.exp(s - top[:, None]), 0.)
+                    a /= np.maximum(a.sum(1, keepdims=True), 1e-300)
+                    cache = (a * same).sum(1)
+                    gate = np.where(earlier.any(1), g[i:end], 0.)
+                    p = (1 - gate) * p + gate * cache
             out[i:i + block] = p
         return out
 
@@ -324,7 +343,7 @@ class NetCursor:
         if self.net.cached and self.keys:
             q = self.net._addresses(self.state)[0]
             s = np.array(self.keys) @ q / np.sqrt(len(q))
-            a = np.exp(s - s.max()); a /= a.sum()
-            g = self.net._valve(self.state)
-            p = (1 - g) * p + g * np.bincount(self.after, weights=a, minlength=self.net.vocabulary)
+            g, a = self.net._share(self.state, s)
+            cache = np.bincount(self.after, weights=a, minlength=self.net.vocabulary)
+            p = (1 - g) * p + (cache if self.net.config.get('sentinel') else g * cache)
         return p

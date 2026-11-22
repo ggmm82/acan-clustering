@@ -96,16 +96,18 @@ class Network(nn.Module):
                                      for k in concepts])
         self.final = nn.Linear(dim, dim)
         # The memory of the document, learned: every position read leaves an address (a projection of its state) with
-        # the token that followed it; a position reads the tokens that followed the addresses most like its own, and
-        # a valve (learned from its state) says how much that reading counts.
+        # the token that followed it; a position reads the tokens that followed the addresses most like its own. One
+        # more address, "none is like mine" (its likeness learned from the state), stands for the reading of the
+        # network: the memory counts only as far as some address is more alike than that one.
         self.config.setdefault('cache', dim)                   # its addresses are as wide as the state
+        self.config.setdefault('sentinel', True)
         c = self.config['cache']
         if c:
             self.cache_query = nn.Linear(dim, c, bias=False)
             self.cache_key = nn.Linear(dim, c, bias=False)
             self.cache_valve = nn.Linear(dim, 1)
-            with torch.no_grad():
-                self.cache_valve.bias.fill_(-2.)                # it starts by counting little
+            with torch.no_grad():                               # it starts by counting little: "none is like mine"
+                self.cache_valve.bias.fill_(math.log(512.) if self.config['sentinel'] else -2.)   # outweighs a piece of 512 addresses
         self.grouped = groups is not None
         if self.grouped:
             group = torch.as_tensor(np.asarray(groups), dtype=torch.long)
@@ -150,8 +152,12 @@ class Network(nn.Module):
         anything = allowed.any(-1)
         a = torch.softmax(scores.masked_fill(~anything[..., None], 0.), -1) * anything[..., None]
         same = (targets[:, None, :] == targets[:, :, None]).to(a.dtype)          # the token after j is the true one
+        z = self.cache_valve(h)[..., 0]
+        if self.config.get('sentinel'):                        # "none is like mine" is one more address
+            both = torch.softmax(torch.cat([z[..., None], scores], -1), -1)
+            return torch.log(both[..., 0] * net_lp.exp() + (both[..., 1:] * same).sum(-1) + 1e-30)
         p_cache = (a * same).sum(-1)
-        g = torch.sigmoid(self.cache_valve(h))[..., 0] * anything
+        g = torch.sigmoid(z) * anything
         return torch.log((1 - g) * net_lp.exp() + g * p_cache + 1e-30)
 
     def target_log_probs(self, ids, mask, targets):
@@ -291,6 +297,7 @@ class Network(nn.Module):
         """A network that goes on learning from a ConceptNet (the parameters saved in a checkpoint)."""
         groups = net.p['group'].astype(np.int64) if 'group' in net.p else None
         config = dict(net.config, cache=net.config.get('cache', 0) if 'cache_query.weight' in net.p else 0)
+        config.setdefault('sentinel', False)                   # older networks: the memory with its valve
         model = cls(config, groups=groups)
         state = {k: torch.as_tensor(v) for k, v in net.p.items()}
         for i in range(len(model.layers)):                             # older networks: every layer open
