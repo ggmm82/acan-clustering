@@ -60,8 +60,8 @@ def backend(workspace, path, method='GET', data=None, raw=False, headers=None, t
 
 layout = dbc.Container([
     html.H4('Il modello a concetti che scrive', className='mt-3'),
-    html.P("Lo stesso modello della scheda Modello, applicato al testo: ogni posizione è una riga, i token precedenti sono gli "
-           "attributi, il token successivo è il target. Nessuna rete neurale: il modello conta. Si usa in cinque passi, dall'alto in "
+    html.P("Gli stessi concetti della scheda Modello, applicati al testo: ogni posizione è una riga e il token successivo è il "
+           "target. Qui i concetti formano una rete che impara lungo il gradiente e cresce con il testo. Si usa in cinque passi, dall'alto in "
            "basso: prepari i testi, crei la coda, la segui, provi e scarichi il modello, e se vuoi lo usi da altri programmi. "
            "Come funziona: schede Matematica e Informatica.", className='small'),
     dcc.Store(id='lm-workspace', storage_type='local'), dcc.Store(id='lm-state'),
@@ -968,6 +968,10 @@ def register(app):
             rows = [row for row in history if key in row]
             figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows],
                                mode='lines+markers' if job['config'].get('architecture') == 'concepts' else 'lines', name=f'{own} · {label}')
+        trace = metrics.get('network_trace') or []
+        if trace:                                               # the network inside the steps: the same validation, as it learns
+            figure.add_scatter(x=[point[0] for point in trace], y=[point[1] for point in trace], mode='lines',
+                               name='Validazione mentre impara', line=dict(width=1, dash='dot'))
         # The project and its dense control on the same chart: same corpus, seed and budget.
         partner, comparison = paired_job((state or {}).get('jobs', []), job), None
         if partner is not None:
