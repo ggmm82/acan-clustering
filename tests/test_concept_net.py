@@ -14,13 +14,13 @@ def config(**kw):
 
 @unittest.skipUnless(TORCH, 'torch is needed to learn the network')
 class ConceptNetTest(unittest.TestCase):
-    def network(self, grouped):
+    def network(self, grouped, sentinel=True):
         import torch
         from acan.lm.concept_net_training import Network, output_groups
         torch.manual_seed(0)
         rng = np.random.default_rng(0)
         groups = output_groups(rng.integers(0, 4, 50), rng.random(50), limit=6) if grouped else None
-        net = Network(config(), centres=rng.normal(size=(50, 8)), frequency=rng.random(50) + .1, groups=groups)
+        net = Network(dict(config(), sentinel=sentinel), centres=rng.normal(size=(50, 8)), frequency=rng.random(50) + .1, groups=groups)
         with torch.no_grad():                                  # parameters away from their start
             for p in net.parameters():
                 p.add_(torch.randn_like(p) * .1)
@@ -29,12 +29,13 @@ class ConceptNetTest(unittest.TestCase):
     def test_numpy_reads_as_torch_and_the_cursor_as_the_whole_document(self):
         import torch
         ids = np.random.default_rng(1).integers(0, 50, 23)
-        for grouped in (False, True):
-            net = self.network(grouped)
+        for grouped, sentinel in ((False, True), (True, True), (False, False)):   # (False, False): an older network's valve
+            net = self.network(grouped, sentinel)
             x = torch.as_tensor(ids[None, :-1])
             with torch.no_grad():
                 expected = net.target_log_probs(x, torch.ones_like(x, dtype=torch.float32), torch.as_tensor(ids[None, 1:]))[0].numpy()
             reading = net.export()
+            np.testing.assert_allclose(np.log(reading.targets(ids)), expected, atol=2e-4)
             whole = reading.document(ids)
             np.testing.assert_allclose(whole.sum(1), 1, rtol=1e-6)
             np.testing.assert_allclose(np.log(whole[np.arange(len(ids) - 1), ids[1:]]), expected, atol=2e-4)
