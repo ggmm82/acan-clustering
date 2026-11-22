@@ -96,10 +96,11 @@ class ConceptLongLearningTests(unittest.TestCase):
             self.assertEqual(progress['tokens_trained'], progress['dataset']['tokens']['train'])
             self.assertTrue(progress['concepts_per_level'] and progress['concepts_total'] > 0)
             from acan.lm.concept_lm import load
-            from acan.core.concepts import ConceptModel
+            from acan.lm.net_text import NetText
             saved = store.directory('jobs', job['id'])/'checkpoints'/done['checkpoint']
             graph, _ = load(saved)
-            self.assertIsInstance(graph.model.root, ConceptModel)                         # the tabular concept model
+            self.assertIsInstance(graph, NetText)                                         # the concept network alone
+            self.assertIsNotNone(graph.model.net)
             self.assertEqual(graph.tokens, progress['tokens_trained'])
             history = store.history(job['id'], owner)
             measured = [row['step'] for row in history if 'validation_nll' in row]
@@ -130,7 +131,7 @@ class ConceptLongLearningTests(unittest.TestCase):
                                          capture_output=True, text=True, timeout=120)
                 self.assertEqual(written.returncode, 0, written.stderr[-2000:])
                 self.assertTrue(written.stdout.strip())
-            # The next text of the queue starts from the sums of the first and adds its own.
+            # The next text of the queue starts from the network of the first and goes on learning.
             config = validate_options(dict(base, corpus_id=second['id'], name='Coda · 2', warm_start=True))
             config['series'] = dict(id='q', order=1, variant='queue', label='due')
             store.set_config(job['id'], dict(done['config'], series=dict(id='q', order=0, variant='queue', label='uno')))
