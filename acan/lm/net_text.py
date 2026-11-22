@@ -57,6 +57,9 @@ class NetText:
         self.growth = bool(growth)
         self.network = dict(self.GROWING if self.growth else self.NETWORK, **(network or {}))
         self.next_race, self.races = 0, []                     # with growth: when the next race is, and their results
+        self.race_gap = 0                                      # text skipped after a race the network as it is won
+        self.decide_on = None                                  # the text the decisions are judged on (the queue's validation)
+        self._previous = None                                  # validation after the last piece: is the network still learning?
         self.tokens, self.tail, self.report = 0, np.empty(0, np.int64), None
         self.model = None                                      # SimpleNamespace(net=ConceptNet, tables={})
         self._learner = None
@@ -90,7 +93,12 @@ class NetText:
             self._learner = Grower(network, passes=self.network.get('passes', True))
             self._learner.KINDS = ()                            # the sizes are fixed
             self._learner.begin = True
-        held = self._held(tune)
+        if self.decide_on is not None:                          # all the validation of the queue: small gains are seen
+            if getattr(self, '_decide_docs', None) is None:
+                self._decide_docs = self._held([self.decide_on])
+            held = self._decide_docs
+        else:
+            held = self._held(tune)
         self.piece = self.piece or len(ids)
         begun = self.tokens, getattr(self._learner.learner, 'seen', 0)
 
@@ -120,11 +128,22 @@ class NetText:
         if shown and not self.trace:                            # where the queue starts
             self._point(where(), held_out(self._learner.learner.network, shown))
         self._learner.passes = False                            # every piece once ...
-        if self.growth and held and (self.read >= self.next_race or self.read + len(ids) >= len(train)):
+        end = self.read + len(ids)
+        if self.growth and held and (self.read >= self.next_race or end >= len(train)):
             best = self._race(ids, held, lambda: watched(False), shown)   # the new piece decides the size, and is learned
-            self.next_race = max(2 * self.read, self.read + len(ids))
+            if self.races[-1]['choice'] != "com'è":            # it needed to grow: the next piece races again
+                self.next_race = end
+            else:                                               # the size is enough: the next race further away
+                self.race_gap = max(2 * self.race_gap, len(ids))
+                self.next_race = end + self.race_gap
+            self._previous = self._learner.best_scores
         else:
             best = self._learner.learn(ids, self.eos, score, watched)
+            if self.growth and held and self._learner is not None and not self._learner.done:
+                now = held_out(self._learner.learner.network, held)
+                if self._previous is not None and not self._better(now, self._previous):
+                    self.next_race = min(self.next_race, end)   # it no longer learns at this size: try to grow
+                self._previous = now
         if again and not self._learner.done:                    # ... and with the last one, the whole text again
             self._learner.passes = True
             best = self._learner.learn(np.asarray(train, np.int64), self.eos, score, watched)
@@ -138,6 +157,13 @@ class NetText:
         self.network_history, self.network_done = self._learner.history, self._learner.done
         if self._learner.done:
             self._learner = None
+
+    @staticmethod
+    def _better(a, b):
+        """a reads held-out text better than b by more than one standard error of the paired difference."""
+        import math
+        d = np.asarray(a) - np.asarray(b)
+        return len(d) > 1 and len(a) == len(b) and d.mean() > d.std(ddof=1) / math.sqrt(len(d) - 1)
 
     def _point(self, tokens, values, kind=None):
         """A point of the chart: the validation after so many tokens learned, in steps of the queue (with the
@@ -279,7 +305,8 @@ class NetText:
     # ---- persistence -------------------------------------------------------------------------------------
     def arrays(self):
         data = {"net_text": np.array([VERSION, self.vocabulary, self.eos, self.budget_bytes, self.tokens, self.max_context,
-                                      int(self.network_done), int(self.growth), int(self.next_race)], np.int64),
+                                      int(self.network_done), int(self.growth), int(self.next_race),
+                                      int(self.race_gap)], np.int64),
                 "tail": np.asarray(self.tail, np.int64)}
         if self.model is not None:
             data.update(self.model.net.arrays('net.'))
@@ -294,6 +321,7 @@ class NetText:
             raise ValueError("Versione del checkpoint della rete sconosciuta.")
         text = cls(vocabulary, eos, budget or limit, context, growth=bool(growth))
         text.next_race = next_race
+        text.race_gap = values[9] if len(values) > 9 else 0
         text.tokens, text.tail, text.network_done = tokens, np.asarray(data["tail"], np.int64), bool(done)
         net = ConceptNet.from_arrays(data, 'net.')
         if net is not None:

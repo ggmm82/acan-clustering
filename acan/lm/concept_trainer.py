@@ -70,6 +70,17 @@ def judged_pieces(blocks, limit, disjoint=False):
     return pieces[0::2], pieces[1::2] or pieces[0::2]
 
 
+def decision_text(blocks, limit):
+    """All the validation text except the blocks that measure the error: the model decides on it (when to grow,
+    when to stop), and the error the page shows stays on text no decision has seen."""
+    indices = blocks.evaluation_indices('validation', 2*limit)
+    if len(indices) < 2:
+        return None                                              # one block only: the decisions use the tuning half
+    measured = set(indices[1::2])
+    kept = [blocks._block('validation', index) for index in range(blocks.counts['validation']) if index not in measured]
+    return np.concatenate(kept) if kept else None
+
+
 def measure(model, pieces):
     """Mean error (nats per token) on pieces of text the model never counted, every position read causally."""
     values = np.concatenate([model.logp(piece, np.arange(1, len(piece))) for piece in pieces])
@@ -200,6 +211,7 @@ def run_training(root, identifier, stop_event=None):
                                                    **({'network_trace': list(trace)} if trace else {})))
         model.report = structure
         model.watch = judge                                     # the chart inside a step: the same text as its validation
+        model.decide_on = decision_text(blocks, config['validation_batches'])   # the decisions: all the validation but the measure
         started, initial = time.monotonic(), state['tokens_trained']
         last_save = time.monotonic()
         saved_step = state['step']

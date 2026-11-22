@@ -312,9 +312,8 @@ imparati: dopo un lotto, due, quattro… Quando due decisioni di fila non miglio
 testo tenuto da parte, la rete smette di imparare.
 
 **Dimensioni dai dati.** La rete parte piccola (32 numeri di stato, uno strato, 4 gruppi
-da 16 concetti, 3 distanze vicine; i centri dei token partono a caso). Con il primo
-pezzo, ogni volta che il testo letto raddoppia e con l'ultimo pezzo, la rete com'è e tre
-copie cresciute imparano il pezzo nuovo, una volta ciascuna:
+da 16 concetti, 3 distanze vicine; i centri dei token partono a caso). In una **gara** la
+rete com'è e tre copie cresciute imparano il pezzo nuovo, una volta ciascuna:
 
 - **il doppio della larghezza:** ogni coordinata scritta due volte, con dispersioni e
   masse dei concetti corrette perché appartenenze e letture restino identiche;
@@ -327,6 +326,21 @@ coordinate si muovono a coppie. Prosegue, con il pezzo imparato, la più semplic
 migliore non batte di più di un errore standard sul testo tenuto da parte (sezione 2). La
 gara usa testo nuovo e non rilegge quello già letto: a parità di token il testo nuovo
 insegna di più (Informatica, sezione 6).
+
+**Quando c'è una gara.** Il calendario segue la rete:
+
+- con il primo pezzo, per scegliere la dimensione dai primi dati, e con l'ultimo;
+- se vince una copia cresciuta, la rete aveva bisogno di crescere: la gara si rifà sul
+  pezzo successivo, così una rete che deve crescere molto cresce un gradino a ogni pezzo;
+- se vince la rete com'è, la dimensione basta: la gara successiva si allontana, saltando
+  uno, poi due, poi quattro pezzi;
+- se fra due gare la rete smette di migliorare sul testo tenuto da parte (non di più di
+  un errore standard rispetto al pezzo prima), è satura: la gara si anticipa al pezzo
+  successivo.
+
+Le decisioni si giudicano su tutto il testo di validazione tranne i tratti che misurano
+l'errore mostrato, così un miglioramento piccolo non si perde nel rumore e l'errore
+mostrato resta su testo che nessuna decisione ha visto.
 
 **Ricordare rileggendo.** Un passo di gradiente sposta i parametri di poco: una frase vista
 una volta lascia una traccia piccola. Finito il testo, la rete lo rilegge tutto, e dopo
@@ -494,11 +508,13 @@ giudizio leave-one-out non rilegge la tabella, perché usa le somme.
    lettura in avanti, perdita (Matematica, sezione 8), gradiente all'indietro, norma del
    gradiente limitata a 1, passo di AdamW (passo $3\cdot10^{-3}$, avvio lineare per al più
    200 passi e al più un passaggio), un lieve decadimento dei parametri.
-4. **Crescita.** Con il primo pezzo, dopo 1, 2, 4… pezzi e con l'ultimo, quattro
-   candidati (la rete com'è, più larga, con uno strato in più, con i concetti divisi)
-   imparano il pezzo nuovo, uno dopo l'altro; prosegue il più semplice che il migliore non
-   batte di più di un errore standard. Una gara costa quattro letture di un pezzo, e le
-   gare sono sempre più rade. Con la crescita spenta (opzione della coda) la rete ha
+4. **Crescita.** In una gara quattro candidati (la rete com'è, più larga, con uno strato
+   in più, con i concetti divisi) imparano il pezzo nuovo, uno dopo l'altro; prosegue il
+   più semplice che il migliore non batte di più di un errore standard. Le gare cadono sul
+   primo e sull'ultimo pezzo, sul pezzo dopo una gara vinta da una crescita, sul pezzo dopo
+   uno in cui la rete non è migliorata, e altrimenti sempre più rade (Matematica,
+   sezione 8). Una gara costa quattro letture di un pezzo. Le decisioni si giudicano su
+   tutta la validazione tranne i tratti che misurano l'errore della pagina. Con la crescita spenta (opzione della coda) la rete ha
    dimensioni fisse: 96 numeri di stato, 3 strati, 4 gruppi da 64 concetti.
 5. **Riletture finali.** Con l'ultimo pezzo la rete rilegge tutto il testo, passaggio dopo
    passaggio, finché la validazione migliora di più di un errore standard; il passaggio che
