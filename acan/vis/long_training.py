@@ -189,8 +189,9 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     tiles = [
         first,
         _tile('Tempo che manca', 'finito' if status == 'completed' else when(remaining), 'stima dalla velocità finora'),
-        _tile('Velocità', f'{speed:,.0f} token/s' if speed else '—',
-              f'un passo è {piece:,} token' + (' · si misura alla fine del primo passo' if not speed else '')),
+        _tile('Velocità', f'{speed:,.0f} token/s' if speed else f"{network['speed']:,} token/s" if network and network.get('speed') else '—',
+              f'un passo è {piece:,} token' + ('' if speed else ' · nel passo in corso' if network and network.get('speed')
+                                                  else ' · si misura mentre la rete impara')),
         _tile('Errore su testo mai visto', '—' if error is None else f'{error:.3f}',
               (f'esita fra circa {perplexity:,.0f} token' if perplexity else '') + (f' · prima di leggere {before:.3f}' if before is not None else '')),
         _tile('Dimensione del modello', _bytes(size) if size else '—',

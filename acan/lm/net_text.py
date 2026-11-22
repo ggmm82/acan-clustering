@@ -124,7 +124,8 @@ class NetText:
                     network.train()
                 best = self._learner.best_scores
                 self.report('network', 0, now - started, learned=int(self._learner.learned), again=int(again),
-                            held_milli=int(1000 * -best.mean()) if best is not None and len(best) else 0)
+                            held_milli=int(1000 * -best.mean()) if best is not None and len(best) else 0,
+                            speed=int((where() - begun[0]) / max(now - started, 1e-9)))   # tokens a second, in this step
         if shown and not self.trace:                            # where the queue starts
             self._point(where(), held_out(self._learner.learner.network, shown))
         self._learner.passes = False                            # every piece once ...
@@ -184,6 +185,7 @@ class NetText:
         import math
         from .concept_net_training import Learner, documents, held_out
         grower, base = self._learner, self._learner.learner
+        self._race_began = time.monotonic()
         docs = documents(ids, self.eos, base.longest, begin=True)
         size = sum(map(len, docs))
         base.tokens = min(grower.batch, max(1, math.isqrt(max(size, 1))))   # as many batches as tokens in a batch
@@ -205,6 +207,7 @@ class NetText:
                 learner.steps, learner.warmup, learner.seen = base.steps, base.warmup, base.seen
                 learner.lr = base.lr / 2 if kind == 'larghezza' else base.lr
             start = learner.seen
+            self._race_done = number * size                     # what the earlier candidates of the race read
             learner.learn_documents(docs, lambda: (check(), self._racing(number, size, kind, learner, start, shown)))
             if shown:                                           # where the candidate ends, on the chart
                 self._point(self.tokens + learner.seen - start, held_out(learner.network, shown), kind)
@@ -231,7 +234,10 @@ class NetText:
             if shown and learner is not None:
                 self._point(self.tokens + learner.seen - start, held_out(learner.network, shown), kind)
                 learner.network.train()
-            self.report('network', 0, 0., race=number + 1, learned=int(self.read), piece=int(size))
+            began = getattr(self, '_race_began', None)
+            read = getattr(self, '_race_done', 0) + (learner.seen - start if learner is not None else 0)
+            self.report('network', 0, 0., race=number + 1, learned=int(self.read), piece=int(size),
+                        speed=int(read / max(now - began, 1e-9)) if began else 0)   # tokens a second, all candidates
 
     def judge(self, pieces, final=False):
         """Nothing to choose: the network is its own reading."""
