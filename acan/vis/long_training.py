@@ -174,11 +174,14 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     else:
         inside = ''
         if network:                                             # the network inside the step: how far it is
-            inside = (f" · la rete rilegge tutto il testo: {network.get('learned', 0):,} token imparati" if network.get('again')
+            inside = (f" · gara di crescita: candidato {network['race']} di 4, passaggio {network.get('passes', 0) + 1} "
+                      f"sul testo letto ({network.get('learned', 0):,} token)" if network.get('race')
+                      else f" · la rete rilegge tutto il testo: {network.get('learned', 0):,} token imparati" if network.get('again')
                       else f" · la rete impara il pezzo: {network.get('learned', 0):,} token imparati")
             if network.get('held_milli'):
                 inside += f", validazione migliore {network['held_milli'] / 1000:.3f}"
-            inside += f", da {network['seconds'] / 60:,.0f} minuti"
+            if network.get('seconds'):
+                inside += f", da {network['seconds'] / 60:,.0f} minuti"
         first = _tile('Avanzamento', f'{share:.0f}%' if ready else 'prepara i token',
                       (f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' + inside) if ready else 'il totale si conosce quando i token sono pronti')
     tiles = [
@@ -232,6 +235,8 @@ def concept_footprint_view(item):
             ('Prima di leggere questo testo', number(progress.get('baseline_nll')))]),
         *([('Rete a concetti', [
             ('Apprendimento', 'si è fermata: la validazione non migliorava più' if progress.get('network_stopped') else 'impara a ogni pezzo'),
+            *[(f"Crescita a {race['tokens']:,} token", f"{race['choice']}: larghezza {race['dim']}, {race['layers']} strati, "
+               f"concetti {race['concepts']}, validazione {race['held_out']:.3f}") for race in progress.get('network_races') or []],
             *[(f"Strato {layer['layer']}",
                f"{' · '.join(f'{a:.0f}' for a in layer['active'])} concetti attivi per gruppo; "
                + (f"in un concetto il token più frequente è il {layer['tied']:.0%}. " if layer['tied'] is not None else '')
@@ -394,6 +399,11 @@ layout = html.Div([
                      className='mb-1'),
              html.Small("Un passo è un pezzo di un milione di token: la rete lo legge e lo rilegge finché il testo tenuto da parte migliora. "
                         "Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
+             dbc.Checkbox(id='lm-long-growth', value=False, label='La rete cresce con i dati (molto più lenta)'),
+             html.Small("La rete parte piccola. Ogni volta che il testo letto raddoppia, la rete com'è e tre copie cresciute "
+                        "(più larga, uno strato in più, concetti divisi) rileggono il testo letto finché la validazione "
+                        "migliora; resta la più semplice fra quelle che la migliore non batte di più di un errore standard.",
+                        className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
          html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),
@@ -572,14 +582,14 @@ def register(app):
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
-                  State('lm-long-length', 'value'), prevent_initial_call=True)
-    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256):
+                  State('lm-long-length', 'value'), State('lm-long-growth', 'value'), prevent_initial_call=True)
+    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, growth=False):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
-                        milestone_steps=int(milestone or 0), probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
+                        milestone_steps=int(milestone or 0), concept_network_growth=bool(growth), probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             return result.get('message', 'Coda creata.'), result['queue']
         except ValueError as exc:

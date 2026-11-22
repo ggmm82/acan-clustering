@@ -170,7 +170,8 @@ def run_training(root, identifier, stop_event=None):
                                  'la rete a concetti non può ripartire da lì. Crea una coda nuova.')
             # the model of a text is the concept network alone: its concepts learned along the gradient
             model = start if start is not None else NetText(len(tokenizer), tokenizer.eos_token_id, budget,
-                                                            config.get('concept_context', 512))
+                                                            config.get('concept_context', 512),
+                                                            growth=bool(config.get('concept_network_growth', False)))
             model.tail = np.empty(0, np.int64)                   # a new text starts with an empty prefix
             state = dict(step=0, tokens_trained=0, device='cpu', identity=identity, model_contract=contract(profile), profile=profile,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},
@@ -237,6 +238,8 @@ def run_training(root, identifier, stop_event=None):
                 # What the concepts of the network hold, on validation text, for the page
                 state['network_concepts'] = model.model.net.describe([p[:512] for p in tune[:8]], tokenizer.decode)
                 state['network_stopped'] = bool(model.network_done)
+                if getattr(model, 'races', None):
+                    state['network_races'] = list(model.races)       # what every race of growth chose
             if last:
                 previous = save(root_checkpoints, model, state, identity)
                 saved_step = state['step']

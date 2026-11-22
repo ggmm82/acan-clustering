@@ -263,3 +263,32 @@ class NetTextTest(unittest.TestCase):
         self.assertTrue(validate_options(dict(base, concept_network_only=True))['concept_network_only'])
         with self.assertRaises(ValueError):
             validate_options(dict(base, concept_network_only='sì'))
+
+
+@unittest.skipUnless(TORCH, 'torch is needed to learn the network')
+class NetTextGrowthTest(unittest.TestCase):
+    def test_the_growing_network_races_when_the_text_doubles_and_reads_as_before_after_saving(self):
+        from acan.lm.concept_lm import from_checkpoint_arrays
+        from acan.lm.net_text import NetText
+        rng = np.random.default_rng(8)
+        eos, docs = 40, []
+        for i in range(60):
+            words = np.arange(1, 20) if i % 2 else np.arange(20, 39)
+            docs += [int(rng.choice(words)) for _ in range(12)] + [eos]
+        ids = np.array(docs)
+        tune = [ids[:390]]
+        model = NetText(41, eos, 1 << 22, max_context=32, growth=True,
+                        network=dict(dim=4, layers=1, heads=1, concepts=2, window=1))
+        model.add(ids[:390], ids, tune, lambda: None)
+        model.add(ids[390:], ids, tune, lambda: None)
+        self.assertEqual([race['tokens'] for race in model.races], [390, len(ids)])     # after 1 piece, then the last
+        self.assertTrue(all(race['choice'] in NetText.KINDS for race in model.races))
+        doc = ids[:ids.tolist().index(eos) + 1]
+        q = model.logp(doc)
+        cursor = model.prediction_cursor(())
+        for i, t in enumerate(doc):
+            self.assertAlmostEqual(np.log(cursor.distribution()[t]), q[i], places=4)
+            cursor.observe(t)
+        restored = from_checkpoint_arrays(model.arrays())
+        self.assertTrue(restored.growth)
+        np.testing.assert_allclose(restored.logp(doc), q, atol=1e-6)
