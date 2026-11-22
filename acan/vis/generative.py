@@ -969,9 +969,13 @@ def register(app):
             figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows],
                                mode='lines+markers' if job['config'].get('architecture') == 'concepts' else 'lines', name=f'{own} · {label}')
         trace = metrics.get('network_trace') or []
-        if trace:                                               # the network inside the steps: every validation it measured
-            figure.add_scatter(x=[point[0] for point in trace], y=[point[1] for point in trace], mode='lines',
-                               name='Rete · validazione dentro il passo', line=dict(width=1, dash='dot'))
+        for kind in dict.fromkeys(point[2] if len(point) > 2 else None for point in trace):
+            # the network inside the steps: every validation it measured; in a race of growth, each candidate
+            points = [point for point in trace if (point[2] if len(point) > 2 else None) == kind]
+            figure.add_scatter(x=[point[0] for point in points], y=[point[1] for point in points],
+                               mode='lines' if kind is None else 'lines+markers',
+                               name='Rete · validazione dentro il passo' if kind is None else f'Rete · gara · {kind}',
+                               line=dict(width=1, dash='dot'))
         # The project and its dense control on the same chart: same corpus, seed and budget.
         partner, comparison = paired_job((state or {}).get('jobs', []), job), None
         if partner is not None:
