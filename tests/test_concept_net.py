@@ -26,6 +26,20 @@ class ConceptNetTest(unittest.TestCase):
                 p.add_(torch.randn_like(p) * .1)
         return net
 
+    def test_cuda_probe_rejects_a_visible_device_without_kernels(self):
+        from unittest.mock import patch
+
+        from acan.lm.resources import cuda_usable
+
+        cuda_usable.cache_clear()
+        self.addCleanup(cuda_usable.cache_clear)
+        with patch('torch.cuda.is_available', return_value=True), patch(
+            'torch.ones', side_effect=RuntimeError('no kernel image')
+        ) as kernel, self.assertLogs('acan.lm.resources', level='WARNING'):
+            self.assertFalse(cuda_usable())
+            self.assertFalse(cuda_usable())
+            kernel.assert_called_once_with(1, device='cuda')
+
     def test_cuda_training_growth_and_cpu_export(self):
         import torch
         from acan.lm.concept_net_training import Learner, Network, held_out

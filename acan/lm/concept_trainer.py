@@ -143,9 +143,9 @@ def run_training(root, identifier, stop_event=None):
     try:
         contract(profile)                                       # an earlier generative model is refused here
         check()
-        import torch
+        from .resources import cuda_usable
         requested = config.get('device', 'cpu')
-        cuda = requested != 'cpu' and torch.cuda.is_available()
+        cuda = requested != 'cpu' and cuda_usable()
         if requested == 'cuda' and not cuda:
             raise ValueError('CUDA non disponibile nel worker generativo.')
         device = 'cuda' if cuda else 'cpu'
