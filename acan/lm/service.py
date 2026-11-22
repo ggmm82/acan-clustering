@@ -125,7 +125,8 @@ def create_app(root=None, token=None):
     @app.get('/capabilities')
     def capabilities():
         import torch
-        return jsonify(cuda=torch.cuda.is_available(), torch=torch.__version__, base_models=BASE_MODELS,
+        from .resources import cuda_usable
+        return jsonify(cuda=cuda_usable(), torch=torch.__version__, base_models=BASE_MODELS,
                        profile='acan-lm-causal-prefix-v1', minicpm_supported=False, controlled_training=True, distillation=True, best_checkpoint=True, model_export=True,attention_fractions=[.5,1.],build_revision=os.environ.get('ACAN_BUILD_REVISION','development'))
 
     @app.get('/public-corpora')

@@ -13,8 +13,8 @@ installation never leaves the server.
 
 A model is a project: its id is the project id (``<32 hex>``), optionally ``<id>:<checkpoint>``; without a
 checkpoint the last saved one is read. The checkpoint is read from disk, so a project can answer while it keeps
-learning. The model is the concept model of text (acan/lm/pair_text.py): no GPU and no worker process; the last two
-models read are kept in memory.
+learning. The model is the concept network of text (acan/lm/net_text.py), read with numpy: no GPU and no worker
+process; the last two models read are kept in memory.
 
 Sampling: ``temperature`` (0 = the most probable token), ``top_p`` (the smallest set of tokens holding that
 probability), ``seed``, ``max_tokens``, ``stop`` (strings: the answer ends before the first one). The chat is
