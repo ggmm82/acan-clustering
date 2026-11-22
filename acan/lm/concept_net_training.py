@@ -121,14 +121,17 @@ class Network(nn.Module):
             counts = torch.bincount(group, minlength=G)
             start = torch.cat([torch.zeros(1, dtype=torch.long), counts.cumsum(0)[:-1]])
             rank = torch.empty_like(order); rank[order] = torch.arange(len(order))
-            self._order, self._start, self._size, self._rank = order, start, counts, rank - start[group]
-            # the members of every group in one table (padded): the token inside its group is read for all the
-            # positions at once, a product over the group's members only
-            S = int(counts.max())
-            slots = torch.arange(S)[None]
-            self._members = torch.where(slots < counts[:, None], order[(start[:, None] + slots).clamp(max=len(order) - 1)],
-                                        torch.zeros((), dtype=torch.long))
-            self._valid = slots < counts[:, None]
+            self.register_buffer('_rank', rank - start[group], persistent=False)
+            # Padded group membership, one gather per target token.
+            slots = torch.arange(int(counts.max()))[None]
+            valid = slots < counts[:, None]
+            members = order[(start[:, None] + slots).clamp(max=len(order) - 1)]
+            self.register_buffer('_members', torch.where(valid, members, 0), persistent=False)
+            self.register_buffer('_valid', valid, persistent=False)
+
+    @property
+    def device(self):
+        return self.centre.weight.device
 
     def states(self, ids, mask):
         h = self.centre(ids)
@@ -194,7 +197,7 @@ class Network(nn.Module):
     def add_layer(self):
         """A new last layer that leaves the states as they are: it starts closed, and what it adds starts at zero."""
         dim, last = self.config['dim'], self.layers[-1]
-        layer = ConceptAttention(dim, self.config['heads'], int(last.g.shape[1]), self.config['window'], self.config['head_dim'])
+        layer = ConceptAttention(dim, self.config['heads'], int(last.g.shape[1]), self.config['window'], self.config['head_dim']).to(self.device)
         with torch.no_grad():
             layer.out.weight.zero_(); layer.out.bias.zero_()
             layer.gate.zero_()                                         # closed: the state goes through as it is
@@ -205,8 +208,8 @@ class Network(nn.Module):
     def _like(self, **change):
         """A network with the configuration changed, its own parameters at their start (to be filled)."""
         config = dict(self.config, **change)
-        groups = self.group.numpy() if self.grouped else None
-        return Network(config, groups=groups)
+        groups = self.group.cpu().numpy() if self.grouped else None
+        return Network(config, groups=groups).to(self.device)
 
     def widened(self, noise=1e-2):
         """Twice as wide (the state and every group of concepts): every coordinate is copied, so the states are the old
@@ -284,7 +287,7 @@ class Network(nn.Module):
             elif part in ('query.weight', 'value.weight'):
                 v = torch.cat([v, f[H * d:]], 0)
             elif part == 'out.weight':
-                v = torch.cat([v[:, :H * d], torch.zeros(D, H * d), v[:, H * d:]], -1)
+                v = torch.cat([v[:, :H * d], v.new_zeros(D, H * d), v[:, H * d:]], -1)
             new[k] = v
         grown.load_state_dict(new)
         return grown
@@ -356,6 +359,8 @@ def held_out(network, docs, limit=None, batch=4096):
     reads them in batches, as it learns, without the gradient. ``limit``: only the first documents, about that many
     tokens."""
     network.eval()
+    if network.device.type == 'cuda':
+        batch = min(batch, 256)
     if limit is not None:
         kept, size = [], 0
         for d in docs:
@@ -377,31 +382,37 @@ def held_out(network, docs, limit=None, batch=4096):
     read = [None] * len(docs)
     with torch.no_grad():
         for chunk in chunks:
-            ids, mask = _pad([docs[j] for j in chunk])
+            ids, mask = _pad([docs[j] for j in chunk], network.device)
             lp = network.target_log_probs(ids[:, :-1], mask[:, :-1], ids[:, 1:])
             m = mask[:, 1:].bool()
             for r, j in enumerate(chunk):
-                read[j] = lp[r][m[r]].numpy()
+                read[j] = lp[r][m[r]].cpu().numpy()
     return np.concatenate(read) if read else np.zeros(0)
 
 
-def batches(docs, tokens, shuffle, rng):
+def batches(docs, tokens, shuffle, rng, device=None):
     order = rng.permutation(len(docs)) if shuffle else np.arange(len(docs))
     chunk, size = [], 0
+    longest = 0
     for j in order:
-        chunk.append(docs[j]); size += len(docs[j])
+        length = len(docs[j])
+        if chunk and device is not None and device.type == 'cuda' and (len(chunk) + 1) * max(longest, length) > tokens:
+            yield _pad(chunk, device)
+            chunk, size, longest = [], 0, 0
+        longest = max(longest, length)
+        chunk.append(docs[j]); size += length
         if size >= tokens:
-            yield _pad(chunk); chunk, size = [], 0
+            yield _pad(chunk, device); chunk, size, longest = [], 0, 0
     if chunk:
-        yield _pad(chunk)
+        yield _pad(chunk, device)
 
 
-def _pad(chunk):
+def _pad(chunk, device=None):
     n = max(len(c) for c in chunk)
     ids = np.zeros((len(chunk), n), np.int64); mask = np.zeros((len(chunk), n), np.float32)
     for r, c in enumerate(chunk):
         ids[r, :len(c)] = c; mask[r, :len(c)] = 1
-    return torch.as_tensor(ids), torch.as_tensor(mask)
+    return torch.as_tensor(ids, device=device), torch.as_tensor(mask, device=device)
 
 
 class Learner:
@@ -411,7 +422,7 @@ class Learner:
         """``weight``: how much every token weighs when it is the one to read (one per token of the vocabulary),
         as the concept model weighs its attributes: a target as much as all the features together."""
         self.network, self.tokens, self.longest = network, tokens, longest
-        self.weight = None if weight is None else torch.as_tensor(np.asarray(weight, np.float32))
+        self.weight = None if weight is None else torch.as_tensor(np.asarray(weight, np.float32), device=network.device)
         self.opt = torch.optim.AdamW(network.parameters(), lr=lr, weight_decay=0.)
         self.decay = .01
         self.anchor = None                                     # where the parameters are pulled back to (None: zero)
@@ -428,7 +439,7 @@ class Learner:
         warmup = self.warmup if warmup is None else warmup
         self.network.train()
         total, n = 0., 0
-        for ids_, mask in batches(docs, self.tokens, True, self.rng):
+        for ids_, mask in batches(docs, self.tokens, True, self.rng, self.network.device):
             if check is not None:
                 check()
             for group in self.opt.param_groups:

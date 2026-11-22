@@ -27,7 +27,7 @@ def profile(cuda, size=None):
     """The settings of the concept language model: the concept network, its concepts learned along the gradient.
     ``size`` is accepted for earlier callers and ignored."""
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
-                distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='cpu',
+                distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='auto',
                 chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000)
 
 
@@ -228,6 +228,7 @@ def concept_footprint_view(item):
             ('Concetti in tutto', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—'),
             ('Parametri della rete', _bytes(progress['statistics_bytes']) if progress.get('statistics_bytes') else '—')]),
         ('Avanzamento e velocità', [
+            ('Dispositivo di addestramento', (progress.get('device') or '—').upper()),
             ('Passo', f'{step:,} di {total:,}' if progress.get('graft') else '— (il totale si conosce quando i token del testo sono pronti)'),
             ('Token letti', f"{progress.get('tokens_trained', 0):,}"),
             ('Velocità', f'{speed:,.0f} token al secondo' if speed else '—'),
@@ -384,6 +385,7 @@ def footprint_view(item):
              f"{config['window']} token esatti + {config['slots']} concetti = {kept} vettori, a qualunque lunghezza"),
             ('Testo letto per pezzo', f"{config['sequence_length']} token")]),
         ('Avanzamento e velocità', [
+            ('Dispositivo di addestramento', (progress.get('device') or '—').upper()),
             ('Passo', f'{step:,} di {total:,}'),
             ('Token elaborati', f"{progress.get('tokens_trained', 0):,}"),
             ('Velocità', f'{speed:,.1f} token al secondo' if speed else '—'),

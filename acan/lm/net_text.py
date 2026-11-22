@@ -62,6 +62,7 @@ class NetText:
         self._previous = None                                  # validation after the last piece: is the network still learning?
         self.tokens, self.tail, self.report = 0, np.empty(0, np.int64), None
         self.model = None                                      # SimpleNamespace(net=ConceptNet, tables={})
+        self.device = 'cpu'
         self._learner = None
         self.network_done, self.network_history = False, []
         self.read = 0                                          # tokens of the current text read so far
@@ -92,7 +93,8 @@ class NetText:
                 config = {k: v for k, v in self.network.items() if k != 'passes'}
                 network = Network(dict(config, vocabulary=self.vocabulary), frequency=frequency / frequency.sum(),
                                   groups=frequency_groups(frequency) if config.get('grouped') else None)
-            self._learner = Grower(network, passes=self.network.get('passes', True))
+            options = dict(tokens=256, longest=min(256, self.max_context)) if self.device == 'cuda' else {}
+            self._learner = Grower(network.to(self.device), passes=self.network.get('passes', True), **options)
             self._learner.KINDS = ()                            # the sizes are fixed
             self._learner.begin = True
         if self.decide_on is not None:                          # all the validation of the queue: small gains are seen
@@ -100,7 +102,7 @@ class NetText:
                 self._decide_docs = self._held([self.decide_on], self._learner.learner.longest)   # as long as in learning
             held = self._decide_docs
         else:
-            held = self._held(tune)
+            held = self._held(tune, self._learner.learner.longest) if self.device == 'cuda' else self._held(tune)
         self.piece = self.piece or len(ids)
         begun = self.tokens, getattr(self._learner.learner, 'seen', 0)
         counted = dict(learner=self._learner.learner, seen=begun[1], total=0)
@@ -118,7 +120,8 @@ class NetText:
             if not held:
                 return np.zeros(2)
             return held_out(net, held, tokens)
-        shown = self._held(self.watch) if self.watch else held  # what the chart is measured on
+        watch_width = self._learner.learner.longest if self.device == 'cuda' else 1 << 30
+        shown = self._held(self.watch, watch_width) if self.watch else held  # what the chart is measured on
         started, last = time.monotonic(), [0.]
         again = self.read + len(ids) >= len(train) and self.network.get('passes', True)
 

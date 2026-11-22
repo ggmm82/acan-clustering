@@ -310,7 +310,7 @@ def native_config(corpus, size, name, steps, length, batch, accumulation, lr, sl
     """A project of the manual form: the concept model (the network settings of earlier projects are ignored)."""
     return dict(corpus_id=corpus, name=name, sequence_length=int(length or 256), save_steps=int(save_steps or 100),
                 protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
-                distillation_weight=0., early_stop_patience=0, validation_batches=int(validation or 8), device='cpu',
+                distillation_weight=0., early_stop_patience=0, validation_batches=int(validation or 8), device='auto',
                 chat_probes=True)
 
 

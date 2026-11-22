@@ -143,6 +143,12 @@ def run_training(root, identifier, stop_event=None):
     try:
         contract(profile)                                       # an earlier generative model is refused here
         check()
+        import torch
+        requested = config.get('device', 'cpu')
+        cuda = requested != 'cpu' and torch.cuda.is_available()
+        if requested == 'cuda' and not cuda:
+            raise ValueError('CUDA non disponibile nel worker generativo.')
+        device = 'cuda' if cuda else 'cpu'
         store.update(identifier, status='preparing', error=None)
         path, base = resolve(store, job, config)
         tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=False, local_files_only=True)
@@ -188,7 +194,7 @@ def run_training(root, identifier, stop_event=None):
                                                             config.get('concept_context', 512),
                                                             growth=bool(config.get('concept_network_growth', True)))
             model.tail = np.empty(0, np.int64)                   # a new text starts with an empty prefix
-            state = dict(step=0, tokens_trained=0, device='cpu', identity=identity, model_contract=contract(profile), profile=profile,
+            state = dict(step=0, tokens_trained=0, device=device, identity=identity, model_contract=contract(profile), profile=profile,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},
                          graft=dict(profile=profile, vocabulary=len(tokenizer), replaced_layers=[], total_layers=0,
                                     slots=0, window=0, fraction=1.))
@@ -200,6 +206,7 @@ def run_training(root, identifier, stop_event=None):
             state.update(quantities(model, config))
             previous = save(root_checkpoints, model, state, identity)
             store.record(identifier, 0, dict(state))           # the chart starts from the error before reading
+        model.device = state['device'] = device
         store.update(identifier, checkpoint=previous.name, progress=state, status='running')
 
         def structure(phase, width, seconds, **facts):

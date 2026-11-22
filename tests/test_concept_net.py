@@ -26,6 +26,23 @@ class ConceptNetTest(unittest.TestCase):
                 p.add_(torch.randn_like(p) * .1)
         return net
 
+    def test_cuda_training_growth_and_cpu_export(self):
+        import torch
+        from acan.lm.concept_net_training import Learner, Network, held_out
+
+        if not torch.cuda.is_available():
+            self.skipTest('requires a CUDA GPU')
+        net = self.network(grouped=True).to('cuda')
+        docs = [np.arange(1, 17), np.arange(2, 12)]
+        learner = Learner(net, tokens=32)
+        self.assertTrue(np.isfinite(learner.learn_documents(docs)))
+        grown = net.widened()
+        grown.add_layer()
+        self.assertTrue(all(p.is_cuda for p in grown.parameters()))
+        resumed = Network.restore(grown.export())
+        self.assertEqual(resumed.device.type, 'cpu')
+        np.testing.assert_allclose(held_out(grown, docs), held_out(resumed, docs), atol=3e-5)
+
     def test_numpy_reads_as_torch_and_the_cursor_as_the_whole_document(self):
         import torch
         ids = np.random.default_rng(1).integers(0, 50, 23)
