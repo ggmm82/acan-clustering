@@ -230,19 +230,21 @@ Quando due decisioni di fila sul testo nuovo non migliorano, la rete smette di i
 **Dimensioni dai dati.** La rete parte piccola (32 numeri di stato, uno strato, 4
 gruppi da 16 concetti, 3 distanze vicine; i centri dei token partono a caso) e cresce.
 Ogni documento comincia dopo il token di fine, così anche il suo primo token si legge
-come in addestramento. Ogni volta che il testo letto raddoppia, la rete com'è e
-tre copie cresciute rileggono il testo letto fino a lì:
+come in addestramento. Con il primo pezzo, ogni volta che il testo letto raddoppia e con
+l'ultimo pezzo, la rete com'è e tre copie cresciute imparano il pezzo nuovo, una volta
+ciascuna:
 
 - il doppio della larghezza: ogni coordinata scritta due volte, con dispersioni e masse
   dei concetti corrette perché appartenenze e letture restino le stesse;
 - uno strato in più, con l'apertura chiusa: lascia lo stato com'è;
 - ogni concetto diviso in due, con centri quasi uguali e metà della massa.
 
-Ogni copia legge all'inizio esattamente come la rete. Ognuna rilegge finché il testo
-tenuto da parte non migliora più di un errore standard due volte di fila, e si tiene al
-suo meglio; la copia più larga impara a metà passo, perché le sue coordinate si muovono a
-coppie. Prosegue la più semplice fra quelle che la migliore non batte di più di un errore
-standard (sezione 2). La gara dell'ultimo pezzo è anche la rilettura finale del testo.
+Ogni copia legge all'inizio esattamente come la rete; la copia più larga impara a metà
+passo, perché le sue coordinate si muovono a coppie. Il testo nuovo insegna più del testo
+riletto, a parità di token, e non è stato visto da nessuna copia: la gara lo usa per
+imparare, non rilegge il testo già letto. Prosegue, con il pezzo imparato, la più semplice
+fra quelle che la migliore non batte sul testo tenuto da parte di più di un errore
+standard (sezione 2). Finito il testo, la rete lo rilegge come sopra.
 
 ### 8 · Generazione
 
@@ -314,11 +316,10 @@ le misure.
    la rete smette di imparare. La pagina mostra, dentro il passo, i token imparati e la
    validazione, misurata mentre la rete impara.
 
-   **La rete che cresce.** Dopo 1, 2, 4…
-   pezzi e con l'ultimo, quattro candidati rileggono il testo letto fino a lì, uno dopo
-   l'altro, come descritto in Matematica, sezione 7. Ogni gara costa quattro
-   addestramenti fino a convergenza sul testo letto: le gare sono sempre più rade, ma
-   ognuna costa il doppio della precedente. La pagina mostra il candidato in corso e,
+   **La rete che cresce.** Con il primo pezzo, dopo 1, 2, 4… pezzi e con l'ultimo,
+   quattro candidati imparano il pezzo nuovo, uno dopo l'altro, come descritto in
+   Matematica, sezione 7. Una gara costa quattro letture di un pezzo, e le gare sono
+   sempre più rade. La pagina mostra il candidato in corso e,
    alla fine, che cosa ha scelto ogni gara; nel grafico la validazione segue la rete che prosegue.
 4. **Calcolo.** Le somme dei concetti si leggono a blocchi di 64 posizioni: dentro il
    blocco con un prodotto di matrici, fra un blocco e l'altro con le somme correnti. Le
