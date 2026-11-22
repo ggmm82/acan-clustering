@@ -11,6 +11,14 @@ RUN --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca; fi; \
     python -m pip install --no-cache-dir "torch==${TORCH_VERSION}" --index-url "$TORCH_INDEX_URL" \
     && python -m pip install --no-cache-dir --require-hashes --no-deps -r requirements/llm.lock
+# Triton compiles host helpers on first CUDA use. Keep this after the Python
+# dependencies so a toolchain-only change can reuse the PyTorch build layer.
+ARG INSTALL_CUDA_BUILD_TOOLS=0
+RUN if [ "$INSTALL_CUDA_BUILD_TOOLS" = 1 ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends gcc g++ libc6-dev \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
 COPY pyproject.toml README.md LICENSE ./
 COPY acan ./acan
 RUN python -m pip install --no-cache-dir --no-deps --no-build-isolation . \

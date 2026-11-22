@@ -6,8 +6,14 @@ services:
     image: ${ACAN_LM_GPU_IMAGE:-acan-generative-gpu:local}
     build:
       args:
+        INSTALL_CUDA_BUILD_TOOLS: "1"
         TORCH_VERSION: ${ACAN_TORCH_VERSION:-2.15.0}
         TORCH_INDEX_URL: ${ACAN_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu132}
+    environment:
+      # /tmp is mounted noexec. Triton's compiled host libraries must be loadable.
+      TRITON_HOME: /data
+      TRITON_CACHE_DIR: /data/triton-cache
+      TORCHINDUCTOR_CACHE_DIR: /data/torchinductor-cache
     mem_limit: ${ACAN_LM_MEMORY:-16g}
     deploy:
       resources:
