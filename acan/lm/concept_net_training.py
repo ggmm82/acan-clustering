@@ -120,6 +120,13 @@ class Network(nn.Module):
             start = torch.cat([torch.zeros(1, dtype=torch.long), counts.cumsum(0)[:-1]])
             rank = torch.empty_like(order); rank[order] = torch.arange(len(order))
             self._order, self._start, self._size, self._rank = order, start, counts, rank - start[group]
+            # the members of every group in one table (padded): the token inside its group is read for all the
+            # positions at once, a product over the group's members only
+            S = int(counts.max())
+            slots = torch.arange(S)[None]
+            self._members = torch.where(slots < counts[:, None], order[(start[:, None] + slots).clamp(max=len(order) - 1)],
+                                        torch.zeros((), dtype=torch.long))
+            self._valid = slots < counts[:, None]
 
     def states(self, ids, mask):
         h = self.centre(ids)
@@ -155,12 +162,10 @@ class Network(nn.Module):
             return self._cache(h, mask, targets, lp)
         g = self.group[tgt]
         lp = torch.log_softmax(self._logits(flat, self.group_centre, self.group_log_mass), -1).gather(1, g[:, None])[:, 0]
-        inside = torch.zeros_like(lp)
-        for k in torch.unique(g).tolist():
-            sel = (g == k).nonzero()[:, 0]
-            members = self._order[self._start[k]:self._start[k] + self._size[k]]
-            logits = self._logits(flat[sel], self.centre.weight[members], self.log_mass[members])
-            inside = inside.index_put((sel,), torch.log_softmax(logits, -1).gather(1, self._rank[tgt[sel]][:, None])[:, 0])
+        members, valid = self._members[g], self._valid[g]                         # N x S: the tokens of each group
+        e = self.centre.weight[members]                                          # N x S x D
+        logits = ((flat[:, None, :] * e).sum(-1) - .5 * (e * e).sum(-1)) * torch.exp(-2 * self.log_scale) + self.log_mass[members]
+        inside = torch.log_softmax(logits.masked_fill(~valid, float('-inf')), -1).gather(1, self._rank[tgt][:, None])[:, 0]
         return self._cache(h, mask, targets, (lp + inside).view(targets.shape))
 
     # ---- growth: a bigger network that reads exactly as the smaller one did -----------------------------------------
@@ -294,6 +299,16 @@ class Network(nn.Module):
             state['group'] = torch.as_tensor(groups)
         model.load_state_dict(state)
         return model
+
+
+def frequency_groups(frequency):
+    """Groups of the output from the frequencies alone: the tokens from the most frequent down, in groups of about
+    the square root of the vocabulary, so that a token is read among as many groups as tokens of its group."""
+    frequency = np.asarray(frequency, float)
+    size = max(1, int(math.ceil(math.sqrt(len(frequency)))))
+    rank = np.empty(len(frequency), np.int64)
+    rank[np.argsort(-frequency, kind='stable')] = np.arange(len(frequency))
+    return rank // size
 
 
 def output_groups(token_classes, frequency, limit=512):
