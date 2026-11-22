@@ -136,9 +136,25 @@ same after restarts. Never run `docker compose down -v` on the training stack
 unless intentionally deleting learned state and corpus data. Back up the named
 `acan-lm-data` volume after a checkpointed pause.
 
-For a GPU host, add `-f compose.generative.gpu.yaml`. Its default official index
-is CUDA 13.2 (`torch==2.15.0`); a compatible driver/container runtime is required.
-Wheel availability was checked, but execution is not GPU-validated here. Do not
+On a CUDA host, use the GPU overlay and build the worker with CUDA-enabled PyTorch:
+
+```sh
+docker compose -f compose.yaml -f compose.generative.yaml -f compose.generative.gpu.yaml \
+  --profile generative up -d --build
+docker compose -f compose.yaml -f compose.generative.yaml -f compose.generative.gpu.yaml \
+  --profile generative exec generative python -c 'import torch; print(torch.cuda.is_available())'
+```
+
+The overlay defaults to the official CUDA 13.2 wheel index for `torch==2.15.0`.
+On Docker Desktop, use a compatible NVIDIA GPU and Windows with the WSL 2
+backend. The container runtime and driver must support the installed Torch
+wheel. Without the overlay, the local Compose uses CPU-only PyTorch. In auto
+mode, a new queue selects CUDA if the worker sees it and CPU otherwise. The CUDA
+path uses smaller training and validation batches. The amount of VRAM needed
+also depends on network growth. For a first run on 2 GB, disable automatic
+growth and use a small corpus. Check the actual training device in the queue
+details. Checkpoint export and generation continue to use the CPU-compatible
+NumPy representation. Projects already set to CPU retain that configuration. Do not
 replace an existing worker image while a long job is running; pin and retain the
 image that created its checkpoint contract.
 
