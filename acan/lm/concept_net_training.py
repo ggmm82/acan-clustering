@@ -353,13 +353,26 @@ def held_out(network, docs, limit=None, batch=4096):
                 break
             kept.append(d); size += len(d)
         docs = kept
-    out = []
+    docs = [np.asarray(d, np.int64) for d in docs if len(d) >= 2]
+    # documents of like length together, and as many as fit ``batch`` tokens once padded: a batch of short documents
+    # and one long one would pad them all to the long one (the memory of the document is the square of the length)
+    order = sorted(range(len(docs)), key=lambda j: len(docs[j]))
+    chunks, chunk = [], []
+    for j in order:
+        if chunk and (len(chunk) + 1) * len(docs[j]) > batch:
+            chunks.append(chunk); chunk = []
+        chunk.append(j)
+    if chunk:
+        chunks.append(chunk)
+    read = [None] * len(docs)
     with torch.no_grad():
-        for ids, mask in batches([np.asarray(d, np.int64) for d in docs if len(d) >= 2], batch, False, None):
+        for chunk in chunks:
+            ids, mask = _pad([docs[j] for j in chunk])
             lp = network.target_log_probs(ids[:, :-1], mask[:, :-1], ids[:, 1:])
             m = mask[:, 1:].bool()
-            out += [lp[r][m[r]].numpy() for r in range(len(ids))]
-    return np.concatenate(out) if out else np.zeros(0)
+            for r, j in enumerate(chunk):
+                read[j] = lp[r][m[r]].numpy()
+    return np.concatenate(read) if read else np.zeros(0)
 
 
 def batches(docs, tokens, shuffle, rng):

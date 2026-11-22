@@ -64,7 +64,8 @@ def inside_figure(trace):
     if not trace:
         return None
     step = math.floor(max(point[0] for point in trace) - 1e-9)
-    points = [point for point in trace if step <= point[0] <= step + 1]
+    # the network's line starts where the step starts; a race's points belong to the step the race happened in
+    points = [point for point in trace if step < point[0] <= step + 1 or (point[0] == step and len(point) == 2)]
     if len(points) < 2:
         return None
     names = {None: 'La rete che impara', "com'è": "Gara · la rete com'è", 'larghezza': 'Gara · il doppio della larghezza',

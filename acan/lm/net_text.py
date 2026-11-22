@@ -103,9 +103,16 @@ class NetText:
             held = self._held(tune)
         self.piece = self.piece or len(ids)
         begun = self.tokens, getattr(self._learner.learner, 'seen', 0)
+        counted = dict(learner=self._learner.learner, seen=begun[1], total=0)
 
-        def where():                                            # tokens of the queue so far, rereadings included
-            return begun[0] + getattr(self._learner.learner, 'seen', 0) - begun[1]
+        def where():
+            # tokens of the queue so far, rereadings included: it never goes back, also when a decision returns to an
+            # earlier copy of the network (its count of tokens is lower: what it reads from there is added on)
+            learner = self._learner.learner
+            seen = getattr(learner, 'seen', 0)
+            counted['total'] += max(seen - counted['seen'], 0)
+            counted['learner'], counted['seen'] = learner, seen
+            return begun[0] + counted['total']
 
         def score(net, tokens=None):
             if not held:
