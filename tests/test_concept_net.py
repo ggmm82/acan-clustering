@@ -281,7 +281,7 @@ class NetTextGrowthTest(unittest.TestCase):
         ids = np.array(docs)
         tune = [ids[:390]]
         model = NetText(41, eos, 1 << 22, max_context=32, growth=True,
-                        network=dict(dim=4, layers=1, heads=1, concepts=2, window=1))
+                        network=dict(dim=4, layers=1, heads=1, concepts=2, window=1, passes=False))
         model.add(ids[:390], ids, tune, lambda: None)
         model.add(ids[390:], ids, tune, lambda: None)
         self.assertEqual([race['tokens'] for race in model.races], [390, len(ids)])     # after 1 piece, then the last

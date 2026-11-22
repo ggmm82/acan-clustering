@@ -327,7 +327,7 @@ le misure.
    quattro candidati imparano il pezzo nuovo, uno dopo l'altro, come descritto in
    Matematica, sezione 7. Una gara costa quattro letture di un pezzo, e le gare sono
    sempre più rade. La pagina mostra il candidato in corso e,
-   alla fine, che cosa ha scelto ogni gara; nel grafico la validazione segue la rete che prosegue.
+   alla fine, che cosa ha scelto ogni gara; nel grafico ogni candidato ha la sua linea, sullo stesso passo.
 4. **Calcolo.** Le somme dei concetti si leggono a blocchi di 64 posizioni: dentro il
    blocco con un prodotto di matrici, fra un blocco e l'altro con le somme correnti. Le
    appartenenze sviluppano il quadrato in prodotti di matrici. La validazione si legge a
