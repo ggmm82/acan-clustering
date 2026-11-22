@@ -146,11 +146,12 @@ class GrowthTest(unittest.TestCase):
         before = net.export().document(ids[:-1])
         net.split_concepts(0)
         self.assertEqual(net.config['concepts'], [8])
-        np.testing.assert_allclose(net.export().document(ids[:-1]), before, atol=2e-3)
+        split = net.export().document(ids[:-1])
+        np.testing.assert_allclose(split, before, atol=2e-3)      # the halves apart: nearly the same reading
         net.add_layer()
         self.assertEqual((net.config['layers'], net.config['concepts']), (2, [8, 8]))
         grown = net.export()
-        np.testing.assert_allclose(grown.document(ids[:-1]), before, atol=1e-5)
+        np.testing.assert_allclose(grown.document(ids[:-1]), split, atol=1e-5)   # a closed layer: exactly the same
         cursor = grown.cursor()
         for t in ids[:10]:
             cursor.observe(t)

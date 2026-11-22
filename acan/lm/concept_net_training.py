@@ -175,12 +175,16 @@ class Network(nn.Module):
         return self._cache(h, mask, targets, (lp + inside).view(targets.shape))
 
     # ---- growth: a bigger network that reads exactly as the smaller one did -----------------------------------------
-    def split_concepts(self, i, scale=1e-3):
-        """Every concept of layer i becomes two, with nearly the same centre and half the mass each: the memberships
-        split in halves, the sums too, and the reading of the layer is the same. The gradient can then pull them apart."""
+    def split_concepts(self, i, scale=.5):
+        """Every concept of layer i becomes two with half the mass each, their centres on either side of the old one:
+        the memberships split, the sums too, and the reading of the layer is nearly the same. The gradient then takes
+        them apart."""
         layer = self.layers[i]
         with torch.no_grad():
-            g = torch.cat([layer.g, layer.g + torch.randn_like(layer.g) * scale], 1)
+            # the two halves apart by a share of their dispersion, in opposite ways: together they still read as the
+            # concept did, and they differ enough for the gradient to take each its own way
+            e = torch.randn_like(layer.g) * torch.exp(layer.log_s) * scale
+            g = torch.cat([layer.g + e, layer.g - e], 1)
             log_s = torch.cat([layer.log_s, layer.log_s], 1)
             log_c = torch.cat([layer.log_c, layer.log_c], 1) - math.log(2)
             A = torch.cat([torch.cat([layer.A, layer.A], 2)] * 2, 1)    # a concept looks at both halves as at the whole
@@ -204,59 +208,65 @@ class Network(nn.Module):
         groups = self.group.numpy() if self.grouped else None
         return Network(config, groups=groups)
 
-    def widened(self, noise=1e-3):
+    def widened(self, noise=1e-2):
         """Twice as wide (the state and every group of concepts): every coordinate is copied, so the states are the old
         ones written twice; the maps that read them take half from each copy, the dispersions grow by sqrt 2 and the
-        masses of the concepts are corrected, so memberships, readings and the next token are the same."""
+        masses of the concepts are corrected, so memberships, readings and the next token are the same. The two copies
+        of what is written get opposite perturbations: their mean, which the next maps read, is the old value, but the
+        copies differ, so the gradient can pull them apart (copied exactly they would move together forever)."""
+        grown = self._like(dim=2 * self.config['dim'], head_dim=2 * self.config['head_dim'],
+                           cache=2 * (self.config.get('cache') or 0))
+        grown.load_state_dict(self._widen({k: v.detach().clone() for k, v in self.state_dict().items()}, noise=noise))
+        return grown
+
+    def _widen(self, values, moments=False, noise=0.):
+        """The map of ``widened`` on a dictionary of tensors named as the parameters: the parameters themselves, or
+        (``moments``) the statistics the optimizer keeps for them. A copy of a coordinate moves as the original did, so
+        it takes the original's statistics, without the corrections that keep the reading the same."""
         D, H, d = self.config['dim'], self.config['heads'], self.config['head_dim']
-        c = self.config.get('cache') or 0
-        two = lambda x: torch.cat([x, x], -1)
-        half_in = lambda W: torch.cat([W, W], -1) / 2                 # out x in: reads both copies of the input
-        rows = lambda W: torch.cat([W, W], 0)                          # writes its output twice
+        half = (lambda W: W) if moments else (lambda W: W / 2)
+        def apart(W, dim):                                     # two copies along dim, perturbed in opposite ways
+            e = 0. if moments or not noise else torch.randn_like(W) * noise * (W.std() + 1e-6)
+            return torch.cat([W + e, W - e], dim)
+        two = lambda x: apart(x, -1)
+        half_in = lambda W: torch.cat([half(W), half(W)], -1)          # out x in: reads both copies of the input
+        rows = lambda W: apart(W, 0)                                   # writes its output twice
         heads_rows = lambda W: torch.cat([W.view(H, d, -1)] * 2, 1).reshape(2 * H * d, -1)
         new = {}
-        for k, v in self.state_dict().items():
-            v = v.detach().clone()
-            name = k.split('.')[-1] if k.startswith('layers.') else k
+        for k, v in values.items():
             if k in ('centre.weight', 'group_centre'):
                 v = two(v)
             elif k == 'log_scale':
-                v = v + math.log(2) / 2                                # |h|, |e|: the products count twice
+                v = v if moments else v + math.log(2) / 2              # |h|, |e|: the products count twice
             elif k.startswith('layers.'):
                 part = k.split('.', 2)[2]
                 if part == 'g':
                     v = two(v)
                 elif part == 'log_s':
-                    v = two(v + math.log(2) / 2)
-                elif part == 'log_c':
-                    log_s = self.state_dict()[k.replace('log_c', 'log_s')]
+                    v = torch.cat([v, v], -1) if moments else torch.cat([v + math.log(2) / 2] * 2, -1)
+                elif part == 'log_c' and not moments:
+                    log_s = values[k.replace('log_c', 'log_s')]
                     v = v + log_s.sum(-1) + d * math.log(2)
                 elif part in ('query.weight', 'value.weight'):
                     v = half_in(heads_rows(v))
                 elif part == 'near':
-                    v = torch.cat([torch.cat([v, v], -1)] * 2, -2) / 2
+                    v = torch.cat([torch.cat([half(v), half(v)], -1)] * 2, -2)
                 elif part == 'out.weight':
                     read, near = v[:, :H * d], v[:, H * d:]
-                    read = torch.cat([read.view(D, H, d) / 2] * 2, -1).reshape(D, 2 * H * d)
+                    read = torch.cat([half(read.view(D, H, d))] * 2, -1).reshape(D, 2 * H * d)
                     v = rows(torch.cat([read, half_in(near)], -1))
                 elif part in ('out.bias', 'norm1.weight', 'norm1.bias', 'norm2.weight', 'norm2.bias'):
-                    v = two(v)
+                    v = torch.cat([v, v], -1)
             elif k == 'final.weight':
                 v = rows(half_in(v))
             elif k == 'final.bias':
-                v = two(v)
+                v = torch.cat([v, v], -1)
             elif k in ('cache_query.weight', 'cache_key.weight'):
-                v = rows(half_in(v)) * (1 / math.sqrt(2) if k == 'cache_key.weight' else 1)
+                v = rows(half_in(v)) * (1 / math.sqrt(2) if k == 'cache_key.weight' and not moments else 1)
             elif k == 'cache_valve.weight':
                 v = half_in(v)
             new[k] = v
-        grown = self._like(dim=2 * D, head_dim=2 * d, cache=2 * c)
-        grown.load_state_dict(new)
-        with torch.no_grad():                                          # the copies may then part
-            for k, p in grown.named_parameters():
-                if p.dim() > 1:
-                    p.add_(torch.randn_like(p) * noise * (p.std() + 1e-6))
-        return grown
+        return new
 
     def more_heads(self):
         """Twice the groups of concepts in every layer: the new groups start with nothing to say (their reading enters
@@ -434,6 +444,34 @@ class Learner:
             self.seen += int(mask[:, 1:].sum())
         self.network.eval()
         return total / max(n, 1)
+
+    def carry(self, before, kind):
+        """The optimizer of a grown copy goes on from the one of the network it grew from (``before``, a Learner):
+        a fresh optimizer moves wildly at first, and a copy starting with one would lose a race for that alone. Every
+        parameter that is there before takes its statistics, mapped as the parameter was; a new one starts from zero
+        at the same count of steps."""
+        old = {name: before.opt.state.get(p) for name, p in before.network.named_parameters()}
+        steps = next((state['step'] for state in old.values() if state), None)
+        if steps is None:
+            return
+        maps = {}
+        for moment in ('exp_avg', 'exp_avg_sq'):
+            values = {name: state[moment] for name, state in old.items() if state}
+            if kind == 'larghezza':
+                values = before.network._widen(values, moments=True)
+            elif kind == 'concetti':
+                for name in list(values):
+                    if name.endswith(('.g', '.log_s', '.log_c')):
+                        values[name] = torch.cat([values[name]] * 2, 1)
+                    elif name.endswith('.A'):
+                        values[name] = torch.cat([torch.cat([values[name]] * 2, 2)] * 2, 1)
+            maps[moment] = values
+        for name, p in self.network.named_parameters():
+            state = {'step': steps.clone() if torch.is_tensor(steps) else steps}
+            for moment in ('exp_avg', 'exp_avg_sq'):
+                v = maps[moment].get(name)
+                state[moment] = v.clone() if v is not None and v.shape == p.shape else torch.zeros_like(p)
+            self.opt.state[p] = state
 
     def hold(self):
         """From now on the parameters are pulled back to where they are, not to zero: as a concept of the concept

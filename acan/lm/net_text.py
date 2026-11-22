@@ -212,9 +212,10 @@ class NetText:
                 for i in range(len(network.layers)):
                     network.split_concepts(i)
             learner = copy.deepcopy(base) if kind == "com'è" else Learner(network, tokens=base.tokens, longest=base.longest)
-            if kind != "com'è":
+            if kind != "com'è":                                 # the same pace and the optimizer it had: a fair race
                 learner.steps, learner.warmup, learner.seen = base.steps, base.warmup, base.seen
-                learner.lr = base.lr / 2 if kind == 'larghezza' else base.lr
+                learner.lr = base.lr / 2 if kind == 'larghezza' else base.lr   # its coordinates move in pairs
+                learner.carry(base, kind)
             start = learner.seen
             self._race_done = number * size                     # what the earlier candidates of the race read
             learner.learn_documents(docs, lambda: (check(), self._racing(number, size, kind, learner, start, shown)))
