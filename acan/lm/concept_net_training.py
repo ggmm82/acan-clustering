@@ -386,6 +386,7 @@ class Learner:
         self.decay = .01
         self.anchor = None                                     # where the parameters are pulled back to (None: zero)
         self.lr, self.steps = lr, 0
+        self.seen = 0                                          # tokens read so far, batch after batch
         self.warmup = 200                                      # steps of the start, at most one pass (Grower)
         self.rng = np.random.default_rng(seed)
 
@@ -410,6 +411,7 @@ class Learner:
             self.opt.step(); self.steps += 1
             self._pull_back(self.opt.param_groups[0]['lr'])
             total += loss.item() * m.sum().item(); n += m.sum().item()
+            self.seen += int(mask[:, 1:].sum())
         self.network.eval()
         return total / max(n, 1)
 

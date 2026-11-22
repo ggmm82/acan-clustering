@@ -148,6 +148,7 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     speed = progress.get('tokens_per_second')
     piece = config.get('concept_piece', 1_000_000)
     remaining = (total-step)*piece/speed if speed and ready and status not in ('completed',) else None
+    shape = progress.get('network')                             # the size of the network: layers, state, concepts
     share = 100*step/max(total, 1) if ready else 0
     error, before = progress.get('validation_nll'), progress.get('baseline_nll')
     perplexity = progress.get('validation_perplexity')
@@ -174,8 +175,10 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     else:
         inside = ''
         if network:                                             # the network inside the step: how far it is
-            inside = (f" · gara di crescita: candidato {network['race']} di 4, passaggio {network.get('passes', 0) + 1} "
-                      f"sul testo letto ({network.get('learned', 0):,} token)" if network.get('race')
+            kinds = ("la rete com'è", 'il doppio della larghezza', 'uno strato in più', 'concetti divisi in due')
+            inside = (f" · gara di crescita sui {network.get('learned', 0):,} token letti finora: prova {network['race']} di 4 "
+                      f"({kinds[network['race'] - 1] if network['race'] <= 4 else ''}), passaggio {network.get('passes', 0) + 1}"
+                      if network.get('race')
                       else f" · la rete rilegge tutto il testo: {network.get('learned', 0):,} token imparati" if network.get('again')
                       else f" · la rete impara il pezzo: {network.get('learned', 0):,} token imparati")
             if network.get('held_milli'):
@@ -188,14 +191,14 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
         first,
         _tile('Tempo che manca', 'finito' if status == 'completed' else when(remaining), 'stima dalla velocità finora'),
         _tile('Velocità', f'{speed:,.0f} token/s' if speed else '—',
-              'un passo è un milione di token' + (f" · struttura imparata in {progress['structure_seconds']/60:,.0f} minuti"
-                                                  if progress.get('structure_seconds') else '')),
+              f'un passo è {piece:,} token' + (' · si misura alla fine del primo passo' if not speed else '')),
         _tile('Errore su testo mai visto', '—' if error is None else f'{error:.3f}',
               (f'esita fra circa {perplexity:,.0f} token' if perplexity else '') + (f' · prima di leggere {before:.3f}' if before is not None else '')),
         _tile('Dimensione del modello', _bytes(size) if size else '—',
               'i parametri della rete' + (f' · file scaricabile {_bytes(checkpoint_bytes)}' if checkpoint_bytes else '')),
-        _tile('Concetti', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—',
-              f"contesto fino a {progress['context_tokens']:,} token" if progress.get('context_tokens') else None),
+        _tile('Rete', f"{shape['layers']} {'strato' if shape['layers'] == 1 else 'strati'}" if shape else '—',
+              f"{shape['dim']} numeri di stato · " + ', '.join(f'{g}×{k}' for g, k in shape['groups']) + ' concetti per strato · '
+              f"{shape['parameters']:,} parametri" if shape else 'si conosce alla fine del primo passo'),
     ]
     bar = dbc.Progress(value=share, className='mb-2', style={'height': '8px'}) if ready else None
     return html.Div([bar, dbc.Row(tiles)])
@@ -225,7 +228,6 @@ def concept_footprint_view(item):
             ('Passo', f'{step:,} di {total:,}' if progress.get('graft') else '— (il totale si conosce quando i token del testo sono pronti)'),
             ('Token letti', f"{progress.get('tokens_trained', 0):,}"),
             ('Velocità', f'{speed:,.0f} token al secondo' if speed else '—'),
-            ('Primo pezzo', f"imparato in {progress['structure_seconds']/60:,.1f} minuti" if progress.get('structure_seconds') else '—'),
             ('Tempo che manca, stima', '—' if remaining is None else f'{remaining/3600:,.1f} ore' if remaining > 3600 else f'{remaining/60:,.0f} minuti'),
             ('Token per passo', f'{piece:,} (un pezzo del testo, letto e riletto finché la validazione migliora)')]),
         ('Qualità', [
@@ -648,8 +650,8 @@ def register(app):
 
     @app.callback(Output('lm-long-size-info', 'children'), Input('lm-long-model', 'value'))
     def size_info(size):
-        return ("Non c'è una dimensione da scegliere: il modello è fatto dei concetti del testo che legge e cresce con esso, "
-                "fino alla memoria massima. Legge i concetti dei tratti precedenti a scale che raddoppiano (2, 4, 8… token, fin dove la validazione trova un guadagno) e ricorda il testo in corso a qualunque distanza.")
+        return ("Non c'è una dimensione da scegliere: la rete a concetti parte piccola e cresce con il testo che legge, "
+                "quando la validazione dice che una rete più grande prevede meglio. Legge il documento attraverso i suoi concetti, a qualunque distanza.")
 
     @app.callback(Output('lm-guide', 'children'), Input('lm-state', 'data'), Input('lm-long-builds', 'data'))
     def show_guide(state, builds):

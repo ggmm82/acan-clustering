@@ -101,9 +101,13 @@ def record_answers(directory, model, tokenizer, state, questions=None, new_token
 def quantities(model, config):
     """What the page shows about the model while it learns."""
     levels = model.concepts()
+    net = getattr(model.model, 'net', None) if model.model is not None else None
+    shape = {} if net is None else dict(network=dict(          # the size of the network, layer by layer (groups, concepts)
+        dim=int(net.config['dim']), layers=int(net.layers), parameters=int(sum(v.size for v in net.p.values())),
+        groups=[[int(n) for n in net.p[f'layers.{i}.g'].shape[:2]] for i in range(net.layers)]))
     return dict(concepts_per_level=levels, concepts_total=sum(levels), statistics_bytes=model.nbytes(),
                 budget_bytes=model.budget_bytes, context_tokens=model.context_tokens(),
-                memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024)
+                memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024, **shape)
 
 
 def run_training(root, identifier, stop_event=None):
@@ -195,6 +199,7 @@ def run_training(root, identifier, stop_event=None):
                                                                           **{key: int(value) for key, value in facts.items()}),
                                                    **({'network_trace': list(trace)} if trace else {})))
         model.report = structure
+        model.watch = judge                                     # the chart inside a step: the same text as its validation
         started, initial = time.monotonic(), state['tokens_trained']
         last_save = time.monotonic()
         saved_step = state['step']
@@ -211,17 +216,10 @@ def run_training(root, identifier, stop_event=None):
                     updated.add(ids, train[:read], tune, check)
             except PreparationPaused:
                 break
-            learned = model.model is None                        # this piece also learned the structure
             model = updated
             state.update(step=state['step']+1, tokens_trained=state['tokens_trained']+len(ids))
-            if learned:
-                # The structure is learned once: its time is not reading speed. The speed (and the time left)
-                # is measured from the next piece; the structure time is reported apart.
-                state['structure_seconds'] = time.monotonic()-started
-                started, initial = time.monotonic(), state['tokens_trained']
-                state.pop('tokens_per_second', None)
-            else:
-                state['tokens_per_second'] = (state['tokens_trained']-initial)/max(time.monotonic()-started, 1e-6)
+            state.pop('structure_seconds', None)
+            state['tokens_per_second'] = (state['tokens_trained']-initial)/max(time.monotonic()-started, 1e-6)
             due = state['step'] % config['save_steps'] == 0 or time.monotonic()-last_save >= config['save_seconds']
             last = due or should_pause() or state['step'] == config['total_steps']
             measured = last or state['step'] % measure_every(config['total_steps']) == 0

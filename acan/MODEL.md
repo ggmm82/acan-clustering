@@ -319,7 +319,7 @@ le misure.
    l'altro, come descritto in Matematica, sezione 7. Ogni gara costa quattro
    addestramenti fino a convergenza sul testo letto: le gare sono sempre più rade, ma
    ognuna costa il doppio della precedente. La pagina mostra il candidato in corso e,
-   alla fine, che cosa ha scelto ogni gara; nel grafico ogni candidato ha la sua linea.
+   alla fine, che cosa ha scelto ogni gara; nel grafico la validazione segue la rete che prosegue.
 4. **Calcolo.** Le somme dei concetti si leggono a blocchi di 64 posizioni: dentro il
    blocco con un prodotto di matrici, fra un blocco e l'altro con le somme correnti. Le
    appartenenze sviluppano il quadrato in prodotti di matrici. La validazione si legge a

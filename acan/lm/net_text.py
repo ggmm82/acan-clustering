@@ -63,6 +63,7 @@ class NetText:
         self.network_done, self.network_history = False, []
         self.read = 0                                          # tokens of the current text read so far
         self.trace = []                                        # [steps learned, validation NLL] whenever it is measured
+        self.watch = None                                      # the pieces the chart is measured on (the queue's validation)
         self.piece = 0
 
     # ---- learning ------------------------------------------------------------------------------------
@@ -91,15 +92,16 @@ class NetText:
             self._learner.begin = True
         held = self._held(tune)
         self.piece = self.piece or len(ids)
-        done_before = self.tokens - self._learner.learned           # what earlier learners of the queue learned
+        begun = self.tokens, getattr(self._learner.learner, 'seen', 0)
+
+        def where():                                            # tokens of the queue so far, rereadings included
+            return begun[0] + getattr(self._learner.learner, 'seen', 0) - begun[1]
 
         def score(net, tokens=None):
             if not held:
                 return np.zeros(2)
-            values = held_out(net, held, tokens)
-            if tokens is None:                                  # the whole validation: a point of the chart
-                self._point(done_before + self._learner.learned, values)
-            return values
+            return held_out(net, held, tokens)
+        shown = self._held(self.watch) if self.watch else held  # what the chart is measured on
         started, last = time.monotonic(), [0.]
         again = self.read + len(ids) >= len(train) and self.network.get('passes', True)
 
@@ -108,13 +110,15 @@ class NetText:
             now = time.monotonic()
             if self.report is not None and now - last[0] >= 15:   # how far the network is, for the page
                 last[0] = now
-                if measured and held:                           # and its validation as it learns, for the chart
+                if measured and shown:                          # and its validation as it learns, for the chart
                     network = self._learner.learner.network
-                    self._point(done_before + self._learner.learned, held_out(network, held))
+                    self._point(where(), held_out(network, shown))
                     network.train()
                 best = self._learner.best_scores
                 self.report('network', 0, now - started, learned=int(self._learner.learned), again=int(again),
                             held_milli=int(1000 * -best.mean()) if best is not None and len(best) else 0)
+        if shown and not self.trace:                            # where the queue starts
+            self._point(where(), held_out(self._learner.learner.network, shown))
         self._learner.passes = False                            # every piece once ...
         best = self._learner.learn(ids, self.eos, score, watched)
         if again and not self._learner.done and not self.growth:   # ... and with the last one, the whole text again
@@ -122,21 +126,24 @@ class NetText:
             best = self._learner.learn(np.asarray(train, np.int64), self.eos, score, watched)
         if best is not None:
             self.model = SimpleNamespace(net=best, tables={})
+        if shown and self._learner is not None:                 # where the step ends
+            self._point(where(), held_out(self._learner.learner.network, shown))
         self.read += len(ids)
         self.tokens += len(ids)
         self.tail = ids[-max(self.max_context, 1):]
         if self.growth and self._learner is not None and (self.read >= self.next_race or self.read >= len(train)):
             self._race(np.asarray(train[:self.read], np.int64), held, lambda: watched(False))
+            if shown:                                           # the network that goes on, after the race
+                self._point(self.tokens, held_out(self._learner.learner.network, shown))
             self.next_race = 2 * self.read
         self.network_history, self.network_done = self._learner.history, self._learner.done
         if self._learner.done:
             self._learner = None
 
-    def _point(self, tokens, values, kind=None):
-        """A point of the chart: the validation after so many tokens learned, in steps of the queue (with the
-        candidate, in a race of growth). A long queue keeps every other point of its older ones: the chart stays
-        light and still shows the whole path."""
-        self.trace.append([round(tokens / max(self.piece, 1), 3), float(-values.mean())] + ([kind] if kind else []))
+    def _point(self, tokens, values):
+        """A point of the chart: the validation after so many tokens learned, in steps of the queue. A long queue
+        keeps every other point of its older ones: the chart stays light and still shows the whole path."""
+        self.trace.append([round(tokens / max(self.piece, 1), 3), float(-values.mean())])
         if len(self.trace) > 512:
             self.trace = self.trace[:-1:2] + self.trace[-1:]
 
@@ -174,7 +181,6 @@ class NetText:
                 learner.learn_documents(docs, lambda: (check(), self._racing(number, passes, best_s)))
                 passes += 1
                 s = held_out(learner.network, held)
-                self._point(self.tokens + passes * len(text), s, kind)
                 if better(s, best_s):
                     best, best_s, misses = copy.deepcopy(learner), s, 0
                 else:

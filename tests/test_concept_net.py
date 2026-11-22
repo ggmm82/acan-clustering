@@ -241,6 +241,8 @@ class NetTextTest(unittest.TestCase):
         self.assertIsNotNone(model.model)
         self.assertGreater(model.logp(ids[:60], np.arange(1, 60)).mean(), before)
         self.assertTrue(model.trace and all(len(point) == 2 for point in model.trace))   # the chart inside the steps
+        xs = [point[0] for point in model.trace]
+        self.assertEqual(xs, sorted(xs)); self.assertGreater(xs[-1], xs[0])            # it moves on as the network reads
         doc = ids[:ids.tolist().index(eos) + 1]
         q = model.logp(doc)
         cursor = model.prediction_cursor(())
