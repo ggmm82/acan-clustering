@@ -58,6 +58,27 @@ def backend(workspace, path, method='GET', data=None, raw=False, headers=None, t
         raise ValueError('Worker generativo non raggiungibile.') from None
 
 
+def inside_figure(trace):
+    """The last step learned, opened up: its validation as the network reads the piece, token by token; in a race
+    of growth every candidate learns the same piece and has its own line, so the one that goes on can be seen."""
+    if not trace:
+        return None
+    step = math.floor(max(point[0] for point in trace) - 1e-9)
+    points = [point for point in trace if step <= point[0] <= step + 1]
+    if len(points) < 2:
+        return None
+    names = {None: 'La rete che impara', "com'è": "Gara · la rete com'è", 'larghezza': 'Gara · il doppio della larghezza',
+             'strato': 'Gara · uno strato in più', 'concetti': 'Gara · concetti divisi in due'}
+    figure = go.Figure()
+    for kind in dict.fromkeys(point[2] if len(point) > 2 else None for point in points):
+        line = [point for point in points if (point[2] if len(point) > 2 else None) == kind]
+        figure.add_scatter(x=[100 * (point[0] - step) for point in line], y=[point[1] for point in line],
+                           mode='lines+markers', name=names.get(kind, f'Gara · {kind}'))
+    figure.update_layout(title=f'Dentro il passo {step + 1}: la validazione mentre la rete legge il pezzo',
+                         xaxis_title='Pezzo letto (%)', yaxis_title='NLL', margin=dict(t=50, b=40), height=360)
+    return figure
+
+
 layout = dbc.Container([
     html.H4('Il modello a concetti che scrive', className='mt-3'),
     html.P("Gli stessi concetti della scheda Modello, applicati al testo: ogni posizione è una riga e il token successivo è il "
@@ -89,6 +110,7 @@ layout = dbc.Container([
     ]),
     html.P("Più in basso è la linea, meno il modello sbaglia a indovinare la parola successiva. Conta la linea su testo mai visto (validazione): se risale mentre quella di addestramento continua a scendere, il modello sta imparando a memoria.",className='small text-muted'),
     dcc.Loading(dcc.Graph(id='lm-loss'),delay_show=150),
+    html.Div(dcc.Graph(id='lm-inside'), id='lm-inside-box', style={'display': 'none'}),
     html.H5('Fai scrivere il modello', className='mt-3'),
             html.P("Scegli una copia salvata (la migliore è indicata) e scrivi l'inizio di una frase, oppure una domanda con la casella «Conversazione»: il modello continua. La prova non cambia il modello. Il server fa una cosa alla volta: se una coda sta imparando, la scrittura non parte; aspetta che finisca o metti in pausa la coda al passo 3, e dopo premi «Riprendi»."),
             dcc.Dropdown(id='lm-checkpoint', placeholder='Copia salvata del modello: la migliore e le ultime tre'),
@@ -942,6 +964,14 @@ def register(app):
                   Output('lm-history-next','disabled'),Input('lm-history-mode','value'))
     def history_controls(mode):
         return (mode!='window',)*3
+
+    @app.callback(Output('lm-inside','figure'), Output('lm-inside-box','style'),
+                  Input('lm-state','data'), Input('lm-job','value'))
+    def inside(state, selected):
+        job = next((j for j in (state or {}).get('jobs', []) if j['id'] == selected), None)
+        trace = ((job or {}).get('progress') or {}).get('network_trace') or []
+        figure = inside_figure(trace)
+        return (figure, {'display': 'block'}) if figure is not None else (go.Figure(), {'display': 'none'})
 
     @app.callback(Output('lm-progress','children'), Output('lm-loss','figure'),
                   Output('lm-checkpoint','options'), Output('lm-checkpoint','value'),
