@@ -74,7 +74,9 @@ def inside_figure(trace):
         line = [point for point in points if (point[2] if len(point) > 2 else None) == kind]
         figure.add_scatter(x=[100 * (point[0] - step) for point in line], y=[point[1] for point in line],
                            mode='lines+markers', name=names.get(kind, f'Gara · {kind}'))
-    figure.update_layout(title=f'Dentro il passo {step + 1}: la validazione mentre la rete legge il pezzo',
+    racing = any(len(point) > 2 for point in points)
+    figure.update_layout(title=f'Dentro il passo {step + 1}: la validazione mentre la rete legge il pezzo'
+                         + (' · gara: ogni candidato legge tutto il pezzo, da 0 a 100%' if racing else ''),
                          xaxis_title='Pezzo letto (%)', yaxis_title='NLL', margin=dict(t=50, b=40), height=360)
     return figure
 

@@ -177,9 +177,10 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
         if network:                                             # the network inside the step: how far it is
             kinds = ("la rete com'è", 'il doppio della larghezza', 'uno strato in più', 'concetti divisi in due')
             part = min(network.get('done', 0) / max(network.get('piece', 1), 1), 1.)
-            inside = (f" · gara di crescita: quattro candidati imparano lo stesso pezzo uno dopo l'altro, ognuno da 0 a 100%. "
-                      f"Ora la prova {network['race']} di 4, {kinds[network['race'] - 1] if network['race'] <= 4 else ''}: "
-                      f"{100 * part:.0f}% del pezzo · gara al {100 * (network['race'] - 1 + part) / 4:.0f}%" if network.get('race')
+            inside = (f" · gara di crescita al {100 * (network['race'] - 1 + part) / 4:.0f}%: quattro candidati imparano lo stesso "
+                      f"pezzo uno dopo l'altro, ognuno da 0 a 100% (una linea ciascuno nel grafico «Dentro il passo»); ora il "
+                      f"{network['race']}° di 4, {kinds[network['race'] - 1] if network['race'] <= 4 else ''}, al {100 * part:.0f}% del pezzo"
+                      if network.get('race')
                       else f" · la rete rilegge tutto il testo: {network.get('learned', 0):,} token imparati" if network.get('again')
                       else f" · la rete impara il pezzo: {network.get('learned', 0):,} token imparati")
             if network.get('held_milli'):
