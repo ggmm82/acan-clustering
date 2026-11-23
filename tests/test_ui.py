@@ -202,9 +202,22 @@ b,?,no
         self.assertEqual(result['lm-active-job']['data'], 'new-public-job')
         self.assertEqual(result['lm-prompt']['value'], 'Nel mezzo del cammin')
 
+    def test_live_validation_displays_only_measured_points(self):
+        from acan.vis.generative import inside_figure
+
+        # Reproduce a sparse trace resumed at step 10 with no point between 5% and completion.
+        trace = [[10.0, 6.0], [10.05, 6.01], [11.0, 5.985]]
+        figure = inside_figure(trace)
+        self.assertEqual(figure.data[0].mode, 'markers')
+        self.assertEqual(tuple(figure.layout.xaxis.range), (0, 100))
+        self.assertAlmostEqual(figure.data[0].x[1], 5.0)
+        self.assertEqual(figure.data[0].x[-1], 100.0)
+        self.assertEqual(list(figure.data[0].y), [6.0, 6.01, 5.985])
+
     def test_lm_chart_explains_baseline_and_repeated_validation(self):
         job = dict(id='job', progress=dict(step=12, tokens_trained=12288, baseline_nll=4.683,
-                   validation_nll=6.62), history=[dict(step=12, training_nll=6.69, validation_nll=6.62)],
+                   validation_nll=6.62, network_trace=[[11.05, 6.64], [12.0, 6.62]]),
+                   history=[dict(step=12, training_nll=6.69, validation_nll=6.62)],
                    snapshots=[dict(step=7, name='saved')], status='running',
                    config=dict(total_steps=1000), checkpoint='saved', error=None)
         result = self.invoke('..lm-progress.children', [('lm-state', 'data', {'jobs':[job]}),
@@ -212,6 +225,8 @@ b,?,no
                              ('lm-history-start','value',0)], [('lm-checkpoint', 'value', None),('lm-workspace','data','a'*64),('lm-chart-view','data',None)])
         figure = result['lm-loss']['figure']
         self.assertEqual(figure['layout']['shapes'][0]['y0'], 4.683)
+        live = next(t for t in figure['data'] if t['name'] == 'Validazione mentre impara')
+        self.assertEqual(live['mode'], 'markers')
         text = str(result['lm-progress']['children'])
         self.assertIn('ancora peggiore', text)
         self.assertIn('controllo denso', text)                         # the valid comparison is named

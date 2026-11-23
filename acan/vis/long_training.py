@@ -24,13 +24,10 @@ QUEUE_NAME = 'Modello a concetti'
 
 
 def profile(cuda, size=None):
-    """The settings of the concept language model: the training text is a table of concepts, no neural network.
-
-    There is no size to choose: the model grows with what it reads (its concepts), up to its memory budget,
-    a quarter of the server's memory unless set. ``size`` is accepted for earlier callers and ignored.
-    """
+    """The settings of the concept language model: the concept network, its concepts learned along the gradient.
+    ``size`` is accepted for earlier callers and ignored."""
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
-                distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='cpu',
+                distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='auto',
                 chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000)
 
 
@@ -151,13 +148,16 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     speed = progress.get('tokens_per_second')
     piece = config.get('concept_piece', 1_000_000)
     remaining = (total-step)*piece/speed if speed and ready and status not in ('completed',) else None
+    shape = progress.get('network')                             # the size of the network: layers, state, concepts
     share = 100*step/max(total, 1) if ready else 0
     error, before = progress.get('validation_nll'), progress.get('baseline_nll')
     perplexity = progress.get('validation_perplexity')
     size, budget = progress.get('statistics_bytes'), progress.get('budget_bytes')
     when = lambda seconds: '—' if seconds is None else f'{seconds/3600:,.1f} ore' if seconds > 3600 else f'{max(seconds, 0)/60:,.0f} minuti'
-    learning = progress.get('structure') if ready and step == 0 and status not in ('completed',) else None
-    if learning and learning.get('phase') != 'done':
+    structure = (progress.get('structure') or {}) if status in ('running', 'pausing') else {}
+    learning = structure if ready and step == 0 else None
+    network = structure if structure.get('phase') == 'network' else None
+    if learning and learning.get('phase') not in ('done', 'network'):
         part, left = structure_progress(learning)
         doing = {'tokens': 'concetti dei token',
                  'scale': f"concetti dei tratti di {learning['width']:,} token",
@@ -174,20 +174,35 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
         bar = dbc.Progress(value=100*part, className='mb-2', style={'height': '8px'}, color='info')
         return html.Div([bar, dbc.Row(tiles)])
     else:
+        inside = ''
+        if network:                                             # the network inside the step: how far it is
+            kinds = ("la rete com'è", 'il doppio della larghezza', 'uno strato in più', 'concetti divisi in due')
+            part = min(network.get('done', 0) / max(network.get('piece', 1), 1), 1.)
+            inside = (f" · gara di crescita al {100 * (network['race'] - 1 + part) / 4:.0f}%: quattro candidati imparano lo stesso "
+                      f"pezzo uno dopo l'altro, ognuno da 0 a 100% (una linea ciascuno nel grafico «Dentro il passo»); ora il "
+                      f"{network['race']}° di 4, {kinds[network['race'] - 1] if network['race'] <= 4 else ''}, al {100 * part:.0f}% del pezzo"
+                      if network.get('race')
+                      else f" · la rete rilegge tutto il testo: {network.get('learned', 0):,} token imparati" if network.get('again')
+                      else f" · la rete impara il pezzo: {network.get('learned', 0):,} token imparati")
+            if network.get('held_milli'):
+                inside += f", validazione migliore {network['held_milli'] / 1000:.3f}"
+            if network.get('seconds'):
+                inside += f", da {network['seconds'] / 60:,.0f} minuti"
         first = _tile('Avanzamento', f'{share:.0f}%' if ready else 'prepara i token',
-                      f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' if ready else 'il totale si conosce quando i token sono pronti')
+                      (f'passo {step:,} di {total:,} · {progress.get("tokens_trained", 0):,} token letti' + inside) if ready else 'il totale si conosce quando i token sono pronti')
     tiles = [
         first,
         _tile('Tempo che manca', 'finito' if status == 'completed' else when(remaining), 'stima dalla velocità finora'),
-        _tile('Velocità', f'{speed:,.0f} token/s' if speed else '—',
-              'un passo è un milione di token' + (f" · struttura imparata in {progress['structure_seconds']/60:,.0f} minuti"
-                                                  if progress.get('structure_seconds') else '')),
+        _tile('Velocità', f'{speed:,.0f} token/s' if speed else f"{network['speed']:,} token/s" if network and network.get('speed') else '—',
+              f'un passo è {piece:,} token' + ('' if speed else ' · nel passo in corso' if network and network.get('speed')
+                                                  else ' · si misura mentre la rete impara')),
         _tile('Errore su testo mai visto', '—' if error is None else f'{error:.3f}',
               (f'esita fra circa {perplexity:,.0f} token' if perplexity else '') + (f' · prima di leggere {before:.3f}' if before is not None else '')),
         _tile('Dimensione del modello', _bytes(size) if size else '—',
-              (f'di {_bytes(budget)} di memoria per i concetti' if budget else '') + (f' · file scaricabile {_bytes(checkpoint_bytes)}' if checkpoint_bytes else '')),
-        _tile('Concetti', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—',
-              f"contesto fino a {progress['context_tokens']:,} token" if progress.get('context_tokens') else None),
+              'i parametri della rete' + (f' · file scaricabile {_bytes(checkpoint_bytes)}' if checkpoint_bytes else '')),
+        _tile('Rete', f"{shape['layers']} {'strato' if shape['layers'] == 1 else 'strati'}" if shape else '—',
+              f"{shape['dim']} numeri di stato · " + ', '.join(f'{g}×{k}' for g, k in shape['groups']) + ' concetti per strato · '
+              f"{shape['parameters']:,} parametri" if shape else 'si conosce alla fine del primo passo'),
     ]
     bar = dbc.Progress(value=share, className='mb-2', style={'height': '8px'}) if ready else None
     return html.Div([bar, dbc.Row(tiles)])
@@ -205,29 +220,35 @@ def concept_footprint_view(item):
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
     rows = [
         ('Modello', [
-            ('Tipo', 'modello a concetti: nessuna rete neurale, nessun peso addestrato'),
+            ('Tipo', 'rete a concetti: i concetti dei token e di ogni strato imparati col gradiente prevedendo il token che segue'),
             ('Vocabolario', f"{(progress.get('graft') or {}).get('vocabulary', 0):,} token" if progress.get('graft') else
              (f"{config.get('vocabulary', 32000):,} token, lo stesso del testo precedente della coda (si stanno preparando i token di questo testo)"
               if config.get('warm_start') else f"{config.get('vocabulary', 32000):,} token (si sta imparando dai testi della coda)")),
-            ('Contesto letto', f"fino a {progress['context_tokens']:,} token precedenti (scale scelte sulla validazione)"
-             if progress.get('context_tokens') else '— (si sceglie dopo il primo pezzo di testo)'),
-            ('Concetti per scala', ' · '.join(f'{count:,}' for count in levels)
-             + ' (token, poi tratti di 2, 4, 8… token)' if levels else '—'),
+            ('Contesto letto', 'tutto il documento, attraverso le somme dei concetti di ogni strato'),
+            ('Concetti per strato', ' · '.join(f'{count:,}' for count in levels) if levels else '— (dopo il primo pezzo di testo)'),
             ('Concetti in tutto', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—'),
-            ('Memoria dei conteggi', (_bytes(progress['statistics_bytes']) if progress.get('statistics_bytes') else '—')
-             + (f' di {_bytes(budget)} disponibili' if budget else ''))]),
+            ('Parametri della rete', _bytes(progress['statistics_bytes']) if progress.get('statistics_bytes') else '—')]),
         ('Avanzamento e velocità', [
+            ('Dispositivo di addestramento', (progress.get('device') or '—').upper()),
             ('Passo', f'{step:,} di {total:,}' if progress.get('graft') else '— (il totale si conosce quando i token del testo sono pronti)'),
             ('Token letti', f"{progress.get('tokens_trained', 0):,}"),
             ('Velocità', f'{speed:,.0f} token al secondo' if speed else '—'),
-            ('Struttura (passo 0)', f"imparata in {progress['structure_seconds']/60:,.1f} minuti" if progress.get('structure_seconds') else '—'),
             ('Tempo che manca, stima', '—' if remaining is None else f'{remaining/3600:,.1f} ore' if remaining > 3600 else f'{remaining/60:,.0f} minuti'),
-            ('Token per passo', f'{piece:,} (un pezzo del testo, contato e aggiunto)')]),
+            ('Token per passo', f'{piece:,} (un pezzo del testo, letto e riletto finché la validazione migliora)')]),
         ('Qualità', [
             ('Errore sul testo che sta per leggere', number(progress.get('training_nll'))),
             ('Errore su testo mai visto', number(progress.get('validation_nll'))),
             ('Migliore finora', number(progress.get('best_validation_nll'))),
             ('Prima di leggere questo testo', number(progress.get('baseline_nll')))]),
+        *([('Rete a concetti', [
+            ('Apprendimento', 'si è fermata: la validazione non migliorava più' if progress.get('network_stopped') else 'impara a ogni pezzo'),
+            *[(f"Crescita a {race['tokens']:,} token", f"{race['choice']}: larghezza {race['dim']}, {race['layers']} strati, "
+               f"concetti {race['concepts']}, validazione {race['held_out']:.3f}") for race in progress.get('network_races') or []],
+            *[(f"Strato {layer['layer']}",
+               f"{' · '.join(f'{a:.0f}' for a in layer['active'])} concetti attivi per gruppo; "
+               + (f"in un concetto il token più frequente è il {layer['tied']:.0%}. " if layer['tied'] is not None else '')
+               + ' '.join(f"Concetto {c['concept']} ({c['mass']:.0%}): " + ' | '.join(c['examples']) for c in layer['concepts']))
+              for layer in progress['network_concepts']]])] if progress.get('network_concepts') else []),
         ('Memoria e disco', [
             ('Memoria del processo (picco)', _bytes(progress['memory_peak_bytes']) if progress.get('memory_peak_bytes') else '—'),
             ('Un checkpoint', _bytes(item['checkpoint_bytes'])),
@@ -242,9 +263,98 @@ def concept_footprint_view(item):
               for title, values in rows]
     note = html.P("Gli errori sono in nat per token: e elevato all'errore è fra quanti token, in media, il modello è incerto. "
                   "Si misurano solo su testo che il modello non ha letto.", className='small text-muted')
+    graph = network_graph_view(progress.get('network_graph'))
     details = folded('Tutti i dettagli: vocabolario, concetti, contesto, memoria e disco',
-                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note], 'lm-long-details')
+                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note] + ([graph] if graph is not None else []),
+                     'lm-long-details')
     return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')), details])
+
+
+def network_graph_view(graph):
+    """The graph of the network, to explore: a column per layer, a node per concept that works (its size is its mass,
+    its name the tokens that enter it and the tokens that follow it), solid edges from a layer to the next (where the
+    positions of a concept go), dotted edges inside a layer (which concepts a concept reads). A click on a concept shows
+    all its edges and lists them; a second click lets it go."""
+    if not graph or not graph.get('nodes'):
+        return None
+    note = html.P("Un nodo è un concetto che lavora: il nome dice quali token vi entrano → quali token vengono dopo; la grandezza, "
+                  "la sua parte del gruppo. Linee continue: il concetto dello strato dopo dove vanno le posizioni del concetto, "
+                  "più di quanto ci andrebbero comunque. Linee punteggiate: quali concetti dello stesso strato il concetto legge. "
+                  "Si mostrano i concetti e gli archi che pesano più di una parte uguale; senza scelta, fra gli strati solo l'arco "
+                  "più caratteristico di ogni concetto. Clic su un concetto: tutti i suoi archi, e l'elenco qui sotto.",
+                  className='small text-muted')
+    return html.Div([html.H6('Il grafo della rete', className='mt-3'),
+                     dcc.Graph(id='lm-network-graph', figure=network_graph_figure(graph), config={'scrollZoom': True}),
+                     dcc.Store(id='lm-network-data', data=graph), html.Div(id='lm-network-info'), note])
+
+
+def _concept_name(n):
+    return f"{' '.join(n['enters'])} → {' '.join(n['follows'])}"
+
+
+def network_graph_figure(graph, selected=None):
+    import plotly.graph_objects as go
+    nodes = sorted(graph['nodes'], key=lambda n: (n['layer'], n['group'], n['concept']))
+    rows, place = {}, {}
+    for n in nodes:
+        rows[n['layer']] = rows.get(n['layer'], -1) + 1
+        place[n['id']] = (n['layer'], rows[n['layer']])
+    if selected in place:                                       # a chosen concept: all its edges
+        shown = [e for e in graph['edges'] if selected in (e['source'], e['target'])]
+        near = {selected} | {e['source'] for e in shown} | {e['target'] for e in shown}
+    else:
+        strongest = {}                                          # between layers, each concept's most telling edge
+        for e in graph['edges']:
+            if e['kind'] == 'porta a' and e.get('lift', 0) > strongest.get(e['source'], {}).get('lift', 0):
+                strongest[e['source']] = e
+        shown, near = [e for e in graph['edges'] if e['kind'] == 'legge'] + list(strongest.values()), None
+    figure = go.Figure()
+    for e in shown:
+        if e['source'] not in place or e['target'] not in place:
+            continue
+        (x0, y0), (x1, y1) = place[e['source']], place[e['target']]
+        inside = e['kind'] == 'legge'
+        xs = [x0, x0 - .25, x1] if inside else [x0, (x0 + x1) / 2, x1]
+        ys = [y0, (y0 + y1) / 2, y1]
+        figure.add_scatter(x=xs, y=ys, mode='lines', showlegend=False, hoverinfo='text' if selected in place else 'skip',
+                           hovertext=f"{e['source']} {e['kind']} {e['target']} · peso {e['weight']:.2f}",
+                           line=dict(width=1 + 4 * e['weight'], dash='dot' if inside else 'solid',
+                                     color='rgba(220,90,40,.6)' if inside else 'rgba(60,110,200,.45)'))
+    faded = lambda n: near is not None and n['id'] not in near
+    figure.add_scatter(x=[place[n['id']][0] for n in nodes], y=[place[n['id']][1] for n in nodes], mode='markers+text',
+                       text=[_concept_name(n) for n in nodes], textposition='middle right', showlegend=False,
+                       customdata=[n['id'] for n in nodes],
+                       textfont=dict(color=['#bbb' if faded(n) else '#222' for n in nodes]),
+                       marker=dict(size=[8 + 40 * n['mass'] for n in nodes],
+                                   color=['#ddd' if faded(n) else ('#d9480f' if n['id'] == selected else '#2c6fbb') for n in nodes]),
+                       hovertext=[f"concetto {n['id']} · {n['mass']:.0%} del gruppo<br>entrano: {', '.join(n['enters'])}<br>"
+                                  f"poi viene: {', '.join(n['follows'])}" for n in nodes], hoverinfo='text')
+    layers = sorted(rows)
+    figure.update_layout(height=max(320, 26 * max(rows.values()) + 120), margin=dict(l=20, r=20, t=40, b=30),
+                         title='Il grafo della rete: concetti e relazioni, misurati sul testo di validazione',
+                         uirevision='network-graph', clickmode='event', hovermode='closest',
+                         xaxis=dict(tickvals=layers, ticktext=[f'strato {i}' for i in layers], range=[min(layers) - .35, max(layers) + .9]),
+                         yaxis=dict(visible=False, autorange='reversed'))
+    return figure
+
+
+def network_graph_info(graph, selected):
+    """What a chosen concept is: its tokens, the concepts it reads and that read it, where its positions go and come from."""
+    by = {n['id']: n for n in graph['nodes']}
+    if selected not in by:
+        return None
+    n = by[selected]
+    out = sorted([e for e in graph['edges'] if e['source'] == selected], key=lambda e: -e['weight'])
+    into = sorted([e for e in graph['edges'] if e['target'] == selected], key=lambda e: -e['weight'])
+    words = {'legge': ('legge', 'è letto da'), 'porta a': ('porta a', 'viene da')}
+    rows = [html.Tr([html.Td(words[e['kind']][0]), html.Td(f"{e['target']} · {_concept_name(by[e['target']])}"), html.Td(f"{e['weight']:.2f}")])
+            for e in out] + \
+           [html.Tr([html.Td(words[e['kind']][1]), html.Td(f"{e['source']} · {_concept_name(by[e['source']])}"), html.Td(f"{e['weight']:.2f}")])
+            for e in into]
+    return html.Div([html.P([html.B(f"Concetto {n['id']}"), f" (strato {n['layer']}, gruppo {n['group']}, {n['mass']:.0%} del gruppo) · "
+                             f"entrano: {', '.join(n['enters'])} · poi viene: {', '.join(n['follows'])}"], className='small mb-1'),
+                     dbc.Table(html.Tbody(rows), size='sm', bordered=True, className='small') if rows else
+                     html.P('Nessun arco che pesi più di una parte uguale.', className='small text-muted')])
 
 
 def footprint_view(item):
@@ -276,6 +386,7 @@ def footprint_view(item):
              f"{config['window']} token esatti + {config['slots']} concetti = {kept} vettori, a qualunque lunghezza"),
             ('Testo letto per pezzo', f"{config['sequence_length']} token")]),
         ('Avanzamento e velocità', [
+            ('Dispositivo di addestramento', (progress.get('device') or '—').upper()),
             ('Passo', f'{step:,} di {total:,}'),
             ('Token elaborati', f"{progress.get('tokens_trained', 0):,}"),
             ('Velocità', f'{speed:,.1f} token al secondo' if speed else '—'),
@@ -383,13 +494,13 @@ layout = html.Div([
              dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Salva ogni'), dbc.Input(id='lm-long-save', type='number', value=10, min=1, max=10000), dbc.InputGroupText('passi')]), md=6),
                       dbc.Col(dbc.InputGroup([dbc.InputGroupText('Tieni per sempre ogni'), dbc.Input(id='lm-long-milestone', type='number', value=100, min=0, max=10000000), dbc.InputGroupText('passi')]), md=6)],
                      className='mb-1'),
-             html.Small("Un passo conta un milione di token: un testo di 300 MB sono circa 40 passi, e si legge una volta sola. Si salva anche "
-                        "ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
-             dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Memoria massima dei concetti'), dbc.Input(id='lm-long-memory', type='number', value=0, min=0, max=262144, step=256), dbc.InputGroupText('MB')]), md=6),
-                      dbc.Col(html.Small("0 = automatica: un quarto della memoria del server (o del suo contenitore), al massimo 2 GB; con il "
-                                         "contenitore da 4 GB sono 1.024 MB. Il limite riguarda le statistiche: ordinamento, stima dei concetti e worker usano altra RAM. Imposta al massimo "
-                                         "un quarto della memoria del contenitore. Oltre il limite si tengono i conteggi "
-                                         "con più osservazioni per byte; gli altri leggono il concetto più generale.", className='text-muted'), md=6)], className='mb-2'),
+             html.Small("Un passo è un pezzo di un milione di token: la rete lo legge e lo rilegge finché il testo tenuto da parte migliora. "
+                        "Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
+             dbc.Checkbox(id='lm-long-growth', value=True, label='La rete cresce con i dati'),
+             html.Small("La rete parte piccola. Ogni volta che il testo letto raddoppia, la rete com'è e tre copie cresciute "
+                        "(più larga, uno strato in più, concetti divisi) rileggono il testo letto finché la validazione "
+                        "migliora; resta la più semplice fra quelle che la migliore non batte di più di un errore standard.",
+                        className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
          html.Div([dcc.Dropdown(id='lm-long-model', value='micro', options=[dict(label='micro', value='micro')]),
@@ -421,7 +532,7 @@ layout = html.Div([
          html.P("Le stesse domande a ogni salvataggio, con la stessa estrazione casuale: le differenze vengono solo da ciò che il modello ha "
                 "imparato. Per fargli domande libere e scaricarlo: passo 4.", className='small'),
          html.Div(id='lm-long-answers')),
-    dcc.Store(id='lm-long-catalog'), dcc.Store(id='lm-long-builds'), dcc.Interval(id='lm-long-poll', interval=5000),
+    dcc.Store(id='lm-long-catalog'), dcc.Store(id='lm-long-builds'), dcc.Store(id='lm-network-selected', storage_type='session'), dcc.Interval(id='lm-long-poll', interval=5000),
 ])
 
 
@@ -462,6 +573,19 @@ def guide(state, builds):
 
 
 def register(app):
+    @app.callback(Output('lm-network-graph', 'figure'), Output('lm-network-info', 'children'), Output('lm-network-selected', 'data'),
+                  Input('lm-network-graph', 'clickData'), Input('lm-network-data', 'data'), State('lm-network-selected', 'data'),
+                  prevent_initial_call=True)
+    def explore(click, graph, selected):
+        # A click chooses a concept (a second click on it lets it go); a new graph keeps the concept chosen.
+        if not graph:
+            return dash.no_update, None, selected
+        if dash.ctx.triggered_id == 'lm-network-graph' and click:
+            chosen = (click.get('points') or [{}])[0].get('customdata')
+            if chosen:
+                selected = None if chosen == selected else chosen
+        return network_graph_figure(graph, selected), network_graph_info(graph, selected), selected
+
     @app.callback(Output('lm-long-catalog', 'data'), Output('lm-long-builds', 'data'),
                   Input('lm-long-poll', 'n_intervals'), Input('lm-workspace', 'data'), State('tabs', 'value'),
                   State('lm-long-catalog', 'data'))
@@ -568,16 +692,14 @@ def register(app):
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
-                  State('lm-long-length', 'value'), State('lm-long-memory', 'value'),
-                  prevent_initial_call=True)
-    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, memory=0):
+                  State('lm-long-length', 'value'), State('lm-long-growth', 'value'), prevent_initial_call=True)
+    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, growth=False):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
-                        milestone_steps=int(milestone or 0), concept_memory_mb=int(memory or 0),
-                        probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
+                        milestone_steps=int(milestone or 0), concept_network_growth=bool(growth), probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             return result.get('message', 'Coda creata.'), result['queue']
         except ValueError as exc:
@@ -636,8 +758,8 @@ def register(app):
 
     @app.callback(Output('lm-long-size-info', 'children'), Input('lm-long-model', 'value'))
     def size_info(size):
-        return ("Non c'è una dimensione da scegliere: il modello è fatto dei concetti del testo che legge e cresce con esso, "
-                "fino alla memoria massima. Legge i concetti dei tratti precedenti a scale che raddoppiano (2, 4, 8… token, fin dove la validazione trova un guadagno) e ricorda il testo in corso a qualunque distanza.")
+        return ("Non c'è una dimensione da scegliere: la rete a concetti parte piccola e cresce con il testo che legge, "
+                "quando la validazione dice che una rete più grande prevede meglio. Legge il documento attraverso i suoi concetti, a qualunque distanza.")
 
     @app.callback(Output('lm-guide', 'children'), Input('lm-state', 'data'), Input('lm-long-builds', 'data'))
     def show_guide(state, builds):
