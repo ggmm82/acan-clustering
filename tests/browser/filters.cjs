@@ -52,8 +52,14 @@ const path = require('node:path');
       await page.locator('#upload-model input[type=file]').setInputFiles(model);
       await page.locator('#learning-status').filter({hasText:'Modello caricato'}).waitFor();
       await learn(); // Loading model targets must not erase feature exclusions.
+      // The buttons update Dash state asynchronously. Wait for each update to render.
+      const checkedFilters = page.locator('#dpdnFilter input[type=checkbox]:checked');
       await page.locator('#btn-clear-filter').click();
+      await checkedFilters.first().waitFor({state: 'detached'});
       await page.locator('#btn-suggest-filter').click();
+      for (const name of ['Cabin', 'Name', 'PassengerId', 'Ticket']) {
+        await page.locator('#dpdnFilter').getByRole('checkbox', {name, exact: true, checked: true}).waitFor();
+      }
       await learn();
       await context.close();
       console.log(`Browser filters: ${width}px upload, model reload and explicit restore passed.`);

@@ -1,6 +1,25 @@
 """Conservative CPU mechanics profile; reject oversized jobs before loading weights."""
 
 
+import logging
+from functools import lru_cache
+
+
+@lru_cache(maxsize=1)
+def cuda_usable():
+    """Confirm that PyTorch can execute a kernel on the default GPU."""
+    import torch
+
+    if not torch.cuda.is_available():
+        return False
+    try:
+        torch.ones(1, device='cuda').cpu()
+    except RuntimeError as exc:
+        logging.getLogger(__name__).warning('CUDA unavailable for training: %s', exc)
+        return False
+    return True
+
+
 def check_profile(options,cuda_available):
     if options.get('architecture')=='concepts':
         return
