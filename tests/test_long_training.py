@@ -421,6 +421,7 @@ class NativeSeriesTest(unittest.TestCase):
         for cuda in (False, True):                                          # the page learns the concept model, with or without GPU
             config = validate_options(dict(profile(cuda), corpus_id='a'*32))
             check_profile(config, cuda)
+            self.assertEqual(config['device'], 'auto')
             self.assertEqual((config['architecture'], config['routing_profile']), ('concepts', 'concept-pairs-v1'))
         with self.assertRaisesRegex(ValueError, 'concept-pairs-v1'):
             validate_options(dict(profile(False), corpus_id='a'*32, routing_profile='concept-graph-v2'))
@@ -473,3 +474,10 @@ class StructureProgressTest(unittest.TestCase):
         text = str(concept_summary(progress, dict(total_steps=45), status='running'))
         self.assertIn('struttura', text)
         self.assertIn('scala 3 di 4', text)
+        progress['structure'] = dict(phase='network', race=2, done=500, piece=1000)
+        self.assertIn('gara di crescita', str(concept_summary(progress, dict(total_steps=45), status='running')))
+        self.assertNotIn('gara di crescita', str(concept_summary(progress, dict(total_steps=45), status='paused')))
+        progress['structure'] = dict(phase='network', race=5, race_total=5, done=500, piece=1000)
+        text = str(concept_summary(progress, dict(total_steps=45), status='running'))
+        self.assertIn('gara di crescita al 90%', text)
+        self.assertIn('5° di 5, il doppio delle teste', text)

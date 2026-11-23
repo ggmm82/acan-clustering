@@ -1,14 +1,24 @@
 # syntax=docker/dockerfile:1
 FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
+ARG TORCH_VERSION=2.15.0
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    ACAN_LM_DATA=/data HF_HOME=/data/hub OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 HF_HUB_DISABLE_XET=1
+    ACAN_LM_DATA=/data HF_HOME=/data/hub OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 HF_HUB_DISABLE_XET=1 \
+    TRITON_HOME=/tmp TRITON_CACHE_DIR=/tmp/acan-triton-cache
 WORKDIR /app
 COPY requirements/llm.lock /app/requirements/llm.lock
 RUN --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca; fi; \
-    python -m pip install --no-cache-dir 'torch==2.15.0' --index-url "$TORCH_INDEX_URL" \
+    python -m pip install --no-cache-dir "torch==${TORCH_VERSION}" --index-url "$TORCH_INDEX_URL" \
     && python -m pip install --no-cache-dir --require-hashes --no-deps -r requirements/llm.lock
+# Triton compiles host helpers on first CUDA use. Keep this after the Python
+# dependencies so a toolchain-only change can reuse the PyTorch build layer.
+ARG INSTALL_CUDA_BUILD_TOOLS=0
+RUN if [ "$INSTALL_CUDA_BUILD_TOOLS" = 1 ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends gcc g++ libc6-dev \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
 COPY pyproject.toml README.md LICENSE ./
 COPY acan ./acan
 RUN python -m pip install --no-cache-dir --no-deps --no-build-isolation . \
