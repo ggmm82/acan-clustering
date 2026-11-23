@@ -235,10 +235,14 @@ ciascun gruppo di concetti (una «testa») ha $K$ concetti con centro $g_k$, dis
 $s_k$ e massa $C_k$. Una posizione $i$ proietta il suo stato in un'interrogazione $q_i$ e
 in un valore $v_i$, e appartiene ai concetti con $T_k(q_i)$, la formula della sezione 4.
 Lungo il documento ogni concetto accumula le sue somme, come un concetto delle tabelle
-accumula le righe:
+accumula le righe. La testa apprende anche quanto conta la posizione $j$ nella memoria:
+$a_j=2\sigma(u^\top\widehat{h}_j)$, dove $\widehat{h}_j$ ha norma $\sqrt D$ per stati non nulli.
+All'inizio $u=0$ e tutte le posizioni pesano uno. Il gradiente della previsione apprende
+quali posizioni scrivere con più peso, così molti token poco informativi possono pesare
+meno di pochi token utili:
 
 $$
-M_k(i)=\sum_{j\le i}T_k(q_j),\qquad S_k(i)=\sum_{j\le i}T_k(q_j)\,v_j ,
+M_k(i)=\sum_{j\le i}a_j T_k(q_j),\qquad S_k(i)=\sum_{j\le i}a_j T_k(q_j)\,v_j ,
 $$
 
 e la posizione $i$ legge le medie dei concetti che le servono:
@@ -578,20 +582,6 @@ distribuzione in ogni posizione: è la stessa funzione applicata allo stesso sta
 Dialoghi in italiano e inglese (SYNTH), tokenizzatore da 32.000 token, dialoghi di
 validazione e di test mai visti; NLL in nat per token (più basso è meglio). Rete fissa
 con 96 numeri di stato, 3 strati e 4 gruppi da 64 concetti (3,4 milioni di parametri).
-
-**Trasferimento fra sinonimi sintetici.** La rete impara a predire una delle quattro
-categorie. Ogni parola del test compare in addestramento, dove alcune combinazioni di
-parola e struttura della frase sono tenute da parte. Con due token intermedi e la
-memoria del documento disattivata, passare da uno a otto concetti per testa porta
-l'accuratezza media di due inizializzazioni dal 63,3% al 71,3%. Con sedici token
-intermedi entrambi i risultati restano vicini al 25% del caso. La permutazione delle
-parole porta l'accuratezza vicino al caso anche a breve distanza. La prova si ripete
-con `python -m scripts.probe_semantic_transfer`.
-
-Nella variante a coppie il finale è identico e cambia solo il primo sinonimo, che
-richiede una categoria diversa. Contando le coppie in cui entrambe le previsioni sono
-corrette, a due token intermedi si passa dal 34,1% al 48,3% con otto concetti. A otto,
-sedici e trentadue token il vantaggio varia fra le due inizializzazioni o scompare.
 
 **Rileggere.** 2.000 dialoghi di addestramento, uscita su tutto il vocabolario:
 

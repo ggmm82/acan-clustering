@@ -52,6 +52,7 @@ class ConceptAttention(nn.Module):
         self.A = nn.Parameter(torch.zeros(heads, concepts, concepts))
         self.query = nn.Linear(dim, heads * self.d, bias=False)
         self.value = nn.Linear(dim, heads * self.d, bias=False)
+        self.write = nn.Parameter(torch.zeros(heads, dim))  # one content-dependent write strength per head
         self.near = nn.Parameter(torch.randn(window, dim, dim) * .02)
         self.out = nn.Linear(heads * self.d + dim, dim)
         self.norm1, self.norm2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
@@ -66,9 +67,13 @@ class ConceptAttention(nn.Module):
         q = self.query(h).view(B, T, self.h, self.d)
         v = self.value(h).view(B, T, self.h, self.d)
         t = torch.softmax(memberships_logits(q, self.g, self.log_s, self.log_c), -1) * mask[:, :, None, None]
-        mass = torch.cumsum(t, 1) + 1e-6
+        # A new or restored layer starts with strength one, the ordinary concept average.
+        direction = F.normalize(h, dim=-1) * math.sqrt(D)
+        strength = 2 * torch.sigmoid(F.linear(direction, self.write))
+        written = t * strength[..., None]
+        mass = torch.cumsum(written, 1) + 1e-6
         weight = torch.einsum('bthk,hkj->bthj', t, torch.softmax(self.A, -1)) / mass
-        read = causal_read(weight, t, v, self.chunk).reshape(B, T, self.h * self.d)
+        read = causal_read(weight, written, v, self.chunk).reshape(B, T, self.h * self.d)
         near = sum(F.pad(h, (0, 0, w, 0))[:, :T] @ self.near[w - 1] for w in range(1, self.window + 1))
         new = self.norm2(self.norm1(h + self.out(torch.cat([read, near], -1))))
         return h + self.gate * (new - h)
@@ -307,6 +312,8 @@ class Network(nn.Module):
                     v = v + log_s.sum(-1) + d * math.log(2)
                 elif part in ('query.weight', 'value.weight'):
                     v = half_in(heads_rows(v))
+                elif part == 'write':
+                    v = half_in(v)
                 elif part == 'near':
                     v = torch.cat([torch.cat([half(v), half(v)], -1)] * 2, -2)
                 elif part == 'out.weight':
@@ -341,7 +348,7 @@ class Network(nn.Module):
         for key, value in values.items():
             if key.startswith('layers.'):
                 part = key.split('.', 2)[2]
-                if part in ('g', 'log_s', 'log_c', 'A', 'query.weight', 'value.weight'):
+                if part in ('g', 'log_s', 'log_c', 'A', 'query.weight', 'value.weight', 'write'):
                     new = fresh[key][len(value):] if fresh is not None else torch.zeros_like(value)
                     value = torch.cat((value, new), dim=0)
                 elif part == 'out.weight':
@@ -381,6 +388,7 @@ class Network(nn.Module):
         state = {k: torch.as_tensor(v) for k, v in net.p.items()}
         for i in range(len(model.layers)):                             # older networks: every layer open
             state.setdefault(f'layers.{i}.gate', torch.ones(()))
+            state.setdefault(f'layers.{i}.write', torch.zeros_like(model.layers[i].write))
         if groups is not None:
             state['group'] = torch.as_tensor(groups)
         model.load_state_dict(state)

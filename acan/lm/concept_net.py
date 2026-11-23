@@ -86,6 +86,16 @@ class ConceptNet:
     def _looked(self, i):
         return _softmax(self.p[f'layers.{i}.A'])
 
+    def _written(self, i, h, membership):
+        gate = self.p.get(f'layers.{i}.write')
+        if gate is None:                                     # checkpoints made before selective writes
+            return membership
+        norm = np.maximum(np.linalg.norm(h, axis=-1, keepdims=True), 1e-12)
+        direction = (h / norm) * np.sqrt(np.float32(self.dim))
+        logits = direction @ gate.T
+        strength = 2 / (1 + np.exp(np.minimum(-logits, 80)))
+        return membership * strength[..., None]
+
     # ---- a whole document --------------------------------------------------------------------------------
     def states(self, ids, memberships=None):
         """The final state of every position of one document (T x D). ``memberships``, a list, receives the
@@ -97,8 +107,9 @@ class ConceptNet:
             t = self._memberships(i, q)                                       # T H K
             if memberships is not None:
                 memberships.append(t)
-            mass = np.cumsum(t, 0) + EPS_MASS
-            sums = np.cumsum(t[..., None] * v[:, :, None, :], 0)              # T H K d
+            written = self._written(i, h, t)
+            mass = np.cumsum(written, 0) + EPS_MASS
+            sums = np.cumsum(written[..., None] * v[:, :, None, :], 0)        # T H K d
             weight = np.einsum('thk,hkj->thj', t, self._looked(i)) / mass
             read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
             near = np.zeros_like(h)
@@ -364,8 +375,9 @@ class NetCursor:
         for i in range(net.layers):
             q, v = net._project(i, h)
             t = net._memberships(i, q)
-            mass = np.cumsum(t, 0) + self.mass[i]
-            sums = np.cumsum(t[..., None] * v[:, :, None, :], 0) + self.sums[i]
+            written = net._written(i, h, t)
+            mass = np.cumsum(written, 0) + self.mass[i]
+            sums = np.cumsum(written[..., None] * v[:, :, None, :], 0) + self.sums[i]
             weight = np.einsum('thk,hkj->thj', t, net._looked(i)) / mass
             read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
             W = net.shape(i)[2]
@@ -393,8 +405,9 @@ class NetCursor:
         for i in range(net.layers):
             q, v = net._project(i, h)
             t = net._memberships(i, q)                                         # H K
-            self.mass[i] += t
-            self.sums[i] += t[..., None] * v[:, None, :]
+            written = net._written(i, h, t)
+            self.mass[i] += written
+            self.sums[i] += written[..., None] * v[:, None, :]
             weight = np.einsum('hk,hkj->hj', t, net._looked(i)) / self.mass[i]
             read = np.einsum('hj,hjd->hd', weight, self.sums[i]).reshape(-1)
             W = net.shape(i)[2]
