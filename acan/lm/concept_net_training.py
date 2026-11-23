@@ -69,7 +69,7 @@ class ConceptAttention(nn.Module):
         t = torch.softmax(memberships_logits(q, self.g, self.log_s, self.log_c), -1) * mask[:, :, None, None]
         # A new or restored layer starts with strength one, the ordinary concept average.
         direction = F.normalize(h, dim=-1) * math.sqrt(D)
-        strength = 2 * torch.sigmoid(F.linear(direction, self.write))
+        strength = .5 + torch.sigmoid(F.linear(direction, self.write))
         written = t * strength[..., None]
         mass = torch.cumsum(written, 1) + 1e-6
         weight = torch.einsum('bthk,hkj->bthj', t, torch.softmax(self.A, -1)) / mass

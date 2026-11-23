@@ -236,8 +236,9 @@ $s_k$ e massa $C_k$. Una posizione $i$ proietta il suo stato in un'interrogazion
 in un valore $v_i$, e appartiene ai concetti con $T_k(q_i)$, la formula della sezione 4.
 Lungo il documento ogni concetto accumula le sue somme, come un concetto delle tabelle
 accumula le righe. La testa apprende anche quanto conta la posizione $j$ nella memoria:
-$a_j=2\sigma(u^\top\widehat{h}_j)$, dove $\widehat{h}_j$ ha norma $\sqrt D$ per stati non nulli.
-All'inizio $u=0$ e tutte le posizioni pesano uno. Il gradiente della previsione apprende
+$a_j=\tfrac12+\sigma(u^\top\widehat{h}_j)$, dove $\widehat{h}_j$ ha norma $\sqrt D$ per stati non nulli.
+Il peso resta fra $\tfrac12$ e $\tfrac32$. All'inizio $u=0$ e tutte le posizioni pesano uno.
+Il gradiente della previsione apprende
 quali posizioni scrivere con più peso, così molti token poco informativi possono pesare
 meno di pochi token utili:
 

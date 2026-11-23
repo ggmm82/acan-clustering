@@ -93,7 +93,7 @@ class ConceptNet:
         norm = np.maximum(np.linalg.norm(h, axis=-1, keepdims=True), 1e-12)
         direction = (h / norm) * np.sqrt(np.float32(self.dim))
         logits = direction @ gate.T
-        strength = 2 / (1 + np.exp(np.minimum(-logits, 80)))
+        strength = .5 + 1 / (1 + np.exp(np.minimum(-logits, 80)))
         return membership * strength[..., None]
 
     # ---- a whole document --------------------------------------------------------------------------------
