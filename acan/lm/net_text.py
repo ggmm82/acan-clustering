@@ -63,7 +63,6 @@ class NetText:
         self.tokens, self.tail, self.report = 0, np.empty(0, np.int64), None
         self.model = None                                      # SimpleNamespace(net=ConceptNet, tables={})
         self.device = 'cpu'
-        self.dialogue_headers = None                           # supplied by the corpus tokenizer on the worker
         self._learner = None
         self.network_done, self.network_history = False, []
         self.read = 0                                          # tokens of the current text read so far
@@ -93,12 +92,7 @@ class NetText:
             else:
                 frequency = np.bincount(ids, minlength=self.vocabulary) + 1.
                 config = {k: v for k, v in self.network.items() if k != 'passes'}
-                centres = None
-                if self.dialogue_headers is not None:
-                    from .dialogue_centres import paired_centres
-                    centres = paired_centres(ids, self.eos, self.dialogue_headers, self.vocabulary,
-                                             config['dim'], self.budget_bytes, check)
-                network = Network(dict(config, vocabulary=self.vocabulary), centres=centres, frequency=frequency / frequency.sum(),
+                network = Network(dict(config, vocabulary=self.vocabulary), frequency=frequency / frequency.sum(),
                                   groups=frequency_groups(frequency) if config.get('grouped') else None)
             options = dict(tokens=256, longest=min(256, self.max_context)) if self.device == 'cuda' else {}
             self._learner = Grower(network.to(self.device), passes=self.network.get('passes', True), **options)
