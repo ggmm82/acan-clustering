@@ -588,6 +588,11 @@ intermedi entrambi i risultati restano vicini al 25% del caso. La permutazione d
 parole porta l'accuratezza vicino al caso anche a breve distanza. La prova si ripete
 con `python -m scripts.probe_semantic_transfer`.
 
+Nella variante a coppie il finale è identico e cambia solo il primo sinonimo, che
+richiede una categoria diversa. Contando le coppie in cui entrambe le previsioni sono
+corrette, a due token intermedi si passa dal 34,1% al 48,3% con otto concetti. A otto,
+sedici e trentadue token il vantaggio varia fra le due inizializzazioni o scompare.
+
 **Rileggere.** 2.000 dialoghi di addestramento, uscita su tutto il vocabolario:
 
 | Passaggi sul testo | Testo già letto | Validazione | Test |

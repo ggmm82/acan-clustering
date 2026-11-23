@@ -30,11 +30,26 @@ def examples(seed, count, held_out, distance):
     return documents
 
 
+def paired_examples(seed, pairs, distance):
+    """Hold the suffix fixed and replace only the distant word with one from another category."""
+    documents = examples(seed, pairs, True, distance)
+    rng = np.random.default_rng(seed + 1)
+    paired = []
+    for original in documents:
+        category = (original[-2] - FIRST_LABEL + rng.integers(1, CLASSES)) % CLASSES
+        replacement = original.copy()
+        offset = rng.integers(ALIASES_PER_CLASS // 2, ALIASES_PER_CLASS)
+        replacement[1] = FIRST_ALIAS + category * ALIASES_PER_CLASS + offset
+        replacement[-2] = FIRST_LABEL + category
+        paired.extend((original, replacement))
+    return paired
+
+
 @torch.no_grad()
-def evaluate(network, documents, permute_aliases=False):
+def evaluate(network, documents, permute_aliases=False, paired=False):
     labels = torch.arange(FIRST_LABEL, FIRST_LABEL + CLASSES)
     generator = torch.Generator().manual_seed(31)
-    correct, losses = 0, []
+    correct, losses = [], []
     for start in range(0, len(documents), 64):
         ids, mask = _pad(documents[start:start + 64])
         if permute_aliases:
@@ -42,16 +57,20 @@ def evaluate(network, documents, permute_aliases=False):
         state = network.states(ids[:, :-2], mask[:, :-2])[:, -1]
         logits = network._logits(state, network.centre.weight, network.log_mass)
         targets = ids[:, -2]
-        correct += int((labels[logits[:, labels].argmax(-1)] == targets).sum())
+        correct.extend((labels[logits[:, labels].argmax(-1)] == targets).tolist())
         losses.extend((-logits.log_softmax(-1).gather(1, targets[:, None])[:, 0]).tolist())
-    return dict(accuracy=correct / len(documents), nll=float(np.mean(losses)))
+    scores = dict(accuracy=float(np.mean(correct)), nll=float(np.mean(losses)))
+    if paired:
+        scores['both_correct'] = float(np.asarray(correct).reshape(-1, 2).all(axis=1).mean())
+    return scores
 
 
 def main():
     torch.set_num_threads(1)
-    for distance in (2, 16):
+    for distance in (2, 8, 16, 32):
         training = [examples(100 + epoch, 2048, False, distance) for epoch in range(4)]
         test = examples(99, 1024, True, distance)
+        paired_test = paired_examples(101, 512, distance)
         for seed in (7, 17):
             for concepts in (1, 8):
                 torch.manual_seed(seed)
@@ -63,7 +82,8 @@ def main():
                     learner.learn_documents(documents)
                 print(json.dumps(dict(seed=seed, distance=distance, concepts=concepts,
                                       held_out=evaluate(network, test),
-                                      permuted=evaluate(network, test, permute_aliases=True))), flush=True)
+                                      permuted=evaluate(network, test, permute_aliases=True),
+                                      identical_suffix=evaluate(network, paired_test, paired=True))), flush=True)
 
 
 if __name__ == '__main__':
