@@ -421,6 +421,7 @@ class NativeSeriesTest(unittest.TestCase):
         for cuda in (False, True):                                          # the page learns the concept model, with or without GPU
             config = validate_options(dict(profile(cuda), corpus_id='a'*32))
             check_profile(config, cuda)
+            self.assertEqual(config['device'], 'auto')
             self.assertEqual((config['architecture'], config['routing_profile']), ('concepts', 'concept-pairs-v1'))
         with self.assertRaisesRegex(ValueError, 'concept-pairs-v1'):
             validate_options(dict(profile(False), corpus_id='a'*32, routing_profile='concept-graph-v2'))
@@ -473,3 +474,34 @@ class StructureProgressTest(unittest.TestCase):
         text = str(concept_summary(progress, dict(total_steps=45), status='running'))
         self.assertIn('struttura', text)
         self.assertIn('scala 3 di 4', text)
+        progress['structure'] = dict(phase='network', race=2, done=500, piece=1000)
+        self.assertIn('gara di crescita', str(concept_summary(progress, dict(total_steps=45), status='running')))
+        self.assertNotIn('gara di crescita', str(concept_summary(progress, dict(total_steps=45), status='paused')))
+        progress['structure'] = dict(phase='network', race=5, race_total=5, done=500, piece=1000)
+        text = str(concept_summary(progress, dict(total_steps=45), status='running'))
+        self.assertIn('gara di crescita al 90%', text)
+        self.assertIn('5° di 5, il doppio delle teste', text)
+        progress['structure'].update(race=4, candidate='concetti · strato 2')
+        text = str(concept_summary(progress, dict(total_steps=45), status='running'))
+        self.assertIn('4° di 5, concetti · strato 2', text)
+
+    def test_growth_panel_shows_completed_scores_and_what_would_happen(self):
+        from acan.vis.long_training import concept_summary
+
+        network = dict(phase='network', race=4, race_total=5, race_round=2, candidate='concetti · strato 2',
+                       done=750, piece=1000, race_candidates=["com'è", 'larghezza', 'strato', 'concetti · strato 2', 'teste'],
+                       race_scores=[6.02, 5.993, 6.01],
+                       race_projection=dict(candidate='larghezza', held_out=5.993, grows=True, retained=False))
+        progress = dict(graft=dict(vocabulary=8), structure=network)
+        config = dict(total_steps=45)
+        text = str(concept_summary(progress, config, status='running'))
+        for detail in ('tornata 2', 'In testa per NLL', '5.993', 'In prova · 75%', 'il doppio delle teste', 'In attesa',
+                       'Se i punteggi confermati restano decisivi', 'Nuova tornata sullo stesso pezzo'):
+            self.assertIn(detail, text)
+
+        network.update(race_evaluating=True, race_projection=dict(candidate="com'è", held_out=5.98, grows=False, retained=True))
+        text = str(concept_summary(progress, config, status='running'))
+        self.assertIn('In validazione', text)
+        self.assertIn('si conserva il vincitore precedente (5.980)', text)
+        self.assertIn('La gara per questo pezzo si chiude', text)
+        self.assertNotIn('In testa per NLL', str(concept_summary(progress, config, status='paused')))

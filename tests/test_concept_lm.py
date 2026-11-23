@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -56,6 +57,7 @@ class ConceptLongLearningTests(unittest.TestCase):
 
     def _exercise_queue(self, profile):
         from acan.lm.concept_trainer import evaluate, generate, run_training
+        from acan.lm.net_text import NetText
         from acan.lm.research_options import validate_options
         from acan.lm.store import Store, owner_key
         words = 'il gatto dorme sul tetto e la luna guarda la città mentre il cane abbaia piano'.split()
@@ -85,9 +87,25 @@ class ConceptLongLearningTests(unittest.TestCase):
                     time.sleep(.05)
                 stop.set()
             threading.Thread(target=halt, daemon=True).start()
-            run_training(root, job['id'], stop)
+            original_add = NetText.add
+
+            def report_after_compaction(model, ids, *args):
+                if not model.trace:
+                    model.piece = len(ids)
+                    for position in range(514):
+                        model._point(position, np.array([-4.0]), 'larghezza')
+                    model.report('network', 0, 0., race=2, done=513, piece=len(ids))
+                    live = store.job(job['id'])['progress']
+                    self.assertEqual(live['step'], 0)
+                    self.assertEqual(live['network_trace'], model.trace)
+                    self.assertEqual(live['network_trace'][-1][2], 'larghezza')
+                return original_add(model, ids, *args)
+
+            with patch.object(NetText, 'add', report_after_compaction):
+                run_training(root, job['id'], stop)
             paused = store.job(job['id'])
             self.assertEqual(paused['status'], 'paused', paused['error'])
+            self._transfer_paused_project(store, job, paused)
             run_training(root, job['id'])
             done = store.job(job['id'])
             self.assertEqual(done['status'], 'completed', done['error'])
@@ -96,10 +114,12 @@ class ConceptLongLearningTests(unittest.TestCase):
             self.assertEqual(progress['tokens_trained'], progress['dataset']['tokens']['train'])
             self.assertTrue(progress['concepts_per_level'] and progress['concepts_total'] > 0)
             from acan.lm.concept_lm import load
-            from acan.core.concepts import ConceptModel
             saved = store.directory('jobs', job['id'])/'checkpoints'/done['checkpoint']
-            graph, _ = load(saved)
-            self.assertIsInstance(graph.model.root, ConceptModel)                         # the tabular concept model
+            graph, saved_state = load(saved)
+            self.assertEqual(saved_state['network_trace'], progress['network_trace'])
+            self.assertNotIn('structure', saved_state)
+            self.assertIsInstance(graph, NetText)                                         # the concept network alone
+            self.assertIsNotNone(graph.model.net)
             self.assertEqual(graph.tokens, progress['tokens_trained'])
             history = store.history(job['id'], owner)
             measured = [row['step'] for row in history if 'validation_nll' in row]
@@ -130,7 +150,7 @@ class ConceptLongLearningTests(unittest.TestCase):
                                          capture_output=True, text=True, timeout=120)
                 self.assertEqual(written.returncode, 0, written.stderr[-2000:])
                 self.assertTrue(written.stdout.strip())
-            # The next text of the queue starts from the sums of the first and adds its own.
+            # The next text of the queue starts from the network of the first and goes on learning.
             config = validate_options(dict(base, corpus_id=second['id'], name='Coda · 2', warm_start=True))
             config['series'] = dict(id='q', order=1, variant='queue', label='due')
             store.set_config(job['id'], dict(done['config'], series=dict(id='q', order=0, variant='queue', label='uno')))
@@ -140,6 +160,61 @@ class ConceptLongLearningTests(unittest.TestCase):
             self.assertEqual(after['status'], 'completed', after['error'])
             self.assertEqual(after['progress']['warm_start']['job'], job['id'])
             self.assertGreater(after['progress']['tokens_trained'], 0)
+
+    def _transfer_paused_project(self, source, job, paused):
+        from acan.lm.concept_lm import load
+        from acan.lm.concept_trainer import run_training
+        from acan.lm.service import create_app
+        from acan.lm.store import owner_key
+
+        token = 'x'*32
+        source_headers = {'Authorization': 'Bearer '+token, 'X-ACAN-Workspace': 'a'*64}
+        target_headers = dict(source_headers, **{'X-ACAN-Workspace': 'b'*64})
+        source_client = create_app(str(source.root), token).test_client()
+        response = source_client.get(f"/jobs/{job['id']}/project-archive", headers=source_headers)
+        self.assertEqual(response.status_code, 200)
+        with response:
+            archive = response.data
+        with tempfile.TemporaryDirectory() as target_root:
+            target = create_app(target_root, token)
+            client = target.test_client()
+            transfer = client.post('/project-imports', headers=target_headers, json={'size': len(archive)})
+            self.assertEqual(transfer.status_code, 200)
+            url = '/project-imports/'+transfer.json['id']
+            self.assertEqual(client.post(url+'/finish', headers=source_headers).status_code, 404)
+            self.assertEqual(client.post(url+'/finish', headers=target_headers).status_code, 400)
+            for offset in range(0, len(archive), 1024**2):
+                result = client.post(url+'/chunk', headers=dict(target_headers, **{'X-Offset': str(offset)}),
+                                     data=archive[offset:offset+1024**2])
+                self.assertEqual(result.status_code, 200, result.get_data(as_text=True))
+            result = client.post(url+'/finish', headers=target_headers)
+            self.assertEqual(result.status_code, 200, result.get_data(as_text=True))
+            identifier = result.json['id']
+            self.assertNotEqual(identifier, job['id'])
+            imported = target.store.job(identifier, owner_key(target_headers['X-ACAN-Workspace']))
+            self.assertEqual(imported['status'], 'paused')
+            step = paused['progress']['step']
+            self.assertEqual(imported['progress']['step'], step)
+            src_checkpoint = source.directory('jobs', job['id'])/'checkpoints'/paused['checkpoint']
+            dst_checkpoint = target.store.directory('jobs', identifier)/'checkpoints'/imported['checkpoint']
+            original, _ = load(src_checkpoint)
+            restored, _ = load(dst_checkpoint)
+            np.testing.assert_array_equal(original.logp(np.arange(1, 11)), restored.logp(np.arange(1, 11)))
+            stop = threading.Event()
+
+            def halt_after_step():
+                while not stop.wait(.02):
+                    if target.store.job(identifier)['progress']['step'] > step:
+                        stop.set()
+            watcher = threading.Thread(target=halt_after_step, daemon=True)
+            watcher.start()
+            try:
+                run_training(target_root, identifier, stop)
+            finally:
+                stop.set()
+                watcher.join()
+            resumed = target.store.job(identifier)
+            self.assertGreater(resumed['progress']['step'], step, resumed['error'])
 
 
 if __name__ == '__main__':

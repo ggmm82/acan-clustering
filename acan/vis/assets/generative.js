@@ -16,6 +16,7 @@
   function bind() {
     ZONES.forEach(bindZone);
     bindRecovery();
+    bindProjectImport();
   }
   function bindZone(names) {
     const zone = document.getElementById(names.zone);
@@ -44,6 +45,62 @@
         finally { button.disabled=false; }
       };
     }
+  }
+  function bindProjectImport() {
+    const zone = document.getElementById('lm-project-import');
+    if (!zone || zone.dataset.bound) return;
+    zone.dataset.bound = 'true';
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = '.zip';
+    input.setAttribute('aria-label', 'Archivio ZIP del progetto');
+    const button = document.createElement('button');
+    button.textContent = 'Importa progetto'; button.className = 'btn btn-outline-primary my-2';
+    const status = document.createElement('div');
+    status.setAttribute('role', 'status');
+    zone.append(input, button, status);
+    button.onclick = async () => {
+      const file = input.files[0], key = window.acanLmWorkspace;
+      if (!file || !key) {
+        status.textContent = 'Scegli l’archivio del progetto e attendi il collegamento al worker.';
+        return;
+      }
+      let transfer;
+      const send = async (action, body, headers = {}) => {
+        const response = await fetch('/generative-project-import/' + action, {
+          method: 'POST', body,
+          headers: {'X-ACAN-Workspace': key, ...(transfer ? {'X-Import-ID': transfer} : {}), ...headers}
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw Error(error.error || 'Trasferimento non riuscito.');
+        }
+        return response.json();
+      };
+      button.disabled = true;
+      status.textContent = 'Caricamento del progetto: 0%.';
+      try {
+        transfer = (await send('begin', JSON.stringify({size: file.size}), {'Content-Type':'application/json'})).id;
+        const size = 1024 * 1024;
+        for (let offset = 0; offset < file.size; offset += size) {
+          const end = Math.min(file.size, offset + size);
+          await send('chunk', file.slice(offset, end), {'X-Offset': String(offset), 'Content-Type':'application/octet-stream'});
+          status.textContent = 'Caricamento del progetto: ' + Math.floor(100 * end / file.size) + '%.';
+        }
+        status.textContent = 'Verifica del corpus e dei checkpoint…';
+        const project = await send('finish');
+        transfer = null;
+        input.value = '';
+        status.textContent = project.status === 'paused'
+          ? 'Progetto importato. Premi Riprendi per continuare dall’ultimo salvataggio.'
+          : 'Progetto completato importato.';
+        window.dash_clientside.set_props('lm-active-job', {data: project.id});
+      } catch (error) {
+        if (transfer) await send('cancel').catch(() => {});
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    };
   }
   function bindRecovery() {
     const recovery = document.getElementById('lm-recovery-input');
