@@ -477,3 +477,7 @@ class StructureProgressTest(unittest.TestCase):
         progress['structure'] = dict(phase='network', race=2, done=500, piece=1000)
         self.assertIn('gara di crescita', str(concept_summary(progress, dict(total_steps=45), status='running')))
         self.assertNotIn('gara di crescita', str(concept_summary(progress, dict(total_steps=45), status='paused')))
+        progress['structure'] = dict(phase='network', race=5, race_total=5, done=500, piece=1000)
+        text = str(concept_summary(progress, dict(total_steps=45), status='running'))
+        self.assertIn('gara di crescita al 90%', text)
+        self.assertIn('5° di 5, il doppio delle teste', text)

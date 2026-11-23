@@ -274,23 +274,26 @@ class Network(nn.Module):
     def more_heads(self):
         """Twice the groups of concepts in every layer: the new groups start with nothing to say (their reading enters
         the layer with zero weight), so the network reads as before; the gradient decides what they hold."""
-        H, d, D = self.config['heads'], self.config['head_dim'], self.config['dim']
-        grown = self._like(heads=2 * H)
-        fresh = grown.state_dict()
-        new = {}
-        for k, v in self.state_dict().items():
-            if not k.startswith('layers.'):
-                new[k] = v; continue
-            part, f = k.split('.', 2)[2], fresh[k]
-            if part in ('g', 'log_s', 'log_c', 'A'):
-                v = torch.cat([v, f[H:]], 0)
-            elif part in ('query.weight', 'value.weight'):
-                v = torch.cat([v, f[H * d:]], 0)
-            elif part == 'out.weight':
-                v = torch.cat([v[:, :H * d], v.new_zeros(D, H * d), v[:, H * d:]], -1)
-            new[k] = v
-        grown.load_state_dict(new)
+        grown = self._like(heads=2 * self.config['heads'])
+        grown.load_state_dict(self._grow_heads(self.state_dict(), grown.state_dict()))
         return grown
+
+    def _grow_heads(self, values, fresh=None):
+        """Preserve the existing head slices. New Adam moments start at zero."""
+        heads, width = self.config['heads'], self.config['head_dim']
+        read_width = heads * width
+        changed = {}
+        for key, value in values.items():
+            if key.startswith('layers.'):
+                part = key.split('.', 2)[2]
+                if part in ('g', 'log_s', 'log_c', 'A', 'query.weight', 'value.weight'):
+                    new = fresh[key][len(value):] if fresh is not None else torch.zeros_like(value)
+                    value = torch.cat((value, new), dim=0)
+                elif part == 'out.weight':
+                    read, near = value[:, :read_width], value[:, read_width:]
+                    value = torch.cat((read, torch.zeros_like(read), near), dim=1)
+            changed[key] = value
+        return changed
 
     def wider_window(self):
         """Twice the distances among the nearby states; the maps of the new ones start at zero."""
@@ -470,6 +473,8 @@ class Learner:
             values = {name: state[moment] for name, state in old.items() if state}
             if kind == 'larghezza':
                 values = before.network._widen(values, moments=True)
+            elif kind == 'teste':
+                values = before.network._grow_heads(values)
             elif kind == 'concetti':
                 for name in list(values):
                     if name.endswith(('.g', '.log_s', '.log_c')):

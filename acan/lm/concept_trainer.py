@@ -208,6 +208,7 @@ def run_training(root, identifier, stop_event=None):
             store.record(identifier, 0, dict(state))           # the chart starts from the error before reading
         model.device = state['device'] = device
         model.trace = list(state.get('network_trace') or [])
+        model.races = list(state.get('network_races') or [])
         state.pop('structure', None)
         store.update(identifier, checkpoint=previous.name, progress=state, status='running')
 
@@ -222,6 +223,7 @@ def run_training(root, identifier, stop_event=None):
             # Commit a whole piece or keep the previous sums intact on pause.
             updated = copy(model)
             updated.trace = model.trace.copy()
+            updated.races = model.races.copy()
 
             def structure(phase, width, seconds, **facts):
                 live = dict(phase=phase, width=int(width), seconds=float(seconds),
@@ -240,6 +242,8 @@ def run_training(root, identifier, stop_event=None):
             model = updated
             state.update(step=state['step']+1, tokens_trained=state['tokens_trained']+len(ids))
             state['network_trace'] = list(model.trace)  # save the complete trace with the step it describes
+            if model.races:
+                state['network_races'] = list(model.races)
             state['tokens_per_second'] = (state['tokens_trained']-initial)/max(time.monotonic()-started, 1e-6)
             due = state['step'] % config['save_steps'] == 0 or time.monotonic()-last_save >= config['save_seconds']
             last = due or should_pause() or state['step'] == config['total_steps']
@@ -258,8 +262,6 @@ def run_training(root, identifier, stop_event=None):
                 state['network_concepts'] = model.model.net.describe([p[:512] for p in tune[:8]], tokenizer.decode)
                 state['network_graph'] = model.model.net.graph([p[:512] for p in tune[:8]], tokenizer.decode)
                 state['network_stopped'] = bool(model.network_done)
-                if getattr(model, 'races', None):
-                    state['network_races'] = list(model.races)       # what every race of growth chose
             if last:
                 previous = save(root_checkpoints, model, state, identity)
                 saved_step = state['step']
@@ -269,7 +271,7 @@ def run_training(root, identifier, stop_event=None):
                     record_answers(directory, model, tokenizer, state, config.get('probe_prompts') or None)
                 last_save = time.monotonic()
             # A step without a measure does not repeat the last one: the chart draws only what was measured.
-            row = {key: value for key, value in state.items() if key not in ('network_trace', 'network_graph', 'network_concepts')
+            row = {key: value for key, value in state.items() if key not in ('network_trace', 'network_races', 'network_graph', 'network_concepts')
                    and (measured or key not in MEASURES)}
             store.record(identifier, state['step'], row, progress=state)
         if state['step'] != saved_step:                          # paused between two saves: keep what was read

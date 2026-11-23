@@ -50,7 +50,7 @@ class ConceptNetTest(unittest.TestCase):
         docs = [np.arange(1, 17), np.arange(2, 12)]
         learner = Learner(net, tokens=32)
         self.assertTrue(np.isfinite(learner.learn_documents(docs)))
-        grown = net.widened()
+        grown = net.widened().more_heads()
         grown.add_layer()
         self.assertTrue(all(p.is_cuda for p in grown.parameters()))
         resumed = Network.restore(grown.export())
@@ -190,6 +190,31 @@ class GrowthTest(unittest.TestCase):
         again = Network.restore(grown)
         self.assertTrue(np.isfinite(Learner(again, tokens=64).learn(np.tile(ids, 5), eos=49)))
 
+    def test_added_heads_keep_old_adam_moments_and_start_with_zero_output(self):
+        import torch
+        from acan.lm.concept_net_training import Learner, Network
+
+        net = Network(config(dim=8, layers=1, heads=1, concepts=2, window=1))
+        ids = np.tile(np.r_[np.arange(1, 10), 49], 4)
+        base = Learner(net, tokens=32)
+        base.learn(ids, eos=49)
+        grown = net.more_heads()
+        trial = Learner(grown, tokens=32)
+        trial.carry(base, 'teste')
+        np.testing.assert_allclose(grown.export().document(ids[:10]), net.export().document(ids[:10]), atol=1e-6)
+        for name in ('g', 'log_s', 'log_c', 'A'):
+            old = base.opt.state[getattr(net.layers[0], name)]['exp_avg']
+            new = trial.opt.state[getattr(grown.layers[0], name)]['exp_avg']
+            torch.testing.assert_close(new[:1], old)
+            self.assertEqual(new[1:].count_nonzero().item(), 0)
+        for moment in ('exp_avg', 'exp_avg_sq'):
+            old = base.opt.state[net.layers[0].out.weight][moment]
+            new = trial.opt.state[grown.layers[0].out.weight][moment]
+            torch.testing.assert_close(new[:, :8], old[:, :8])
+            torch.testing.assert_close(new[:, 16:], old[:, 8:])
+            self.assertEqual(new[:, 8:16].count_nonzero().item(), 0)
+        self.assertTrue(np.isfinite(trial.learn(ids, eos=49)))
+
 
 @unittest.skipUnless(TORCH, 'torch is needed to learn the network')
 class CalendarTest(unittest.TestCase):
@@ -313,6 +338,32 @@ class NetTextTest(unittest.TestCase):
 
 @unittest.skipUnless(TORCH, 'torch is needed to learn the network')
 class NetTextGrowthTest(unittest.TestCase):
+    def test_growth_starts_with_one_head_and_can_select_more_heads(self):
+        from unittest.mock import patch
+        from acan.lm.concept_lm import from_checkpoint_arrays
+        from acan.lm.net_text import NetText
+
+        eos = 40
+        rng = np.random.default_rng(3)
+        ids = rng.integers(0, eos, size=(8, 9))
+        ids[:, -1] = eos
+        stream = ids.ravel()
+        model = NetText(41, eos, 1 << 22, growth=True)
+        self.assertEqual(model.network['heads'], 1)
+        model.network['passes'] = False
+
+        # Keep training real and make the evaluation select the candidate with two heads.
+        def score(network, *_):
+            return np.full(2, -1. if network.config['heads'] == 2 else -2.)
+
+        with patch('acan.lm.concept_net_training.held_out', side_effect=score):
+            model.add(stream, stream, [stream], lambda: None)
+        self.assertEqual(model.races[0]['choice'], 'teste')
+        self.assertEqual(model.model.net.shape(0)[0], 2)
+        restored = from_checkpoint_arrays(model.arrays())
+        self.assertEqual(restored.model.net.shape(0)[0], 2)
+        np.testing.assert_allclose(restored.logp(ids[0]), model.logp(ids[0]), atol=1e-6)
+
     def test_the_growing_network_races_when_the_text_doubles_and_reads_as_before_after_saving(self):
         from acan.lm.concept_lm import from_checkpoint_arrays
         from acan.lm.net_text import NetText
@@ -339,6 +390,12 @@ class NetTextGrowthTest(unittest.TestCase):
         self.assertGreater(grower.decision, grower.learned)
         self.assertEqual([race['tokens'] for race in model.races], [390, len(ids)])     # after 1 piece, then the last
         self.assertTrue(all(race['choice'] in NetText.KINDS for race in model.races))
+        for race in model.races:
+            candidates = {candidate['choice']: candidate for candidate in race['candidates']}
+            self.assertEqual(set(candidates), set(NetText.KINDS))
+            self.assertEqual(candidates['teste']['heads'], 2 * candidates["com'è"]['heads'])
+            self.assertEqual(race['heads'], candidates[race['choice']]['heads'])
+        self.assertTrue(all(entry['race_total'] == 5 for entry in reported if 'race' in entry))
         doc = ids[:ids.tolist().index(eos) + 1]
         q = model.logp(doc)
         cursor = model.prediction_cursor(())

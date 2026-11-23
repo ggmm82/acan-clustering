@@ -69,7 +69,8 @@ def inside_figure(trace):
     if len(points) < 2:
         return None
     names = {None: 'La rete che impara', "com'è": "Gara · la rete com'è", 'larghezza': 'Gara · il doppio della larghezza',
-             'strato': 'Gara · uno strato in più', 'concetti': 'Gara · concetti divisi in due'}
+             'strato': 'Gara · uno strato in più', 'concetti': 'Gara · concetti divisi in due',
+             'teste': 'Gara · il doppio delle teste'}
     racing = any(len(point) > 2 for point in points)
     if racing:                                                  # in a race the network itself only starts and ends the step
         names[None] = 'Misure iniziali e finali della rete'

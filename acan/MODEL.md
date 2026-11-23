@@ -311,17 +311,22 @@ decisioni (smettere, crescere) cadono su un calendario che raddoppia con i token
 imparati: dopo un lotto, due, quattro… Quando due decisioni di fila non migliorano il
 testo tenuto da parte, la rete smette di imparare.
 
-**Dimensioni dai dati.** La rete parte piccola (32 numeri di stato, uno strato, 4 gruppi
-da 16 concetti, 3 distanze vicine; i centri dei token partono a caso). In una **gara** la
-rete com'è e tre copie cresciute imparano il pezzo nuovo, una volta ciascuna:
+**Dimensioni dai dati.** La rete parte con 32 numeri di stato, uno strato, una testa
+da 16 concetti e 3 distanze vicine. I centri dei token partono a caso. In una **gara** la
+rete com'è e quattro copie cresciute imparano il pezzo nuovo, una volta ciascuna:
 
 - **il doppio della larghezza:** ogni coordinata scritta due volte, con dispersioni e
   masse dei concetti corrette perché appartenenze e letture restino identiche;
 - **uno strato in più,** con l'apertura chiusa: lascia lo stato com'è;
-- **ogni concetto diviso in due,** con centri quasi uguali e metà della massa.
+- **ogni concetto diviso in due,** con centri vicini e metà della massa;
+- **il doppio delle teste:** una testa aggiunta ha proiezioni e concetti propri.
+  All'inizio il suo contributo all'uscita dello strato è zero. Durante
+  l'apprendimento può crescere se aiuta la previsione.
 
-Ogni copia, all'inizio, legge **esattamente** come la rete: la crescita non costa niente
-finché i dati non la usano. La copia più larga impara a metà passo, perché le sue
+Una testa basta per leggere attraverso i concetti. Più teste permettono
+proiezioni indipendenti dello stesso token, ciascuna con un insieme di concetti.
+La gara decide se questa capacità in più migliora la previsione su testo
+tenuto da parte. La copia più larga impara a metà passo, perché le sue
 coordinate si muovono a coppie. Prosegue, con il pezzo imparato, la più semplice che la
 migliore non batte di più di un errore standard sul testo tenuto da parte (sezione 2). La
 gara usa testo nuovo e non rilegge quello già letto: a parità di token il testo nuovo
@@ -508,12 +513,12 @@ giudizio leave-one-out non rilegge la tabella, perché usa le somme.
    lettura in avanti, perdita (Matematica, sezione 8), gradiente all'indietro, norma del
    gradiente limitata a 1, passo di AdamW (passo $3\cdot10^{-3}$, avvio lineare per al più
    200 passi e al più un passaggio), un lieve decadimento dei parametri.
-4. **Crescita.** In una gara quattro candidati (la rete com'è, più larga, con uno strato
-   in più, con i concetti divisi) imparano il pezzo nuovo, uno dopo l'altro; prosegue il
+4. **Crescita.** In una gara cinque candidati (la rete com'è, più larga, con uno strato
+   in più, con i concetti divisi o con più teste) imparano il pezzo nuovo, uno dopo l'altro; prosegue il
    più semplice che il migliore non batte di più di un errore standard. Le gare cadono sul
    primo e sull'ultimo pezzo, sul pezzo dopo una gara vinta da una crescita, sul pezzo dopo
    uno in cui la rete non è migliorata, e altrimenti sempre più rade (Matematica,
-   sezione 8). Una gara costa quattro letture di un pezzo. Le decisioni si giudicano su
+   sezione 8). Una gara costa cinque letture di un pezzo. Le decisioni si giudicano su
    tutta la validazione tranne i tratti che misurano l'errore della pagina. Con la crescita spenta (opzione della coda) la rete ha
    dimensioni fisse: 96 numeri di stato, 3 strati, 4 gruppi da 64 concetti.
 5. **Riletture finali.** Con l'ultimo pezzo la rete rilegge tutto il testo, passaggio dopo
@@ -558,7 +563,7 @@ distribuzione in ogni posizione: è la stessa funzione applicata allo stesso sta
   di token; il confronto con gli indirizzi della memoria.
 - **Memoria in inferenza:** le somme dei concetti e gli ultimi stati di ogni strato, fissi
   a qualunque lunghezza del documento, più un indirizzo per token del documento.
-- **Addestramento:** lineare nei token per ogni passaggio; una gara costa quattro passaggi
+- **Addestramento:** lineare nei token per ogni passaggio; una gara costa cinque passaggi
   su un pezzo; le riletture finali, un passaggio ciascuna sul testo intero.
 
 ### 6 · Misure

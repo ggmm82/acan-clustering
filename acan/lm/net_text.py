@@ -48,8 +48,8 @@ class NetCursor:
 class NetText:
     NETWORK = dict(dim=96, layers=3, heads=4, concepts=64, window=3, grouped=True)
     # With growth the network starts small and the data choose how it grows (``_race``)
-    GROWING = dict(dim=32, layers=1, heads=4, concepts=16, window=3, grouped=True)
-    KINDS = ("com'è", 'larghezza', 'strato', 'concetti')
+    GROWING = dict(dim=32, layers=1, heads=1, concepts=16, window=3, grouped=True)
+    KINDS = ("com'è", 'larghezza', 'strato', 'concetti', 'teste')
 
     def __init__(self, vocabulary, eos, budget, max_context=512, network=None, growth=False):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), int(eos), int(budget)
@@ -188,11 +188,11 @@ class NetText:
 
     # ---- growth ------------------------------------------------------------------------------------------
     def _race(self, ids, held, check, shown=None):
-        """With the first piece and every time the text read doubles (and with the last piece) the network as it
-        is and its grown copies (twice as wide, one more layer, every concept split in two: each reads exactly as the
-        network) learn the new piece, once each: new text teaches more than text read again. The smallest that the
-        best does not beat on held-out text by more than one standard error goes on, with the piece learned. A wider
-        copy starts from half the step: its coordinates move in pairs."""
+        """Compare the current network and four growth candidates on the same new piece.
+
+        The smallest candidate within one standard error of the best validation score continues.
+        The wider candidate learns at half the learning rate because its coordinates were duplicated.
+        """
         import copy
         import math
         from .concept_net_training import Learner, documents, held_out
@@ -206,17 +206,24 @@ class NetText:
         better = lambda a, b: len(a - b) > 1 and (a - b).mean() > (a - b).std(ddof=1) / math.sqrt(len(a) - 1)
         results = []
         for number, kind in enumerate(self.KINDS):
-            network = copy.deepcopy(base.network)
-            if kind == 'larghezza':
-                network = network.widened()
-            elif kind == 'strato':
-                network.add_layer()
-            elif kind == 'concetti':
-                for i in range(len(network.layers)):
-                    network.split_concepts(i)
-            learner = copy.deepcopy(base) if kind == "com'è" else Learner(network, tokens=base.tokens, longest=base.longest)
-            if kind != "com'è":                                 # the same pace and the optimizer it had: a fair race
+            if kind == "com'è":
+                learner = copy.deepcopy(base)
+            else:
+                if kind == 'larghezza':
+                    network = base.network.widened()
+                elif kind == 'teste':
+                    network = base.network.more_heads()
+                else:
+                    network = copy.deepcopy(base.network)
+                    if kind == 'strato':
+                        network.add_layer()
+                    elif kind == 'concetti':
+                        for i in range(len(network.layers)):
+                            network.split_concepts(i)
+                learner = Learner(network, tokens=base.tokens, longest=base.longest)
+                # Start from the same optimizer, pace and order of training rows.
                 learner.steps, learner.warmup, learner.seen = base.steps, base.warmup, base.seen
+                learner.rng = copy.deepcopy(base.rng)
                 learner.lr = base.lr / 2 if kind == 'larghezza' else base.lr   # its coordinates move in pairs
                 learner.carry(base, kind)
             start = learner.seen
@@ -233,8 +240,13 @@ class NetText:
         net = learner.network.export()
         grower.best, grower.best_scores = net, scores
         c = net.config
-        self.races.append(dict(tokens=int(self.read + len(ids)), choice=kind, dim=int(c['dim']), layers=int(c['layers']),
-                               concepts=[int(k) for k in c['concepts']], held_out=float(-scores.mean())))
+        candidates = [dict(choice=choice, heads=int(trial.network.config['heads']),
+                           held_out=float(-values.mean()), parameters=count)
+                      for choice, trial, values, count in results]
+        self.races.append(dict(tokens=int(self.tokens + len(ids)), choice=kind, dim=int(c['dim']),
+                               layers=int(c['layers']), heads=int(c['heads']),
+                               concepts=[int(k) for k in c['concepts']], held_out=float(-scores.mean()),
+                               candidates=candidates))
         return net
 
     def _racing(self, number, size, kind=None, learner=None, start=0, shown=None):
@@ -249,7 +261,8 @@ class NetText:
                 learner.network.train()
             began = getattr(self, '_race_began', None)
             read = getattr(self, '_race_done', 0) + (learner.seen - start if learner is not None else 0)
-            self.report('network', 0, 0., race=number + 1, learned=int(self.read), piece=int(size),
+            self.report('network', 0, 0., race=number + 1, race_total=len(self.KINDS),
+                        learned=int(self.read), piece=int(size),
                         done=int(learner.seen - start) if learner is not None else 0,   # how much of the piece this candidate read
                         speed=int(read / max(now - began, 1e-9)) if began else 0)   # tokens a second, all candidates
 
