@@ -190,6 +190,30 @@ class GrowthTest(unittest.TestCase):
         again = Network.restore(grown)
         self.assertTrue(np.isfinite(Learner(again, tokens=64).learn(np.tile(ids, 5), eos=49)))
 
+    def test_split_a_single_concept_preserves_reading_and_optimizer_slices(self):
+        import copy
+        import torch
+        from acan.lm.concept_net_training import Learner, Network
+
+        net = Network(config(dim=8, layers=2, heads=2, concepts=3, window=1))
+        tokens = np.tile(np.r_[np.arange(1, 10), 49], 4)
+        base = Learner(net, tokens=32)
+        base.learn(tokens, eos=49)
+        selected = torch.tensor([1, 0])
+        grown = copy.deepcopy(net)
+        grown.split_one(1, selected, noise=0)
+        self.assertEqual(grown.config['concepts'], [3, 4])
+        np.testing.assert_allclose(grown.export().document(tokens[:10]), net.export().document(tokens[:10]),
+                                   atol=1e-6)
+        trial = Learner(grown, tokens=32)
+        trial.carry(base, 'concetti', (1, selected))
+        heads = torch.arange(2)
+        old = base.opt.state[net.layers[1].g]['exp_avg']
+        new = trial.opt.state[grown.layers[1].g]['exp_avg']
+        torch.testing.assert_close(new[:, :-1], old)
+        torch.testing.assert_close(new[:, -1], old[heads, selected])
+        self.assertTrue(np.isfinite(trial.learn(tokens, eos=49)))
+
     def test_added_heads_keep_old_adam_moments_and_start_with_zero_output(self):
         import torch
         from acan.lm.concept_net_training import Learner, Network
@@ -364,6 +388,27 @@ class NetTextGrowthTest(unittest.TestCase):
         self.assertEqual(restored.model.net.shape(0)[0], 2)
         np.testing.assert_allclose(restored.logp(ids[0]), model.logp(ids[0]), atol=1e-6)
 
+    def test_growth_starts_with_one_concept_and_tests_layers_in_turn(self):
+        from unittest.mock import patch
+        from acan.lm.concept_lm import from_checkpoint_arrays
+        from acan.lm.net_text import NetText
+
+        model = NetText(41, 40, 1 << 22, growth=True, network=dict(layers=2, passes=False))
+        self.assertEqual(model.network['concepts'], 1)
+        ids = np.tile(np.r_[np.arange(1, 10), 40], 8)
+        targets = ([2, 1], [2, 2])
+        for index, end in enumerate((40, 80)):
+            def score(network, *_):
+                return np.full(2, -1. if network.config['concepts'] == targets[index] else -2.)
+
+            with patch('acan.lm.concept_net_training.held_out', side_effect=score):
+                model.add(ids[end-40:end], ids, [ids], lambda: None)
+            self.assertEqual(model.races[-1]['layer'], index+1)
+            self.assertEqual(model.races[-1]['choice'], 'concetti')
+            self.assertEqual(model.model.net.config['concepts'], targets[index])
+        restored = from_checkpoint_arrays(model.arrays())
+        self.assertEqual(restored.model.net.config['concepts'], [2, 2])
+
     def test_the_growing_network_races_when_the_text_doubles_and_reads_as_before_after_saving(self):
         from acan.lm.concept_lm import from_checkpoint_arrays
         from acan.lm.net_text import NetText
@@ -395,6 +440,11 @@ class NetTextGrowthTest(unittest.TestCase):
             self.assertEqual(set(candidates), set(NetText.KINDS))
             self.assertEqual(candidates['teste']['heads'], 2 * candidates["com'è"]['heads'])
             self.assertEqual(race['heads'], candidates[race['choice']]['heads'])
+            previous = candidates["com'è"]['concepts']
+            split = candidates['concetti']
+            expected = previous.copy()
+            expected[split['layer']-1] += 1
+            self.assertEqual(split['concepts'], expected)
         self.assertTrue(all(entry['race_total'] == 5 for entry in reported if 'race' in entry))
         doc = ids[:ids.tolist().index(eos) + 1]
         q = model.logp(doc)

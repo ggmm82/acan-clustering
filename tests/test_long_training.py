@@ -481,3 +481,6 @@ class StructureProgressTest(unittest.TestCase):
         text = str(concept_summary(progress, dict(total_steps=45), status='running'))
         self.assertIn('gara di crescita al 90%', text)
         self.assertIn('5° di 5, il doppio delle teste', text)
+        progress['structure'].update(race=4, candidate='concetti · strato 2')
+        text = str(concept_summary(progress, dict(total_steps=45), status='running'))
+        self.assertIn('4° di 5, concetti · strato 2', text)

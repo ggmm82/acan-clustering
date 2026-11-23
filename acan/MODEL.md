@@ -312,13 +312,17 @@ imparati: dopo un lotto, due, quattro… Quando due decisioni di fila non miglio
 testo tenuto da parte, la rete smette di imparare.
 
 **Dimensioni dai dati.** La rete parte con 32 numeri di stato, uno strato, una testa
-da 16 concetti e 3 distanze vicine. I centri dei token partono a caso. In una **gara** la
+con un concetto e 3 distanze vicine. I centri dei token partono a caso. In una **gara** la
 rete com'è e quattro copie cresciute imparano il pezzo nuovo, una volta ciascuna:
 
 - **il doppio della larghezza:** ogni coordinata scritta due volte, con dispersioni e
   masse dei concetti corrette perché appartenenze e letture restino identiche;
 - **uno strato in più,** con l'apertura chiusa: lascia lo stato com'è;
-- **ogni concetto diviso in due,** con centri vicini e metà della massa;
+- **un concetto in più per testa in uno strato.** Le gare successive provano gli
+  strati a turno. In ciascuna testa si divide il concetto che raccoglie più massa
+  di appartenenza su un campione del nuovo pezzo. I due figli si dividono la massa
+  originaria e iniziano con centri vicini. La stessa gara su testo tenuto da parte
+  decide se conservarli;
 - **il doppio delle teste:** una testa aggiunta ha proiezioni e concetti propri.
   All'inizio il suo contributo all'uscita dello strato è zero. Durante
   l'apprendimento può crescere se aiuta la previsione.
@@ -326,8 +330,9 @@ rete com'è e quattro copie cresciute imparano il pezzo nuovo, una volta ciascun
 Una testa basta per leggere attraverso i concetti. Più teste permettono
 proiezioni indipendenti dello stesso token, ciascuna con un insieme di concetti.
 La gara decide se questa capacità in più migliora la previsione su testo
-tenuto da parte. La copia più larga impara a metà passo, perché le sue
-coordinate si muovono a coppie. Prosegue, con il pezzo imparato, la più semplice che la
+tenuto da parte. La validazione può lasciare la rete con un solo concetto per testa.
+La copia più larga impara a metà passo, perché le sue coordinate si muovono a coppie.
+Prosegue, con il pezzo imparato, la più semplice che la
 migliore non batte di più di un errore standard sul testo tenuto da parte (sezione 2). La
 gara usa testo nuovo e non rilegge quello già letto: a parità di token il testo nuovo
 insegna di più (Informatica, sezione 6).
@@ -514,7 +519,7 @@ giudizio leave-one-out non rilegge la tabella, perché usa le somme.
    gradiente limitata a 1, passo di AdamW (passo $3\cdot10^{-3}$, avvio lineare per al più
    200 passi e al più un passaggio), un lieve decadimento dei parametri.
 4. **Crescita.** In una gara cinque candidati (la rete com'è, più larga, con uno strato
-   in più, con i concetti divisi o con più teste) imparano il pezzo nuovo, uno dopo l'altro; prosegue il
+   in più, con più concetti in uno strato o con più teste) imparano il pezzo nuovo, uno dopo l'altro; prosegue il
    più semplice che il migliore non batte di più di un errore standard. Le gare cadono sul
    primo e sull'ultimo pezzo, sul pezzo dopo una gara vinta da una crescita, sul pezzo dopo
    uno in cui la rete non è migliorata, e altrimenti sempre più rade (Matematica,

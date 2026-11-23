@@ -194,6 +194,59 @@ class Network(nn.Module):
         layer.g, layer.log_s, layer.log_c, layer.A = (nn.Parameter(x.contiguous()) for x in (g, log_s, log_c, A))
         self.config['concepts'][i] = int(g.shape[1])
 
+    def split_one(self, layer_index, selected, noise=.01):
+        """Split one concept per head in a single layer, preserving its mass and attention."""
+        layer = self.layers[layer_index]
+        prefix = f'layers.{layer_index}.'
+        with torch.no_grad():
+            values = self._copy_split(layer.state_dict(prefix=prefix), layer_index, selected)
+            heads = torch.arange(layer.h, device=self.device)
+            mass = torch.zeros_like(values[prefix+'log_c'])
+            mass[heads, selected] = mass[:, -1] = math.log(2)
+            values[prefix+'log_c'] -= mass
+            values[prefix+'A'] -= mass[:, None, :]
+            offset = torch.randn_like(layer.g[heads, selected]) * layer.log_s[heads, selected].exp() * noise
+            values[prefix+'g'][heads, selected] += offset
+            values[prefix+'g'][:, -1] -= offset
+        for name in ('g', 'log_s', 'log_c', 'A'):
+            setattr(layer, name, nn.Parameter(values[prefix+name].contiguous()))
+        self.config['concepts'][layer_index] += 1
+
+    def _copy_split(self, values, layer_index, selected):
+        """Duplicate the chosen slices of both parameters and optimizer moments."""
+        layer = self.layers[layer_index]
+        prefix = f'layers.{layer_index}.'
+        heads = torch.arange(layer.h, device=self.device)
+        order = torch.arange(layer.g.shape[1], device=self.device).expand(layer.h, -1)
+        order = torch.cat((order, selected[:, None]), dim=1)
+        copied = dict(values)
+        for name in ('g', 'log_s', 'log_c'):
+            key = prefix+name
+            if key in values:
+                copied[key] = values[key][heads[:, None], order]
+        key = prefix+'A'
+        if key in values:
+            copied[key] = values[key][heads[:, None, None], order[:, :, None], order[:, None, :]]
+        return copied
+
+    @torch.no_grad()
+    def concepts_to_split(self, layer_index, docs):
+        """Use the most occupied concept of each head on a spread of training documents."""
+        layer = self.layers[layer_index]
+        if layer.g.shape[1] == 1:
+            return torch.zeros(layer.h, dtype=torch.long, device=self.device)
+
+        usage = torch.zeros_like(layer.log_c)
+        for index in np.linspace(0, len(docs)-1, min(8, len(docs)), dtype=int):
+            tokens, mask = _pad([docs[index][:-1]], self.device)
+            hidden = self.centre(tokens)
+            for previous in self.layers[:layer_index]:
+                hidden = previous(hidden, mask)
+            q = layer.query(hidden).view(1, tokens.shape[1], layer.h, layer.d)
+            logits = memberships_logits(q, layer.g, layer.log_s, layer.log_c)
+            usage += logits.softmax(-1)[0].sum(0)
+        return usage.argmax(dim=-1)
+
     def add_layer(self):
         """A new last layer that leaves the states as they are: it starts closed, and what it adds starts at zero."""
         dim, last = self.config['dim'], self.layers[-1]
@@ -459,7 +512,7 @@ class Learner:
         self.network.eval()
         return total / max(n, 1)
 
-    def carry(self, before, kind):
+    def carry(self, before, kind, split=None):
         """The optimizer of a grown copy goes on from the one of the network it grew from (``before``, a Learner):
         a fresh optimizer moves wildly at first, and a copy starting with one would lose a race for that alone. Every
         parameter that is there before takes its statistics, mapped as the parameter was; a new one starts from zero
@@ -475,6 +528,8 @@ class Learner:
                 values = before.network._widen(values, moments=True)
             elif kind == 'teste':
                 values = before.network._grow_heads(values)
+            elif split is not None:
+                values = before.network._copy_split(values, *split)
             elif kind == 'concetti':
                 for name in list(values):
                     if name.endswith(('.g', '.log_s', '.log_c')):

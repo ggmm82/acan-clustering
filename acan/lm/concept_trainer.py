@@ -227,7 +227,7 @@ def run_training(root, identifier, stop_event=None):
 
             def structure(phase, width, seconds, **facts):
                 live = dict(phase=phase, width=int(width), seconds=float(seconds),
-                            **{key: int(value) for key, value in facts.items()})
+                            **facts)
                 store.update(identifier, progress=dict(state, structure=live, network_trace=list(updated.trace)))
 
             updated.report = structure
