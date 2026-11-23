@@ -72,15 +72,16 @@ def inside_figure(trace):
              'strato': 'Gara · uno strato in più', 'concetti': 'Gara · concetti divisi in due'}
     racing = any(len(point) > 2 for point in points)
     if racing:                                                  # in a race the network itself only starts and ends the step
-        names[None] = 'La rete: prima della gara e la vincitrice'
+        names[None] = 'Misure iniziali e finali della rete'
     figure = go.Figure()
     for kind in dict.fromkeys(point[2] if len(point) > 2 else None for point in points):
         line = [point for point in points if (point[2] if len(point) > 2 else None) == kind]
         figure.add_scatter(x=[100 * (point[0] - step) for point in line], y=[point[1] for point in line],
-                           mode='lines+markers', name=names.get(kind, f'Gara · {kind}'))
+                           mode='markers', name=names.get(kind, f'Gara · {kind}'))
     figure.update_layout(title=f'Dentro il passo {step + 1}: la validazione mentre la rete legge il pezzo'
                          + (' · gara: ogni candidato legge tutto il pezzo, da 0 a 100%' if racing else ''),
-                         xaxis_title='Pezzo letto (%)', yaxis_title='NLL', margin=dict(t=50, b=40), height=360)
+                         xaxis=dict(title='Pezzo letto (%)', range=[0, 100]), yaxis_title='NLL',
+                         margin=dict(t=50, b=40), height=360)
     return figure
 
 
@@ -114,7 +115,7 @@ layout = dbc.Container([
             dbc.Button('500 passi dopo →',id='lm-history-next',size='sm',outline=True,color='primary',className='mt-1')],md=6),
     ]),
     html.P("Più in basso è la linea, meno il modello sbaglia a indovinare la parola successiva. Conta la linea su testo mai visto (validazione): se risale mentre quella di addestramento continua a scendere, il modello sta imparando a memoria.",className='small text-muted'),
-    dcc.Loading(dcc.Graph(id='lm-loss'),delay_show=150),
+    dcc.Graph(id='lm-loss'),
     html.Div(dcc.Graph(id='lm-inside'), id='lm-inside-box', style={'display': 'none'}),
     html.H5('Fai scrivere il modello', className='mt-3'),
             html.P("Scegli una copia salvata (la migliore è indicata) e scrivi l'inizio di una frase, oppure una domanda con la casella «Conversazione»: il modello continua. La prova non cambia il modello. Il server fa una cosa alla volta: se una coda sta imparando, la scrittura non parte; aspetta che finisca o metti in pausa la coda al passo 3, e dopo premi «Riprendi»."),
@@ -1007,9 +1008,9 @@ def register(app):
         for kind in dict.fromkeys(point[2] if len(point) > 2 else None for point in trace):
             # the network inside the steps, on the same validation; in a race of growth every candidate over the same step
             points = [point for point in trace if (point[2] if len(point) > 2 else None) == kind]
-            figure.add_scatter(x=[point[0] for point in points], y=[point[1] for point in points], mode='lines',
+            figure.add_scatter(x=[point[0] for point in points], y=[point[1] for point in points], mode='markers',
                                name='Validazione mentre impara' if kind is None else f'Gara · {kind}',
-                               line=dict(width=1, dash='dot' if kind is None else 'dash'))
+                               marker=dict(size=4))
         # The project and its dense control on the same chart: same corpus, seed and budget.
         partner, comparison = paired_job((state or {}).get('jobs', []), job), None
         if partner is not None:
