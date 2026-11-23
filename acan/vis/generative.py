@@ -58,10 +58,45 @@ def backend(workspace, path, method='GET', data=None, raw=False, headers=None, t
         raise ValueError('Worker generativo non raggiungibile.') from None
 
 
+def inside_figure(trace):
+    """The last step learned, opened up: its validation as the network reads the piece, token by token; in a race
+    of growth every candidate learns the same piece and has its own line, so the one that goes on can be seen."""
+    if not trace:
+        return None
+    step = math.floor(max(point[0] for point in trace) - 1e-9)
+    # the network's line starts where the step starts; a race's points belong to the step the race happened in
+    points = [point for point in trace if step < point[0] <= step + 1 or (point[0] == step and len(point) == 2)]
+    if len(points) < 2:
+        return None
+    names = {None: 'La rete che impara', "com'è": "Gara · la rete com'è", 'larghezza': 'Gara · il doppio della larghezza',
+             'strato': 'Gara · uno strato in più', 'concetti': 'Gara · concetti divisi in due',
+             'teste': 'Gara · il doppio delle teste'}
+    racing = any(len(point) > 2 for point in points)
+    if racing:                                                  # in a race the network itself only starts and ends the step
+        names[None] = 'Misure iniziali e finali della rete'
+    figure = go.Figure()
+    lines = {}
+    for point in points:
+        kind = point[2] if len(point) > 2 else None
+        round_number = point[3] if len(point) > 3 else None
+        lines.setdefault((kind, round_number), []).append(point)
+    for (kind, round_number), line in lines.items():
+        label = names.get(kind, f'Gara · {kind}')
+        if round_number is not None:
+            label = f'Tornata {round_number} · {label.removeprefix("Gara · ")}'
+        figure.add_scatter(x=[100 * (point[0] - step) for point in line], y=[point[1] for point in line],
+                           mode='markers', name=label)
+    figure.update_layout(title=f'Dentro il passo {step + 1}: la validazione mentre la rete legge il pezzo'
+                         + (' · gara: ogni candidato legge tutto il pezzo, da 0 a 100%' if racing else ''),
+                         xaxis=dict(title='Pezzo letto (%)', range=[0, 100]), yaxis_title='NLL',
+                         margin=dict(t=50, b=40), height=360)
+    return figure
+
+
 layout = dbc.Container([
     html.H4('Il modello a concetti che scrive', className='mt-3'),
-    html.P("Lo stesso modello della scheda Modello, applicato al testo: ogni posizione è una riga, i token precedenti sono gli "
-           "attributi, il token successivo è il target. Nessuna rete neurale: il modello conta. Si usa in cinque passi, dall'alto in "
+    html.P("Gli stessi concetti della scheda Modello, applicati al testo: ogni posizione è una riga e il token successivo è il "
+           "target. Qui i concetti formano una rete che impara lungo il gradiente e cresce con il testo. Si usa in cinque passi, dall'alto in "
            "basso: prepari i testi, crei la coda, la segui, provi e scarichi il modello, e se vuoi lo usi da altri programmi. "
            "Come funziona: schede Matematica e Informatica.", className='small'),
     dcc.Store(id='lm-workspace', storage_type='local'), dcc.Store(id='lm-state'),
@@ -87,8 +122,9 @@ layout = dbc.Container([
             dbc.Button('← 500 passi prima',id='lm-history-prev',size='sm',outline=True,color='primary',className='me-1 mt-1'),
             dbc.Button('500 passi dopo →',id='lm-history-next',size='sm',outline=True,color='primary',className='mt-1')],md=6),
     ]),
-    html.P("Più in basso è la linea, meno il modello sbaglia a indovinare la parola successiva. Conta la linea su testo mai visto (validazione): se risale mentre quella di addestramento continua a scendere, il modello sta imparando a memoria.",className='small text-muted'),
-    dcc.Loading(dcc.Graph(id='lm-loss'),delay_show=150),
+    html.P("Una NLL più bassa indica previsioni migliori. La validazione usa lo stesso testo a ogni misura. Per la rete a concetti, la linea «prossimo pezzo» misura ogni volta un testo diverso, prima di addestrarlo.",className='small text-muted'),
+    dcc.Graph(id='lm-loss'),
+    html.Div(dcc.Graph(id='lm-inside'), id='lm-inside-box', style={'display': 'none'}),
     html.H5('Fai scrivere il modello', className='mt-3'),
             html.P("Scegli una copia salvata (la migliore è indicata) e scrivi l'inizio di una frase, oppure una domanda con la casella «Conversazione»: il modello continua. La prova non cambia il modello. Il server fa una cosa alla volta: se una coda sta imparando, la scrittura non parte; aspetta che finisca o metti in pausa la coda al passo 3, e dopo premi «Riprendi»."),
             dcc.Dropdown(id='lm-checkpoint', placeholder='Copia salvata del modello: la migliore e le ultime tre'),
@@ -103,6 +139,12 @@ layout = dbc.Container([
             dbc.Button('Scarica questa copia del modello', id='lm-export-model', outline=True, color='primary', className='my-2'),
             html.Small('Contiene i concetti e il tokenizer: si ricarica senza altri file (istruzioni nel README del pacchetto).', className='text-muted d-block'),
             html.Div(id='lm-export-status', role='status'),
+    dbc.Accordion([dbc.AccordionItem([
+        html.P('Per continuare su un altro server, esporta il progetto in pausa. Il file contiene anche il corpus.'),
+        dbc.Button('Esporta progetto', id='lm-project-export', outline=True, color='primary', className='mb-2'),
+        html.Div(id='lm-project-export-status', role='status'),
+        html.Div(id='lm-project-import'),
+    ], title='Trasferisci il progetto su un altro server')], start_collapsed=True, className='my-2'),
     dbc.Accordion([dbc.AccordionItem([
     dbc.Button('Pausa e salva', id='lm-pause', color='warning', className='m-1'),
     dbc.Button('Riprendi', id='lm-resume', className='m-1'),
@@ -283,7 +325,7 @@ def native_config(corpus, size, name, steps, length, batch, accumulation, lr, sl
     """A project of the manual form: the concept model (the network settings of earlier projects are ignored)."""
     return dict(corpus_id=corpus, name=name, sequence_length=int(length or 256), save_steps=int(save_steps or 100),
                 protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
-                distillation_weight=0., early_stop_patience=0, validation_batches=int(validation or 8), device='cpu',
+                distillation_weight=0., early_stop_patience=0, validation_batches=int(validation or 8), device='auto',
                 chat_probes=True)
 
 
@@ -738,6 +780,86 @@ def register(app):
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
 
+    @app.server.post('/generative-project-export/<identifier>')
+    def project_export_proxy(identifier):
+        workspace = flask_request.form.get('workspace', '')
+        if not re.fullmatch('[0-9a-f]{32}', identifier) or not re.fullmatch('[0-9a-f]{64}', workspace):
+            return jsonify(error='Progetto o workspace non valido.'), 400
+        endpoint = os.environ.get('ACAN_LM_URL', '').rstrip('/')
+        token = os.environ.get('ACAN_LM_SERVICE_TOKEN', '')
+        if not endpoint or not token:
+            return jsonify(error='Worker non configurato.'), 400
+        try:
+            upstream = urlopen(Request(endpoint+f'/jobs/{identifier}/project-archive',
+                headers={'Authorization':'Bearer '+token, 'X-ACAN-Workspace':workspace}), timeout=300)
+        except HTTPError as exc:
+            try:
+                error = json.load(exc).get('error')
+            except ValueError:
+                error = None
+            return jsonify(error=error or 'Esportazione non disponibile.'), exc.code
+        except (URLError, TimeoutError):
+            return jsonify(error='Worker non raggiungibile durante l’esportazione.'), 502
+
+        def chunks():
+            with upstream:
+                while chunk := upstream.read(1024*1024):
+                    yield chunk
+
+        return Response(stream_with_context(chunks()), mimetype='application/zip',
+                        headers={'Cache-Control':'no-store', 'Content-Disposition':'attachment; filename="acan-project.zip"'})
+
+    @app.server.post('/generative-project-import/<action>')
+    def project_import_proxy(action):
+        workspace = flask_request.headers.get('X-ACAN-Workspace')
+        try:
+            if action == 'begin':
+                return jsonify(backend(workspace, '/project-imports', 'POST', flask_request.get_json()))
+            identifier = flask_request.headers.get('X-Import-ID', '')
+            if action not in ('chunk', 'finish', 'cancel') or not re.fullmatch('[0-9a-f]{32}', identifier):
+                raise ValueError('Trasferimento non valido.')
+            path = f'/project-imports/{identifier}/{action}'
+            if action == 'chunk':
+                if flask_request.content_length is None or not 0 < flask_request.content_length <= 2*1024**2:
+                    raise ValueError('Chunk non valido.')
+                return jsonify(backend(workspace, path, 'POST', flask_request.get_data(), True,
+                                       {'X-Offset':flask_request.headers.get('X-Offset', '')}))
+            return jsonify(backend(workspace, path, 'POST', {}, timeout=300 if action == 'finish' else 30))
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        except TimeoutError:
+            return jsonify(error='Tempo scaduto durante il trasferimento.'), 504
+
+    app.clientside_callback("""function(click, workspace, job) {
+        if (!click) return window.dash_clientside.no_update;
+        if (!workspace || !job) return 'Scegli il progetto da esportare.';
+        const frame = document.createElement('iframe');
+        frame.hidden = true;
+        frame.name = 'acan-project-download-'+click;
+        frame.addEventListener('load', () => {
+            if (frame.contentWindow.location.href === 'about:blank') return;
+            try {
+                const error = JSON.parse(frame.contentDocument.body.textContent).error;
+                window.dash_clientside.set_props('lm-project-export-status', {children: error});
+            } catch (_) {}
+            frame.remove();
+        });
+        document.body.appendChild(frame);
+        const form = document.createElement('form');
+        form.hidden = true;
+        form.method = 'POST';
+        form.action = '/generative-project-export/'+encodeURIComponent(job);
+        form.target = frame.name;
+        const key = document.createElement('input');
+        key.type = 'hidden'; key.name = 'workspace'; key.value = workspace;
+        form.appendChild(key);
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+        return 'Esportazione richiesta. Il file comparirà nei download del browser.';
+    }""", Output('lm-project-export-status','children'), Input('lm-project-export','n_clicks'),
+       State('lm-workspace','data'), State('lm-job','value'), prevent_initial_call=True)
+
     @app.server.get('/generative-export/<identifier>/<checkpoint>')
     def export_proxy(identifier, checkpoint):
         if not re.fullmatch('[0-9a-f]{32}', identifier) or not re.fullmatch('[a-z0-9-]{1,128}', checkpoint):
@@ -943,6 +1065,14 @@ def register(app):
     def history_controls(mode):
         return (mode!='window',)*3
 
+    @app.callback(Output('lm-inside','figure'), Output('lm-inside-box','style'),
+                  Input('lm-state','data'), Input('lm-job','value'))
+    def inside(state, selected):
+        job = next((j for j in (state or {}).get('jobs', []) if j['id'] == selected), None)
+        trace = ((job or {}).get('progress') or {}).get('network_trace') or []
+        figure = inside_figure(trace)
+        return (figure, {'display': 'block'}) if figure is not None else (go.Figure(), {'display': 'none'})
+
     @app.callback(Output('lm-progress','children'), Output('lm-loss','figure'),
                   Output('lm-checkpoint','options'), Output('lm-checkpoint','value'),
                   Input('lm-state','data'), Input('lm-job','value'), State('lm-checkpoint','value'),
@@ -964,10 +1094,18 @@ def register(app):
             try:history=backend(workspace,f'/jobs/{selected}/history?start={max(0,int(history_start or 0))}&end={max(0,int(history_start or 0))+499}&limit=500&plot=1')['rows']
             except ValueError as exc:history=[];history_error=str(exc)
         own = 'Controllo denso' if job['config'].get('architecture') == 'dense-control' else 'Concetti'
-        for key, label in [('training_nll','training'),('validation_nll','validazione')]:
+        next_piece_nll = job['config'].get('architecture') == 'concepts'
+        for key, label in [('training_nll', 'prossimo pezzo' if next_piece_nll else 'training'), ('validation_nll', 'validazione')]:
             rows = [row for row in history if key in row]
             figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows],
                                mode='lines+markers' if job['config'].get('architecture') == 'concepts' else 'lines', name=f'{own} · {label}')
+        trace = metrics.get('network_trace') or []
+        for kind in dict.fromkeys(point[2] if len(point) > 2 else None for point in trace):
+            # the network inside the steps, on the same validation; in a race of growth every candidate over the same step
+            points = [point for point in trace if (point[2] if len(point) > 2 else None) == kind]
+            figure.add_scatter(x=[point[0] for point in points], y=[point[1] for point in points], mode='markers',
+                               name='Validazione mentre impara' if kind is None else f'Gara · {kind}',
+                               marker=dict(size=4))
         # The project and its dense control on the same chart: same corpus, seed and budget.
         partner, comparison = paired_job((state or {}).get('jobs', []), job), None
         if partner is not None:
@@ -1016,7 +1154,7 @@ def register(app):
         elif partner is None and job['config'].get('architecture') not in ('dense-control', 'concepts') and job['config'].get('protocol') == 'controlled-v1':
             detail.insert(0, html.P('Per sapere se i concetti funzionano, avvia il controllo denso (in fondo alla pagina): '
                                     'comparirà su questo grafico, tratteggiato, con il confronto dei due risultati.', className='small text-muted'))
-        for key,label in [('training_nll','Errore sul testo di addestramento (NLL)'),('training_objective','Obiettivo di addestramento'),('training_cp_penalty','Penalità CP media'),('cp_weight','Peso CP'),('validation_nll','Errore su testo mai visto (NLL di validazione)'),('validation_perplexity','Perplessità: fra quante parole in media il modello è incerto'),
+        for key,label in [('training_nll','Errore sul prossimo pezzo prima di leggerlo (NLL)' if next_piece_nll else 'Errore sul testo di addestramento (NLL)'),('training_objective','Obiettivo di addestramento'),('training_cp_penalty','Penalità CP media'),('cp_weight','Peso CP'),('validation_nll','Errore su testo mai visto (NLL di validazione)'),('validation_perplexity','Perplessità: fra quante parole in media il modello è incerto'),
                           ('baseline_nll',"Prima di leggere questo testo (il modello non sa ancora nulla)" if job['config'].get('architecture') == 'concepts' else "Errore al passo 0 (pesi casuali per un modello nativo)"),('tokens_per_second','Velocità (token al secondo)'),('trainable_parameters','Parametri che imparano'),('total_parameters','Parametri totali del modello'),('process_peak_rss_kib','Memoria massima usata (KiB)')]:
             # The CP terms belong to earlier profiles only; the objective then equals the training NLL.
             if key in ('training_objective','training_cp_penalty','cp_weight') and job['config'].get('routing_profile') not in ('cp-routing-v1','cp-joint-v1'):

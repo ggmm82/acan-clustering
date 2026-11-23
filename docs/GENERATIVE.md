@@ -107,6 +107,21 @@ are outside this first profile. Training retains prefix activations and is not
 constant-memory in sequence length. Incremental decoding keeps bounded ACAN
 sufficient statistics and the local window; dense lower-layer KV still grows.
 
+### Move a training project to another server
+
+Pause and save the project. In **Generativo**, select it in step 4 and open
+**Trasferisci il progetto su un altro server → Esporta progetto**. On the destination,
+open the same panel and use **Importa progetto** with the ZIP file. The destination
+gets its own project in the active browser workspace. It starts paused. Press
+**Riprendi** to continue from the exported step.
+
+The ZIP includes the selected project's corpus, prepared tokens, tokenizer,
+latest checkpoint, best checkpoint and training history. It contains the
+corpus in plain text. Use it only with servers you trust. Each export covers
+one text of the queue. Add later texts on the destination if you want to
+continue the queue. Both servers need a version supporting project transfer
+and the same checkpoint contract. The ordinary model download is for inference.
+
 ## Deployment
 
 The normal web image stays CPU/lightweight and does not import/install Torch.
@@ -136,9 +151,29 @@ same after restarts. Never run `docker compose down -v` on the training stack
 unless intentionally deleting learned state and corpus data. Back up the named
 `acan-lm-data` volume after a checkpointed pause.
 
-For a GPU host, add `-f compose.generative.gpu.yaml`. Its default official index
-is CUDA 13.2 (`torch==2.15.0`); a compatible driver/container runtime is required.
-Wheel availability was checked, but execution is not GPU-validated here. Do not
+On a CUDA host, use the GPU overlay and build the worker with CUDA-enabled PyTorch:
+
+```sh
+docker compose -f compose.yaml -f compose.generative.yaml -f compose.generative.gpu.yaml \
+  --profile generative up -d --build
+docker compose -f compose.yaml -f compose.generative.yaml -f compose.generative.gpu.yaml \
+  --profile generative exec generative python -c 'import torch; print(torch.cuda.is_available())'
+```
+
+The overlay defaults to the official CUDA 13.2 wheel index for `torch==2.15.0`.
+On Docker Desktop, use a compatible NVIDIA GPU and Windows with the WSL 2
+backend. The container runtime and driver must support the installed Torch
+wheel. For Maxwell GPUs such as the GeForce MX130 (sm_50), set both
+`ACAN_TORCH_VERSION=2.14.1` and
+`ACAN_TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126` in the local
+environment before rebuilding. PyTorch 2.15 no longer publishes CUDA 12.6
+wheels. Without the overlay, the local Compose uses CPU-only PyTorch. In auto
+mode, a new queue selects CUDA if the worker can execute a CUDA operation and CPU otherwise. The CUDA
+path uses smaller training and validation batches. The amount of VRAM needed
+also depends on network growth. For a first run on 2 GB, disable automatic
+growth and use a small corpus. Check the actual training device in the queue
+details. Checkpoint export and generation continue to use the CPU-compatible
+NumPy representation. Projects already set to CPU retain that configuration. Do not
 replace an existing worker image while a long job is running; pin and retain the
 image that created its checkpoint contract.
 

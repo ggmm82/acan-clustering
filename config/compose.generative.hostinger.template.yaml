@@ -44,7 +44,7 @@ services:
     environment:
       ACAN_LM_SERVICE_TOKEN: ${ACAN_LM_SERVICE_TOKEN:?Set a private service token}
     mem_limit: ${ACAN_LM_MEMORY:-4g}
-    cpus: ${ACAN_LM_CPUS:-2}
+    cpus: ${ACAN_LM_CPUS:-1}
     security_opt:
       - no-new-privileges:true
     cap_drop:
