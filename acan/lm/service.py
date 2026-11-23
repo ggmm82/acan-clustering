@@ -437,6 +437,32 @@ def create_app(root=None, token=None):
         from .diagnostics import report
         return jsonify(report(store,store.job(identifier,request.workspace),token))
 
+    @app.get('/jobs/<identifier>/project-archive')
+    def project_archive(identifier):
+        from .project_archive import export_project
+        archive = export_project(store, request.workspace, identifier)
+        return send_file(archive, as_attachment=True, download_name='acan-project.zip', conditional=False,
+                         mimetype='application/zip')
+
+    @app.post('/project-imports')
+    def project_import_begin():
+        from .project_archive import begin_import
+        return jsonify(begin_import(store, request.workspace, (request.get_json() or {}).get('size')))
+
+    @app.post('/project-imports/<identifier>/<action>')
+    def project_import_action(identifier, action):
+        from .project_archive import append_import, cancel_import, finish_import
+        if action == 'chunk':
+            offset = int(request.headers.get('X-Offset', '-1'))
+            return jsonify(append_import(store, request.workspace, identifier, offset, request.get_data()))
+        if action == 'finish':
+            job = finish_import(store, request.workspace, identifier)
+            return jsonify(id=job['id'], status=job['status'], name=job['config']['name'])
+        if action == 'cancel':
+            cancel_import(store, request.workspace, identifier)
+            return jsonify(cancelled=True)
+        raise ValueError('Operazione di trasferimento non valida.')
+
     @app.get('/jobs/<identifier>/export')
     def export_model(identifier):
         from .exporting import export_bundle

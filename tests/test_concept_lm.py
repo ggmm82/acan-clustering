@@ -105,6 +105,7 @@ class ConceptLongLearningTests(unittest.TestCase):
                 run_training(root, job['id'], stop)
             paused = store.job(job['id'])
             self.assertEqual(paused['status'], 'paused', paused['error'])
+            self._transfer_paused_project(store, job, paused)
             run_training(root, job['id'])
             done = store.job(job['id'])
             self.assertEqual(done['status'], 'completed', done['error'])
@@ -159,6 +160,61 @@ class ConceptLongLearningTests(unittest.TestCase):
             self.assertEqual(after['status'], 'completed', after['error'])
             self.assertEqual(after['progress']['warm_start']['job'], job['id'])
             self.assertGreater(after['progress']['tokens_trained'], 0)
+
+    def _transfer_paused_project(self, source, job, paused):
+        from acan.lm.concept_lm import load
+        from acan.lm.concept_trainer import run_training
+        from acan.lm.service import create_app
+        from acan.lm.store import owner_key
+
+        token = 'x'*32
+        source_headers = {'Authorization': 'Bearer '+token, 'X-ACAN-Workspace': 'a'*64}
+        target_headers = dict(source_headers, **{'X-ACAN-Workspace': 'b'*64})
+        source_client = create_app(str(source.root), token).test_client()
+        response = source_client.get(f"/jobs/{job['id']}/project-archive", headers=source_headers)
+        self.assertEqual(response.status_code, 200)
+        with response:
+            archive = response.data
+        with tempfile.TemporaryDirectory() as target_root:
+            target = create_app(target_root, token)
+            client = target.test_client()
+            transfer = client.post('/project-imports', headers=target_headers, json={'size': len(archive)})
+            self.assertEqual(transfer.status_code, 200)
+            url = '/project-imports/'+transfer.json['id']
+            self.assertEqual(client.post(url+'/finish', headers=source_headers).status_code, 404)
+            self.assertEqual(client.post(url+'/finish', headers=target_headers).status_code, 400)
+            for offset in range(0, len(archive), 1024**2):
+                result = client.post(url+'/chunk', headers=dict(target_headers, **{'X-Offset': str(offset)}),
+                                     data=archive[offset:offset+1024**2])
+                self.assertEqual(result.status_code, 200, result.get_data(as_text=True))
+            result = client.post(url+'/finish', headers=target_headers)
+            self.assertEqual(result.status_code, 200, result.get_data(as_text=True))
+            identifier = result.json['id']
+            self.assertNotEqual(identifier, job['id'])
+            imported = target.store.job(identifier, owner_key(target_headers['X-ACAN-Workspace']))
+            self.assertEqual(imported['status'], 'paused')
+            step = paused['progress']['step']
+            self.assertEqual(imported['progress']['step'], step)
+            src_checkpoint = source.directory('jobs', job['id'])/'checkpoints'/paused['checkpoint']
+            dst_checkpoint = target.store.directory('jobs', identifier)/'checkpoints'/imported['checkpoint']
+            original, _ = load(src_checkpoint)
+            restored, _ = load(dst_checkpoint)
+            np.testing.assert_array_equal(original.logp(np.arange(1, 11)), restored.logp(np.arange(1, 11)))
+            stop = threading.Event()
+
+            def halt_after_step():
+                while not stop.wait(.02):
+                    if target.store.job(identifier)['progress']['step'] > step:
+                        stop.set()
+            watcher = threading.Thread(target=halt_after_step, daemon=True)
+            watcher.start()
+            try:
+                run_training(target_root, identifier, stop)
+            finally:
+                stop.set()
+                watcher.join()
+            resumed = target.store.job(identifier)
+            self.assertGreater(resumed['progress']['step'], step, resumed['error'])
 
 
 if __name__ == '__main__':

@@ -107,6 +107,21 @@ are outside this first profile. Training retains prefix activations and is not
 constant-memory in sequence length. Incremental decoding keeps bounded ACAN
 sufficient statistics and the local window; dense lower-layer KV still grows.
 
+### Move a training project to another server
+
+Pause and save the project. In **Generativo**, select it in step 4 and open
+**Trasferisci il progetto su un altro server → Esporta progetto**. On the destination,
+open the same panel and use **Importa progetto** with the ZIP file. The destination
+gets its own project in the active browser workspace. It starts paused. Press
+**Riprendi** to continue from the exported step.
+
+The ZIP includes the selected project's corpus, prepared tokens, tokenizer,
+latest checkpoint, best checkpoint and training history. It contains the
+corpus in plain text. Use it only with servers you trust. Each export covers
+one text of the queue. Add later texts on the destination if you want to
+continue the queue. Both servers need a version supporting project transfer
+and the same checkpoint contract. The ordinary model download is for inference.
+
 ## Deployment
 
 The normal web image stays CPU/lightweight and does not import/install Torch.

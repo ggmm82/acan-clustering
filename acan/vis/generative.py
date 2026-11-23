@@ -132,6 +132,12 @@ layout = dbc.Container([
             html.Small('Contiene i concetti e il tokenizer: si ricarica senza altri file (istruzioni nel README del pacchetto).', className='text-muted d-block'),
             html.Div(id='lm-export-status', role='status'),
     dbc.Accordion([dbc.AccordionItem([
+        html.P('Per continuare su un altro server, esporta il progetto in pausa. Il file contiene anche il corpus.'),
+        dbc.Button('Esporta progetto', id='lm-project-export', outline=True, color='primary', className='mb-2'),
+        html.Div(id='lm-project-export-status', role='status'),
+        html.Div(id='lm-project-import'),
+    ], title='Trasferisci il progetto su un altro server')], start_collapsed=True, className='my-2'),
+    dbc.Accordion([dbc.AccordionItem([
     dbc.Button('Pausa e salva', id='lm-pause', color='warning', className='m-1'),
     dbc.Button('Riprendi', id='lm-resume', className='m-1'),
     dbc.Row([
@@ -765,6 +771,86 @@ def register(app):
             return jsonify(result)
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
+
+    @app.server.post('/generative-project-export/<identifier>')
+    def project_export_proxy(identifier):
+        workspace = flask_request.form.get('workspace', '')
+        if not re.fullmatch('[0-9a-f]{32}', identifier) or not re.fullmatch('[0-9a-f]{64}', workspace):
+            return jsonify(error='Progetto o workspace non valido.'), 400
+        endpoint = os.environ.get('ACAN_LM_URL', '').rstrip('/')
+        token = os.environ.get('ACAN_LM_SERVICE_TOKEN', '')
+        if not endpoint or not token:
+            return jsonify(error='Worker non configurato.'), 400
+        try:
+            upstream = urlopen(Request(endpoint+f'/jobs/{identifier}/project-archive',
+                headers={'Authorization':'Bearer '+token, 'X-ACAN-Workspace':workspace}), timeout=300)
+        except HTTPError as exc:
+            try:
+                error = json.load(exc).get('error')
+            except ValueError:
+                error = None
+            return jsonify(error=error or 'Esportazione non disponibile.'), exc.code
+        except (URLError, TimeoutError):
+            return jsonify(error='Worker non raggiungibile durante l’esportazione.'), 502
+
+        def chunks():
+            with upstream:
+                while chunk := upstream.read(1024*1024):
+                    yield chunk
+
+        return Response(stream_with_context(chunks()), mimetype='application/zip',
+                        headers={'Cache-Control':'no-store', 'Content-Disposition':'attachment; filename="acan-project.zip"'})
+
+    @app.server.post('/generative-project-import/<action>')
+    def project_import_proxy(action):
+        workspace = flask_request.headers.get('X-ACAN-Workspace')
+        try:
+            if action == 'begin':
+                return jsonify(backend(workspace, '/project-imports', 'POST', flask_request.get_json()))
+            identifier = flask_request.headers.get('X-Import-ID', '')
+            if action not in ('chunk', 'finish', 'cancel') or not re.fullmatch('[0-9a-f]{32}', identifier):
+                raise ValueError('Trasferimento non valido.')
+            path = f'/project-imports/{identifier}/{action}'
+            if action == 'chunk':
+                if flask_request.content_length is None or not 0 < flask_request.content_length <= 2*1024**2:
+                    raise ValueError('Chunk non valido.')
+                return jsonify(backend(workspace, path, 'POST', flask_request.get_data(), True,
+                                       {'X-Offset':flask_request.headers.get('X-Offset', '')}))
+            return jsonify(backend(workspace, path, 'POST', {}, timeout=300 if action == 'finish' else 30))
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        except TimeoutError:
+            return jsonify(error='Tempo scaduto durante il trasferimento.'), 504
+
+    app.clientside_callback("""function(click, workspace, job) {
+        if (!click) return window.dash_clientside.no_update;
+        if (!workspace || !job) return 'Scegli il progetto da esportare.';
+        const frame = document.createElement('iframe');
+        frame.hidden = true;
+        frame.name = 'acan-project-download-'+click;
+        frame.addEventListener('load', () => {
+            if (frame.contentWindow.location.href === 'about:blank') return;
+            try {
+                const error = JSON.parse(frame.contentDocument.body.textContent).error;
+                window.dash_clientside.set_props('lm-project-export-status', {children: error});
+            } catch (_) {}
+            frame.remove();
+        });
+        document.body.appendChild(frame);
+        const form = document.createElement('form');
+        form.hidden = true;
+        form.method = 'POST';
+        form.action = '/generative-project-export/'+encodeURIComponent(job);
+        form.target = frame.name;
+        const key = document.createElement('input');
+        key.type = 'hidden'; key.name = 'workspace'; key.value = workspace;
+        form.appendChild(key);
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+        return 'Esportazione richiesta. Il file comparirà nei download del browser.';
+    }""", Output('lm-project-export-status','children'), Input('lm-project-export','n_clicks'),
+       State('lm-workspace','data'), State('lm-job','value'), prevent_initial_call=True)
 
     @app.server.get('/generative-export/<identifier>/<checkpoint>')
     def export_proxy(identifier, checkpoint):
