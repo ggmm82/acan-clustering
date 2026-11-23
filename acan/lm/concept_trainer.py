@@ -113,9 +113,7 @@ def quantities(model, config):
     """What the page shows about the model while it learns."""
     levels = model.concepts()
     net = getattr(model.model, 'net', None) if model.model is not None else None
-    shape = {} if net is None else dict(network=dict(          # the size of the network, layer by layer (groups, concepts)
-        dim=int(net.config['dim']), layers=int(net.layers), parameters=int(sum(v.size for v in net.p.values())),
-        groups=[[int(n) for n in net.p[f'layers.{i}.g'].shape[:2]] for i in range(net.layers)]))
+    shape = {} if net is None else dict(network=net.footprint())
     return dict(concepts_per_level=levels, concepts_total=sum(levels), statistics_bytes=model.nbytes(),
                 budget_bytes=model.budget_bytes, context_tokens=model.context_tokens(),
                 memory_peak_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024, **shape)
@@ -258,6 +256,8 @@ def run_training(root, identifier, stop_event=None):
                     state['training_nll'] = float(-model.logp(following, np.arange(1, len(following))).mean())
                 state['best_validation_nll'] = min(state.get('best_validation_nll', state['validation_nll']), state['validation_nll'])
                 state.update(quantities(model, config))
+            elif model.model is not None:
+                state['network'] = model.model.net.footprint()
             if last and model.model is not None and getattr(model.model, 'net', None) is not None:
                 # What the concepts of the network hold, on validation text, for the page
                 state['network_concepts'] = model.model.net.describe([p[:512] for p in tune[:8]], tokenizer.decode)

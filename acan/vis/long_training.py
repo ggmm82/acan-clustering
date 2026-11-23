@@ -146,6 +146,11 @@ def _candidate_label(kind):
             'strato': 'uno strato in più', "com'è": "la rete com'è"}.get(kind, kind)
 
 
+def _network_details(shape):
+    groups = ', '.join(f'{heads}×{concepts}' for heads, concepts in shape['groups'])
+    return f"{shape['dim']} numeri di stato · {groups} (teste × concetti per testa, per strato) · {shape['parameters']:,} parametri"
+
+
 def _race_live(network):
     candidates = network['race_candidates']
     scores = network['race_scores']
@@ -169,6 +174,10 @@ def _race_live(network):
                                          html.Th('Stato', scope='col')])), html.Tbody(rows)], size='sm', responsive=True,
                       className='small mb-1')
     heading = f"Gara di crescita · tornata {network['race_round']}"
+    shape = network.get('candidate_network')
+    candidate_details = (html.P([html.Strong(_candidate_label(candidates[current])),
+                                 f" · {_network_details(shape)} · {_bytes(shape['bytes'])}"], className='small mb-1')
+                         if shape and current >= len(scores) else None)
     projection = network.get('race_projection')
     outcome = None
     if projection:
@@ -176,7 +185,7 @@ def _race_live(network):
         candidate = 'si conserva il vincitore precedente' if projection['retained'] else _candidate_label(projection['candidate'])
         following = 'Nuova tornata sullo stesso pezzo.' if projection['grows'] else 'La gara per questo pezzo si chiude.'
         outcome = html.Div([html.Strong(lead), f" · {candidate} ({projection['held_out']:.3f}). {following}"], className='small')
-    return dbc.Card(dbc.CardBody([html.H6(heading), table, outcome,
+    return dbc.Card(dbc.CardBody([html.H6(heading), candidate_details, table, outcome,
                                  html.Small('NLL più bassa è meglio. La scelta favorisce la rete più semplice entro un errore standard dalla migliore.',
                                             className='text-muted')], className='py-2'), className='mb-2')
 
@@ -188,15 +197,15 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     speed = progress.get('tokens_per_second')
     piece = config.get('concept_piece', 1_000_000)
     remaining = (total-step)*piece/speed if speed and ready and status not in ('completed',) else None
-    shape = progress.get('network')                             # the size of the network: layers, state, concepts
     share = 100*step/max(total, 1) if ready else 0
     error, before = progress.get('validation_nll'), progress.get('baseline_nll')
     perplexity = progress.get('validation_perplexity')
-    size, budget = progress.get('statistics_bytes'), progress.get('budget_bytes')
     when = lambda seconds: '—' if seconds is None else f'{seconds/3600:,.1f} ore' if seconds > 3600 else f'{max(seconds, 0)/60:,.0f} minuti'
     structure = (progress.get('structure') or {}) if status in ('running', 'pausing') else {}
     learning = structure if ready and step == 0 else None
     network = structure if structure.get('phase') == 'network' else None
+    shape = (network or {}).get('network') or progress.get('network')
+    size = shape.get('bytes', progress.get('statistics_bytes')) if shape else None
     if learning and learning.get('phase') not in ('done', 'network'):
         part, left = structure_progress(learning)
         doing = {'tokens': 'concetti dei token',
@@ -246,9 +255,8 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
               (f'esita fra circa {perplexity:,.0f} token' if perplexity else '') + (f' · prima di leggere {before:.3f}' if before is not None else '')),
         _tile('Dimensione del modello', _bytes(size) if size else '—',
               'i parametri della rete' + (f' · file scaricabile {_bytes(checkpoint_bytes)}' if checkpoint_bytes else '')),
-        _tile('Rete', f"{shape['layers']} {'strato' if shape['layers'] == 1 else 'strati'}" if shape else '—',
-              f"{shape['dim']} numeri di stato · " + ', '.join(f'{g}×{k}' for g, k in shape['groups']) + ' concetti per strato · '
-              f"{shape['parameters']:,} parametri" if shape else 'si conosce alla fine del primo passo'),
+        _tile('Rete corrente', f"{shape['layers']} {'strato' if shape['layers'] == 1 else 'strati'}" if shape else '—',
+              _network_details(shape) if shape else 'in attesa della configurazione del worker'),
     ]
     bar = dbc.Progress(value=share, className='mb-2', style={'height': '8px'}) if ready else None
     race_card = _race_live(network) if network and network.get('race_candidates') else None
@@ -277,8 +285,10 @@ def concept_footprint_view(item):
     speed = progress.get('tokens_per_second')
     piece = config.get('concept_piece', 1_000_000)
     remaining = (total-step)*piece/speed if speed else None
-    levels = progress.get('concepts_per_level') or []
-    budget = progress.get('budget_bytes')
+    live = (progress.get('structure') or {}) if item.get('status') in ('running', 'pausing') else {}
+    shape = live.get('network') or progress.get('network')
+    levels = [heads * concepts for heads, concepts in shape['groups']] if shape else progress.get('concepts_per_level') or []
+    size = shape.get('bytes', progress.get('statistics_bytes')) if shape else None
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
     rows = [
         ('Modello', [
@@ -287,9 +297,9 @@ def concept_footprint_view(item):
              (f"{config.get('vocabulary', 32000):,} token, lo stesso del testo precedente della coda (si stanno preparando i token di questo testo)"
               if config.get('warm_start') else f"{config.get('vocabulary', 32000):,} token (si sta imparando dai testi della coda)")),
             ('Contesto letto', 'tutto il documento, attraverso le somme dei concetti di ogni strato'),
-            ('Concetti per strato', ' · '.join(f'{count:,}' for count in levels) if levels else '— (dopo il primo pezzo di testo)'),
-            ('Concetti in tutto', f"{progress['concepts_total']:,}" if progress.get('concepts_total') else '—'),
-            ('Parametri della rete', _bytes(progress['statistics_bytes']) if progress.get('statistics_bytes') else '—')]),
+            ('Concetti per strato', ' · '.join(f'{count:,}' for count in levels) if levels else '—'),
+            ('Concetti in tutto', f'{sum(levels):,}' if levels else '—'),
+            ('Dimensione dei parametri', _bytes(size) if size else '—')]),
         ('Avanzamento e velocità', [
             ('Dispositivo di addestramento', (progress.get('device') or '—').upper()),
             ('Passo', f'{step:,} di {total:,}' if progress.get('graft') else '— (il totale si conosce quando i token del testo sono pronti)'),

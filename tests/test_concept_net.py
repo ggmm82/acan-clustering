@@ -418,6 +418,12 @@ class NetTextGrowthTest(unittest.TestCase):
                           and entry['race_evaluating'])
         self.assertEqual(validating['race_scores'], [4., 4., 3.])
         self.assertEqual(validating['race_candidates'][3:], ['concetti · strato 1', 'teste'])
+        self.assertEqual(validating['network']['groups'], [[1, 1], [1, 1]])
+        self.assertEqual(validating['candidate_network']['groups'], [[1, 2], [1, 1]])
+        second_round = next(entry for entry in reported if entry['race_round'] == 2)
+        self.assertEqual(second_round['network'], validating['candidate_network'])
+        third_round = next(entry for entry in reported if entry['race_round'] == 3)
+        self.assertEqual(third_round['network'], model.model.net.footprint())
         for race in model.races:
             final = next(entry for entry in reported if entry['race_round'] == race['round'] and len(entry['race_scores']) == 5)
             self.assertEqual(final['race_projection']['held_out'], race['held_out'])

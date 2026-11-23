@@ -356,6 +356,14 @@ class Network(nn.Module):
         grown.load_state_dict(new)
         return grown
 
+    def footprint(self):
+        """Architecture of the live network without exporting or moving its weights."""
+        weights = tuple(self.parameters())
+        return dict(dim=int(self.config['dim']), layers=len(self.layers),
+                    groups=[list(layer.g.shape[:2]) for layer in self.layers],
+                    parameters=sum(weight.numel() for weight in weights),
+                    bytes=sum(weight.numel() * weight.element_size() for weight in weights))
+
     def export(self):
         """The parameters as numpy arrays, read by ConceptNet."""
         keep = {k: v.detach().cpu().numpy().copy() for k, v in self.state_dict().items()}   # a copy: it must not change as the network learns on

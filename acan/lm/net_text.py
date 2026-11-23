@@ -132,14 +132,14 @@ class NetText:
             now = time.monotonic()
             if self.report is not None and now - last[0] >= 15:   # how far the network is, for the page
                 last[0] = now
+                network = self._learner.learner.network
                 if shown:                                      # and its validation as it learns, for the chart
-                    network = self._learner.learner.network
                     self._point(min(where(), end), held_out(network, shown))
                     network.train()
                 best = self._learner.best_scores
                 self.report('network', 0, now - started, learned=int(self._learner.learned), again=int(again),
                             held_milli=int(1000 * -best.mean()) if best is not None and len(best) else 0,
-                            speed=int((where() - begun[0]) / max(now - started, 1e-9)))   # tokens a second, in this step
+                            speed=int((where() - begun[0]) / max(now - started, 1e-9)), network=network.footprint())
         if shown and not self.trace:                            # where the queue starts
             self._point(where(), held_out(self._learner.learner.network, shown))
         if self.growth and held and (self.read >= self.next_race or end >= len(train)):
@@ -222,7 +222,8 @@ class NetText:
         labels = [f'concetti · strato {next_layer + 1}' if kind == 'concetti' else kind for kind in self.KINDS]
         results, trials = [], []
         previous = grower.best_scores if round_number > 1 else None
-        projection = None
+        projection, candidate_shape = None, None
+        current_shape = base.network.footprint()
 
         def report(number, read, evaluating=False):
             if self.report is None:
@@ -234,8 +235,9 @@ class NetText:
                         candidate=labels[number], learned=int(self.read), piece=int(size), done=int(read),
                         speed=int(spent / max(elapsed, 1e-9)), race_candidates=labels,
                         race_scores=[trial['held_out'] for trial in trials], race_evaluating=evaluating,
-                        race_projection=projection)
+                        race_projection=projection, network=current_shape, candidate_network=candidate_shape)
 
+        report(0, 0)
         for number, (kind, label) in enumerate(zip(self.KINDS, labels)):
             layer = next_layer if kind == 'concetti' else None
             split = (layer, selected) if layer is not None else None
@@ -259,6 +261,7 @@ class NetText:
                 learner.lr = base.lr / 2 if kind == 'larghezza' else base.lr   # its coordinates move in pairs
                 learner.carry(base, kind, split)
             learner.tokens, learner.warmup = batch, warmup
+            candidate_shape = learner.network.footprint()
             start = learner.seen
             self._reported = float('-inf')
             learner.learn_documents(docs, lambda: (check(), self._racing(
@@ -269,7 +272,7 @@ class NetText:
             if shown:                                           # the chart can use a different sample
                 chart_scores = scores if shown is held else held_out(learner.network, shown)
                 self._point(self.read + len(ids), chart_scores, label, round_number)
-            count = sum(p.numel() for p in learner.network.parameters())
+            count = candidate_shape['parameters']
             results.append((kind, learner, scores, count, layer))
             trials.append(dict(choice=kind, layer=layer+1 if layer is not None else None,
                                heads=int(learner.network.config['heads']), concepts=list(learner.network.config['concepts']),

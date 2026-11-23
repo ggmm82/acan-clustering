@@ -64,6 +64,12 @@ class ConceptNet:
         H, _, d = self.p[f'layers.{i}.g'].shape
         return H, d, self.p[f'layers.{i}.near'].shape[0]
 
+    def footprint(self):
+        weights = [value for name, value in self.p.items() if name != 'group']
+        return dict(dim=self.dim, layers=self.layers,
+                    groups=[list(self.p[f'layers.{i}.g'].shape[:2]) for i in range(self.layers)],
+                    parameters=sum(value.size for value in weights), bytes=sum(value.nbytes for value in weights))
+
     def _project(self, i, h):
         H, d, _ = self.shape(i)
         q = (h @ self.p[f'layers.{i}.query.weight'].T).reshape(*h.shape[:-1], H, d)

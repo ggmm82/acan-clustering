@@ -491,12 +491,15 @@ class StructureProgressTest(unittest.TestCase):
         network = dict(phase='network', race=4, race_total=5, race_round=2, candidate='concetti · strato 2',
                        done=750, piece=1000, race_candidates=["com'è", 'larghezza', 'strato', 'concetti · strato 2', 'teste'],
                        race_scores=[6.02, 5.993, 6.01],
+                       network=dict(dim=32, layers=1, groups=[[1, 16]], parameters=2048, bytes=8192),
+                       candidate_network=dict(dim=32, layers=1, groups=[[1, 17]], parameters=2304, bytes=9216),
                        race_projection=dict(candidate='larghezza', held_out=5.993, grows=True, retained=False))
         progress = dict(graft=dict(vocabulary=8), structure=network)
         config = dict(total_steps=45)
         text = str(concept_summary(progress, config, status='running'))
         for detail in ('tornata 2', 'In testa per NLL', '5.993', 'In prova · 75%', 'il doppio delle teste', 'In attesa',
-                       'Se i punteggi confermati restano decisivi', 'Nuova tornata sullo stesso pezzo'):
+                       'Se i punteggi confermati restano decisivi', 'Nuova tornata sullo stesso pezzo',
+                       'Rete corrente', '1×16', '2,048 parametri', '8.0 KB', '1×17', '2,304 parametri', '9.0 KB'):
             self.assertIn(detail, text)
 
         network.update(race_evaluating=True, race_projection=dict(candidate="com'è", held_out=5.98, grows=False, retained=True))
