@@ -152,13 +152,13 @@ class Network(nn.Module):
         earlier = torch.tril(torch.ones(T, T, dtype=torch.bool, device=h.device), -1)
         allowed = earlier[None] & mask[:, None, :].bool()
         scores = scores.masked_fill(~allowed, float('-inf'))
-        anything = allowed.any(-1)
-        a = torch.softmax(scores.masked_fill(~anything[..., None], 0.), -1) * anything[..., None]
-        same = (targets[:, None, :] == targets[:, :, None]).to(a.dtype)          # the token after j is the true one
+        same = targets[:, None, :] == targets[:, :, None]                       # the token after j is the true one
         z = self.cache_valve(h)[..., 0]
         if self.config.get('sentinel'):                        # "none is like mine" is one more address
             both = torch.softmax(torch.cat([z[..., None], scores], -1), -1)
             return torch.log(both[..., 0] * net_lp.exp() + (both[..., 1:] * same).sum(-1) + 1e-30)
+        anything = allowed.any(-1)
+        a = torch.softmax(scores.masked_fill(~anything[..., None], 0.), -1) * anything[..., None]
         p_cache = (a * same).sum(-1)
         g = torch.sigmoid(z) * anything
         return torch.log((1 - g) * net_lp.exp() + g * p_cache + 1e-30)
@@ -172,8 +172,10 @@ class Network(nn.Module):
         g = self.group[tgt]
         lp = torch.log_softmax(self._logits(flat, self.group_centre, self.group_log_mass), -1).gather(1, g[:, None])[:, 0]
         members, valid = self._members[g], self._valid[g]                         # N x S: the tokens of each group
-        e = self.centre.weight[members]                                          # N x S x D
-        logits = ((flat[:, None, :] * e).sum(-1) - .5 * (e * e).sum(-1)) * torch.exp(-2 * self.log_scale) + self.log_mass[members]
+        centres = self.centre.weight
+        matching = torch.bmm(centres[members], flat.unsqueeze(-1)).squeeze(-1)    # N x S
+        norms = centres.square().sum(-1)[members]
+        logits = (matching - .5 * norms) * torch.exp(-2 * self.log_scale) + self.log_mass[members]
         inside = torch.log_softmax(logits.masked_fill(~valid, float('-inf')), -1).gather(1, self._rank[tgt][:, None])[:, 0]
         return self._cache(h, mask, targets, (lp + inside).view(targets.shape))
 
