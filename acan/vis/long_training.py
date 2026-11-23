@@ -141,6 +141,46 @@ def structure_progress(learning):
     return part, (seconds*(1-part)/part if part > .02 else None)
 
 
+def _candidate_label(kind):
+    return {'teste': 'il doppio delle teste', 'larghezza': 'il doppio della larghezza',
+            'strato': 'uno strato in più', "com'è": "la rete com'è"}.get(kind, kind)
+
+
+def _race_live(network):
+    candidates = network['race_candidates']
+    scores = network['race_scores']
+    best = min(scores, default=None)
+    current = network['race'] - 1
+    part = min(1., network['done'] / max(network['piece'], 1))
+    rows = []
+    for index, candidate in enumerate(candidates):
+        if index < len(scores):
+            score = f'{scores[index]:.3f}'
+            state = 'In testa per NLL' if scores[index] == best else 'Valutato'
+        elif index == current:
+            score = '—'
+            state = 'In validazione' if network.get('race_evaluating') else f'In prova · {part:.0%}'
+        else:
+            score, state = '—', 'In attesa'
+        rows.append(html.Tr([html.Th(_candidate_label(candidate), scope='row', className='fw-normal'),
+                             html.Td(score, className='text-end'), html.Td(state)],
+                            className='table-info' if index == current and index >= len(scores) else None))
+    table = dbc.Table([html.Thead(html.Tr([html.Th('Candidato', scope='col'), html.Th('NLL', scope='col', className='text-end'),
+                                         html.Th('Stato', scope='col')])), html.Tbody(rows)], size='sm', responsive=True,
+                      className='small mb-1')
+    heading = f"Gara di crescita · tornata {network['race_round']}"
+    projection = network.get('race_projection')
+    outcome = None
+    if projection:
+        lead = 'Scelta della tornata' if len(scores) == len(candidates) else 'Se i punteggi confermati restano decisivi'
+        candidate = 'si conserva il vincitore precedente' if projection['retained'] else _candidate_label(projection['candidate'])
+        following = 'Nuova tornata sullo stesso pezzo.' if projection['grows'] else 'La gara per questo pezzo si chiude.'
+        outcome = html.Div([html.Strong(lead), f" · {candidate} ({projection['held_out']:.3f}). {following}"], className='small')
+    return dbc.Card(dbc.CardBody([html.H6(heading), table, outcome,
+                                 html.Small('NLL più bassa è meglio. La scelta favorisce la rete più semplice entro un errore standard dalla migliore.',
+                                            className='text-muted')], className='py-2'), className='mb-2')
+
+
 def concept_summary(progress, config, checkpoint_bytes=None, status=None):
     """The few numbers that say how the concept model is doing, as tiles: progress, time, speed, error, size, concepts."""
     step, total = progress.get('step', 0), config.get('total_steps') or 0
@@ -181,16 +221,15 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
             candidates = network.get('race_total', 4)  # progress written by an earlier worker records four
             race = network.get('race', 0)
             label = network.get('candidate') or (kinds[race-1] if 1 <= race <= len(kinds) else '')
-            label = {'teste': 'il doppio delle teste', 'larghezza': 'il doppio della larghezza',
-                     'strato': 'uno strato in più', "com'è": "la rete com'è"}.get(label, label)
+            label = _candidate_label(label)
             part = min(network.get('done', 0) / max(network.get('piece', 1), 1), 1.)
             round_label = f" · tornata {network['race_round']}" if network.get('race_round') else ''
-            inside = (f" · gara di crescita al {100 * (race - 1 + part) / candidates:.0f}%{round_label}: {candidates} candidati imparano lo stesso "
-                      f"pezzo uno dopo l'altro, ognuno da 0 a 100% (una linea ciascuno nel grafico «Dentro il passo»); ora il "
-                      f"{network['race']}° di {candidates}, {label}, al {100 * part:.0f}% del pezzo"
-                      if network.get('race')
-                      else f" · la rete rilegge tutto il testo: {network.get('learned', 0):,} token imparati" if network.get('again')
-                      else f" · la rete impara il pezzo: {network.get('learned', 0):,} token imparati")
+            if race:
+                inside = (f" · gara di crescita al {100 * (race - 1 + part) / candidates:.0f}%{round_label} · "
+                          f"{race}° di {candidates}, {label}")
+            else:
+                reading = 'rilegge tutto il testo' if network.get('again') else 'impara il pezzo'
+                inside = f" · la rete {reading}: {network.get('learned', 0):,} token imparati"
             if network.get('held_milli'):
                 inside += f", validazione migliore {network['held_milli'] / 1000:.3f}"
             if network.get('seconds'):
@@ -212,7 +251,8 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
               f"{shape['parameters']:,} parametri" if shape else 'si conosce alla fine del primo passo'),
     ]
     bar = dbc.Progress(value=share, className='mb-2', style={'height': '8px'}) if ready else None
-    return html.Div([bar, dbc.Row(tiles)])
+    race_card = _race_live(network) if network and network.get('race_candidates') else None
+    return html.Div([bar, dbc.Row(tiles), race_card])
 
 
 def _race_summary(race):

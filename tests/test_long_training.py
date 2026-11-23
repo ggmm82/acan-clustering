@@ -484,3 +484,24 @@ class StructureProgressTest(unittest.TestCase):
         progress['structure'].update(race=4, candidate='concetti · strato 2')
         text = str(concept_summary(progress, dict(total_steps=45), status='running'))
         self.assertIn('4° di 5, concetti · strato 2', text)
+
+    def test_growth_panel_shows_completed_scores_and_what_would_happen(self):
+        from acan.vis.long_training import concept_summary
+
+        network = dict(phase='network', race=4, race_total=5, race_round=2, candidate='concetti · strato 2',
+                       done=750, piece=1000, race_candidates=["com'è", 'larghezza', 'strato', 'concetti · strato 2', 'teste'],
+                       race_scores=[6.02, 5.993, 6.01],
+                       race_projection=dict(candidate='larghezza', held_out=5.993, grows=True, retained=False))
+        progress = dict(graft=dict(vocabulary=8), structure=network)
+        config = dict(total_steps=45)
+        text = str(concept_summary(progress, config, status='running'))
+        for detail in ('tornata 2', 'In testa per NLL', '5.993', 'In prova · 75%', 'il doppio delle teste', 'In attesa',
+                       'Se i punteggi confermati restano decisivi', 'Nuova tornata sullo stesso pezzo'):
+            self.assertIn(detail, text)
+
+        network.update(race_evaluating=True, race_projection=dict(candidate="com'è", held_out=5.98, grows=False, retained=True))
+        text = str(concept_summary(progress, config, status='running'))
+        self.assertIn('In validazione', text)
+        self.assertIn('si conserva il vincitore precedente (5.980)', text)
+        self.assertIn('La gara per questo pezzo si chiude', text)
+        self.assertNotIn('In testa per NLL', str(concept_summary(progress, config, status='paused')))

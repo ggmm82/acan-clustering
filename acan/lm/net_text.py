@@ -219,11 +219,26 @@ class NetText:
         # Give each layer a chance without adding a full training run for every layer in every race.
         next_layer = len(self.races) % len(base.network.layers)
         selected = base.network.concepts_to_split(next_layer, docs)
-        results = []
-        for number, kind in enumerate(self.KINDS):
+        labels = [f'concetti · strato {next_layer + 1}' if kind == 'concetti' else kind for kind in self.KINDS]
+        results, trials = [], []
+        previous = grower.best_scores if round_number > 1 else None
+        projection = None
+
+        def report(number, read, evaluating=False):
+            if self.report is None:
+                return
+            total = len(self.KINDS)
+            elapsed = time.monotonic() - self._race_began
+            spent = ((round_number - 1) * total + number) * size + read
+            self.report('network', 0, elapsed, race=number + 1, race_total=total, race_round=round_number,
+                        candidate=labels[number], learned=int(self.read), piece=int(size), done=int(read),
+                        speed=int(spent / max(elapsed, 1e-9)), race_candidates=labels,
+                        race_scores=[trial['held_out'] for trial in trials], race_evaluating=evaluating,
+                        race_projection=projection)
+
+        for number, (kind, label) in enumerate(zip(self.KINDS, labels)):
             layer = next_layer if kind == 'concetti' else None
             split = (layer, selected) if layer is not None else None
-            label = f'concetti · strato {layer+1}' if split is not None else kind
             if kind == "com'è":
                 learner = copy.deepcopy(base)
             else:
@@ -247,15 +262,26 @@ class NetText:
             start = learner.seen
             self._reported = float('-inf')
             learner.learn_documents(docs, lambda: (check(), self._racing(
-                round_number, number, size, label, learner, start, shown)))
+                round_number, number, size, label, learner, start, shown, report)))
             check()
-            if shown:                                           # where the candidate ends, on the chart
-                self._point(self.read + len(ids), held_out(learner.network, shown), label, round_number)
-            results.append((kind, learner, held_out(learner.network, held),
-                            sum(p.numel() for p in learner.network.parameters()), layer))
-        top = max(results, key=lambda r: r[2].mean())
-        kind, learner, scores, _, layer = min((r for r in results if not self._better(top[2], r[2])), key=lambda r: r[3])
-        retained = round_number > 1 and not self._better(scores, grower.best_scores)
+            report(number, size, evaluating=True)
+            scores = held_out(learner.network, held)
+            if shown:                                           # the chart can use a different sample
+                chart_scores = scores if shown is held else held_out(learner.network, shown)
+                self._point(self.read + len(ids), chart_scores, label, round_number)
+            count = sum(p.numel() for p in learner.network.parameters())
+            results.append((kind, learner, scores, count, layer))
+            trials.append(dict(choice=kind, layer=layer+1 if layer is not None else None,
+                               heads=int(learner.network.config['heads']), concepts=list(learner.network.config['concepts']),
+                               held_out=float(-scores.mean()), parameters=count))
+            winner, retained = self._race_choice(results, previous)
+            choice, _, choice_scores, _, _ = winner
+            projection = dict(candidate=labels[self.KINDS.index(choice)], held_out=float(-choice_scores.mean()),
+                              grows=choice != "com'è" and not retained, retained=retained)
+            if retained:
+                projection = dict(candidate="com'è", held_out=float(-previous.mean()), grows=False, retained=True)
+            report(number, size)
+        kind, learner, scores, _, layer = winner
         if retained:                                           # rereading must improve on the winner we already have
             kind, learner, scores, layer = "com'è", base, grower.best_scores, None
         else:
@@ -267,10 +293,6 @@ class NetText:
         grower.best, grower.best_scores = net, scores
         grower.best_learner = None
         c = net.config
-        trials = [dict(choice=choice, layer=layer_index+1 if layer_index is not None else None,
-                       heads=int(trial.network.config['heads']), concepts=list(trial.network.config['concepts']),
-                       held_out=float(-values.mean()), parameters=count)
-                  for choice, trial, values, count, layer_index in results]
         self.races.append(dict(tokens=int(self.tokens + len(ids)), choice=kind, round=round_number, retained=retained,
                                layer=layer+1 if layer is not None else None,
                                dim=int(c['dim']), layers=int(c['layers']), heads=int(c['heads']),
@@ -278,7 +300,12 @@ class NetText:
                                candidates=trials))
         return net, kind != "com'è"
 
-    def _racing(self, round_number, number, size, kind, learner, start, shown):
+    def _race_choice(self, results, previous):
+        top = max(results, key=lambda result: result[2].mean())
+        winner = min((result for result in results if not self._better(top[2], result[2])), key=lambda result: result[3])
+        return winner, previous is not None and not self._better(winner[2], previous)
+
+    def _racing(self, round_number, number, size, kind, learner, start, shown, report):
         """The page: which candidate of the race is learning the new piece, how far it is, and its validation on
         the chart: every candidate a line over the same step."""
         from .concept_net_training import held_out
@@ -289,11 +316,7 @@ class NetText:
             if shown:
                 self._point(self.read + self._race_piece * read / size, held_out(learner.network, shown), kind, round_number)
                 learner.network.train()
-            total = len(self.KINDS)
-            spent = ((round_number - 1) * total + number) * size + read
-            self.report('network', 0, 0., race=number + 1, race_total=total, race_round=round_number, candidate=kind,
-                        learned=int(self.read), piece=int(size),
-                        done=int(read), speed=int(spent / max(now - self._race_began, 1e-9)))
+            report(number, read)
 
     def judge(self, pieces, final=False):
         """Nothing to choose: the network is its own reading."""

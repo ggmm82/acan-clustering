@@ -414,6 +414,15 @@ class NetTextGrowthTest(unittest.TestCase):
         self.assertTrue(model.races[-1]['retained'])
         self.assertEqual((model.read, model.tokens), (40, 40))
         self.assertEqual({entry['race_round'] for entry in reported}, {1, 2, 3})
+        validating = next(entry for entry in reported if entry['race_round'] == 1 and entry['race'] == 4
+                          and entry['race_evaluating'])
+        self.assertEqual(validating['race_scores'], [4., 4., 3.])
+        self.assertEqual(validating['race_candidates'][3:], ['concetti · strato 1', 'teste'])
+        for race in model.races:
+            final = next(entry for entry in reported if entry['race_round'] == race['round'] and len(entry['race_scores']) == 5)
+            self.assertEqual(final['race_projection']['held_out'], race['held_out'])
+            self.assertEqual(final['race_projection']['grows'], race['choice'] != "com'è")
+            self.assertEqual(final['race_projection']['retained'], race['retained'])
         self.assertEqual({p[3] for p in model.trace if len(p) == 4}, {1, 2, 3})
         self.assertLessEqual(max(point[0] for point in model.trace), 1.)
         restored = from_checkpoint_arrays(model.arrays())
