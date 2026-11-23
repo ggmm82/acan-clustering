@@ -5,7 +5,7 @@ from .trainer import validate_options as legacy_options
 EXTRA=dict(protocol='controlled-v1',routing_profile='shared-algebra-v1',architecture='hybrid',graft_fraction=.5,distillation_weight=0.,distillation_temperature=2.,
            early_stop_patience=3,early_stop_min_delta=.01,validation_batches=8,cp_weight=0.,
            milestone_steps=0,chat_probes=False,probe_prompts=[],auto_resume=False,passes=0,warm_start=False,native_size='micro',vocabulary=32000,native_attention='concepts',
-           concept_memory_mb=0,concept_piece=1_000_000,concept_context=512)
+           concept_memory_mb=0,concept_piece=1_000_000,concept_context=512,concept_network=False,concept_network_only=False,concept_network_growth=True)
 # Options of the earlier generative models: accepted from older clients and ignored.
 RETIRED=('context_refinement','concept_depth','concept_document','concept_paths')
 
@@ -52,8 +52,8 @@ def validate_options(options):
         value=extra[key]
         if isinstance(value,bool) or not isinstance(value,int) or not lo<=value<=hi:
             raise ValueError('Parametro non valido: '+key)
-    if any(not isinstance(extra[key],bool) for key in ('chat_probes','auto_resume','warm_start')):
-        raise ValueError('Parametro non valido: chat_probes, auto_resume o warm_start')
+    if any(not isinstance(extra[key],bool) for key in ('chat_probes','auto_resume','warm_start','concept_network','concept_network_only','concept_network_growth')):
+        raise ValueError('Parametro non valido: chat_probes, auto_resume, warm_start, concept_network, concept_network_only o concept_network_growth')
     if isinstance(extra['passes'],bool) or not isinstance(extra['passes'],(int,float)) or not 0<=extra['passes']<=1000:
         raise ValueError('Giri sul testo: da 0 (usa i passi) a 1000.')
     prompts=extra['probe_prompts']

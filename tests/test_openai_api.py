@@ -33,7 +33,7 @@ class OpenAICompatibleTests(unittest.TestCase):
         store.append_corpus(corpus['id'], owner, 0, raw); store.finish_corpus(corpus['id'], owner)
         config = validate_options(dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1',
                                        vocabulary=4000, sequence_length=64, validation_batches=4, save_steps=2,
-                                       concept_piece=10_000, concept_context=8, device='cpu',
+                                       concept_piece=10_000, concept_context=8, device='cpu', concept_network_growth=False,
                                        corpus_id=corpus['id'], name='Prova API'))
         job = store.create_job(owner, config)
         store.update(job['id'], status='queued')
@@ -112,7 +112,9 @@ class OpenAICompatibleTests(unittest.TestCase):
         self.assertTrue(any(chunk['choices'] and chunk['choices'][0]['finish_reason'] for chunk in chunks))
 
     def test_stop_strings_end_the_answer_before_them(self):
-        body = dict(model=self.job['id'], prompt='il gatto', temperature=0, max_tokens=40)
+        # a prompt as the corpus has them: the answer that follows is words, not the end of the text
+        body = dict(model=self.job['id'], prompt='<|im_start|>user\nCiao 5<|im_end|>\n<|im_start|>assistant\nil gatto',
+                    temperature=0, max_tokens=40)
         free = self.call('/v1/completions', body).get_json()['choices'][0]['text']
         words = free.split()
         self.assertGreater(len(words), 3)
