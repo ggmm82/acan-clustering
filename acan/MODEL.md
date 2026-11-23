@@ -317,8 +317,13 @@ imparati: dopo un lotto, due, quattro… Quando due decisioni di fila non miglio
 testo tenuto da parte, la rete smette di imparare.
 
 **Dimensioni dai dati.** La rete parte con 32 numeri di stato, uno strato, una testa
-con un concetto e 3 distanze vicine. I centri dei token partono a caso. In una **gara** la
-rete com'è e quattro copie cresciute imparano il pezzo nuovo, una volta ciascuna:
+con un concetto e 3 distanze vicine. Se il primo pezzo contiene dialoghi, ogni coppia
+richiesta-risposta contribuisce una volta per associazione fra un token osservato $u$ e un
+token bersaglio $v$. Dai conteggi si ricava $M_{uv}=\max(0,\log[p(u,v)/(p(u)p(v))])$.
+La fattorizzazione a rango ridotto di $M$ dà coordinate per i due ruoli. Le loro medie
+inizializzano i centri condivisi dei token, che poi si apprendono insieme alla rete.
+Se il pezzo è testo continuo, i centri partono a caso. In una **gara** la rete com'è e
+quattro copie cresciute imparano il pezzo nuovo, una volta ciascuna:
 
 - **il doppio della larghezza:** ogni coordinata scritta due volte, con dispersioni e
   masse dei concetti corrette perché appartenenze e letture restino identiche;

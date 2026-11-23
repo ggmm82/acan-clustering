@@ -124,6 +124,7 @@ def run_training(root, identifier, stop_event=None):
     from threadpoolctl import threadpool_limits
     from transformers import AutoTokenizer
     from .concept_lm import default_budget, load, save
+    from .dialogue_centres import markers
     from .native import resolve
     from .net_text import NetText
     from .research_data import Blocks, prepare
@@ -205,6 +206,8 @@ def run_training(root, identifier, stop_event=None):
             previous = save(root_checkpoints, model, state, identity)
             store.record(identifier, 0, dict(state))           # the chart starts from the error before reading
         model.device = state['device'] = device
+        if model.model is None:
+            model.dialogue_headers = markers(tokenizer)
         model.read, model.piece = state['tokens_trained'], piece   # the current text, also when resuming a queue
         model.trace = list(state.get('network_trace') or [])
         model.races = list(state.get('network_races') or [])
