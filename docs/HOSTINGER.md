@@ -71,6 +71,7 @@ For the optional **Generativo** tab, retain the normal frontend deployment and
 configure a durable worker. For the bundled CPU worker, deploy the single sealed
 `compose.generative.hostinger.yaml` instead of the normal frontend-only Compose.
 It includes both images and the persistent worker volume, with no Docker profile.
+The worker defaults to one CPU. Set `ACAN_LM_CPUS` to override the limit.
 Set the private `ACAN_LM_SERVICE_TOKEN` environment variable in Hostinger and
 retain the same project name so the existing data volume is reused. Download
 the raw YAML asset; rich-text copy/paste can introduce invalid non-breaking

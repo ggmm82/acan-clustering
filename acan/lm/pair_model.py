@@ -123,11 +123,42 @@ def chain(model):
     return order
 
 
-def read_distribution(model, previous, keys, memory):
+def network_starts(model, row):
+    """What the concept network predicts at every position of a row, one document at a time (None where it has not
+    read a token of the document yet, or where there is no network): the start of the chain of readings."""
+    net = getattr(model, "net", None)
+    starts = np.r_[np.flatnonzero(row.age == 0), len(row.y)]
+    for a, b in zip(starts[:-1], starts[1:]):
+        yield None
+        if b - a < 2:
+            continue
+        if net is None:
+            yield from [None] * (b - a - 1)
+            continue
+        h = net.states(row.y[a:b - 1])
+        for i in range(0, len(h), 256):
+            yield from net.probabilities(h[i:i + 256])
+
+
+def network_targets(model, row):
+    """p_network(true token) at every position (nan where the network has not read a token of the document yet)."""
+    out = np.full(len(row.y), np.nan)
+    net = getattr(model, "net", None)
+    if net is None:
+        return out
+    starts = np.r_[np.flatnonzero(row.age == 0), len(row.y)]
+    for a, b in zip(starts[:-1], starts[1:]):
+        if b - a >= 2:
+            out[a + 1:b] = net.targets(row.y[a:b])
+    return out
+
+
+def read_distribution(model, previous, keys, memory, start=None):
     """The probability of every token: one chain from the general to the particular, where every step is
     a reading of the corpus or of the memory of the document (chain), then what the topics say: Bayes'
-    rule, the reading times q(topic) / q(general) (topic_chain), normalized."""
-    p = model.leaf_weights[previous] @ model.head
+    rule, the reading times q(topic) / q(general) (topic_chain), normalized. The chain starts from what the concept
+    network predicts (``start``) where there is one, from the concepts of the previous token otherwise."""
+    p = start.copy() if start is not None else model.leaf_weights[previous] @ model.head
     for kind, f in chain(model):
         if kind == "corpus":
             k, table = model.weights[f], model.tables[f]
@@ -160,11 +191,12 @@ def walk(model, row):
     previous = np.r_[0, row.y[:-1].astype(np.int64) + 1]
     previous[row.age == 0] = 0
     seen = {f: {} for f in model.memory}
+    starts = network_starts(model, row)
     for i in range(len(row.y)):
         if row.age[i] == 0:
             seen = {f: {} for f in model.memory}
         yield read_distribution(model, previous[i], {f: int(keys[f][i]) for f in names},
-                                lambda f, key: seen[f].get(key) if key else None)
+                                lambda f, key: seen[f].get(key) if key else None, next(starts))
         for f in model.memory:
             key = int(keys[f][i])
             if key:
@@ -301,6 +333,8 @@ class PairCursor:
         self.overlay = {f: {} for f in model.memory}
         # What the document talks about: its last tokens and the topic of every scale, kept as bulk does.
         self.age, self.recent, self.topic = -1, np.empty(0, np.int32), {}
+        net = getattr(model, "net", None)
+        self.net = net.cursor() if net is not None else None             # the sums of the concepts of the network
 
     def prefill(self, ids):
         if not len(ids):
@@ -310,6 +344,8 @@ class PairCursor:
                 self.observe(token)
             return self
         ids = np.asarray(ids, np.int32)
+        if self.net is not None:
+            self.net.prefill(ids)
         pending = []
         for start in range(0, len(ids), 131072):
             left = max(0, start - self.model.encoder.width)
@@ -353,6 +389,7 @@ class PairCursor:
     def fork(self):
         other = copy(self)
         other.topic = dict(self.topic)
+        other.net = None if self.net is None else self.net.copy()
         other.overlay = {f: {k: c.copy() for k, c in vals.items()} for f, vals in self.overlay.items()}
         return other
 
@@ -382,6 +419,8 @@ class PairCursor:
                 if key:
                     values.setdefault(key, Counter())[int(token)] += 1
         self.tail = np.r_[self.tail, np.int32(token)][-self.model.encoder.width :]
+        if self.net is not None:
+            self.net.observe(token)
         self.age += 1
         self.recent = np.r_[self.recent, np.int32(token)][-self._keep():]
         self._topics()
@@ -402,4 +441,5 @@ class PairCursor:
             return counts
 
         previous = int(self.tail[-1]) + 1 if len(self.tail) else 0
-        return read_distribution(self.model, previous, keys, memory)
+        start = self.net.distribution() if self.net is not None else None
+        return read_distribution(self.model, previous, keys, memory, start)
