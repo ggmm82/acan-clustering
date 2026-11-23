@@ -75,10 +75,17 @@ def inside_figure(trace):
     if racing:                                                  # in a race the network itself only starts and ends the step
         names[None] = 'Misure iniziali e finali della rete'
     figure = go.Figure()
-    for kind in dict.fromkeys(point[2] if len(point) > 2 else None for point in points):
-        line = [point for point in points if (point[2] if len(point) > 2 else None) == kind]
+    lines = {}
+    for point in points:
+        kind = point[2] if len(point) > 2 else None
+        round_number = point[3] if len(point) > 3 else None
+        lines.setdefault((kind, round_number), []).append(point)
+    for (kind, round_number), line in lines.items():
+        label = names.get(kind, f'Gara · {kind}')
+        if round_number is not None:
+            label = f'Tornata {round_number} · {label.removeprefix("Gara · ")}'
         figure.add_scatter(x=[100 * (point[0] - step) for point in line], y=[point[1] for point in line],
-                           mode='markers', name=names.get(kind, f'Gara · {kind}'))
+                           mode='markers', name=label)
     figure.update_layout(title=f'Dentro il passo {step + 1}: la validazione mentre la rete legge il pezzo'
                          + (' · gara: ogni candidato legge tutto il pezzo, da 0 a 100%' if racing else ''),
                          xaxis=dict(title='Pezzo letto (%)', range=[0, 100]), yaxis_title='NLL',

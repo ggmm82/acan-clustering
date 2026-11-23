@@ -184,7 +184,8 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
             label = {'teste': 'il doppio delle teste', 'larghezza': 'il doppio della larghezza',
                      'strato': 'uno strato in più', "com'è": "la rete com'è"}.get(label, label)
             part = min(network.get('done', 0) / max(network.get('piece', 1), 1), 1.)
-            inside = (f" · gara di crescita al {100 * (network['race'] - 1 + part) / candidates:.0f}%: {candidates} candidati imparano lo stesso "
+            round_label = f" · tornata {network['race_round']}" if network.get('race_round') else ''
+            inside = (f" · gara di crescita al {100 * (race - 1 + part) / candidates:.0f}%{round_label}: {candidates} candidati imparano lo stesso "
                       f"pezzo uno dopo l'altro, ognuno da 0 a 100% (una linea ciascuno nel grafico «Dentro il passo»); ora il "
                       f"{network['race']}° di {candidates}, {label}, al {100 * part:.0f}% del pezzo"
                       if network.get('race')
@@ -219,6 +220,8 @@ def _race_summary(race):
     layer = f" nello strato {race['layer']}" if race.get('layer') else ''
     winner = (f"{race['choice']}{layer} · larghezza {race['dim']}, {race['layers']} strati, "
               f"{heads}concetti {race['concepts']}, NLL {race['held_out']:.3f}")
+    if race.get('retained'):
+        winner += ' · conservato il vincitore della tornata precedente'
     tested = race.get('candidates')
     if not tested:
         return winner
@@ -253,7 +256,7 @@ def concept_footprint_view(item):
             ('Token letti', f"{progress.get('tokens_trained', 0):,}"),
             ('Velocità', f'{speed:,.0f} token al secondo' if speed else '—'),
             ('Tempo che manca, stima', '—' if remaining is None else f'{remaining/3600:,.1f} ore' if remaining > 3600 else f'{remaining/60:,.0f} minuti'),
-            ('Token per passo', f'{piece:,} (un pezzo del testo, letto e riletto finché la validazione migliora)')]),
+            ('Token per passo', f'{piece:,} nuovi al massimo. Durante la crescita, ogni tornata rilegge lo stesso pezzo.')]),
         ('Qualità', [
             ('Errore sul testo che sta per leggere', number(progress.get('training_nll'))),
             ('Errore su testo mai visto', number(progress.get('validation_nll'))),
@@ -261,7 +264,7 @@ def concept_footprint_view(item):
             ('Prima di leggere questo testo', number(progress.get('baseline_nll')))]),
         *([('Rete a concetti', [
             ('Apprendimento', 'si è fermata: la validazione non migliorava più' if progress.get('network_stopped') else 'impara a ogni pezzo'),
-            *[(f"Crescita a {race['tokens']:,} token", _race_summary(race))
+            *[(f"Crescita a {race['tokens']:,} token" + (f" · tornata {race['round']}" if race.get('round') else ''), _race_summary(race))
               for race in progress.get('network_races') or []],
             *[(f"Strato {layer['layer']}",
                f"{' · '.join(f'{a:.0f}' for a in layer['active'])} concetti attivi per gruppo; "
@@ -513,12 +516,12 @@ layout = html.Div([
              dbc.Row([dbc.Col(dbc.InputGroup([dbc.InputGroupText('Salva ogni'), dbc.Input(id='lm-long-save', type='number', value=10, min=1, max=10000), dbc.InputGroupText('passi')]), md=6),
                       dbc.Col(dbc.InputGroup([dbc.InputGroupText('Tieni per sempre ogni'), dbc.Input(id='lm-long-milestone', type='number', value=100, min=0, max=10000000), dbc.InputGroupText('passi')]), md=6)],
                      className='mb-1'),
-             html.Small("Un passo è un pezzo di un milione di token: la rete lo legge e lo rilegge finché il testo tenuto da parte migliora. "
+             html.Small("Un passo è un pezzo di al massimo un milione di token nuovi. Alla fine, la rete rilegge tutto il testo finché la validazione migliora. "
                         "Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
              dbc.Checkbox(id='lm-long-growth', value=True, label='La rete cresce con i dati'),
              html.Small("La rete parte con uno strato, una testa e un concetto. Quando arriva una gara, la rete com'è e quattro copie cresciute "
                         "(più larga, uno strato in più, più concetti in uno strato, più teste) imparano lo stesso pezzo nuovo. "
-                        "Resta la più semplice fra quelle che la migliore non batte di più di un errore standard.",
+                        "Se la rete cresce, il vincitore fa una nuova tornata sullo stesso pezzo. Il passo termina quando la validazione conferma la struttura corrente.",
                         className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.

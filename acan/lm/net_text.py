@@ -3,8 +3,8 @@
 Every object is the concept network's (acan/lm/concept_net.py): the tokens are concepts, the layers of concept
 attention read the document through the sums of their concepts, the memory of the document is learned, and the next
 token is the membership of the final state to the concepts of the tokens. Everything is learned along the gradient
-of the log-likelihood of the next token. Every piece of the queue is read once, and the text goes on; with the last
-piece the network reads the whole text of the queue again, pass after pass, while held-out text is read better by
+of the log-likelihood of the next token. Growth races reread the current piece until the structure is selected.
+With the last piece the network reads the whole text again, pass after pass, while held-out text is read better by
 more than one standard error (concept_net_training.Grower, with its sizes fixed): reading again is how it remembers
 what it saw. Every document starts after an ``eos``, so its first token is read as in training. The interface is the one of the text model of the queue
 (add, judge, logp, prediction_cursor, generate, arrays), so training, generation, evaluation, the API and the export
@@ -81,6 +81,7 @@ class NetText:
         return out
 
     def add(self, ids, train, tune, check, documents=None, starts_in_piece=None):
+        from copy import copy
         from .concept_net_training import Grower, Network, frequency_groups, held_out
         ids = np.asarray(ids, np.int64)
         if not len(self.tail):                                  # a new text of the queue begins
@@ -104,7 +105,7 @@ class NetText:
         else:
             held = self._held(tune, self._learner.learner.longest) if self.device == 'cuda' else self._held(tune)
         self.piece = self.piece or len(ids)
-        begun = self.tokens, getattr(self._learner.learner, 'seen', 0)
+        begun = self.read, self._learner.learner.seen
         counted = dict(learner=self._learner.learner, seen=begun[1], total=0)
 
         def where():
@@ -123,16 +124,17 @@ class NetText:
         watch_width = self._learner.learner.longest if self.device == 'cuda' else 1 << 30
         shown = self._held(self.watch, watch_width) if self.watch else held  # what the chart is measured on
         started, last = time.monotonic(), [0.]
-        again = self.read + len(ids) >= len(train) and self.network.get('passes', True)
+        end = self.read + len(ids)
+        again = end >= len(train) and self.network.get('passes', True)
 
-        def watched(measured=True):
+        def watched():
             check()
             now = time.monotonic()
             if self.report is not None and now - last[0] >= 15:   # how far the network is, for the page
                 last[0] = now
-                if measured and shown:                          # and its validation as it learns, for the chart
+                if shown:                                      # and its validation as it learns, for the chart
                     network = self._learner.learner.network
-                    self._point(where(), held_out(network, shown))
+                    self._point(min(where(), end), held_out(network, shown))
                     network.train()
                 best = self._learner.best_scores
                 self.report('network', 0, now - started, learned=int(self._learner.learned), again=int(again),
@@ -140,18 +142,24 @@ class NetText:
                             speed=int((where() - begun[0]) / max(now - started, 1e-9)))   # tokens a second, in this step
         if shown and not self.trace:                            # where the queue starts
             self._point(where(), held_out(self._learner.learner.network, shown))
-        self._learner.passes = False                            # every piece once ...
-        end = self.read + len(ids)
         if self.growth and held and (self.read >= self.next_race or end >= len(train)):
-            previous_races = len(self.races)
-            best = self._race(ids, held, lambda: watched(False), shown)   # the new piece decides the size, and is learned
-            if len(self.races) > previous_races and self.races[-1]['choice'] != "com'è":            # it needed to grow: the next piece races again
-                self.next_race = end
-            else:                                               # the size is enough: the next race further away
-                self.race_gap = max(2 * self.race_gap, len(ids))
-                self.next_race = end + self.race_gap
+            self._learner = copy(self._learner)                 # an unfinished piece must not alter the preceding one
+            first_race = len(self.races)
+            self._race_began = time.monotonic()
+            self._race_piece = len(ids)
+            round_number = 1
+            best, grew = self._race(ids, held, check, shown, round_number)
+            while grew:
+                round_number += 1
+                best, grew = self._race(ids, held, check, shown, round_number)
+            counted.update(seen=self._learner.learner.seen, total=len(ids))  # a rereading does not advance the queue
+            self.race_gap = len(ids) if len(self.races) > first_race + 1 else max(2 * self.race_gap, len(ids))
+            self.next_race = end + self.race_gap
+            if again and len(self.races) > first_race:
+                self._learner._keep(best, self._learner.best_scores)   # restore the stabilized winner if rereading does not help
             self._previous = self._learner.best_scores
         else:
+            self._learner.passes = False                        # a piece without a race is read once
             best = self._learner.learn(ids, self.eos, score, watched)
             if self.growth and held and self._learner is not None and not self._learner.done:
                 now = held_out(self._learner.learner.network, held)
@@ -164,7 +172,7 @@ class NetText:
         if best is not None:
             self.model = SimpleNamespace(net=best, tables={})
         if shown and self._learner is not None:                 # where the step ends
-            self._point(where(), held_out(self._learner.learner.network, shown))
+            self._point(end, held_out(self._learner.learner.network, shown))
         self.read += len(ids)
         self.tokens += len(ids)
         self.tail = ids[-max(self.max_context, 1):]
@@ -179,16 +187,19 @@ class NetText:
         d = np.asarray(a) - np.asarray(b)
         return len(d) > 1 and len(a) == len(b) and d.mean() > d.std(ddof=1) / math.sqrt(len(d) - 1)
 
-    def _point(self, tokens, values, kind=None):
+    def _point(self, tokens, values, kind=None, round_number=None):
         """A point of the chart: the validation after so many tokens learned, in steps of the queue (with the
         candidate, in a race of growth). A long queue keeps every other point of its older ones: the chart stays
         light and still shows the whole path."""
-        self.trace.append([round(tokens / max(self.piece, 1), 3), float(-values.mean())] + ([kind] if kind else []))
+        point = [round(tokens / max(self.piece, 1), 3), float(-values.mean())]
+        if kind is not None:
+            point.extend((kind, round_number))
+        self.trace.append(point)
         if len(self.trace) > 512:
             self.trace = self.trace[:-1:2] + self.trace[-1:]
 
     # ---- growth ------------------------------------------------------------------------------------------
-    def _race(self, ids, held, check, shown=None):
+    def _race(self, ids, held, check, shown, round_number):
         """Compare the current network and its growth candidates on the same new piece.
 
         The smallest candidate within one standard error of the best validation score continues.
@@ -198,15 +209,13 @@ class NetText:
         import math
         from .concept_net_training import Learner, documents, held_out
         grower, base = self._learner, self._learner.learner
-        self._race_began = time.monotonic()
+        check()
         docs = documents(ids, self.eos, base.longest, begin=True)
-        size = sum(map(len, docs))
-        base.tokens = min(grower.batch, max(1, math.isqrt(max(size, 1))))   # as many batches as tokens in a batch
-        if not grower.learned:                                  # the start lasts at most one pass over the piece
-            base.warmup = min(base.warmup, max(1, -(-size // base.tokens)))
-        better = lambda a, b: len(a - b) > 1 and (a - b).mean() > (a - b).std(ddof=1) / math.sqrt(len(a) - 1)
         if not docs:
-            return base.network.export()
+            return base.network.export(), False
+        size = sum(map(len, docs))
+        batch = min(grower.batch, max(1, math.isqrt(size)))      # as many batches as tokens in a batch
+        warmup = base.warmup if grower.learned else min(base.warmup, max(1, -(-size // batch)))
         # Give each layer a chance without adding a full training run for every layer in every race.
         next_layer = len(self.races) % len(base.network.layers)
         selected = base.network.concepts_to_split(next_layer, docs)
@@ -228,56 +237,63 @@ class NetText:
                         network.add_layer()
                     elif split is not None:
                         network.split_one(*split)
-                learner = Learner(network, tokens=base.tokens, longest=base.longest)
+                learner = Learner(network, tokens=batch, longest=base.longest)
                 # Start from the same optimizer, pace and order of training rows.
-                learner.steps, learner.warmup, learner.seen = base.steps, base.warmup, base.seen
+                learner.steps, learner.seen = base.steps, base.seen
                 learner.rng = copy.deepcopy(base.rng)
                 learner.lr = base.lr / 2 if kind == 'larghezza' else base.lr   # its coordinates move in pairs
                 learner.carry(base, kind, split)
+            learner.tokens, learner.warmup = batch, warmup
             start = learner.seen
             self._reported = float('-inf')
-            self._race_done = number * size                     # what the earlier candidates of the race read
             learner.learn_documents(docs, lambda: (check(), self._racing(
-                number, len(self.KINDS), size, label, learner, start, shown)))
+                round_number, number, size, label, learner, start, shown)))
+            check()
             if shown:                                           # where the candidate ends, on the chart
-                self._point(self.tokens + learner.seen - start, held_out(learner.network, shown), label)
+                self._point(self.read + len(ids), held_out(learner.network, shown), label, round_number)
             results.append((kind, learner, held_out(learner.network, held),
                             sum(p.numel() for p in learner.network.parameters()), layer))
         top = max(results, key=lambda r: r[2].mean())
-        kind, learner, scores, _, layer = min((r for r in results if not better(top[2], r[2])), key=lambda r: r[3])
-        grower.learner, grower.learned = learner, grower.learned + size
+        kind, learner, scores, _, layer = min((r for r in results if not self._better(top[2], r[2])), key=lambda r: r[3])
+        retained = round_number > 1 and not self._better(scores, grower.best_scores)
+        if retained:                                           # rereading must improve on the winner we already have
+            kind, learner, scores, layer = "com'è", base, grower.best_scores, None
+        else:
+            grower.learned += size
+        grower.learner = learner
         while grower.decision <= grower.learned:               # the race was the decision of these tokens
             grower.decision *= 2
-        net = learner.network.export()
+        net = grower.best if retained else learner.network.export()
         grower.best, grower.best_scores = net, scores
+        grower.best_learner = None
         c = net.config
         trials = [dict(choice=choice, layer=layer_index+1 if layer_index is not None else None,
                        heads=int(trial.network.config['heads']), concepts=list(trial.network.config['concepts']),
                        held_out=float(-values.mean()), parameters=count)
                   for choice, trial, values, count, layer_index in results]
-        self.races.append(dict(tokens=int(self.tokens + len(ids)), choice=kind,
+        self.races.append(dict(tokens=int(self.tokens + len(ids)), choice=kind, round=round_number, retained=retained,
                                layer=layer+1 if layer is not None else None,
                                dim=int(c['dim']), layers=int(c['layers']), heads=int(c['heads']),
                                concepts=[int(k) for k in c['concepts']], held_out=float(-scores.mean()),
                                candidates=trials))
-        return net
+        return net, kind != "com'è"
 
-    def _racing(self, number, total, size, kind, learner, start, shown):
+    def _racing(self, round_number, number, size, kind, learner, start, shown):
         """The page: which candidate of the race is learning the new piece, how far it is, and its validation on
         the chart: every candidate a line over the same step."""
         from .concept_net_training import held_out
         now = time.monotonic()
         if self.report is not None and now - getattr(self, '_reported', 0.) >= 15:
             self._reported = now
-            if shown and learner is not None:
-                self._point(self.tokens + learner.seen - start, held_out(learner.network, shown), kind)
+            read = learner.seen - start
+            if shown:
+                self._point(self.read + self._race_piece * read / size, held_out(learner.network, shown), kind, round_number)
                 learner.network.train()
-            began = getattr(self, '_race_began', None)
-            read = getattr(self, '_race_done', 0) + (learner.seen - start if learner is not None else 0)
-            self.report('network', 0, 0., race=number + 1, race_total=total, candidate=kind,
+            total = len(self.KINDS)
+            spent = ((round_number - 1) * total + number) * size + read
+            self.report('network', 0, 0., race=number + 1, race_total=total, race_round=round_number, candidate=kind,
                         learned=int(self.read), piece=int(size),
-                        done=int(learner.seen - start) if learner is not None else 0,   # how much of the piece this candidate read
-                        speed=int(read / max(now - began, 1e-9)) if began else 0)   # tokens a second, all candidates
+                        done=int(read), speed=int(spent / max(now - self._race_began, 1e-9)))
 
     def judge(self, pieces, final=False):
         """Nothing to choose: the network is its own reading."""

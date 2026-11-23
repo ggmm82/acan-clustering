@@ -333,17 +333,18 @@ La gara decide se questa capacità in più migliora la previsione su testo
 tenuto da parte. La validazione può lasciare la rete con un solo concetto per testa.
 La copia più larga impara a metà passo, perché le sue coordinate si muovono a coppie.
 Prosegue, con il pezzo imparato, la più semplice che la
-migliore non batte di più di un errore standard sul testo tenuto da parte (sezione 2). La
-gara usa testo nuovo e non rilegge quello già letto: a parità di token il testo nuovo
-insegna di più (Informatica, sezione 6).
+migliore non batte di più di un errore standard sul testo tenuto da parte (sezione 2).
+Se vince una rete cresciuta, parte una nuova tornata dallo stesso vincitore sullo stesso
+pezzo. La struttura è stabile per quel pezzo quando vince la rete com'è. Se rileggere
+non produce un miglioramento superiore a un errore standard rispetto al vincitore
+precedente, si conserva quel vincitore e si avanza.
 
 **Quando c'è una gara.** Il calendario segue la rete:
 
 - con il primo pezzo, per scegliere la dimensione dai primi dati, e con l'ultimo;
-- se vince una copia cresciuta, la rete aveva bisogno di crescere: la gara si rifà sul
-  pezzo successivo, così una rete che deve crescere molto cresce un gradino a ogni pezzo;
-- se vince la rete com'è, la dimensione basta: la gara successiva si allontana, saltando
-  uno, poi due, poi quattro pezzi;
+- quando la rete si stabilizza dopo essere cresciuta, la gara successiva salta un pezzo;
+- se la struttura resta la stessa già alla prima tornata, la distanza dalla gara
+  successiva raddoppia;
 - se fra due gare la rete smette di migliorare sul testo tenuto da parte (non di più di
   un errore standard rispetto al pezzo prima), è satura: la gara si anticipa al pezzo
   successivo.
@@ -520,10 +521,10 @@ giudizio leave-one-out non rilegge la tabella, perché usa le somme.
    200 passi e al più un passaggio), un lieve decadimento dei parametri.
 4. **Crescita.** In una gara cinque candidati (la rete com'è, più larga, con uno strato
    in più, con più concetti in uno strato o con più teste) imparano il pezzo nuovo, uno dopo l'altro; prosegue il
-   più semplice che il migliore non batte di più di un errore standard. Le gare cadono sul
-   primo e sull'ultimo pezzo, sul pezzo dopo una gara vinta da una crescita, sul pezzo dopo
-   uno in cui la rete non è migliorata, e altrimenti sempre più rade (Matematica,
-   sezione 8). Una gara costa cinque letture di un pezzo. Le decisioni si giudicano su
+   più semplice che il migliore non batte di più di un errore standard. Se cresce, il
+   vincitore riparte dallo stesso pezzo finché la struttura si stabilizza. Le gare cadono
+   sul primo e sull'ultimo pezzo, anticipano se la rete smette di migliorare e altrimenti
+   si diradano (Matematica, sezione 8). Una tornata costa cinque letture del pezzo. Le decisioni si giudicano su
    tutta la validazione tranne i tratti che misurano l'errore della pagina. Con la crescita spenta (opzione della coda) la rete ha
    dimensioni fisse: 96 numeri di stato, 3 strati, 4 gruppi da 64 concetti.
 5. **Riletture finali.** Con l'ultimo pezzo la rete rilegge tutto il testo, passaggio dopo
@@ -537,7 +538,7 @@ giudizio leave-one-out non rilegge la tabella, perché usa le somme.
 7. **Avanzamento.** La pagina mostra il passo, la velocità, la dimensione della rete
    (strati, numeri di stato, concetti, parametri), la gara in corso e due grafici: l'errore
    su testo mai visto passo dopo passo, e il passo in corso aperto, con la validazione
-   mentre la rete legge il pezzo e una linea per ogni candidato della gara. Nei dettagli, a
+   mentre la rete legge il pezzo e una serie per candidato e tornata. Nei dettagli, a
    ogni salvataggio, il **grafo della rete** misurato sul testo di validazione: un nodo per
    ogni concetto che lavora, con i token che vi entrano e quelli che vengono dopo, gli
    archi di attenzione dentro uno strato (la matrice $A$) e, fra uno strato e il successivo,
@@ -568,8 +569,8 @@ distribuzione in ogni posizione: è la stessa funzione applicata allo stesso sta
   di token; il confronto con gli indirizzi della memoria.
 - **Memoria in inferenza:** le somme dei concetti e gli ultimi stati di ogni strato, fissi
   a qualunque lunghezza del documento, più un indirizzo per token del documento.
-- **Addestramento:** lineare nei token per ogni passaggio; una gara costa cinque passaggi
-  su un pezzo; le riletture finali, un passaggio ciascuna sul testo intero.
+- **Addestramento:** lineare nei token per ogni passaggio. Ogni tornata di crescita costa
+  cinque passaggi sullo stesso pezzo. Ogni rilettura finale percorre il testo intero.
 
 ### 6 · Misure
 

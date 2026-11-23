@@ -214,6 +214,13 @@ b,?,no
         self.assertEqual(figure.data[0].x[-1], 100.0)
         self.assertEqual(list(figure.data[0].y), [6.0, 6.01, 5.985])
 
+        figure = inside_figure([[10.0, 6.0], [10.25, 5.9, 'larghezza', 1], [11., 5.8, 'larghezza', 1],
+                                [10.25, 5.7, 'larghezza', 2], [11., 5.6, 'larghezza', 2]])
+        rounds = [line for line in figure.data if line.name.startswith('Tornata')]
+        self.assertEqual([line.name for line in rounds], ['Tornata 1 · il doppio della larghezza',
+                                                        'Tornata 2 · il doppio della larghezza'])
+        self.assertEqual([list(line.x) for line in rounds], [[25., 100.], [25., 100.]])
+
     def test_lm_chart_explains_baseline_and_repeated_validation(self):
         job = dict(id='job', progress=dict(step=12, tokens_trained=12288, baseline_nll=4.683,
                    validation_nll=6.62, network_trace=[[11.05, 6.64], [12.0, 6.62]]),

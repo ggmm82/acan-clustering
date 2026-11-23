@@ -207,6 +207,7 @@ def run_training(root, identifier, stop_event=None):
             previous = save(root_checkpoints, model, state, identity)
             store.record(identifier, 0, dict(state))           # the chart starts from the error before reading
         model.device = state['device'] = device
+        model.read, model.piece = state['tokens_trained'], piece   # the current text, also when resuming a queue
         model.trace = list(state.get('network_trace') or [])
         model.races = list(state.get('network_races') or [])
         state.pop('structure', None)

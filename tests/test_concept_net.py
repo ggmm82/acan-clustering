@@ -382,7 +382,8 @@ class NetTextGrowthTest(unittest.TestCase):
 
         with patch('acan.lm.concept_net_training.held_out', side_effect=score):
             model.add(stream, stream, [stream], lambda: None)
-        self.assertEqual(model.races[0]['choice'], 'teste')
+        self.assertEqual([race['choice'] for race in model.races], ['teste', "com'è"])
+        self.assertTrue(model.races[-1]['retained'])
         self.assertEqual(model.model.net.shape(0)[0], 2)
         restored = from_checkpoint_arrays(model.arrays())
         self.assertEqual(restored.model.net.shape(0)[0], 2)
@@ -396,16 +397,25 @@ class NetTextGrowthTest(unittest.TestCase):
         model = NetText(41, 40, 1 << 22, growth=True, network=dict(layers=2, passes=False))
         self.assertEqual(model.network['concepts'], 1)
         ids = np.tile(np.r_[np.arange(1, 10), 40], 8)
-        targets = ([2, 1], [2, 2])
-        for index, end in enumerate((40, 80)):
-            def score(network, *_):
-                return np.full(2, -1. if network.config['concepts'] == targets[index] else -2.)
 
-            with patch('acan.lm.concept_net_training.held_out', side_effect=score):
-                model.add(ids[end-40:end], ids, [ids], lambda: None)
-            self.assertEqual(model.races[-1]['layer'], index+1)
-            self.assertEqual(model.races[-1]['choice'], 'concetti')
-            self.assertEqual(model.model.net.config['concepts'], targets[index])
+        def score(network, *_):
+            concepts = sum(network.config['concepts'])
+            return np.full(2, {2: -4., 3: -3., 4: -2.}.get(concepts, -5.))
+
+        reported = []
+        model.report = lambda *args, **facts: reported.append(facts)
+        with patch('acan.lm.concept_net_training.held_out', side_effect=score):
+            model.add(ids[:40], ids, [ids[40:]], lambda: None)
+        self.assertEqual([race['tokens'] for race in model.races], [40, 40, 40])
+        self.assertEqual([race['round'] for race in model.races], [1, 2, 3])
+        self.assertEqual([race['layer'] for race in model.races], [1, 2, None])
+        self.assertEqual([race['choice'] for race in model.races], ['concetti', 'concetti', "com'è"])
+        self.assertEqual([race['held_out'] for race in model.races], [3., 2., 2.])
+        self.assertTrue(model.races[-1]['retained'])
+        self.assertEqual((model.read, model.tokens), (40, 40))
+        self.assertEqual({entry['race_round'] for entry in reported}, {1, 2, 3})
+        self.assertEqual({p[3] for p in model.trace if len(p) == 4}, {1, 2, 3})
+        self.assertLessEqual(max(point[0] for point in model.trace), 1.)
         restored = from_checkpoint_arrays(model.arrays())
         self.assertEqual(restored.model.net.config['concepts'], [2, 2])
 
@@ -426,14 +436,14 @@ class NetTextGrowthTest(unittest.TestCase):
         model._reported = -1e9
         model.add(ids[:390], ids, tune, lambda: None)
         model.add(ids[390:], ids, tune, lambda: None)
-        self.assertTrue(any(len(point) == 3 for point in model.trace))
+        self.assertTrue(any(len(point) == 4 for point in model.trace))
         # the decisions read the validation in stretches as long as in learning, whatever its documents
         long_text = np.r_[np.arange(1, 39).repeat(30), eos]               # one document of over a thousand tokens
         self.assertLessEqual(max(map(len, model._held([long_text], 32))), 32)
         # a piece after a race goes on with the calendar of the tokens learned: no decisions at once, no stop
         grower = model._learner
         self.assertGreater(grower.decision, grower.learned)
-        self.assertEqual([race['tokens'] for race in model.races], [390, len(ids)])     # after 1 piece, then the last
+        self.assertEqual(list(dict.fromkeys(race['tokens'] for race in model.races)), [390, len(ids)])
         self.assertTrue(all(race['choice'] in NetText.KINDS for race in model.races))
         for race in model.races:
             candidates = {candidate['choice']: candidate for candidate in race['candidates']}
