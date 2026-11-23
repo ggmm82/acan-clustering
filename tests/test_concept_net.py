@@ -434,6 +434,35 @@ class NetTextGrowthTest(unittest.TestCase):
         restored = from_checkpoint_arrays(model.arrays())
         self.assertEqual(restored.model.net.config['concepts'], [2, 2])
 
+    def test_new_piece_keeps_its_starting_network_when_every_trial_regresses(self):
+        from unittest.mock import patch
+        from acan.lm.concept_lm import from_checkpoint_arrays
+        from acan.lm.net_text import NetText
+
+        ids = np.tile(np.r_[np.arange(1, 10), 40], 8)
+        model = NetText(41, 40, 1 << 22, growth=True, network=dict(passes=False))
+        model.add(ids[:40], ids, [ids[40:]], lambda: None)
+        saved = from_checkpoint_arrays(model.arrays())
+        saved.network['passes'] = False
+        saved.read = 40  # the worker restores the current text's position
+        before = saved.model.net.p['centre.weight'].copy()
+
+        def score(network, *_):
+            centres = network.centre.weight.detach().cpu().numpy()
+            unchanged = np.array_equal(centres, before)
+            return np.full(2, -2. if unchanged else -3.)
+
+        with patch('acan.lm.concept_net_training.held_out', side_effect=score):
+            saved.add(ids[40:], ids, [ids[:40]], lambda: None)
+
+        decision, = saved.races
+        self.assertEqual(decision['round'], 1)
+        self.assertTrue(decision['retained'])
+        self.assertEqual(decision['reference_nll'], decision['held_out'])
+        self.assertTrue(all(candidate['held_out'] > decision['held_out'] for candidate in decision['candidates']))
+        self.assertEqual((saved.read, saved.tokens), (80, 80))
+        np.testing.assert_array_equal(saved.model.net.p['centre.weight'], before)
+
     def test_the_growing_network_races_when_the_text_doubles_and_reads_as_before_after_saving(self):
         from acan.lm.concept_lm import from_checkpoint_arrays
         from acan.lm.net_text import NetText

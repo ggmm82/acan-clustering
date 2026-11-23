@@ -332,12 +332,13 @@ proiezioni indipendenti dello stesso token, ciascuna con un insieme di concetti.
 La gara decide se questa capacità in più migliora la previsione su testo
 tenuto da parte. La validazione può lasciare la rete con un solo concetto per testa.
 La copia più larga impara a metà passo, perché le sue coordinate si muovono a coppie.
-Prosegue, con il pezzo imparato, la più semplice che la
-migliore non batte di più di un errore standard sul testo tenuto da parte (sezione 2).
+La rete già imparata all'inizio della tornata fornisce il riferimento. Una candidata
+deve superarlo di più di un errore standard sul testo tenuto da parte (sezione 2).
+Fra le candidate che migliorano, prosegue la più semplice entro un errore standard
+dalla migliore. Alla prima tornata di una rete nuova si confrontano direttamente le candidate.
 Se vince una rete cresciuta, parte una nuova tornata dallo stesso vincitore sullo stesso
-pezzo. La struttura è stabile per quel pezzo quando vince la rete com'è. Se rileggere
-non produce un miglioramento superiore a un errore standard rispetto al vincitore
-precedente, si conserva quel vincitore e si avanza.
+pezzo. La struttura è stabile per quel pezzo quando vince la rete com'è o quando si
+conserva la rete di partenza. In entrambi i casi si avanza.
 
 **Quando c'è una gara.** Il calendario segue la rete:
 
@@ -577,6 +578,15 @@ distribuzione in ogni posizione: è la stessa funzione applicata allo stesso sta
 Dialoghi in italiano e inglese (SYNTH), tokenizzatore da 32.000 token, dialoghi di
 validazione e di test mai visti; NLL in nat per token (più basso è meglio). Rete fissa
 con 96 numeri di stato, 3 strati e 4 gruppi da 64 concetti (3,4 milioni di parametri).
+
+**Trasferimento fra sinonimi sintetici.** La rete impara a predire una delle quattro
+categorie. Ogni parola del test compare in addestramento, dove alcune combinazioni di
+parola e struttura della frase sono tenute da parte. Con due token intermedi e la
+memoria del documento disattivata, passare da uno a otto concetti per testa porta
+l'accuratezza media di due inizializzazioni dal 63,3% al 71,3%. Con sedici token
+intermedi entrambi i risultati restano vicini al 25% del caso. La permutazione delle
+parole porta l'accuratezza vicino al caso anche a breve distanza. La prova si ripete
+con `python -m scripts.probe_semantic_transfer`.
 
 **Rileggere.** 2.000 dialoghi di addestramento, uscita su tutto il vocabolario:
 

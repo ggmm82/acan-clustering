@@ -502,9 +502,11 @@ class StructureProgressTest(unittest.TestCase):
                        'Rete corrente', '1×16', '2,048 parametri', '8.0 KB', '1×17', '2,304 parametri', '9.0 KB'):
             self.assertIn(detail, text)
 
-        network.update(race_evaluating=True, race_projection=dict(candidate="com'è", held_out=5.98, grows=False, retained=True))
+        network.update(race_evaluating=True, race_reference_nll=5.98,
+                       race_projection=dict(candidate="com'è", held_out=5.98, grows=False, retained=True))
         text = str(concept_summary(progress, config, status='running'))
         self.assertIn('In validazione', text)
-        self.assertIn('si conserva il vincitore precedente (5.980)', text)
+        self.assertIn('NLL della rete di partenza 5.980', text)
+        self.assertIn('si conserva la rete di partenza (5.980)', text)
         self.assertIn('La gara per questo pezzo si chiude', text)
         self.assertNotIn('In testa per NLL', str(concept_summary(progress, config, status='paused')))

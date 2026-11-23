@@ -122,7 +122,7 @@ layout = dbc.Container([
             dbc.Button('← 500 passi prima',id='lm-history-prev',size='sm',outline=True,color='primary',className='me-1 mt-1'),
             dbc.Button('500 passi dopo →',id='lm-history-next',size='sm',outline=True,color='primary',className='mt-1')],md=6),
     ]),
-    html.P("Più in basso è la linea, meno il modello sbaglia a indovinare la parola successiva. Conta la linea su testo mai visto (validazione): se risale mentre quella di addestramento continua a scendere, il modello sta imparando a memoria.",className='small text-muted'),
+    html.P("Una NLL più bassa indica previsioni migliori. La validazione usa lo stesso testo a ogni misura. Per la rete a concetti, la linea «prossimo pezzo» misura ogni volta un testo diverso, prima di addestrarlo.",className='small text-muted'),
     dcc.Graph(id='lm-loss'),
     html.Div(dcc.Graph(id='lm-inside'), id='lm-inside-box', style={'display': 'none'}),
     html.H5('Fai scrivere il modello', className='mt-3'),
@@ -1094,7 +1094,8 @@ def register(app):
             try:history=backend(workspace,f'/jobs/{selected}/history?start={max(0,int(history_start or 0))}&end={max(0,int(history_start or 0))+499}&limit=500&plot=1')['rows']
             except ValueError as exc:history=[];history_error=str(exc)
         own = 'Controllo denso' if job['config'].get('architecture') == 'dense-control' else 'Concetti'
-        for key, label in [('training_nll','training'),('validation_nll','validazione')]:
+        next_piece_nll = job['config'].get('architecture') == 'concepts'
+        for key, label in [('training_nll', 'prossimo pezzo' if next_piece_nll else 'training'), ('validation_nll', 'validazione')]:
             rows = [row for row in history if key in row]
             figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows],
                                mode='lines+markers' if job['config'].get('architecture') == 'concepts' else 'lines', name=f'{own} · {label}')
@@ -1153,7 +1154,7 @@ def register(app):
         elif partner is None and job['config'].get('architecture') not in ('dense-control', 'concepts') and job['config'].get('protocol') == 'controlled-v1':
             detail.insert(0, html.P('Per sapere se i concetti funzionano, avvia il controllo denso (in fondo alla pagina): '
                                     'comparirà su questo grafico, tratteggiato, con il confronto dei due risultati.', className='small text-muted'))
-        for key,label in [('training_nll','Errore sul testo di addestramento (NLL)'),('training_objective','Obiettivo di addestramento'),('training_cp_penalty','Penalità CP media'),('cp_weight','Peso CP'),('validation_nll','Errore su testo mai visto (NLL di validazione)'),('validation_perplexity','Perplessità: fra quante parole in media il modello è incerto'),
+        for key,label in [('training_nll','Errore sul prossimo pezzo prima di leggerlo (NLL)' if next_piece_nll else 'Errore sul testo di addestramento (NLL)'),('training_objective','Obiettivo di addestramento'),('training_cp_penalty','Penalità CP media'),('cp_weight','Peso CP'),('validation_nll','Errore su testo mai visto (NLL di validazione)'),('validation_perplexity','Perplessità: fra quante parole in media il modello è incerto'),
                           ('baseline_nll',"Prima di leggere questo testo (il modello non sa ancora nulla)" if job['config'].get('architecture') == 'concepts' else "Errore al passo 0 (pesi casuali per un modello nativo)"),('tokens_per_second','Velocità (token al secondo)'),('trainable_parameters','Parametri che imparano'),('total_parameters','Parametri totali del modello'),('process_peak_rss_kib','Memoria massima usata (KiB)')]:
             # The CP terms belong to earlier profiles only; the objective then equals the training NLL.
             if key in ('training_objective','training_cp_penalty','cp_weight') and job['config'].get('routing_profile') not in ('cp-routing-v1','cp-joint-v1'):

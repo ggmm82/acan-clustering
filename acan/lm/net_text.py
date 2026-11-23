@@ -221,7 +221,11 @@ class NetText:
         selected = base.network.concepts_to_split(next_layer, docs)
         labels = [f'concetti · strato {next_layer + 1}' if kind == 'concetti' else kind for kind in self.KINDS]
         results, trials = [], []
-        previous = grower.best_scores if round_number > 1 else None
+        if round_number > 1:
+            previous = grower.best_scores
+        else:
+            previous = held_out(base.network, held) if self.model is not None else None
+        reference_nll = float(-previous.mean()) if previous is not None else None
         projection, candidate_shape = None, None
         current_shape = base.network.footprint()
 
@@ -235,7 +239,8 @@ class NetText:
                         candidate=labels[number], learned=int(self.read), piece=int(size), done=int(read),
                         speed=int(spent / max(elapsed, 1e-9)), race_candidates=labels,
                         race_scores=[trial['held_out'] for trial in trials], race_evaluating=evaluating,
-                        race_projection=projection, network=current_shape, candidate_network=candidate_shape)
+                        race_projection=projection, race_reference_nll=reference_nll,
+                        network=current_shape, candidate_network=candidate_shape)
 
         report(0, 0)
         for number, (kind, label) in enumerate(zip(self.KINDS, labels)):
@@ -282,21 +287,22 @@ class NetText:
             projection = dict(candidate=labels[self.KINDS.index(choice)], held_out=float(-choice_scores.mean()),
                               grows=choice != "com'è" and not retained, retained=retained)
             if retained:
-                projection = dict(candidate="com'è", held_out=float(-previous.mean()), grows=False, retained=True)
+                projection = dict(candidate="com'è", held_out=reference_nll, grows=False, retained=True)
             report(number, size)
         kind, learner, scores, _, layer = winner
-        if retained:                                           # rereading must improve on the winner we already have
-            kind, learner, scores, layer = "com'è", base, grower.best_scores, None
+        if retained:                                           # neither rereading nor growing improved the reference
+            kind, learner, scores, layer = "com'è", base, previous, None
         else:
             grower.learned += size
         grower.learner = learner
         while grower.decision <= grower.learned:               # the race was the decision of these tokens
             grower.decision *= 2
-        net = grower.best if retained else learner.network.export()
+        net = grower.best if retained and round_number > 1 else learner.network.export()
         grower.best, grower.best_scores = net, scores
         grower.best_learner = None
         c = net.config
         self.races.append(dict(tokens=int(self.tokens + len(ids)), choice=kind, round=round_number, retained=retained,
+                               reference_nll=reference_nll,
                                layer=layer+1 if layer is not None else None,
                                dim=int(c['dim']), layers=int(c['layers']), heads=int(c['heads']),
                                concepts=[int(k) for k in c['concepts']], held_out=float(-scores.mean()),
@@ -304,9 +310,12 @@ class NetText:
         return net, kind != "com'è"
 
     def _race_choice(self, results, previous):
-        top = max(results, key=lambda result: result[2].mean())
-        winner = min((result for result in results if not self._better(top[2], result[2])), key=lambda result: result[3])
-        return winner, previous is not None and not self._better(winner[2], previous)
+        eligible = results if previous is None else [result for result in results if self._better(result[2], previous)]
+        if not eligible:
+            return results[0], True
+        top = max(eligible, key=lambda result: result[2].mean())
+        winner = min((result for result in eligible if not self._better(top[2], result[2])), key=lambda result: result[3])
+        return winner, False
 
     def _racing(self, round_number, number, size, kind, learner, start, shown, report):
         """The page: which candidate of the race is learning the new piece, how far it is, and its validation on

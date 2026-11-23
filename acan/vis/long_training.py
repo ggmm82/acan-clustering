@@ -174,6 +174,10 @@ def _race_live(network):
                                          html.Th('Stato', scope='col')])), html.Tbody(rows)], size='sm', responsive=True,
                       className='small mb-1')
     heading = f"Gara di crescita · tornata {network['race_round']}"
+    reference_nll = network.get('race_reference_nll')
+    reference = html.P(f'NLL della rete di partenza {reference_nll:.3f}', className='small mb-1') if reference_nll is not None else None
+    criteria = ('La scelta favorisce la rete più semplice entro un errore standard dalla migliore.' if reference_nll is None else
+                'La scelta favorisce la rete più semplice tra quelle che battono la partenza e restano entro un errore standard dalla migliore.')
     shape = network.get('candidate_network')
     candidate_details = (html.P([html.Strong(_candidate_label(candidates[current])),
                                  f" · {_network_details(shape)} · {_bytes(shape['bytes'])}"], className='small mb-1')
@@ -182,12 +186,11 @@ def _race_live(network):
     outcome = None
     if projection:
         lead = 'Scelta della tornata' if len(scores) == len(candidates) else 'Se i punteggi confermati restano decisivi'
-        candidate = 'si conserva il vincitore precedente' if projection['retained'] else _candidate_label(projection['candidate'])
+        candidate = 'si conserva la rete di partenza' if projection['retained'] else _candidate_label(projection['candidate'])
         following = 'Nuova tornata sullo stesso pezzo.' if projection['grows'] else 'La gara per questo pezzo si chiude.'
         outcome = html.Div([html.Strong(lead), f" · {candidate} ({projection['held_out']:.3f}). {following}"], className='small')
-    return dbc.Card(dbc.CardBody([html.H6(heading), candidate_details, table, outcome,
-                                 html.Small('NLL più bassa è meglio. La scelta favorisce la rete più semplice entro un errore standard dalla migliore.',
-                                            className='text-muted')], className='py-2'), className='mb-2')
+    return dbc.Card(dbc.CardBody([html.H6(heading), reference, candidate_details, table, outcome,
+                                 html.Small(criteria, className='text-muted')], className='py-2'), className='mb-2')
 
 
 def concept_summary(progress, config, checkpoint_bytes=None, status=None):
@@ -269,7 +272,9 @@ def _race_summary(race):
     winner = (f"{race['choice']}{layer} · larghezza {race['dim']}, {race['layers']} strati, "
               f"{heads}concetti {race['concepts']}, NLL {race['held_out']:.3f}")
     if race.get('retained'):
-        winner += ' · conservato il vincitore della tornata precedente'
+        winner += ' · conservata la rete di partenza'
+    if race.get('reference_nll') is not None:
+        winner += f" · NLL di partenza {race['reference_nll']:.3f}"
     tested = race.get('candidates')
     if not tested:
         return winner
