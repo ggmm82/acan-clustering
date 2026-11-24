@@ -1,0 +1,182 @@
+"""Verification of the single learning rule uniting tabular EM and generative concept networks."""
+import importlib.util
+import unittest
+
+import numpy as np
+
+from acan.concept_algebra import centre_variance, natural_em_dict, natural_em_parameters, natural_em_step
+
+TORCH = importlib.util.find_spec('torch') is not None
+
+
+class UnifiedLearningAlgebraTest(unittest.TestCase):
+    def test_step_one_equals_exact_tabular_batch_em_and_chunked_sums(self):
+        rng = np.random.default_rng(11)
+        n, k, d = 120, 4, 5
+        x = rng.normal(size=(n, d))
+        raw_t = rng.dirichlet(np.ones(k), size=n)
+        batch_c = raw_t.sum(0)
+        batch_u = raw_t.T @ x
+        batch_q = raw_t.T @ (x * x)
+        root = np.ones((1, d))
+        kappa = 1.5
+
+        log_c = rng.normal(size=k)
+        g = rng.normal(size=(k, d))
+        log_s = rng.normal(scale=.2, size=(k, d))
+
+        new_log_c, new_g, new_log_s = natural_em_parameters(
+            log_c, g, log_s, batch_c, batch_u, batch_q, root, kappa, step=1., xp=np
+        )
+        expected_g, expected_v = centre_variance(batch_c[:, None], batch_u, batch_q, root, kappa, np)
+        expected_pi = batch_c / batch_c.sum()
+        np.testing.assert_allclose(np.exp(new_log_c), expected_pi, atol=1e-12)
+        np.testing.assert_allclose(new_g, expected_g, atol=1e-12)
+        np.testing.assert_allclose(np.exp(2 * new_log_s), expected_v, atol=1e-12)
+
+        # Streaming online EM with step = n_b / N_so_far equals the exact full-table additive statistics.
+        running = None
+        seen = 0
+        for start in (0, 27, 73):
+            stop = {0: 27, 27: 73, 73: n}[start]
+            part_t, part_x = raw_t[start:stop], x[start:stop]
+            part = dict(
+                C=part_t.sum(0) / len(part_x),
+                U=(part_t.T @ part_x) / len(part_x),
+                Q=(part_t.T @ (part_x * part_x)) / len(part_x),
+            )
+            seen += len(part_x)
+            running = natural_em_dict(running, part, step=len(part_x) / seen)
+        np.testing.assert_allclose(running['C'] * n, batch_c, atol=1e-12)
+        np.testing.assert_allclose(running['U'] * n, batch_u, atol=1e-12)
+        np.testing.assert_allclose(running['Q'] * n, batch_q, atol=1e-12)
+
+    @unittest.skipUnless(TORCH, 'torch required to verify autograd Fisher natural gradient identity')
+    def test_infinitesimal_step_equals_complete_data_fisher_natural_gradient(self):
+        import torch
+
+        torch.manual_seed(7)
+        n, k, d = 64, 3, 4
+        z = torch.randn(n, d, dtype=torch.float64)
+        log_c = torch.tensor([0.3, -0.4, 0.1], dtype=torch.float64, requires_grad=True)
+        g = (torch.randn(k, d, dtype=torch.float64) * .6).detach().requires_grad_(True)
+        log_s = (torch.randn(k, d, dtype=torch.float64) * .25).detach().requires_grad_(True)
+
+        pi = torch.softmax(log_c, dim=-1)
+        var = torch.exp(2 * log_s)
+        log_det = 2 * log_s.sum(-1)
+        quad = ((z[:, None, :] - g[None, :, :]) ** 2 / var[None, :, :]).sum(-1)
+        log_comp = torch.log(pi)[None, :] - .5 * (quad + log_det[None, :] + d * np.log(2 * np.pi))
+        ll = torch.logsumexp(log_comp, dim=-1).mean()
+        ll.backward()
+
+        with torch.no_grad():
+            t = torch.softmax(log_comp, dim=-1)
+            bc = t.sum(0)
+            bu = t.T @ z
+            bq = t.T @ (z * z)
+            eps = 1e-7
+            nlc, ng, nls = natural_em_parameters(
+                log_c, g, log_s, bc, bu, bq, root=0., kappa=0., step=eps, xp=torch
+            )
+            em_vel_pi = (torch.exp(nlc) - pi) / eps
+            em_vel_g = (ng - g) / eps
+            em_vel_ls = (nls - log_s) / eps
+
+            # Analytical inverse complete-data Fisher metric applied to Euclidean autograd gradients:
+            fisher_vel_pi = log_c.grad                                 # dL / d(log c_k) = pi_hat_k - pi_k
+            fisher_vel_g = (var / pi[:, None]) * g.grad                # F_g^{-1} = sigma_k^2 / pi_k
+            fisher_vel_ls = (1. / (2. * pi[:, None])) * log_s.grad     # F_{log s}^{-1} = 1 / (2 pi_k)
+
+            torch.testing.assert_close(em_vel_pi, fisher_vel_pi, atol=1e-6, rtol=1e-5)
+            torch.testing.assert_close(em_vel_g, fisher_vel_g, atol=1e-6, rtol=1e-5)
+            torch.testing.assert_close(em_vel_ls, fisher_vel_ls, atol=1e-6, rtol=1e-5)
+
+
+@unittest.skipUnless(TORCH, 'torch required to test grouped readout and network growth dynamics')
+class UnifiedNetworkMechanicsTest(unittest.TestCase):
+    def test_grouped_token_log_prob_matches_dense_reference_values_and_gradients(self):
+        import copy
+        import torch
+        from acan.lm.concept_net_training import Network, _GroupedTokenLogProb, _pad, frequency_groups
+
+        torch.manual_seed(3)
+        rng = np.random.default_rng(3)
+        v = 120
+        freq = 1. / (np.arange(1, v + 1) ** .9)
+        groups = frequency_groups(freq)
+        net = Network(dict(vocabulary=v, dim=16, layers=1, heads=2, concepts=4, window=2, grouped=True),
+                      frequency=freq / freq.sum(), groups=groups)
+        ref = copy.deepcopy(net)
+        docs = [rng.choice(v, size=25, p=freq / freq.sum()) for _ in range(5)]
+        ids, mask = _pad(docs)
+        x_in, m_in, targets = ids[:, :-1], mask[:, :-1], ids[:, 1:]
+
+        hf = net.states(x_in, m_in)
+        flat_f, tgt_f = hf.reshape(-1, hf.shape[-1]), targets.reshape(-1)
+        g_f = net.group[tgt_f]
+        lp_gf = torch.log_softmax(net._logits(flat_f, net.group_centre, net.group_log_mass), -1).gather(1, g_f[:, None])[:, 0]
+        in_f = _GroupedTokenLogProb.apply(flat_f, net._rank[tgt_f], g_f, net.centre.weight, net.log_mass,
+                                          net.log_scale, net._members, net._valid)
+        lp_fast = net._cache(hf, m_in, targets, (lp_gf + in_f).view(targets.shape))
+        (-lp_fast.mean()).backward()
+
+        h = ref.states(x_in, m_in)
+        flat, tgt = h.reshape(-1, h.shape[-1]), targets.reshape(-1)
+        g = ref.group[tgt]
+        lp_g = torch.log_softmax(ref._logits(flat, ref.group_centre, ref.group_log_mass), -1).gather(1, g[:, None])[:, 0]
+        members, valid = ref._members[g], ref._valid[g]
+        matching = torch.bmm(ref.centre.weight[members], flat.unsqueeze(-1)).squeeze(-1)
+        norms = ref.centre.weight.square().sum(-1)[members]
+        logits = (matching - .5 * norms) * torch.exp(-2 * ref.log_scale) + ref.log_mass[members]
+        inside = torch.log_softmax(logits.masked_fill(~valid, float('-inf')), -1).gather(1, ref._rank[tgt][:, None])[:, 0]
+        lp_ref = ref._cache(h, m_in, targets, (lp_g + inside).view(targets.shape))
+        (-lp_ref.mean()).backward()
+
+        torch.testing.assert_close(lp_fast, lp_ref, atol=1e-5, rtol=1e-5)
+        for (name, p_fast), (_, p_ref) in zip(net.named_parameters(), ref.named_parameters()):
+            if p_ref.grad is not None:
+                torch.testing.assert_close(p_fast.grad, p_ref.grad, atol=1e-6, rtol=1e-5, msg=name)
+
+    def test_added_third_layer_preserves_reading_yet_receives_nonzero_opening_signal(self):
+        import torch
+        from acan.lm.concept_net_training import Learner, Network
+
+        torch.manual_seed(5)
+        net = Network(dict(vocabulary=40, dim=16, layers=2, heads=2, concepts=3, window=2, grouped=True),
+                      groups=np.arange(40) // 6)
+        ids = np.tile(np.r_[np.arange(1, 15), 39], 4)
+        Learner(net, tokens=32).learn(ids, eos=39)
+        before = net.export().document(ids[:14])
+        net.add_layer()
+        np.testing.assert_allclose(net.export().document(ids[:14]), before, atol=1e-5)
+        Learner(net, tokens=32).learn(ids, eos=39)
+        self.assertNotAlmostEqual(float(net.layers[-1].gate.item()), 0., places=5)
+
+    def test_corpus_bundles_preserve_exact_token_counts_and_mix_domains(self):
+        from acan.lm.concept_trainer import corpus_bundles, piece_from_bundles
+
+        eos = 99
+        # Four distinct blocks of documents concatenated sequentially (domains 0, 1, 2, 3).
+        stream = np.concatenate([
+            np.tile(np.r_[np.full(30, d * 10 + 1, dtype=np.int64), eos], 20)
+            for d in range(4)
+        ])
+        read = len(stream)
+        bundles, offsets = corpus_bundles(stream, read, eos, seed=42, bundle_tokens=64)
+        piece = 620
+        steps = int(np.ceil(read / piece))
+        pieces = [piece_from_bundles(stream, bundles, offsets, s * piece, min((s + 1) * piece, read))
+                  for s in range(steps)]
+        self.assertEqual(sum(len(p) for p in pieces), read)
+        np.testing.assert_array_equal(
+            np.bincount(np.concatenate(pieces), minlength=100),
+            np.bincount(stream, minlength=100),
+        )
+        # First piece now samples multiple domains instead of only domain 0.
+        distinct_domains = {int(v) // 10 for v in np.unique(pieces[0]) if v != eos}
+        self.assertGreaterEqual(len(distinct_domains), 3)
+
+
+if __name__ == '__main__':
+    unittest.main()

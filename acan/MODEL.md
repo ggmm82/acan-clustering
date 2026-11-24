@@ -19,21 +19,22 @@ quadrati, quante volte compare ogni categoria). Le domande che guidano il proget
   è una riga i cui attributi sono i token precedenti e la cui colonna da completare è il
   token che segue.
 
-Il progetto ha quindi due modelli costruiti con gli stessi concetti e le stesse formule:
+Il progetto ha quindi due modelli costruiti con gli stessi concetti, le stesse formule e una
+sola regola di apprendimento (`natural_em_step`):
 
 | | Tabelle | Testo |
 |---|---|---|
 | Che cosa impara | concetti delle righe, in livelli dal generale al particolare | una rete di concetti che legge il documento |
-| Come impara | per somme e assegnazioni alternate (EM), senza gradiente | lungo il gradiente della verosimiglianza del token che segue |
-| Che cosa salva | le somme dei concetti, nessuna riga | i parametri della rete |
+| Come impara | gradiente naturale di Fisher sulle statistiche sufficienti con passo $\rho=1$ (EM esatto) | la stessa regola con passo $0<\rho<1$ (EM naturale online) sui concetti, più il gradiente predittivo sulle proiezioni |
+| Che cosa salva | le somme dei concetti, nessuna riga | i parametri dei concetti e delle proiezioni |
 | Che cosa predice | qualunque colonna mancante | il token che segue, un token alla volta |
 
-La differenza nasce dai dati. In una tabella ogni riga è un punto in uno spazio fisso di
-colonne: i concetti si trovano raggruppando i punti, e le loro somme sono già il modello.
-In un testo la «riga» di una posizione contiene tutti i token che la precedono, una
-quantità che cresce senza limite e che non si può raggruppare direttamente: serve una
-funzione che riassuma il passato in uno stato di dimensione fissa, e quella funzione si
-impara meglio lungo il gradiente.
+La differenza è solo nella lunghezza del passo $\rho\in(0,1]$. In una tabella ogni riga è un
+punto fisso: le osservazioni non si spostano quando cambiano i concetti, quindi il passo
+completo $\rho=1$ raggiunge in un solo salto il punto stazionario (passo M dell'EM). Nel
+testo le interrogazioni interne dipendono dalle proiezioni degli strati precedenti e i dati
+arrivano a pezzi: lo stesso aggiornamento applicato con $0<\rho<1$ (Robbins-Monro) fa
+muovere insieme concetti e rappresentazioni.
 
 Seguiamo due esempi: una tabella di quattro automobili per le sezioni 3–6, e la frase
 «il gatto dorme sul» per le sezioni 7–9.
@@ -301,20 +302,32 @@ in quella direzione, con l'ottimizzatore AdamW. Ogni concetto di ogni strato si 
 a servire la previsione finale: non raggruppa le posizioni perché si somigliano, ma perché
 raggrupparle aiuta a predire.
 
-**Perché il gradiente e non l'EM.** Sulle tabelle l'EM funziona perché le righe sono
-fisse: il passo M ha una soluzione esatta, le medie. Nella rete le «righe» degli strati
-interni sono gli stati, che dipendono da tutti i parametri degli strati precedenti: non
-c'è una soluzione esatta da calcolare, e il modo diretto di sapere come cambiare un
-parametro è il gradiente dell'obiettivo finale. Il passo E resta, dentro la rete: è la
-formula di appartenenza che ogni strato applica.
+**Una sola regola per EM e gradiente.** Sia $\widehat S_k=(\widehat C_k,\widehat U_k,\widehat Q_k)$
+la raccolta delle statistiche sufficienti pesate dalle quote a posteriori $T_{tk}$.
+Moltiplicando il gradiente euclideo della log-verosimiglianza dei concetti per l'inversa
+della matrice di informazione di Fisher dei dati completi $F_c^{-1}$, la direzione naturale
+nello spazio delle aspettative coincide con $\widehat S_k - S_k$. Ne segue un'unica legge di
+aggiornamento con passo $\rho\in(0,1]$:
 
-**A pezzi, con un calendario.** Il testo si legge a pezzi di un milione di token, in lotti
-di documenti interi (ogni documento comincia dopo il token di fine, così anche il suo
-primo token è predetto). Un lotto ha tanti token quanti lotti ci sono in un passaggio sul
-pezzo, al più 2.048; il passo cresce linearmente all'inizio per al più un passaggio. Le
-decisioni (smettere, crescere) cadono su un calendario che raddoppia con i token
-imparati: dopo un lotto, due, quattro… Quando due decisioni di fila non migliorano il
-testo tenuto da parte, la rete smette di imparare.
+$$
+S_k'=(1-\rho)\,S_k+\rho\,\widehat S_k .
+$$
+
+Per $\rho\to0$ la derivata sui parametri $(\log C_k,\,g_k,\,\log s_k)$ è esattamente il
+gradiente naturale $F_c^{-1}\nabla\mathcal L$; per $\rho=1$ (righe fisse delle tabelle) è
+esattamente il passo M dell'EM in un solo salto. Nella rete ogni strato aggiorna i propri
+concetti con $0<\rho_t<1$ sulle interrogazioni osservate mentre la retropropagazione di
+$\mathcal L$ muove proiezioni, attenzioni $A$ (inizializzate sulla diagonale perché ogni
+concetto legga anzitutto la propria somma) e centri dei token.
+
+**A pezzi mescolati, con passo di Robbins-Monro.** Poiché una miscela di fonti concatena
+domini diversi (conversazioni, enciclopedia, codice, comandi), i documenti del testo sono
+raggruppati in fascicoli allineati alla fine del documento e permutati in modo deterministico
+prima della divisione in pezzi da un milione di token: ogni passo vede così la stessa
+miscela della validazione, conservando esattamente il numero totale di token e la ripresa da
+checkpoint. I documenti formano lotti fino a 4.096 token; il passo sale linearmente nei primi
+passi e poi scende come $(1+t/t_0)^{-1/2}$ secondo Robbins-Monro, regolarizzando solo le
+matrici di proiezione lineare e mai masse a priori, dispersioni, normalizzazioni o aperture.
 
 **Dimensioni dai dati.** La rete parte con 32 numeri di stato, uno strato, una testa
 con un concetto e 3 distanze vicine. I centri dei token partono a caso. In una **gara** la
@@ -437,12 +450,11 @@ memoria aggiunge probabilità a «divano».
   e la differenza dipende soprattutto dalla quantità di testo e di calcolo, non dalla
   formula.
 
-**I due modelli del progetto fra loro.** Sulle tabelle i concetti si trovano: le somme
-sono il modello, e ogni numero ha un significato diretto. Sul testo i concetti si
-imparano: sono parametri che l'ottimizzazione piega a servire la previsione, e si
-ispezionano attraverso le posizioni che vi appartengono. Le formule (appartenenza,
-somme, lettura gerarchica) sono le stesse; cambia chi decide dove stanno i concetti: le
-righe stesse nelle tabelle, il gradiente nel testo.
+**I due modelli del progetto fra loro.** Non solo le formule di appartenenza, somme e
+lettura gerarchica sono le stesse, ma anche la regola di apprendimento dei concetti è una
+sola: il gradiente naturale di Fisher $S_k'=(1-\rho)S_k+\rho\widehat S_k$. Sulle tabelle
+le righe sono fisse e $\rho=1$ dà l'EM esatto; sul testo $0<\rho<1$ aggiorna i concetti
+mentre il gradiente predittivo plasma le proiezioni fra gli strati.
 
 ### 11 · Misura della qualità
 
@@ -462,25 +474,27 @@ quadratico.
 
 - **Velocità di apprendimento della rete.** Per ogni token la rete calcola, avanti e
   indietro lungo il gradiente, le appartenenze di ogni strato e quelle dei gruppi e dei
-  token: su un processore senza GPU impara molto più lentamente di quanto il modello delle
-  tabelle impari per somme.
+  token: l'uscita raggruppata per blocchi di frequenza e le gare su finestra limitata
+  riducono drasticamente il costo, ma su CPU senza GPU un modello profondo resta più
+  costoso di una passata tabulare su colonne già fisse.
 - **Colonne indipendenti dentro un concetto** (tabelle): le relazioni fra colonne si
   colgono solo attraverso più concetti.
 - **Interpretabilità della rete.** I concetti delle tabelle si leggono come somme dei loro
-  membri; quelli della rete sono parametri ottimizzati, che si ispezionano attraverso le
+  membri; quelli della rete operano su proiezioni apprese e si ispezionano attraverso le
   posizioni che vi appartengono.
 
 ## Informatica
 
 ### 1 · Panoramica
 
-Il sistema ha due schede di lavoro che usano le stesse formule (Matematica, sezioni 3–4):
+Il sistema ha due schede di lavoro che usano le stesse formule e la stessa regola di
+apprendimento dei concetti (Matematica, sezioni 3–8):
 
-- la scheda **tabulare** impara i concetti di una tabella con l'EM e predice qualunque
+- la scheda **tabulare** impara i concetti di una tabella con $\rho=1$ (EM) e predice qualunque
   colonna;
-- la scheda **generativa** impara la rete a concetti da una coda di testi, lungo il
-  gradiente, e la fa scrivere; un'interfaccia compatibile con quella di OpenAI permette di
-  usarla da altri programmi.
+- la scheda **generativa** impara la rete a concetti da una coda di testi con $0<\rho<1$
+  sui concetti e il gradiente predittivo sulle proiezioni, e la fa scrivere; un'interfaccia
+  compatibile con quella di OpenAI permette di usarla da altri programmi.
 
 L'apprendimento della rete gira in un processo separato (il *worker*), che fa una cosa
 alla volta, salva a ogni passo e riprende dall'ultimo salvataggio.
@@ -519,28 +533,31 @@ giudizio leave-one-out non rilegge la tabella, perché usa le somme.
 2. **Tokenizzazione.** Un tokenizzatore BPE impara dai testi della coda a dividere le
    parole in pezzi (32.000 di default). Ogni documento va per intero in addestramento,
    validazione o test: il modello non viene mai misurato su testo che ha letto.
-3. **Pezzi e lotti.** Il testo si legge a pezzi di un milione di token. Un pezzo si divide
-   in documenti (al più 512 token per tratto, ognuno dopo il token di fine), e i documenti
-   in lotti di circa $\sqrt{\text{token del pezzo}}$ token, al più 2.048. Per ogni lotto:
-   lettura in avanti, perdita (Matematica, sezione 8), gradiente all'indietro, norma del
-   gradiente limitata a 1, passo di AdamW (passo $3\cdot10^{-3}$, avvio lineare per al più
-   200 passi e al più un passaggio), un lieve decadimento dei parametri.
+3. **Pezzi mescolati e lotti.** I documenti di addestramento sono raggruppati in fascicoli
+   allineati alla fine del documento e permutati in modo deterministico prima di formare i
+   pezzi da un milione di token, così ogni passo legge una miscela uniforme di tutte le
+   fonti. Un pezzo si divide in documenti (al più 512 token per tratto, ognuno dopo il token
+   di fine) e in lotti fino a 4.096 token. Per ogni lotto: lettura in avanti, perdita
+   (Matematica, sezione 8), gradiente analitico per gruppo di token, norma del gradiente
+   limitata a 1, passo di AdamW con discesa di Robbins-Monro $(1+t/t_0)^{-1/2}$, passo di EM
+   naturale online sui concetti di ogni strato e regolarizzazione delle sole proiezioni.
 4. **Crescita.** In una gara cinque candidati (la rete com'è, più larga, con uno strato
-   in più, con più concetti in uno strato o con più teste) imparano il pezzo nuovo, uno dopo l'altro; prosegue il
-   più semplice che il migliore non batte di più di un errore standard. Se cresce, il
-   vincitore riparte dallo stesso pezzo finché la struttura si stabilizza. Le gare cadono
+   in più, con più concetti in uno strato o con più teste) si confrontano su una finestra di
+   prova del pezzo nuovo (al più 65.536 token); prosegue il più semplice entro un errore
+   standard dal migliore e completa da solo il resto del pezzo. Se cresce, il vincitore
+   ripete la verifica sulla finestra finché la struttura si stabilizza. Le gare cadono
    sul primo e sull'ultimo pezzo, anticipano se la rete smette di migliorare e altrimenti
-   si diradano (Matematica, sezione 8). Una tornata costa cinque letture del pezzo. Le decisioni si giudicano su
-   tutta la validazione tranne i tratti che misurano l'errore della pagina. Con la crescita spenta (opzione della coda) la rete ha
+   si diradano (Matematica, sezione 8). Con la crescita spenta (opzione della coda) la rete ha
    dimensioni fisse: 96 numeri di stato, 3 strati, 4 gruppi da 64 concetti.
 5. **Riletture finali.** Con l'ultimo pezzo la rete rilegge tutto il testo, passaggio dopo
    passaggio, finché la validazione migliora di più di un errore standard; il passaggio che
    non aiuta si annulla.
 6. **Calcolo.** Le somme dei concetti si leggono a blocchi di 64 posizioni: dentro il
    blocco con un prodotto di matrici, fra un blocco e l'altro con le somme correnti. Le
-   appartenenze sviluppano il quadrato in prodotti di matrici. La lettura finale usa i
-   gruppi di token: per ogni posizione la probabilità del gruppo e quella del token dentro
-   il gruppo. Per imparare si usa PyTorch; per leggere bastano numpy e i parametri salvati.
+   appartenenze sviluppano il quadrato in prodotti di matrici. La lettura finale ordina le
+   posizioni del lotto per gruppo di frequenza del token vero, caricando ogni gruppo di
+   centri una sola volta senza duplicare i vettori del vocabolario. Per imparare si usa
+   PyTorch; per leggere bastano numpy e i parametri salvati.
 7. **Avanzamento.** La pagina mostra il passo, la velocità, la dimensione della rete
    (strati, numeri di stato, concetti, parametri), la gara in corso e due grafici: l'errore
    su testo mai visto passo dopo passo, e il passo in corso aperto, con la validazione
