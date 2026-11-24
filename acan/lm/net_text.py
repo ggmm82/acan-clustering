@@ -147,7 +147,7 @@ class NetText:
                     self._point(min(where(), end), eval_held(network, shown))
                     network.train()
                 best = self._learner.best_scores
-                self.report('network', 0, now - started, learned=int(self._learner.learned), again=int(again),
+                self.report('network', 0, now - started, learned=int(where()), again=int(again),
                             held_milli=int(1000 * -best.mean()) if best is not None and len(best) else 0,
                             speed=int((where() - begun[0]) / max(now - started, 1e-9)), network=network.footprint())
         if shown and not self.trace:                            # where the queue starts

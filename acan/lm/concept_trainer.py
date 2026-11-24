@@ -70,7 +70,7 @@ def judged_pieces(blocks, limit, disjoint=False):
     return pieces[0::2], pieces[1::2] or pieces[0::2]
 
 
-def decision_text(blocks, limit, max_blocks=128):
+def decision_text(blocks, limit, max_blocks=128, eos=None):
     """Representative validation text excluding the blocks that measure the error: the model decides on it (when to
     grow, when to stop), and the error the page shows stays on text no decision has seen."""
     indices = blocks.evaluation_indices('validation', 2*limit)
@@ -82,7 +82,12 @@ def decision_text(blocks, limit, max_blocks=128):
     if len(candidates) > cap:
         picks = np.linspace(0, len(candidates)-1, cap, dtype=int)
         candidates = [candidates[i] for i in picks]
-    kept = [blocks._block('validation', index) for index in candidates]
+    kept = []
+    for pos, index in enumerate(candidates):
+        block = blocks._block('validation', index)
+        if eos is not None and pos > 0 and index != candidates[pos - 1] + 1:
+            block = np.r_[int(eos), block]
+        kept.append(block)
     return np.concatenate(kept) if kept else None
 
 
@@ -258,7 +263,7 @@ def run_training(root, identifier, stop_event=None):
         store.update(identifier, checkpoint=previous.name, progress=state, status='running')
 
         model.watch = judge                                     # the chart inside a step: the same text as its validation
-        model.decide_on = decision_text(blocks, config['validation_batches'])   # the decisions: representative validation
+        model.decide_on = decision_text(blocks, config['validation_batches'], eos=tokenizer.eos_token_id)
         bundles, bundle_offsets = (corpus_bundles(train, read, tokenizer.eos_token_id, config['seed'])
                                    if isinstance(model, NetText) and config['total_steps'] > 1
                                    else ([(0, read)], np.array([0, read], dtype=np.int64)))

@@ -355,8 +355,11 @@ class Network(nn.Module):
                 values[prefix+'A'][heads, selected, -1] -= nudge
                 values[prefix+'A'][heads, -1, -1] += nudge
                 values[prefix+'A'][heads, -1, selected] -= nudge
+        was_single = layer.g.shape[1] == 1
         for name in ('g', 'log_s', 'log_c', 'A'):
             setattr(layer, name, nn.Parameter(values[prefix+name].contiguous()))
+        if was_single and noise:
+            layer._awakened = True
         self.config['concepts'][layer_index] += 1
 
     def _copy_split(self, values, layer_index, selected):
@@ -667,9 +670,18 @@ class Learner:
         self.network, self.tokens, self.longest = network, tokens, longest
         self.weight = None if weight is None else torch.as_tensor(np.asarray(weight, np.float32), device=network.device)
         gates = [p for name, p in network.named_parameters() if name.endswith('.gate')]
-        gate_ids = {id(p) for p in gates}
-        regular = [p for p in network.parameters() if id(p) not in gate_ids]
-        groups = [{'params': regular, 'lr': lr}] + ([{'params': gates, 'lr': lr * 8., 'gate': True}] if gates else [])
+        awakened = []
+        for layer in network.layers:
+            if getattr(layer, '_awakened', False):
+                awakened.extend([layer.query.weight, layer.g, layer.log_s, layer.log_c, layer.A])
+                layer._awakened = False
+        special_ids = {id(p) for p in gates} | {id(p) for p in awakened}
+        regular = [p for p in network.parameters() if id(p) not in special_ids]
+        groups = [{'params': regular, 'lr': lr, 'scale': 1.}]
+        if awakened:
+            groups.append({'params': awakened, 'lr': lr * 4., 'scale': 4.})
+        if gates:
+            groups.append({'params': gates, 'lr': lr * 8., 'scale': 8.})
         self.opt = torch.optim.AdamW(groups, lr=lr, weight_decay=0.,
                                      foreach=(network.device.type == 'cpu'))
         self.decay = .01
@@ -700,7 +712,7 @@ class Learner:
                 check()
             step_lr = self._step_lr(warmup)
             for group in self.opt.param_groups:
-                group['lr'] = step_lr * (8. if group.get('gate') else 1.)
+                group['lr'] = step_lr * group.get('scale', 1.)
             lp = self.network.target_log_probs(ids_[:, :-1], mask[:, :-1], ids_[:, 1:])
             m = mask[:, 1:] if self.weight is None else mask[:, 1:] * self.weight[ids_[:, 1:]]
             denom = m.sum()

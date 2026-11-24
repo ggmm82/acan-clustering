@@ -964,9 +964,10 @@ def register(app):
         uploaded = (upload or {}).get('id')
         chosen_corpus = corpus if corpus in corpus_ids else uploaded if uploaded in corpus_ids else None
         job_ids = {item['id'] for item in state['jobs']}
+        running = next((item['id'] for item in state['jobs'] if item.get('status') in ('running', 'preparing')), None)
         chosen_job = state.get('select_job')
         if chosen_job not in job_ids:
-            chosen_job = selected if selected in job_ids else active if active in job_ids else None
+            chosen_job = selected if selected in job_ids else (active if active in job_ids else running)
         return ([dict(label=f"{item['name']} ({item['received']/1048576:.1f} MiB)", value=item['id']) for item in corpora],
                 [dict(label=project_label(item, state['jobs']),value=item['id']) for item in state['jobs']],
                 chosen_corpus, chosen_job if chosen_job!=selected else dash.no_update)
