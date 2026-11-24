@@ -70,15 +70,61 @@ def judged_pieces(blocks, limit, disjoint=False):
     return pieces[0::2], pieces[1::2] or pieces[0::2]
 
 
-def decision_text(blocks, limit):
-    """All the validation text except the blocks that measure the error: the model decides on it (when to grow,
-    when to stop), and the error the page shows stays on text no decision has seen."""
+def decision_text(blocks, limit, max_blocks=128):
+    """Representative validation text excluding the blocks that measure the error: the model decides on it (when to
+    grow, when to stop), and the error the page shows stays on text no decision has seen."""
     indices = blocks.evaluation_indices('validation', 2*limit)
     if len(indices) < 2:
         return None                                              # one block only: the decisions use the tuning half
     measured = set(indices[1::2])
-    kept = [blocks._block('validation', index) for index in range(blocks.counts['validation']) if index not in measured]
+    candidates = [index for index in range(blocks.counts['validation']) if index not in measured]
+    cap = max(4*limit, max_blocks)
+    if len(candidates) > cap:
+        picks = np.linspace(0, len(candidates)-1, cap, dtype=int)
+        candidates = [candidates[i] for i in picks]
+    kept = [blocks._block('validation', index) for index in candidates]
     return np.concatenate(kept) if kept else None
+
+
+def corpus_bundles(train, read, eos, seed, bundle_tokens=4096):
+    """Deterministic permutation of document-aligned bundles across ``train[:read]``.
+
+    Multi-source corpora concatenate sources sequentially (dialogues, encyclopaedias, code, bash);
+    permuting document bundles gives every piece the same mixture of domains as held-out validation
+    while preserving exact token counts and resumability at any step.
+    """
+    spans, start = [], 0
+    chunk = 4_000_000
+    for offset in range(0, read, chunk):
+        part = np.asarray(train[offset:min(offset+chunk, read)])
+        for end in np.flatnonzero(part == eos) + 1 + offset:
+            if end - start >= bundle_tokens:
+                spans.append((start, int(end)))
+                start = int(end)
+    if start < read:
+        spans.append((start, int(read)))
+    if len(spans) <= 1:
+        return spans, np.array([0, read], dtype=np.int64)
+    order = np.random.default_rng(seed).permutation(len(spans))
+    ordered = [spans[int(i)] for i in order]
+    lengths = np.array([b - a for a, b in ordered], dtype=np.int64)
+    return ordered, np.r_[0, np.cumsum(lengths)]
+
+
+def piece_from_bundles(train, bundles, offsets, start, stop):
+    """Exact token slice ``[start, stop)`` of the permuted bundle stream as an int64 array."""
+    if stop <= start or not bundles:
+        return np.empty(0, np.int64)
+    first = max(0, int(np.searchsorted(offsets, start, side='right')) - 1)
+    last = min(len(bundles), int(np.searchsorted(offsets, stop, side='left')))
+    parts = []
+    for idx in range(first, last):
+        a, b = bundles[idx]
+        lo = a + max(0, start - int(offsets[idx]))
+        hi = a + min(b - a, stop - int(offsets[idx]))
+        if hi > lo:
+            parts.append(np.asarray(train[lo:hi], np.int64))
+    return np.concatenate(parts) if parts else np.empty(0, np.int64)
 
 
 def measure(model, pieces):
@@ -212,13 +258,24 @@ def run_training(root, identifier, stop_event=None):
         store.update(identifier, checkpoint=previous.name, progress=state, status='running')
 
         model.watch = judge                                     # the chart inside a step: the same text as its validation
-        model.decide_on = decision_text(blocks, config['validation_batches'])   # the decisions: all the validation but the measure
+        model.decide_on = decision_text(blocks, config['validation_batches'])   # the decisions: representative validation
+        bundles, bundle_offsets = (corpus_bundles(train, read, tokenizer.eos_token_id, config['seed'])
+                                   if isinstance(model, NetText) and config['total_steps'] > 1
+                                   else ([(0, read)], np.array([0, read], dtype=np.int64)))
+        import os as _os
+        threads = max(2, min(_os.cpu_count() or 2, 4))
+        if device == 'cpu':
+            try:
+                import torch as _torch
+                _torch.set_num_threads(threads)
+            except ImportError:
+                pass
         started, initial = time.monotonic(), state['tokens_trained']
         last_save = time.monotonic()
         saved_step = state['step']
         while state['step'] < config['total_steps'] and not should_pause():
             begin = state['step']*piece
-            ids = np.asarray(train[begin:min(begin+piece, read)], np.int64)
+            ids = piece_from_bundles(train, bundles, bundle_offsets, begin, min(begin+piece, read))
             # Commit a whole piece or keep the previous sums intact on pause.
             updated = copy(model)
             updated.trace = model.trace.copy()
@@ -234,7 +291,7 @@ def run_training(root, identifier, stop_event=None):
                 updated.model = copy(model.model)
                 updated.model.tables = dict(model.model.tables)
             try:
-                with threadpool_limits(limits=2):
+                with threadpool_limits(limits=threads):
                     updated.add(ids, train[:read], tune, check)
             except PreparationPaused:
                 break
@@ -251,7 +308,8 @@ def run_training(root, identifier, stop_event=None):
                 model.judge(tune, final=state['step'] == config['total_steps'])
                 state['validation_nll'] = measure(model, judge)
                 state['validation_perplexity'] = math.exp(state['validation_nll']) if state['validation_nll'] < 700 else None
-                following = np.asarray(train[state['step']*piece:state['step']*piece+4096], np.int64)
+                next_begin = state['step']*piece
+                following = piece_from_bundles(train, bundles, bundle_offsets, next_begin, min(next_begin+4096, read))
                 if len(following) > 1:                           # the text it is about to read: unseen, as validation
                     state['training_nll'] = float(-model.logp(following, np.arange(1, len(following))).mean())
                 state['best_validation_nll'] = min(state.get('best_validation_nll', state['validation_nll']), state['validation_nll'])

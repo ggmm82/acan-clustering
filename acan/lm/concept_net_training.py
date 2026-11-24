@@ -12,7 +12,110 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from acan.concept_algebra import natural_em_parameters
 from .concept_net import ConceptNet
+
+
+class _GroupedTokenLogProb(torch.autograd.Function):
+    """Exact log p(y | h, G_y) for grouped token concepts without materializing N x S x D gathers."""
+
+    @staticmethod
+    def forward(ctx, flat, rank_tgt, g, centre, log_mass, log_scale, members, valid):
+        N, D = flat.shape
+        if N == 0:
+            ctx.empty = True
+            ctx.centre_rows, ctx.dim = centre.shape
+            return flat.new_empty(0)
+        ctx.empty = False
+        S = members.shape[1]
+        inv_scale = torch.exp(-2 * log_scale)
+        order = torch.argsort(g)
+        g_s, x_s, r_s = g[order], flat[order], rank_tgt[order]
+        ug, counts = torch.unique_consecutive(g_s, return_counts=True)
+        mem_u, val_u = members[ug], valid[ug]
+        C_u = centre[mem_u]
+        norms_u = C_u.square().sum(-1)
+        mass_u = log_mass[mem_u]
+        starts = torch.cat([counts.new_zeros(1), counts.cumsum(0)[:-1]])
+        tail_mask = counts <= 16
+        head_idx = torch.nonzero(~tail_mask, as_tuple=False).squeeze(-1)
+        tail_idx = torch.nonzero(tail_mask, as_tuple=False).squeeze(-1)
+        P_s = flat.new_empty(N, S)
+        out_s = flat.new_empty(N)
+        for u in head_idx.tolist():
+            a = int(starts[u]); b = a + int(counts[u])
+            lg = (x_s[a:b] @ C_u[u].T - .5 * norms_u[u]) * inv_scale + mass_u[u]
+            lg = lg.masked_fill(~val_u[u], float('-inf'))
+            lse = torch.logsumexp(lg, dim=-1, keepdim=True)
+            P_s[a:b] = torch.exp(lg - lse)
+            out_s[a:b] = lg.gather(1, r_s[a:b, None])[:, 0] - lse[:, 0]
+        if len(tail_idx):
+            t_counts = counts[tail_idx]
+            B_max, T_u = int(t_counts.max().item()), len(tail_idx)
+            u_rep = torch.repeat_interleave(torch.arange(T_u, device=flat.device), t_counts)
+            local_offsets = torch.cat([t_counts.new_zeros(1), t_counts.cumsum(0)[:-1]])
+            slot = torch.arange(int(t_counts.sum().item()), device=flat.device) - local_offsets[u_rep]
+            src_pos = starts[tail_idx][u_rep] + slot
+            X_pad = flat.new_zeros(T_u, B_max, D)
+            X_pad[u_rep, slot] = x_s[src_pos]
+            lg = (torch.bmm(X_pad, C_u[tail_idx].transpose(1, 2)) - .5 * norms_u[tail_idx, None, :]) * inv_scale + mass_u[tail_idx, None, :]
+            lg = lg.masked_fill(~val_u[tail_idx, None, :], float('-inf'))
+            lse = torch.logsumexp(lg, dim=-1, keepdim=True)
+            P_s[src_pos] = torch.exp(lg - lse)[u_rep, slot]
+            out_s[src_pos] = lg[u_rep, slot].gather(1, r_s[src_pos, None])[:, 0] - lse[u_rep, slot, 0]
+        else:
+            B_max = 0
+            u_rep = slot = src_pos = flat.new_empty(0, dtype=torch.long)
+        out = flat.new_empty(N)
+        out[order] = out_s
+        ctx.save_for_backward(order, x_s, r_s, P_s, counts, starts, head_idx, tail_idx,
+                              mem_u, val_u, C_u, inv_scale, u_rep, slot, src_pos)
+        ctx.B_max = B_max
+        ctx.centre_rows = centre.shape[0]
+        return out
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        if ctx.empty:
+            z_c = grad_out.new_zeros(ctx.centre_rows, ctx.dim)
+            return grad_out.new_empty(0, ctx.dim), None, None, z_c, grad_out.new_zeros(ctx.centre_rows), grad_out.new_zeros(()), None, None
+        (order, x_s, r_s, P_s, counts, starts, head_idx, tail_idx,
+         mem_u, val_u, C_u, inv_scale, u_rep, slot, src_pos) = ctx.saved_tensors
+        N, D = x_s.shape
+        U, S, _ = C_u.shape
+        go_s = grad_out[order]
+        D_s = -P_s * go_s[:, None]
+        D_s.scatter_add_(1, r_s[:, None], go_s[:, None])
+        grad_x_s = x_s.new_empty(N, D)
+        grad_C_u = C_u.new_empty(U, S, D)
+        grad_mass_u = C_u.new_empty(U, S)
+        for u in head_idx.tolist():
+            a = int(starts[u]); b = a + int(counts[u])
+            dk, xk, ck = D_s[a:b], x_s[a:b], C_u[u]
+            ms = dk.sum(0)
+            grad_mass_u[u] = ms
+            grad_x_s[a:b] = (dk @ ck) * inv_scale
+            grad_C_u[u] = (dk.T @ xk - ms[:, None] * ck) * inv_scale
+        if len(tail_idx):
+            T_u, B_max = len(tail_idx), ctx.B_max
+            D_pad = x_s.new_zeros(T_u, B_max, S)
+            X_pad = x_s.new_zeros(T_u, B_max, D)
+            D_pad[u_rep, slot] = D_s[src_pos]
+            X_pad[u_rep, slot] = x_s[src_pos]
+            C_t = C_u[tail_idx]
+            ms_t = D_pad.sum(1)
+            grad_mass_u[tail_idx] = ms_t
+            grad_x_s[src_pos] = (torch.bmm(D_pad, C_t) * inv_scale)[u_rep, slot]
+            grad_C_u[tail_idx] = (torch.bmm(D_pad.transpose(1, 2), X_pad) - ms_t[:, :, None] * C_t) * inv_scale
+        grad_log_scale = -2. * ((x_s * grad_x_s).sum() - .5 * inv_scale * (grad_mass_u * C_u.square().sum(-1)).sum())
+        grad_flat = x_s.new_empty(N, D)
+        grad_flat[order] = grad_x_s
+        flat_mem = mem_u[val_u]
+        grad_centre = C_u.new_zeros(ctx.centre_rows, D)
+        grad_centre[flat_mem] = grad_C_u[val_u]
+        grad_log_mass = C_u.new_zeros(ctx.centre_rows)
+        grad_log_mass[flat_mem] = grad_mass_u[val_u]
+        return grad_flat, None, None, grad_centre, grad_log_mass, grad_log_scale, None, None
 
 
 def memberships_logits(q, g, log_s, log_c):
@@ -49,7 +152,9 @@ class ConceptAttention(nn.Module):
         self.g = nn.Parameter(torch.randn(heads, concepts, self.d) * .5)
         self.log_s = nn.Parameter(torch.zeros(heads, concepts, self.d))
         self.log_c = nn.Parameter(torch.zeros(heads, concepts))
-        self.A = nn.Parameter(torch.zeros(heads, concepts, concepts))
+        # Each concept starts by reading primarily its own summary (with A=0 every concept read the same uniform mean).
+        eye = torch.eye(concepts).unsqueeze(0).expand(heads, -1, -1).clone() if concepts > 1 else torch.zeros(heads, 1, 1)
+        self.A = nn.Parameter(1.5 * eye)
         self.query = nn.Linear(dim, heads * self.d, bias=False)
         self.value = nn.Linear(dim, heads * self.d, bias=False)
         self.write = nn.Parameter(torch.zeros(heads, dim))  # one content-dependent write strength per head
@@ -61,12 +166,27 @@ class ConceptAttention(nn.Module):
         self.gate = nn.Parameter(torch.ones(()))
         self.window = window
         self.chunk = 64
+        self._em_stats = None
 
     def forward(self, h, mask):
         B, T, D = h.shape
         q = self.query(h).view(B, T, self.h, self.d)
         v = self.value(h).view(B, T, self.h, self.d)
         t = torch.softmax(memberships_logits(q, self.g, self.log_s, self.log_c), -1) * mask[:, :, None, None]
+        if self.training:
+            with torch.no_grad():
+                qd, td = q.detach(), t.detach()
+                tf = td.flatten(0, 1).permute(1, 2, 0)
+                qf = qd.flatten(0, 1).transpose(0, 1)
+                bc = tf.sum(-1)
+                bu = torch.bmm(tf, qf)
+                q2 = qf.square()
+                bq = torch.bmm(tf, q2)
+                mv = mask.reshape(1, -1, 1)
+                n_valid = mv.sum().clamp_min(1.)
+                mean_q = (qf * mv).sum(1, keepdim=True) / n_valid
+                root_v = ((q2 * mv).sum(1, keepdim=True) / n_valid - mean_q.square()).clamp_min(1e-4)
+                self._em_stats = (bc, bu, bq, root_v)
         # A new or restored layer starts with strength one, the ordinary concept average.
         direction = F.normalize(h, dim=-1) * math.sqrt(D)
         strength = .5 + torch.sigmoid(F.linear(direction, self.write))
@@ -176,12 +296,16 @@ class Network(nn.Module):
             return self._cache(h, mask, targets, lp)
         g = self.group[tgt]
         lp = torch.log_softmax(self._logits(flat, self.group_centre, self.group_log_mass), -1).gather(1, g[:, None])[:, 0]
-        members, valid = self._members[g], self._valid[g]                         # N x S: the tokens of each group
-        centres = self.centre.weight
-        matching = torch.bmm(centres[members], flat.unsqueeze(-1)).squeeze(-1)    # N x S
-        norms = centres.square().sum(-1)[members]
-        logits = (matching - .5 * norms) * torch.exp(-2 * self.log_scale) + self.log_mass[members]
-        inside = torch.log_softmax(logits.masked_fill(~valid, float('-inf')), -1).gather(1, self._rank[tgt][:, None])[:, 0]
+        if flat.shape[0] * self._members.shape[1] <= 16_384:
+            members, valid = self._members[g], self._valid[g]
+            centres = self.centre.weight
+            matching = torch.bmm(centres[members], flat.unsqueeze(-1)).squeeze(-1)
+            norms = centres.square().sum(-1)[members]
+            logits = (matching - .5 * norms) * torch.exp(-2 * self.log_scale) + self.log_mass[members]
+            inside = torch.log_softmax(logits.masked_fill(~valid, float('-inf')), -1).gather(1, self._rank[tgt][:, None])[:, 0]
+        else:
+            inside = _GroupedTokenLogProb.apply(flat, self._rank[tgt], g, self.centre.weight, self.log_mass,
+                                                self.log_scale, self._members, self._valid)
         return self._cache(h, mask, targets, (lp + inside).view(targets.shape))
 
     # ---- growth: a bigger network that reads exactly as the smaller one did -----------------------------------------
@@ -201,7 +325,7 @@ class Network(nn.Module):
         layer.g, layer.log_s, layer.log_c, layer.A = (nn.Parameter(x.contiguous()) for x in (g, log_s, log_c, A))
         self.config['concepts'][i] = int(g.shape[1])
 
-    def split_one(self, layer_index, selected, noise=.01):
+    def split_one(self, layer_index, selected, noise=.25):
         """Split one concept per head in a single layer, preserving its mass and attention."""
         layer = self.layers[layer_index]
         prefix = f'layers.{layer_index}.'
@@ -212,9 +336,16 @@ class Network(nn.Module):
             mass[heads, selected] = mass[:, -1] = math.log(2)
             values[prefix+'log_c'] -= mass
             values[prefix+'A'] -= mass[:, None, :]
-            offset = torch.randn_like(layer.g[heads, selected]) * layer.log_s[heads, selected].exp() * noise
-            values[prefix+'g'][heads, selected] += offset
-            values[prefix+'g'][:, -1] -= offset
+            if noise:
+                offset = torch.randn_like(layer.g[heads, selected]) * layer.log_s[heads, selected].exp() * noise
+                values[prefix+'g'][heads, selected] += offset
+                values[prefix+'g'][:, -1] -= offset
+                # Each child slightly favors reading its own summary so their rows in A diverge cleanly.
+                nudge = min(float(noise), .25)
+                values[prefix+'A'][heads, selected, selected] += nudge
+                values[prefix+'A'][heads, selected, -1] -= nudge
+                values[prefix+'A'][heads, -1, -1] += nudge
+                values[prefix+'A'][heads, -1, selected] -= nudge
         for name in ('g', 'log_s', 'log_c', 'A'):
             setattr(layer, name, nn.Parameter(values[prefix+name].contiguous()))
         self.config['concepts'][layer_index] += 1
@@ -255,11 +386,12 @@ class Network(nn.Module):
         return usage.argmax(dim=-1)
 
     def add_layer(self):
-        """A new last layer that leaves the states as they are: it starts closed, and what it adds starts at zero."""
+        """A new last layer that leaves the states as they are: it starts closed, and the gradient opens it."""
         dim, last = self.config['dim'], self.layers[-1]
         layer = ConceptAttention(dim, self.config['heads'], int(last.g.shape[1]), self.config['window'], self.config['head_dim']).to(self.device)
         with torch.no_grad():
-            layer.out.weight.zero_(); layer.out.bias.zero_()
+            # Keep out non-zero so (new - h) carries signal on step 1 while gate=0 preserves the state exactly.
+            nn.init.normal_(layer.out.weight, std=.02); layer.out.bias.zero_()
             layer.gate.zero_()                                         # closed: the state goes through as it is
         self.layers.append(layer)
         self.config['layers'] = len(self.layers)
@@ -492,18 +624,28 @@ def _pad(chunk, device=None):
 class Learner:
     """The network and its optimizer across the pieces of a queue (the state is kept between pieces)."""
 
-    def __init__(self, network, lr=3e-3, tokens=2048, longest=512, seed=0, weight=None):
+    _DECAYED = ('query.weight', 'value.weight', 'out.weight', '.near', 'final.weight', 'cache_query.weight', 'cache_key.weight')
+
+    def __init__(self, network, lr=3e-3, tokens=4096, longest=512, seed=0, weight=None):
         """``weight``: how much every token weighs when it is the one to read (one per token of the vocabulary),
         as the concept model weighs its attributes: a target as much as all the features together."""
         self.network, self.tokens, self.longest = network, tokens, longest
         self.weight = None if weight is None else torch.as_tensor(np.asarray(weight, np.float32), device=network.device)
-        self.opt = torch.optim.AdamW(network.parameters(), lr=lr, weight_decay=0.)
+        self.opt = torch.optim.AdamW(network.parameters(), lr=lr, weight_decay=0.,
+                                     foreach=(network.device.type == 'cpu'))
         self.decay = .01
-        self.anchor = None                                     # where the parameters are pulled back to (None: zero)
+        self.anchor = None                                     # where the parameters are pulled back to (None: projections only)
         self.lr, self.steps = lr, 0
+        self.horizon = 500.                                    # Robbins-Monro online EM step decay horizon (in steps)
+        self.em_scale = 8.                                     # online natural-EM rate relative to step size
         self.seen = 0                                          # tokens read so far, batch after batch
         self.warmup = 200                                      # steps of the start, at most one pass (Grower)
         self.rng = np.random.default_rng(seed)
+
+    def _step_lr(self, warmup):
+        warm = min(1., (self.steps + 1) / max(warmup, 1))
+        cool = 1. / math.sqrt(1. + max(0, self.steps - warmup) / self.horizon)
+        return self.lr * warm * cool
 
     def learn(self, ids, eos, check=None, warmup=None):
         """One pass over a piece of text, in batches of about ``tokens`` tokens. Returns the training loss."""
@@ -513,22 +655,46 @@ class Learner:
         warmup = self.warmup if warmup is None else warmup
         self.network.train()
         total, n = 0., 0
+        use_foreach = self.network.device.type == 'cpu'
         for ids_, mask in batches(docs, self.tokens, True, self.rng, self.network.device):
             if check is not None:
                 check()
+            step_lr = self._step_lr(warmup)
             for group in self.opt.param_groups:
-                group['lr'] = self.lr * min(1., (self.steps + 1) / warmup)
+                group['lr'] = step_lr
             lp = self.network.target_log_probs(ids_[:, :-1], mask[:, :-1], ids_[:, 1:])
             m = mask[:, 1:] if self.weight is None else mask[:, 1:] * self.weight[ids_[:, 1:]]
             loss = -(lp * m).sum() / m.sum()
             self.opt.zero_grad(); loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.network.parameters(), 1.)
+            torch.nn.utils.clip_grad_norm_(self.network.parameters(), 1., foreach=use_foreach)
             self.opt.step(); self.steps += 1
-            self._pull_back(self.opt.param_groups[0]['lr'])
+            self._concept_em_step(step_lr)
+            self._pull_back(step_lr)
             total += loss.item() * m.sum().item(); n += m.sum().item()
             self.seen += int(mask[:, 1:].sum())
         self.network.eval()
         return total / max(n, 1)
+
+    def _concept_em_step(self, lr):
+        """Apply the shared Fisher natural-gradient / online-EM update to the Gaussian concepts of every layer."""
+        if self.anchor is not None or self.em_scale <= 0.:
+            return
+        rate = min(.05, lr * self.em_scale)
+        with torch.no_grad():
+            for layer in self.network.layers:
+                stats = getattr(layer, '_em_stats', None)
+                if stats is None:
+                    continue
+                bc, bu, bq, root_v = stats
+                layer._em_stats = None
+                if float(bc.sum()) <= 1e-6:
+                    continue
+                new_log_c, new_g, new_log_s = natural_em_parameters(
+                    layer.log_c, layer.g, layer.log_s, bc, bu, bq, root_v, 1., rate, torch
+                )
+                layer.log_c.copy_(new_log_c)
+                layer.g.copy_(new_g)
+                layer.log_s.copy_(new_log_s.clamp(-4., 3.))
 
     def carry(self, before, kind, split=None):
         """The optimizer of a grown copy goes on from the one of the network it grew from (``before``, a Learner):
@@ -570,8 +736,10 @@ class Learner:
     def _pull_back(self, lr):
         with torch.no_grad():
             if self.anchor is None:
-                for p in self.network.parameters():
-                    p.mul_(1 - lr * self.decay)
+                # Only regularize linear projections; never pull priors, dispersions, norms or gates toward zero.
+                for name, p in self.network.named_parameters():
+                    if name.endswith(self._DECAYED):
+                        p.mul_(1 - lr * self.decay)
             else:
                 for p, a in zip(self.network.parameters(), self.anchor):
                     p.sub_(lr * self.decay * (p - a))
@@ -734,9 +902,9 @@ class Grower:
             return self.best
         cycle = _Cycle(docs, self.learner.rng)
         decided = False
-        # as many batches in a pass as tokens in a batch: a small piece is learned in many small steps
+        # as many batches in a pass as tokens in a batch on small pieces; full batches on large pieces
         self.piece = sum(map(len, docs))                       # a trial is at most one pass over the piece
-        self.learner.tokens = min(self.batch, max(1, math.isqrt(self.piece)))
+        self.learner.tokens = min(self.batch, max(1, self.piece // 64) if self.piece >= 16384 else max(1, math.isqrt(self.piece)))
         if not self.learned:                                   # the start lasts at most one pass over the piece
             self.learner.warmup = min(self.learner.warmup, max(1, -(-self.piece // self.learner.tokens)))
         if not self.learned:
@@ -757,10 +925,13 @@ class Grower:
             self.decision *= 2
         if self.done:
             return self.best
-        if not decided:                                        # the network at the end of the new text, if better
+        if not decided:                                        # same architecture: keep any held-out improvement
             scores = score(self.learner.network)
-            if self.best_scores is None or self._better(scores, self.best_scores):
+            if self.best_scores is None or scores.mean() > self.best_scores.mean():
                 self._keep(self.learner.network.export(), scores)
+            elif self.best_learner is not None and self._better(self.best_scores, scores):
+                self.learner = copy.deepcopy(self.best_learner)
+                self.learner.lr = max(1e-4, self.learner.lr * .5)
         if self.passes:
             piece, made = sum(map(len, docs)), 0
             interval = piece
