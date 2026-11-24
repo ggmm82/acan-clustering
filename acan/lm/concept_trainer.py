@@ -303,7 +303,7 @@ def run_training(root, identifier, stop_event=None):
             state['tokens_per_second'] = (state['tokens_trained']-initial)/max(time.monotonic()-started, 1e-6)
             due = state['step'] % config['save_steps'] == 0 or time.monotonic()-last_save >= config['save_seconds']
             last = due or should_pause() or state['step'] == config['total_steps']
-            measured = last or state['step'] % measure_every(config['total_steps']) == 0
+            measured = last or isinstance(model, NetText) or state['step'] % measure_every(config['total_steps']) == 0
             if measured:                                         # the error on unseen text, about twenty times per text
                 model.judge(tune, final=state['step'] == config['total_steps'])
                 state['validation_nll'] = measure(model, judge)

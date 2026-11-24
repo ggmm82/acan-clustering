@@ -325,23 +325,32 @@ class Network(nn.Module):
         layer.g, layer.log_s, layer.log_c, layer.A = (nn.Parameter(x.contiguous()) for x in (g, log_s, log_c, A))
         self.config['concepts'][i] = int(g.shape[1])
 
-    def split_one(self, layer_index, selected, noise=.25):
+    def split_one(self, layer_index, selected, noise=.06):
         """Split one concept per head in a single layer, preserving its mass and attention."""
         layer = self.layers[layer_index]
         prefix = f'layers.{layer_index}.'
         with torch.no_grad():
-            values = self._copy_split(layer.state_dict(prefix=prefix), layer_index, selected)
+            raw = layer.state_dict(prefix=prefix)
+            if layer.g.shape[1] == 1 and noise and getattr(layer, '_k1_stats', None) is not None:
+                # For K=1, softmax([logit]) == 1 identically for any (g, log_s); aligning to the empirical
+                # query mean/dispersion before splitting gives 50/50 child responsibilities with zero output drift.
+                mean_q, log_std_q = layer._k1_stats
+                raw = dict(raw)
+                raw[prefix+'g'] = mean_q.to(device=self.device, dtype=layer.g.dtype).unsqueeze(1).clone()
+                raw[prefix+'log_s'] = log_std_q.to(device=self.device, dtype=layer.log_s.dtype).unsqueeze(1).clone()
+            values = self._copy_split(raw, layer_index, selected)
             heads = torch.arange(layer.h, device=self.device)
             mass = torch.zeros_like(values[prefix+'log_c'])
             mass[heads, selected] = mass[:, -1] = math.log(2)
             values[prefix+'log_c'] -= mass
             values[prefix+'A'] -= mass[:, None, :]
             if noise:
-                offset = torch.randn_like(layer.g[heads, selected]) * layer.log_s[heads, selected].exp() * noise
+                scale = values[prefix+'log_s'][heads, selected].exp()
+                offset = torch.randn_like(values[prefix+'g'][heads, selected]) * scale * noise
                 values[prefix+'g'][heads, selected] += offset
                 values[prefix+'g'][:, -1] -= offset
                 # Each child slightly favors reading its own summary so their rows in A diverge cleanly.
-                nudge = min(float(noise), .25)
+                nudge = min(float(noise) * 4., .25)
                 values[prefix+'A'][heads, selected, selected] += nudge
                 values[prefix+'A'][heads, selected, -1] -= nudge
                 values[prefix+'A'][heads, -1, -1] += nudge
@@ -372,6 +381,25 @@ class Network(nn.Module):
         """Use the most occupied concept of each head on a spread of training documents."""
         layer = self.layers[layer_index]
         if layer.g.shape[1] == 1:
+            if docs:
+                sum_q = torch.zeros(layer.h, layer.d, device=self.device)
+                sum_q2 = torch.zeros(layer.h, layer.d, device=self.device)
+                count = 0
+                for index in np.linspace(0, len(docs)-1, min(8, len(docs)), dtype=int):
+                    if len(docs[index]) < 2:
+                        continue
+                    tokens, mask = _pad([docs[index][:-1]], self.device)
+                    hidden = self.centre(tokens)
+                    for previous in self.layers[:layer_index]:
+                        hidden = previous(hidden, mask)
+                    q = layer.query(hidden).view(-1, layer.h, layer.d)
+                    sum_q += q.sum(0)
+                    sum_q2 += q.square().sum(0)
+                    count += int(q.shape[0])
+                if count > 1:
+                    mean_q = sum_q / count
+                    var_q = (sum_q2 / count - mean_q.square()).clamp_min(1e-4)
+                    layer._k1_stats = (mean_q.detach(), (.5 * var_q.log()).clamp(-4., 3.).detach())
             return torch.zeros(layer.h, dtype=torch.long, device=self.device)
 
         usage = torch.zeros_like(layer.log_c)
@@ -403,7 +431,7 @@ class Network(nn.Module):
         groups = self.group.cpu().numpy() if self.grouped else None
         return Network(config, groups=groups).to(self.device)
 
-    def widened(self, noise=1e-2):
+    def widened(self, noise=2e-3):
         """Twice as wide (the state and every group of concepts): every coordinate is copied, so the states are the old
         ones written twice; the maps that read them take half from each copy, the dispersions grow by sqrt 2 and the
         masses of the concepts are corrected, so memberships, readings and the next token are the same. The two copies
@@ -638,12 +666,16 @@ class Learner:
         as the concept model weighs its attributes: a target as much as all the features together."""
         self.network, self.tokens, self.longest = network, tokens, longest
         self.weight = None if weight is None else torch.as_tensor(np.asarray(weight, np.float32), device=network.device)
-        self.opt = torch.optim.AdamW(network.parameters(), lr=lr, weight_decay=0.,
+        gates = [p for name, p in network.named_parameters() if name.endswith('.gate')]
+        gate_ids = {id(p) for p in gates}
+        regular = [p for p in network.parameters() if id(p) not in gate_ids]
+        groups = [{'params': regular, 'lr': lr}] + ([{'params': gates, 'lr': lr * 8., 'gate': True}] if gates else [])
+        self.opt = torch.optim.AdamW(groups, lr=lr, weight_decay=0.,
                                      foreach=(network.device.type == 'cpu'))
         self.decay = .01
         self.anchor = None                                     # where the parameters are pulled back to (None: projections only)
         self.lr, self.steps = lr, 0
-        self.horizon = 500.                                    # Robbins-Monro online EM step decay horizon (in steps)
+        self.horizon = 2000.                                   # Robbins-Monro online EM step decay horizon (in steps)
         self.em_scale = 8.                                     # online natural-EM rate relative to step size
         self.seen = 0                                          # tokens read so far, batch after batch
         self.warmup = 200                                      # steps of the start, at most one pass (Grower)
@@ -651,7 +683,7 @@ class Learner:
 
     def _step_lr(self, warmup):
         warm = min(1., (self.steps + 1) / max(warmup, 1))
-        cool = 1. / math.sqrt(1. + max(0, self.steps - warmup) / self.horizon)
+        cool = max(.2, 1. / math.sqrt(1. + max(0, self.steps - warmup) / self.horizon))
         return self.lr * warm * cool
 
     def learn(self, ids, eos, check=None, warmup=None):
@@ -668,7 +700,7 @@ class Learner:
                 check()
             step_lr = self._step_lr(warmup)
             for group in self.opt.param_groups:
-                group['lr'] = step_lr
+                group['lr'] = step_lr * (8. if group.get('gate') else 1.)
             lp = self.network.target_log_probs(ids_[:, :-1], mask[:, :-1], ids_[:, 1:])
             m = mask[:, 1:] if self.weight is None else mask[:, 1:] * self.weight[ids_[:, 1:]]
             denom = m.sum()
@@ -677,7 +709,19 @@ class Learner:
             loss = -(lp * m).sum() / denom
             self.opt.zero_grad(); loss.backward()
             torch.nn.utils.clip_grad_norm_(self.network.parameters(), 1., foreach=use_foreach)
+            with torch.no_grad():
+                for p, state in self.opt.state.items():
+                    if p.grad is not None and state and 'exp_avg_sq' in state:
+                        step_val = int(state['step'].item()) if torch.is_tensor(state['step']) else int(state['step'])
+                        if step_val > 0:
+                            sq = state['exp_avg_sq']
+                            zero_mask = (sq == 0) & (p.grad != 0)
+                            if bool(zero_mask.any()):
+                                sq[zero_mask] = p.grad[zero_mask].square()
             self.opt.step(); self.steps += 1
+            with torch.no_grad():
+                for layer in self.network.layers:
+                    layer.gate.clamp_(-1.5, 1.5)
             self._concept_em_step(step_lr)
             self._pull_back(step_lr)
             total += loss.item() * m.sum().item(); n += m.sum().item()
@@ -693,10 +737,10 @@ class Learner:
         with torch.no_grad():
             for layer in self.network.layers:
                 stats = getattr(layer, '_em_stats', None)
-                if stats is None:
+                layer._em_stats = None
+                if stats is None or layer.g.shape[1] <= 1:
                     continue
                 bc, bu, bq, root_v = stats
-                layer._em_stats = None
                 if float(bc.sum()) <= 1e-6:
                     continue
                 new_log_c, new_g, new_log_s = natural_em_parameters(
@@ -709,8 +753,8 @@ class Learner:
     def carry(self, before, kind, split=None):
         """The optimizer of a grown copy goes on from the one of the network it grew from (``before``, a Learner):
         a fresh optimizer moves wildly at first, and a copy starting with one would lose a race for that alone. Every
-        parameter that is there before takes its statistics, mapped as the parameter was; a new one starts from zero
-        at the same count of steps."""
+        parameter that is there before takes its statistics, mapped as the parameter was; a brand-new parameter tensor
+        starts cleanly at step 0 with full bias correction."""
         old = {name: before.opt.state.get(p) for name, p in before.network.named_parameters()}
         steps = next((state['step'] for state in old.values() if state), None)
         if steps is None:
@@ -732,6 +776,9 @@ class Learner:
                         values[name] = torch.cat([torch.cat([values[name]] * 2, 2)] * 2, 1)
             maps[moment] = values
         for name, p in self.network.named_parameters():
+            v_sq = maps['exp_avg_sq'].get(name)
+            if v_sq is None or v_sq.shape != p.shape or float(v_sq.max()) <= 0.:
+                continue
             state = {'step': steps.clone() if torch.is_tensor(steps) else steps}
             for moment in ('exp_avg', 'exp_avg_sq'):
                 v = maps[moment].get(name)
@@ -746,9 +793,10 @@ class Learner:
     def _pull_back(self, lr):
         with torch.no_grad():
             if self.anchor is None:
-                # Only regularize linear projections; never pull priors, dispersions, norms or gates toward zero.
+                # Only regularize linear projections; never pull priors, dispersions, norms, gates or K=1 queries toward zero.
+                single_k = {f'layers.{i}.query.weight' for i, layer in enumerate(self.network.layers) if layer.g.shape[1] <= 1}
                 for name, p in self.network.named_parameters():
-                    if name.endswith(self._DECAYED):
+                    if name.endswith(self._DECAYED) and name not in single_k:
                         p.mul_(1 - lr * self.decay)
             else:
                 for p, a in zip(self.network.parameters(), self.anchor):
@@ -878,12 +926,15 @@ class Grower:
                     misses += 1
                     if misses >= 2:
                         break
+            best.anchor = None
             results.append((kind, best, best_scores))
+        self.learner.anchor = None
         winner = results[0]
         for result in results[1:]:
             if self._better(result[2], winner[2]):
                 winner = result
         kind, self.learner, _ = winner
+        self.learner.anchor = None
         net, scores = self.learner.network.export(), score(self.learner.network)   # the winner, on all of it
         improved = self.best_scores is None or self._better(scores, self.best_scores)
         c = net.config
@@ -921,20 +972,29 @@ class Grower:
             self.decision = self.learner.tokens
         while self.decision <= self.learned:                   # tokens learned elsewhere (a race of growth): the
             self.decision *= 2                                 # calendar goes on from them, it does not decide at once
-        while cycle.fresh and not self.done:                   # the new text, on the calendar of the tokens learned
-            stretch, size = cycle.take(self.decision - self.learned, within_pass=True)
-            if stretch:
-                self.learner.learn_documents(stretch, check); self.learned += size
-            if self.learned < self.decision or not cycle.fresh or cycle.i == len(cycle.order):
-                break                                          # the new text is over before the decision
-            trial, size = cycle.take(self._trial_tokens(), within_pass=True)
-            self.learned += size; decided = True
-            # it no longer learns and growing does not help: confirmed by a second decision, on twice the text
-            self.misses = 0 if self._decide(trial, score, check) else self.misses + 1
-            self.done = self.misses >= 2
-            self.decision *= 2
-        if self.done:
-            return self.best
+        if not self.KINDS and not self.passes:
+            # Fixed architecture on a fresh single-pass piece (NetText non-race step): learn the whole piece cleanly
+            # without anchoring weights to a sub-stretch or prematurely stopping the queue.
+            self.learner.anchor = None
+            self.learner.learn_documents(docs, check)
+            self.learned += self.piece
+            while self.decision <= self.learned:
+                self.decision *= 2
+        else:
+            while cycle.fresh and not self.done:               # the new text, on the calendar of the tokens learned
+                stretch, size = cycle.take(self.decision - self.learned, within_pass=True)
+                if stretch:
+                    self.learner.learn_documents(stretch, check); self.learned += size
+                if self.learned < self.decision or not cycle.fresh or cycle.i == len(cycle.order):
+                    break                                      # the new text is over before the decision
+                trial, size = cycle.take(self._trial_tokens(), within_pass=True)
+                self.learned += size; decided = True
+                # it no longer learns and growing does not help: confirmed by a second decision, on twice the text
+                self.misses = 0 if self._decide(trial, score, check) else self.misses + 1
+                self.done = self.misses >= 2
+                self.decision *= 2
+            if self.done:
+                return self.best
         if not decided:                                        # same architecture: keep any held-out improvement
             scores = score(self.learner.network)
             if self.best_scores is None or scores.mean() > self.best_scores.mean():

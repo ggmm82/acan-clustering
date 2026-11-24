@@ -252,6 +252,38 @@ class GradualTabularEMTest(unittest.TestCase):
         self.assertEqual(float((exact.predict(test, 'play') == test.play).mean()), 1.)
         self.assertEqual(float((gradual.predict(test, 'play') == test.play).mean()), 1.)
 
+    @unittest.skipUnless(TORCH, 'PyTorch required')
+    def test_growth_candidates_start_at_reference_nll_and_non_race_steps_stay_unanchored(self):
+        import copy
+        import torch
+        from acan.lm.concept_net_training import Learner, Network, documents, held_out
+        from acan.lm.net_text import NetText
+
+        torch.manual_seed(2)
+        rng = np.random.default_rng(2)
+        eos = 40
+        docs_raw = [np.r_[rng.integers(1, 20 if i % 2 == 0 else 40, size=18), eos] for i in range(60)]
+        stream = np.concatenate(docs_raw)
+        net = Network(dict(vocabulary=41, dim=16, layers=1, heads=1, concepts=1, window=2, grouped=False))
+        Learner(net, tokens=64).learn(stream[:600], eos=eos)
+        held = documents(stream[600:], eos, 64, begin=True)
+        ref = float(-held_out(net, held).mean())
+        sel = net.concepts_to_split(0, held)
+        split_net = copy.deepcopy(net); split_net.split_one(0, sel)
+        layer_net = copy.deepcopy(net); layer_net.add_layer()
+        for name, cand in (('larghezza', net.widened()), ('teste', net.more_heads()),
+                           ('strato', layer_net), ('concetti', split_net)):
+            start_nll = float(-held_out(cand, held).mean())
+            self.assertAlmostEqual(start_nll, ref, delta=0.015, msg=name)
+
+        model = NetText(41, eos, 1 << 22, max_context=64, growth=True,
+                        network=dict(dim=8, layers=1, heads=1, concepts=1, window=1, grouped=False, passes=False))
+        model.add(stream[:300], stream, [stream[900:]], lambda: None)
+        model.add(stream[300:600], stream, [stream[900:]], lambda: None)
+        self.assertIsNotNone(model._learner)
+        self.assertIsNone(model._learner.learner.anchor)
+        self.assertFalse(model._learner.done)
+
 
 if __name__ == '__main__':
     unittest.main()
