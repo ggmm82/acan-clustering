@@ -6,15 +6,12 @@ This implementation starts from the newly supplied
 It is separate from the withdrawn character-language experiment and does not
 change the tabular ACAN objective. See [LM audit](LM-AUDIT.md) for differences.
 
-> **From 9.0.0 new projects learn the concept model itself, with no neural network**:
-> the training text is a table of concepts by context ([CONCEPT-LM.md](CONCEPT-LM.md)).
-> Earlier projects keep their network.
->
-> New projects use the `concept-graph-v2` attention layer: the concepts, the reading and
-> the cost of the tabular core ([MODEL.md](MODEL.md)) on a fixed dyadic structure, so that
-> a whole block is read at once ([ALGEBRAIC-CONCEPTS.md](ALGEBRAIC-CONCEPTS.md)). Earlier
-> projects keep `concept-graph-v1`. Operation, persistence and checkpoints below
-> are unchanged; how to judge a run is in [CONTROLLED-LM.md](CONTROLLED-LM.md).
+> **From 10.0.0 tabular and generative models share a single learning rule (`natural_em_step` in `acan/concept_algebra.py`)**:
+> $S_k' = (1 - \rho)\,S_k + \rho\,\widehat{S}_k$, which equals the exact batch M-step at $\rho = 1$ on fixed tabular rows and
+> online Fisher natural-gradient EM ($0 < \rho < 1$) on the concepts of every layer in the generative concept network (`NetText`,
+> [MODEL.md](MODEL.md)), alongside analytical grouped token readouts, deterministic multi-domain document bundles and bounded
+> growth races. Earlier checkpoints (`concept-pairs-v1`, `concept-graph-v2`, `concept-graph-v1`) remain readable; operation and
+> persistence below are unchanged, and controlled evaluation is in [CONTROLLED-LM.md](CONTROLLED-LM.md).
 
 ## What is implemented
 

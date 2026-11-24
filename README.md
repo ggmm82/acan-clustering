@@ -7,13 +7,14 @@ opzionale. Richiede Python 3.9 o successivo.
 
 ## Il modello
 
-Nel tabulare, ACAN scopre i concetti a partire dalle colonne osservate. Per
-prevedere il prossimo token abbiamo dato allo stesso `ConceptModel` una riga per
-posizione. Le colonne riassumono il prefisso a distanze crescenti. Ogni concetto
-accumula le frequenze dei token che lo seguono e contribuisce alla previsione
-in proporzione al grado di appartenenza della riga.
-
-Su WikiText-2, a parità di 32.704 target e di prefisso d’articolo, le coppie a 32 token ottengono **4,84090 nat/token** senza memoria e **4,08543** con memoria. Il contatore a sei token ottiene 4,91300 e 4,11082. La validazione seleziona 128 token, con NLL di test senza memoria pari a 4,84216. Le scale 256 e 512 esauriscono il criterio di arresto. [Guida matematica e informatica](acan/MODEL.md) · [Protocolli e ricevute](experiments/text_table/README.md).
+Nel tabulare e nel generativo ACAN usa gli stessi oggetti — concetti descritti da
+statistiche sufficienti additive, appartenenza a posteriori e lettura gerarchica —
+e una sola regola di apprendimento (`natural_em_step`): il gradiente naturale di
+Fisher $S_k' = (1 - \rho)\,S_k + \rho\,\widehat{S}_k$. Sulle righe fisse di una
+tabella il passo $\rho = 1$ coincide con il passo M esatto dell'EM; sul testo la
+rete a concetti aggiorna i concetti di ogni strato con $0 < \rho < 1$ (EM naturale
+online secondo Robbins-Monro) mentre il gradiente predittivo plasma le proiezioni
+fra gli strati e i centri dei token. [Guida matematica e informatica](acan/MODEL.md) · [Protocolli e ricevute](experiments/text_table/README.md).
 
 I concetti sono disposti in **livelli**: sotto la radice i concetti generali,
 poi i comportamenti particolari. Ogni livello toglie alle osservazioni il
@@ -97,7 +98,7 @@ Guida dettagliata della scheda Modello e della valutazione: [docs/GUI.md](docs/G
 
 ## Laboratorio generativo
 
-La scheda **Generativo** usa per l’addestramento lungo lo stesso modello a concetti delle tabelle: il testo diventa righe di coppie di concetti e il prossimo token è la colonna da completare. Prepara una miscela di dati italiani e inglesi per conversare da dataset
+La scheda **Generativo** allena la rete a concetti (`acan/lm/net_text.py`) con la stessa regola di apprendimento delle tabelle ($0 < \rho < 1$ sui concetti di ogni strato e gradiente predittivo sulle proiezioni, crescita automatica su finestra di prova e uscita analitica raggruppata per frequenza). Prepara una miscela di dati italiani e inglesi per conversare da dataset
 pubblici con licenze aperte (verificati e scaricati dal worker, con pausa e
 ripresa), impara una coda di testi uno dopo l'altro (anche file propri:
 Markdown, Python, ZIP, EPUB, DOCX, PDF), salva in modo permanente, riprende da
@@ -123,8 +124,8 @@ paper, le ricevute dei benchmark sintetici e le prove HTTP dell'immagine.
 ## Contenuto del repository
 
 - `acan/`: libreria (`acan/core/concepts.py` nucleo tabulare, `acan/core/scan.py` passata a blocchi sulle righe,
-  `acan/lm/graph_scan.py` strato di attenzione (v2), `acan/lm/concept_attention.py` (v1),
-  `acan/concept_algebra.py` funzioni comuni)
+  `acan/lm/concept_net.py` e `acan/lm/concept_net_training.py` rete a concetti generativa,
+  `acan/lm/graph_scan.py` strato di attenzione innestato, `acan/concept_algebra.py` algebra e regola `natural_em_step` condivisa)
 - `tests/`: test unitari e, in `tests/browser/`, test nel browser
 - `scripts/`: valutazioni e sonde che rigenerano le misure dei documenti
 - `benchmarks/`, `experiments/`: suite sintetica storica e risultati archiviati

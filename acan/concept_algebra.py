@@ -17,11 +17,19 @@ Three operators define the model. Table rows and attention keys use the same one
      generating function of the concept, ``dot_similarity``; with one concept
      per key it is exactly dense softmax attention.
 
-2. Generalization.  Two concepts are generalized by adding their statistics.
+2. Learning.  Both tables and concept networks update concepts by the complete-data
+   Fisher natural gradient of the log-likelihood, ``natural_em_step``:
+
+       S_i'  =  (1 - step) · S_i  +  step · batch_S_i
+
+   As step -> 0 its derivative on (log C, g, log s) is F_c^{-1} grad L; at step = 1
+   (fixed table rows) it is the exact M-step of batch EM in a single jump.
+
+3. Generalization.  Two concepts are generalized by adding their statistics.
    ``description_length`` is the code length of a concept; the cost of a merge is
    the increase of the total length. Copies of one concept always have negative cost.
 
-3. Judgment.  A concept is evaluated only on observations it has not absorbed:
+4. Judgment.  A concept is evaluated only on observations it has not absorbed:
    statistics are additive, so a row is subtracted before it is predicted, and
    a causal prefix never contains the token it predicts.
 
@@ -125,3 +133,51 @@ def categorical_reading(counts, members, distinct, prior, kappa, xp):
     """
     weight = kappa*xp.maximum(distinct, 1)
     return (counts+weight*prior)/(members+weight)
+
+
+def natural_em_step(c, u, q, batch_c, batch_u, batch_q, step, xp):
+    """Single learning rule of the concept model on additive statistics: Fisher natural gradient = EM.
+
+    For exponential-family concepts with posterior memberships T_tk, multiplying the gradient of the
+    log-likelihood L = (1/n) sum_t log sum_k pi_k L_k(z_t; theta_k) by the inverse complete-data Fisher
+    information matrix yields the expectation-space direction (batch_S - S). A step ``step`` in [0, 1] gives:
+
+        S' = (1 - step) * S + step * batch_S.
+
+    * ``step == 1`` (tabular EM on fixed rows): exact batch M-step in a single jump.
+    * ``0 < step < 1`` (streaming pieces or deep layers whose inputs move): online natural EM.
+    """
+    if step >= 1.:
+        return batch_c, batch_u, batch_q
+    keep = 1. - step
+    return keep*c + step*batch_c, keep*u + step*batch_u, keep*q + step*batch_q
+
+
+def natural_em_dict(current, batch, step):
+    """Apply the unified ``(1 - step) * S + step * batch_S`` update across a dictionary of additive statistics."""
+    if current is None or step >= 1.:
+        return batch
+    keep = 1. - step
+    return {key: keep*current[key] + step*batch[key] for key in batch}
+
+
+def natural_em_parameters(log_c, g, log_s, batch_c, batch_u, batch_q, root, kappa, step, xp):
+    """Apply ``natural_em_step`` directly to Gaussian concept parameters (log_c, g, log_s).
+
+    Maps (log_c, g, log_s) to expectation statistics on the batch reference mass, takes a ``natural_em_step``
+    of size ``step``, and projects back via ``centre_variance`` with prior ``root`` and strength ``kappa``.
+    At ``step == 1`` it equals the tabular M-step; as ``step -> 0`` with ``kappa == 0`` its derivative equals
+    the complete-data Fisher natural gradient F_c^{-1} grad L on every coordinate (log_c, g, log_s).
+    """
+    total = xp.clip(batch_c.sum(-1)[..., None], 1e-12, None)
+    shifted = log_c - xp.amax(log_c, -1)[..., None]
+    pi = xp.exp(shifted)
+    pi = pi / xp.clip(pi.sum(-1)[..., None], 1e-30, None)
+    old_c = total * pi
+    old_u = old_c[..., None] * g
+    old_q = old_c[..., None] * (g*g + xp.exp(2*log_s))
+    new_c, new_u, new_q = natural_em_step(old_c, old_u, old_q, batch_c, batch_u, batch_q, step, xp)
+    new_g, new_v = centre_variance(new_c[..., None], new_u, new_q, root, kappa, xp)
+    new_pi = xp.clip(new_c, 1e-30, None) / xp.clip(new_c.sum(-1)[..., None], 1e-30, None)
+    return xp.log(new_pi), new_g, .5*xp.log(xp.clip(new_v, 1e-12, None))
+
