@@ -331,16 +331,18 @@ matrici di proiezione lineare e mai masse a priori, dispersioni, normalizzazioni
 
 **Dimensioni dai dati.** La rete parte con 32 numeri di stato, uno strato, una testa
 con un concetto e 3 distanze vicine. I centri dei token partono a caso. In una **gara** la
-rete com'è e quattro copie cresciute imparano il pezzo nuovo, una volta ciascuna:
+rete com'è e quattro copie cresciute si confrontano su una finestra di prova del pezzo
+nuovo (al più 65.536 token), e la vincitrice completa da sola il resto del pezzo:
 
 - **il doppio della larghezza:** ogni coordinata scritta due volte, con dispersioni e
   masse dei concetti corrette perché appartenenze e letture restino identiche;
-- **uno strato in più,** con l'apertura chiusa: lascia lo stato com'è;
+- **uno strato in più,** con l'apertura chiusa ($a=0$) ma proiezione d'uscita non nulla,
+  così lo stato passa identico all'istante dell'aggiunta mentre l'apertura riceve
+  gradiente dal primo passo;
 - **un concetto in più per testa in uno strato.** Le gare successive provano gli
   strati a turno. In ciascuna testa si divide il concetto che raccoglie più massa
   di appartenenza su un campione del nuovo pezzo. I due figli si dividono la massa
-  originaria e iniziano con centri vicini. La stessa gara su testo tenuto da parte
-  decide se conservarli;
+  originaria e partono separati in versi opposti nei centri e nelle attenzioni $A$;
 - **il doppio delle teste:** una testa aggiunta ha proiezioni e concetti propri.
   All'inizio il suo contributo all'uscita dello strato è zero. Durante
   l'apprendimento può crescere se aiuta la previsione.
@@ -350,13 +352,14 @@ proiezioni indipendenti dello stesso token, ciascuna con un insieme di concetti.
 La gara decide se questa capacità in più migliora la previsione su testo
 tenuto da parte. La validazione può lasciare la rete con un solo concetto per testa.
 La copia più larga impara a metà passo, perché le sue coordinate si muovono a coppie.
-La rete già imparata all'inizio della tornata fornisce il riferimento. Una candidata
-deve superarlo di più di un errore standard sul testo tenuto da parte (sezione 2).
-Fra le candidate che migliorano, prosegue la più semplice entro un errore standard
-dalla migliore. Alla prima tornata di una rete nuova si confrontano direttamente le candidate.
-Se vince una rete cresciuta, parte una nuova tornata dallo stesso vincitore sullo stesso
-pezzo. La struttura è stabile per quel pezzo quando vince la rete com'è o quando si
-conserva la rete di partenza. In entrambi i casi si avanza.
+La rete già imparata all'inizio della tornata fornisce il riferimento: alla prima tornata
+sul pezzo nuovo la rete com'è non aggiunge parametri e avanza non appena migliora la
+verosimiglianza sul testo tenuto da parte, mentre ogni copia cresciuta (o ogni tornata
+successiva) deve superare il riferimento di più di un errore standard (sezione 2).
+Fra le candidate ammesse prosegue la più semplice entro un errore standard dalla migliore.
+Alla prima tornata di una rete nuova si confrontano direttamente le candidate. Se vince
+una rete cresciuta, ripete la verifica finché la struttura si stabilizza (al più due
+tornate sui pezzi lunghi, prima di leggere il resto del pezzo).
 
 **Quando c'è una gara.** Il calendario segue la rete:
 
@@ -368,9 +371,10 @@ conserva la rete di partenza. In entrambi i casi si avanza.
   un errore standard rispetto al pezzo prima), è satura: la gara si anticipa al pezzo
   successivo.
 
-Le decisioni si giudicano su tutto il testo di validazione tranne i tratti che misurano
-l'errore mostrato, così un miglioramento piccolo non si perde nel rumore e l'errore
-mostrato resta su testo che nessuna decisione ha visto.
+Le decisioni si giudicano su un campione rappresentativo e stratificato del testo di
+validazione (fino a 128 blocchi) disgiunto dai tratti che misurano l'errore mostrato,
+così un miglioramento piccolo non si perde nel rumore e l'errore mostrato resta su testo
+che nessuna decisione ha visto.
 
 **Ricordare rileggendo.** Un passo di gradiente sposta i parametri di poco: una frase vista
 una volta lascia una traccia piccola. Finito il testo, la rete lo rilegge tutto, e dopo
@@ -592,8 +596,10 @@ distribuzione in ogni posizione: è la stessa funzione applicata allo stesso sta
   di token; il confronto con gli indirizzi della memoria.
 - **Memoria in inferenza:** le somme dei concetti e gli ultimi stati di ogni strato, fissi
   a qualunque lunghezza del documento, più un indirizzo per token del documento.
-- **Addestramento:** lineare nei token per ogni passaggio. Ogni tornata di crescita costa
-  cinque passaggi sullo stesso pezzo. Ogni rilettura finale percorre il testo intero.
+- **Addestramento:** lineare nei token per ogni passaggio, con un solo caricamento dei
+  centri per gruppo di frequenza in ciascun lotto. Ogni tornata di crescita costa cinque
+  letture della sola finestra di prova (al più 65.536 token), poi il vincitore legge una
+  volta il resto del pezzo. Ogni rilettura finale percorre il testo intero.
 
 ### 6 · Misure
 
@@ -632,8 +638,39 @@ convergenza, il test passa da 4,832 a **4,805**; e sulle risposte a 30 domande m
 | token presi dalla domanda | 47% | **32%** | 21% |
 | trigrammi ripetuti | 5% | 6% | 2% |
 
-**Uscita in due livelli.** Con i gruppi di token la rete impara circa il doppio più
-veloce (2.007 contro 1.015 token al secondo su due processori), con test 5,359 contro
-5,337 dopo un passaggio e 5,009 contro 4,948 dopo due.
+**Uscita in due livelli e calcolo per gruppi.** Con i gruppi di token la rete passava da
+1.015 a 2.007 token al secondo su due processori; ordinando il lotto per gruppo di
+frequenza del token vero (`_GroupedTokenLogProb`, senza gather tridimensionale) e
+giudicando le gare sulla finestra di prova da 65.536 token, su `V = 32.000` e 2 vCPU il
+passo ordinario sale da 961 a **4.087 token/s** (4,3×) e il passo con gara da 565 a
+**4.871 token/s** (8,6× su 100.000 token; 84× rispetto ai 58 token/s misurati sui pezzi
+da un milione di token). Su una coda multi-dominio di 12 passi la NLL di test scende da
+5,878 (perplessità 356,9, crescita ferma a `[[1, 1]]`) a **4,451** (perplessità **85,7**).
+
+**Il modello unificato sui dataset tabulari.** Stessi split 80/20 dei test di qualità
+(tre semi: 1, 2, 3), confrontando `ConceptModel` con $\rho=1$ (EM), `ConceptModel` con
+passo graduale $\rho=0{,}5$ e la rete generativa `NetText` ($0<\rho<1$ sui concetti più
+gradiente predittivo, ogni riga letta come sequenza di token `[attributi, classe, fine]`
+con i numeri divisi in ottili sul solo addestramento e il token della classe pesato quanto
+tutti gli attributi insieme):
+
+| Dataset | righe | attributi | Tabulare ($\rho=1$) | Tabulare ($\rho=0{,}5$) | Generativo (`NetText`) |
+|---|---:|---:|---:|---:|---:|
+| Gioco (XOR + 3 rumori) | 300 | 5 | **100,0%** | **100,0%** | **100,0%** |
+| Vote (categorie e mancanti) | 435 | 16 | 96,6% | **96,9%** | **96,9%** |
+| Breast Cancer | 569 | 30 | 95,6% | 95,9% | **96,2%** |
+| Iris | 150 | 4 | **98,9%** | **98,9%** | 94,4% |
+| Wine | 178 | 13 | **96,3%** | **96,3%** | 95,4% |
+| Vehicle | 846 | 18 | **79,6%** | 77,8% | 67,1% |
+| Sonar | 208 | 60 | **90,5%** | **90,5%** | 59,5% |
+
+- Su `ConceptModel`, $\rho=0{,}5$ raggiunge lo stesso punto fisso di $\rho=1$.
+- Sulla rete generativa, pesare il token da predire quanto tutti gli attributi insieme
+  porta `Gioco` dal 65,6% al **100,0%** e `Vote` dall'87,4% al **96,9%**, superando il
+  tabulare anche su `Breast Cancer` (**96,2%**).
+- Dove invece le righe sono pochissime rispetto a molte colonne continue (`Sonar`: 166
+  righe di addestramento per 60 bande spettrali, circa 480 token discreti), trasformare i
+  numeri in token privi di ordine numerico perde la continuità gaussiana diretta che il
+  modello tabulare usa nativamente (**90,5%**).
 
 [Protocolli sperimentali](../experiments/text_table/README.md).

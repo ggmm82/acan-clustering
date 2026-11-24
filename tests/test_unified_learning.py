@@ -177,6 +177,81 @@ class UnifiedNetworkMechanicsTest(unittest.TestCase):
         distinct_domains = {int(v) // 10 for v in np.unique(pieces[0]) if v != eos}
         self.assertGreaterEqual(len(distinct_domains), 3)
 
+    def test_generative_net_text_solves_tabular_xor_with_irrelevant_columns(self):
+        import pandas as pd
+        import torch
+        from acan.lm.net_text import NetText
+
+        def make_rows(n, seed):
+            rng = np.random.default_rng(seed)
+            w, p = rng.integers(0, 2, n), rng.integers(0, 2, n)
+            return pd.DataFrame(dict(
+                w=w, p=p,
+                noise1=rng.integers(0, 8, n),
+                noise2=rng.integers(0, 8, n),
+                noise3=rng.integers(0, 8, n),
+                play=(w == p).astype(int),
+            ))
+
+        train_df, val_df, test_df = make_rows(180, 1), make_rows(40, 2), make_rows(80, 3)
+        # Disjoint token offsets per column: w(0..1), p(2..3), n1(4..11), n2(12..19), n3(20..27), play(28..29), eos=30
+        offsets = [0, 2, 4, 12, 20, 28]
+        eos, vocab = 30, 31
+
+        def encode(df, include_target=True):
+            arr = df.to_numpy(dtype=np.int64)
+            cols = 6 if include_target else 5
+            shifted = arr[:, :cols] + np.array(offsets[:cols], dtype=np.int64)
+            if not include_target:
+                return shifted
+            with_eos = np.column_stack([shifted, np.full(len(df), eos, dtype=np.int64)])
+            return with_eos.ravel()
+
+        rng = np.random.default_rng(7)
+        train_stream = np.concatenate([encode(train_df.iloc[rng.permutation(len(train_df))]) for _ in range(8)])
+        val_stream = encode(val_df)
+        weight = np.full(vocab, .05, dtype=np.float32)
+        weight[28:30] = 5.
+        weight[eos] = 0.
+
+        torch.manual_seed(0)
+        net_cfg = dict(dim=32, layers=2, heads=2, concepts=8, window=3, grouped=False, cache=0, passes=False)
+        model = NetText(vocab, eos, budget=1 << 22, max_context=12, network=net_cfg, growth=False, weight=weight)
+        model.decide_on = val_stream
+        model.add(train_stream, train_stream, [val_stream], lambda: None)
+
+        feats = encode(test_df, include_target=False)
+        preds = [int(np.argmax(model.distribution(row)[28:30])) for row in feats]
+        acc = float((np.array(preds) == test_df['play'].to_numpy()).mean())
+        self.assertGreaterEqual(acc, .95)
+
+
+class GradualTabularEMTest(unittest.TestCase):
+    def test_gradual_online_em_rate_solves_tabular_xor_interaction(self):
+        import pandas as pd
+        from acan.core.concepts import ConceptModel
+
+        class GradualModel(ConceptModel):
+            def _em(self, s, data, weights, steps, rate=.5):
+                return super()._em(s, data, weights, max(steps * 2, 8), rate=rate)
+
+        def game(rows, seed):
+            rng = np.random.default_rng(seed)
+            w, p = rng.integers(0, 2, rows), rng.integers(0, 2, rows)
+            return pd.DataFrame(dict(
+                weather=np.where(w, 'rain', 'sun'),
+                place=np.where(p, 'hall', 'field'),
+                day=rng.integers(1, 29, rows),
+                month=rng.integers(1, 13, rows),
+                play=np.where(w == p, 'yes', 'no'),
+            ))
+
+        train, test = game(160, 10), game(80, 11)
+        exact = ConceptModel(seed=0).fit(train, ['play'])
+        gradual = GradualModel(seed=0).fit(train, ['play'])
+        self.assertEqual(float((exact.predict(test, 'play') == test.play).mean()), 1.)
+        self.assertEqual(float((gradual.predict(test, 'play') == test.play).mean()), 1.)
+
 
 if __name__ == '__main__':
     unittest.main()

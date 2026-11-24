@@ -560,10 +560,10 @@ def documents(ids, eos, longest, begin=False):
     return [doc[i:i + longest] for doc in docs if len(doc) > 2 for i in range(0, len(doc) - 1, longest - 1)]
 
 
-def held_out(network, docs, limit=None, batch=4096):
+def held_out(network, docs, limit=None, batch=4096, weight=None):
     """log p of the true token at every position of held-out documents (arrays of ids), in their order: the network
     reads them in batches, as it learns, without the gradient. ``limit``: only the first documents, about that many
-    tokens."""
+    tokens. When ``weight`` is given, returns one weighted log-likelihood per document."""
     network.eval()
     if network.device.type == 'cuda':
         batch = min(batch, 256)
@@ -585,6 +585,7 @@ def held_out(network, docs, limit=None, batch=4096):
         chunk.append(j)
     if chunk:
         chunks.append(chunk)
+    w_arr = None if weight is None else np.asarray(weight, np.float64)
     read = [None] * len(docs)
     with torch.no_grad():
         for chunk in chunks:
@@ -592,7 +593,13 @@ def held_out(network, docs, limit=None, batch=4096):
             lp = network.target_log_probs(ids[:, :-1], mask[:, :-1], ids[:, 1:])
             m = mask[:, 1:].bool()
             for r, j in enumerate(chunk):
-                read[j] = lp[r][m[r]].cpu().numpy()
+                vals = lp[r][m[r]].cpu().numpy()
+                if w_arr is None:
+                    read[j] = vals
+                else:
+                    ws = w_arr[ids[r, 1:][m[r]].cpu().numpy()]
+                    tw = ws.sum()
+                    read[j] = np.array([(vals * ws).sum() / tw]) if tw > 0 else np.zeros(0)
     return np.concatenate(read) if read else np.zeros(0)
 
 
@@ -664,7 +671,10 @@ class Learner:
                 group['lr'] = step_lr
             lp = self.network.target_log_probs(ids_[:, :-1], mask[:, :-1], ids_[:, 1:])
             m = mask[:, 1:] if self.weight is None else mask[:, 1:] * self.weight[ids_[:, 1:]]
-            loss = -(lp * m).sum() / m.sum()
+            denom = m.sum()
+            if float(denom) <= 0.:
+                continue
+            loss = -(lp * m).sum() / denom
             self.opt.zero_grad(); loss.backward()
             torch.nn.utils.clip_grad_norm_(self.network.parameters(), 1., foreach=use_foreach)
             self.opt.step(); self.steps += 1
