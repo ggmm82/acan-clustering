@@ -22,7 +22,7 @@ Every step is linear in the number of attributes.
 import numpy as np
 import pandas as pd
 
-from acan.concept_algebra import KAPPA_GRID, LOG_2PI, categorical_reading, centre_variance, pair_mass, reader_cost, reader_radius, unbiased
+from acan.concept_algebra import KAPPA_GRID, LOG_2PI, categorical_reading, centre_variance, natural_em_dict, pair_mass, reader_cost, reader_radius, unbiased
 from acan.core.scan import Scan, scan, scan_part
 
 TIE = .05                                                       # relative difference of pair criteria that counts as a tie
@@ -376,10 +376,11 @@ class ConceptModel:
             keep[j] = False
         return {key: value[keep] for key, value in merged.items()}
 
-    def _em(self, s, data, weights, steps):
+    def _em(self, s, data, weights, steps, rate=1.):
+        """The unified Fisher natural-gradient step on fixed rows: ``rate=1`` is exact batch EM."""
         for _ in range(steps):
             t, _ = self._route(s, data, weights)
-            s = self._statistics(t, data)
+            s = natural_em_dict(s, self._statistics(t, data), rate)
             alive = s['C'] > 1e-8
             if not alive.all():
                 s = {key: value[alive] for key, value in s.items()}
