@@ -264,7 +264,7 @@ Tre proprietà delimitano strutturalmente il modello:
 ### 1 · Architettura del sistema e codifica dei dati
 
 ACAN 10.0 separa rigorosamente l'interfaccia analitica dall'esecuzione computazionale pesante mediante due servizi cooperanti:
-- **Applicazione interattiva (`acan/vis/`):** espone le viste **Dati**, **Modello**, **Valutazione**, **Previsione**, **Generativo**, **Matematica** e **Informatica**, isolando le sessioni tabulari per scheda del browser e supportando tabelle intere fino a un milione di righe (`FullTables`).
+- **Applicazione interattiva (`acan/vis/`):** organizza l'ambiente nelle schede dedicate ai dati, al modello tabulare, alla valutazione, alla previsione, al modulo generativo e ai riferimenti teorici e architetturali, isolando le sessioni per scheda del browser e supportando tabelle intere fino a un milione di righe (`FullTables`).
 - **Worker generativo persistente (`acan/lm/service.py`, `acan/lm/concept_trainer.py`):** processo dedicato che gestisce il ciclo di vita dei corpus, l'addestramento incrementale a pezzi, il salvataggio atomico dei checkpoint (`safetensors` + registro transazionale SQLite in modalità WAL `FULL`) e l'API HTTP compatibile con lo standard OpenAI (`/v1/models`, `/v1/chat/completions`, `/v1/completions`).
 
 #### Codifica delle tabelle e del testo
