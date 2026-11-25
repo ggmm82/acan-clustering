@@ -288,12 +288,12 @@ class Network(nn.Module):
         g = torch.sigmoid(z) * anything
         return torch.log((1 - g) * net_lp.exp() + g * p_cache + 1e-30)
 
-    def target_log_probs(self, ids, mask, targets):
+    def target_log_probs(self, ids, mask, targets, *, use_cache=True):
         h = self.states(ids, mask)
         flat, tgt = h.reshape(-1, h.shape[-1]), targets.reshape(-1)
         if not self.grouped:
             lp = torch.log_softmax(self._logits(flat, self.centre.weight, self.log_mass), -1).gather(1, tgt[:, None])[:, 0].view(targets.shape)
-            return self._cache(h, mask, targets, lp)
+            return self._cache(h, mask, targets, lp) if use_cache else lp
         g = self.group[tgt]
         lp = torch.log_softmax(self._logits(flat, self.group_centre, self.group_log_mass), -1).gather(1, g[:, None])[:, 0]
         if flat.shape[0] * self._members.shape[1] <= 16_384:
@@ -306,7 +306,8 @@ class Network(nn.Module):
         else:
             inside = _GroupedTokenLogProb.apply(flat, self._rank[tgt], g, self.centre.weight, self.log_mass,
                                                 self.log_scale, self._members, self._valid)
-        return self._cache(h, mask, targets, (lp + inside).view(targets.shape))
+        lp = (lp + inside).view(targets.shape)
+        return self._cache(h, mask, targets, lp) if use_cache else lp
 
     # ---- growth: a bigger network that reads exactly as the smaller one did -----------------------------------------
     def split_concepts(self, i, scale=.22):
@@ -347,7 +348,7 @@ class Network(nn.Module):
             layer._awakened = True
         self.config['concepts'][i] = int(g.shape[1])
 
-    def split_one(self, layer_index, selected, noise=.06):
+    def split_one(self, layer_index, selected, noise=.06, axis=None):
         """Split one concept per head in a single layer, preserving its mass and attention."""
         layer = self.layers[layer_index]
         prefix = f'layers.{layer_index}.'
@@ -368,11 +369,17 @@ class Network(nn.Module):
             values[prefix+'A'] -= mass[:, None, :]
             if noise:
                 scale = values[prefix+'log_s'][heads, selected].exp()
-                offset = torch.randn_like(values[prefix+'g'][heads, selected]) * scale * noise
+                if axis is None:
+                    relative = torch.randn_like(scale) * noise
+                else:
+                    relative = torch.zeros_like(scale).scatter_(1, axis[:, None], noise)
+                relative = relative.clamp(-.45, .45)
+                offset = relative * scale
                 values[prefix+'g'][heads, selected] += offset
                 values[prefix+'g'][:, -1] -= offset
-                values[prefix+'log_s'][heads, selected] -= .15
-                values[prefix+'log_s'][:, -1] -= .15
+                shrink = .5 * torch.log1p(-relative.square())
+                values[prefix+'log_s'][heads, selected] += shrink
+                values[prefix+'log_s'][:, -1] += shrink
                 # Each child slightly favors reading its own summary so their rows in A diverge cleanly.
                 nudge = min(float(noise) * 4., .25)
                 values[prefix+'A'][heads, selected, selected] += nudge
@@ -382,7 +389,7 @@ class Network(nn.Module):
         was_single = layer.g.shape[1] == 1
         for name in ('g', 'log_s', 'log_c', 'A'):
             setattr(layer, name, nn.Parameter(values[prefix+name].contiguous()))
-        if was_single and noise:
+        if noise and (was_single or axis is not None):
             layer._awakened = True
         self.config['concepts'][layer_index] += 1
 
@@ -439,6 +446,57 @@ class Network(nn.Module):
             logits = memberships_logits(q, layer.g, layer.log_s, layer.log_c)
             usage += logits.softmax(-1)[0].sum(0)
         return usage.argmax(dim=-1)
+
+    @torch.no_grad()
+    def distant_split(self, layer_index, docs):
+        """Find a query coordinate whose association with later token centres repeats across documents."""
+        layer = self.layers[layer_index]
+        first_lag = max(2, layer.window + 1)
+        eligible = [doc for doc in docs if len(doc) >= first_lag + 2]
+        if len(eligible) < 2:
+            return None
+        observations = []
+        for index in np.linspace(0, len(eligible)-1, min(16, len(eligible)), dtype=int):
+            ids, mask = _pad([eligible[index]], self.device)
+            centres = self.centre(ids)
+            hidden = centres
+            for previous in self.layers[:layer_index]:
+                hidden = previous(hidden, mask)
+            q = layer.query(hidden)[0].reshape(-1, layer.h, layer.d)
+            t = memberships_logits(q, layer.g, layer.log_s, layer.log_c).softmax(-1)
+            # Average the observed continuations on dyadic horizons. Both these targets and the
+            # document boundaries belong to the training sample. Inference only sees the prefix.
+            future = torch.zeros_like(centres[0])
+            count = torch.zeros_like(future[:, :1])
+            lag = first_lag
+            while lag < len(q):
+                future[:-lag] += centres[0, lag:]
+                count[:-lag] += 1
+                lag *= 2
+            y = (future / count.clamp_min(1))[:-first_lag]
+            observations.append((q[:-first_lag] - q[:1], t[:-first_lag], y - y[:1]))
+
+        # Bound the temporary cross-covariances independently of the number of concepts.
+        agreement = torch.empty_like(layer.g)
+        width = self.config['dim']
+        block = max(1, 262144 // (width * layer.d))
+        for head in range(layer.h):
+            for start in range(0, layer.g.shape[1], block):
+                cols = slice(start, start + block)
+                folds = [None, None]
+                for n, (q, t, y) in enumerate(observations):
+                    w, x = t[:, head, cols], q[:, head]
+                    mean = (w.T @ x) / w.sum(0).clamp_min(1e-6)[:, None]
+                    wx = w[..., None] * (x[:, None] - mean)
+                    cov = (wx.flatten(1).T @ y).reshape(*mean.shape, width)
+                    cov = cov / (len(y) * layer.log_s[head, cols].exp()[..., None].clamp_min(.01))
+                    fold = n % 2
+                    folds[fold] = cov if folds[fold] is None else folds[fold] + cov
+                agreement[head, cols] = (folds[0] * folds[1]).sum(-1)
+        score, flat = agreement.flatten(1).max(1)
+        if not bool((score > 0).all()):
+            return None
+        return flat // layer.d, flat % layer.d
 
     def add_layer(self):
         """A new last layer that leaves the states as they are: it starts closed, and the gradient opens it."""
@@ -678,6 +736,23 @@ def held_out(network, docs, limit=None, batch=4096, weight=None):
     return np.concatenate(read) if read else np.zeros(0)
 
 
+@torch.no_grad()
+def distant_context_scores(network, docs, longest):
+    """Paired document log scores with/without the early prefix, beyond the stacked local receptive field."""
+    network.eval()
+    local = 1 + sum(layer.window for layer in network.layers)
+    eligible = [d for d in docs if min(len(d), longest) >= 4 * local]
+    full, truncated = [], []
+    for i in np.linspace(0, len(eligible)-1, min(32, len(eligible)), dtype=int):
+        doc = eligible[i][:longest]
+        cut = len(doc) // 2
+        ids, mask = _pad([doc, doc[cut:]], network.device)
+        lp = network.target_log_probs(ids[:, :-1], mask[:, :-1], ids[:, 1:], use_cache=False)
+        full.append(float(lp[0, cut + local - 1:len(doc)-1].mean()))
+        truncated.append(float(lp[1, local - 1:len(doc)-cut-1].mean()))
+    return np.asarray(full), np.asarray(full) - truncated
+
+
 def batches(docs, tokens, shuffle, rng, device=None):
     order = rng.permutation(len(docs)) if shuffle else np.arange(len(docs))
     chunk, size = [], 0
@@ -842,7 +917,19 @@ class Learner:
             elif kind == 'teste':
                 values = before.network._grow_heads(values, moments=True, moments_power=power)
             elif isinstance(split, tuple):
-                values = before.network._copy_split(values, *split)
+                index, parents = split
+                values = before.network._copy_split(values, index, parents)
+                layer = before.network.layers[index]
+                heads = torch.arange(layer.h, device=parents.device)
+                factor = layer.log_c.new_ones(layer.h, layer.g.shape[1] + 1)
+                factor[heads, parents] = factor[:, -1] = .5 ** power
+                for part in ('log_c', 'g', 'log_s', 'A'):
+                    key = f'layers.{index}.{part}'
+                    if key in values:
+                        scale = factor if part == 'log_c' else factor[..., None]
+                        if part == 'A':
+                            scale = scale * factor[:, None, :]
+                        values[key] = values[key] * scale
             elif kind == 'concetti':
                 prefix = f'layers.{split}.' if isinstance(split, int) else 'layers.'
                 m_scale, a_scale = .5 ** power, .25 ** power
