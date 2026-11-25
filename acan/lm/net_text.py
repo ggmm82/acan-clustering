@@ -135,7 +135,7 @@ class NetText:
         shown = self._held(self.watch, watch_width) if self.watch else held  # what the chart is measured on
         started, last = time.monotonic(), [0.]
         end = self.read + len(ids)
-        again = end >= len(train) and self.network.get('passes', True)
+        again = end >= len(train) and len(train) <= 2 * max(len(ids), 1) and self.network.get('passes', True)
 
         def watched():
             check()
