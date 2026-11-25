@@ -203,16 +203,20 @@ b,?,no
         self.assertEqual(result['lm-prompt']['value'], 'Nel mezzo del cammin')
 
     def test_live_validation_displays_only_measured_points(self):
-        from acan.vis.generative import inside_figure
+        from acan.vis.generative import _trace_segments, inside_figure
 
         # Reproduce a sparse trace resumed at step 10 with no point between 5% and completion.
         trace = [[10.0, 6.0], [10.05, 6.01], [11.0, 5.985]]
         figure = inside_figure(trace)
-        self.assertEqual(figure.data[0].mode, 'markers')
+        self.assertEqual(figure.data[0].mode, 'lines+markers')
         self.assertEqual(tuple(figure.layout.xaxis.range), (0, 100))
         self.assertAlmostEqual(figure.data[0].x[1], 5.0)
         self.assertEqual(figure.data[0].x[-1], 100.0)
         self.assertEqual(list(figure.data[0].y), [6.0, 6.01, 5.985])
+        # Multi-step gaps insert a None break instead of bridging unmeasured steps.
+        xs, ys = _trace_segments([[0.0, 10.3], [1.0, 6.1], [5.2, 5.4], [6.0, 5.3]])
+        self.assertEqual(xs, [0.0, 1.0, None, 5.2, 6.0])
+        self.assertEqual(ys, [10.3, 6.1, None, 5.4, 5.3])
 
         figure = inside_figure([[10.0, 6.0], [10.25, 5.9, 'larghezza', 1], [11., 5.8, 'larghezza', 1],
                                 [10.25, 5.7, 'larghezza', 2], [11., 5.6, 'larghezza', 2]])
@@ -225,15 +229,20 @@ b,?,no
         job = dict(id='job', progress=dict(step=12, tokens_trained=12288, baseline_nll=4.683,
                    validation_nll=6.62, network_trace=[[11.05, 6.64], [12.0, 6.62]]),
                    history=[dict(step=12, training_nll=6.69, validation_nll=6.62)],
-                   snapshots=[dict(step=7, name='saved')], status='running',
-                   config=dict(total_steps=1000), checkpoint='saved', error=None)
+                   snapshots=[dict(step=7, name='saved'), dict(step=0, name='s0', best=True, validation_nll=4.683)],
+                   status='running', config=dict(total_steps=1000), checkpoint='saved', error=None)
+        stale_view = {'job:overview:0': [-0.09, 1.8]}
         result = self.invoke('..lm-progress.children', [('lm-state', 'data', {'jobs':[job]}),
                              ('lm-job', 'value', 'job'),('lm-history-mode','value','overview'),
-                             ('lm-history-start','value',0)], [('lm-checkpoint', 'value', None),('lm-workspace','data','a'*64),('lm-chart-view','data',None)])
+                             ('lm-history-start','value',0)], [('lm-checkpoint', 'value', None),('lm-workspace','data','a'*64),('lm-chart-view','data',stale_view)])
         figure = result['lm-loss']['figure']
+        # Equal baseline and step-0 best snapshot must not draw two overlapping horizontal annotations.
+        self.assertEqual(len(figure['layout']['shapes']), 1)
         self.assertEqual(figure['layout']['shapes'][0]['y0'], 4.683)
+        # Stale initial rangeslider bounds must not lock autorange=False while the job is running past them.
+        self.assertNotEqual(figure['layout']['xaxis'].get('autorange'), False)
         live = next(t for t in figure['data'] if t['name'] == 'Validazione mentre impara')
-        self.assertEqual(live['mode'], 'markers')
+        self.assertEqual(live['mode'], 'lines+markers')
         text = str(result['lm-progress']['children'])
         self.assertIn('ancora peggiore', text)
         self.assertIn('controllo denso', text)                         # the valid comparison is named
