@@ -309,20 +309,42 @@ class Network(nn.Module):
         return self._cache(h, mask, targets, (lp + inside).view(targets.shape))
 
     # ---- growth: a bigger network that reads exactly as the smaller one did -----------------------------------------
-    def split_concepts(self, i, scale=.5):
-        """Every concept of layer i becomes two with half the mass each, their centres on either side of the old one:
-        the memberships split, the sums too, and the reading of the layer is nearly the same. The gradient then takes
-        them apart."""
+    def split_concepts(self, i, scale=.22):
+        """Every concept of layer i becomes two with half the mass each, moment-matched around the parent so the reading
+        at step zero stays nearly identical while narrower dispersions, antipodal shifts and diagonal attention preference
+        pull the two halves cleanly apart."""
         layer = self.layers[i]
+        was_single = layer.g.shape[1] == 1
         with torch.no_grad():
-            # the two halves apart by a share of their dispersion, in opposite ways: together they still read as the
-            # concept did, and they differ enough for the gradient to take each its own way
-            e = torch.randn_like(layer.g) * torch.exp(layer.log_s) * scale
-            g = torch.cat([layer.g + e, layer.g - e], 1)
-            log_s = torch.cat([layer.log_s, layer.log_s], 1)
+            base_g, base_log_s = layer.g, layer.log_s
+            if was_single and scale and getattr(layer, '_k1_stats', None) is not None:
+                mean_q, log_std_q = layer._k1_stats
+                base_g = mean_q.to(device=self.device, dtype=layer.g.dtype).unsqueeze(1).clone()
+                base_log_s = log_std_q.to(device=self.device, dtype=layer.log_s.dtype).unsqueeze(1).clone()
+            K = base_g.shape[1]
+            if scale:
+                step = float(scale) / math.sqrt(max(layer.d, 1))
+                u = (torch.randn_like(base_g) * step).clamp(-.45, .45)
+                e = u * torch.exp(base_log_s)
+                child_log_s = base_log_s + .5 * torch.log1p(-u.square())
+            else:
+                e = torch.zeros_like(base_g)
+                child_log_s = base_log_s
+            g = torch.cat([base_g + e, base_g - e], 1)
+            log_s = torch.cat([child_log_s, child_log_s], 1)
             log_c = torch.cat([layer.log_c, layer.log_c], 1) - math.log(2)
-            A = torch.cat([torch.cat([layer.A, layer.A], 2)] * 2, 1)    # a concept looks at both halves as at the whole
+            A = torch.cat([torch.cat([layer.A, layer.A], 2)] * 2, 1) - math.log(2)
+            if scale:
+                p_self = .5 + min(.5 * float(scale), .12)
+                idx = torch.arange(K, device=self.device)
+                stay, cross = math.log(2. * p_self), math.log(2. * (1. - p_self))
+                A[:, idx, idx] += stay
+                A[:, idx + K, idx + K] += stay
+                A[:, idx, idx + K] += cross
+                A[:, idx + K, idx] += cross
         layer.g, layer.log_s, layer.log_c, layer.A = (nn.Parameter(x.contiguous()) for x in (g, log_s, log_c, A))
+        if scale:
+            layer._awakened = True
         self.config['concepts'][i] = int(g.shape[1])
 
     def split_one(self, layer_index, selected, noise=.06):
@@ -426,6 +448,7 @@ class Network(nn.Module):
             # Keep out non-zero so (new - h) carries signal on step 1 while gate=0 preserves the state exactly.
             nn.init.normal_(layer.out.weight, std=.02); layer.out.bias.zero_()
             layer.gate.zero_()                                         # closed: the state goes through as it is
+        layer._layer_boost = True
         self.layers.append(layer)
         self.config['layers'] = len(self.layers)
         self.config['concepts'].append(int(last.g.shape[1]))
@@ -498,27 +521,46 @@ class Network(nn.Module):
             new[k] = v
         return new
 
-    def more_heads(self):
-        """Twice the groups of concepts in every layer: the new groups start with nothing to say (their reading enters
-        the layer with zero weight), so the network reads as before; the gradient decides what they hold."""
+    def more_heads(self, noise=2e-3):
+        """Twice the groups of concepts in every layer: each head is duplicated with half its output weight and small
+        opposite perturbations so the layer reading is preserved at step zero while every head receives full non-zero
+        gradients from the first batch."""
         grown = self._like(heads=2 * self.config['heads'])
-        grown.load_state_dict(self._grow_heads(self.state_dict(), grown.state_dict()))
+        grown.load_state_dict(self._grow_heads({k: v.detach().clone() for k, v in self.state_dict().items()}, noise=noise))
         return grown
 
-    def _grow_heads(self, values, fresh=None):
-        """Preserve the existing head slices. New Adam moments start at zero."""
+    def _grow_heads(self, values, moments=False, moments_power=1, noise=0.):
+        """Duplicate head slices of parameters or optimizer moments (scaled so paired head copies step without overshoot)."""
         heads, width = self.config['heads'], self.config['head_dim']
         read_width = heads * width
+        head_scale = (.5 ** moments_power) if moments else 1.
+        out_scale = (2. ** moments_power) if moments else .5
+        def apart(W, scale_ref=None):
+            if moments or not noise:
+                return torch.cat((W * head_scale, W * head_scale), dim=0)
+            amp = scale_ref if scale_ref is not None else (W.std() + 1e-6)
+            e = torch.randn_like(W) * noise * amp
+            return torch.cat((W + e, W - e), dim=0)
         changed = {}
         for key, value in values.items():
             if key.startswith('layers.'):
                 part = key.split('.', 2)[2]
-                if part in ('g', 'log_s', 'log_c', 'A', 'query.weight', 'value.weight', 'write'):
-                    new = fresh[key][len(value):] if fresh is not None else torch.zeros_like(value)
-                    value = torch.cat((value, new), dim=0)
+                if part == 'g':
+                    log_s = values.get(key.replace('.g', '.log_s'))
+                    ref = log_s.exp() if (log_s is not None and not moments) else None
+                    value = apart(value, ref)
+                elif part in ('query.weight', 'value.weight'):
+                    value = apart(value)
+                elif part in ('log_s', 'log_c', 'A', 'write'):
+                    value = torch.cat((value * head_scale, value * head_scale), dim=0)
                 elif part == 'out.weight':
                     read, near = value[:, :read_width], value[:, read_width:]
-                    value = torch.cat((read, torch.zeros_like(read), near), dim=1)
+                    if moments or not noise:
+                        read_new = torch.cat((read * out_scale, read * out_scale), dim=1)
+                    else:
+                        e = torch.randn_like(read) * noise * (read.std() + 1e-6)
+                        read_new = torch.cat((read * .5 + e, read * .5 - e), dim=1)
+                    value = torch.cat((read_new, near), dim=1)
             changed[key] = value
         return changed
 
@@ -672,16 +714,27 @@ class Learner:
         self.network, self.tokens, self.longest = network, tokens, longest
         self.weight = None if weight is None else torch.as_tensor(np.asarray(weight, np.float32), device=network.device)
         gates = [p for name, p in network.named_parameters() if name.endswith('.gate')]
-        awakened = []
+        seen_special = {id(p) for p in gates}
+        awakened, grown_params = [], []
+        def add_unique(target, params):
+            for p in params:
+                if id(p) not in seen_special:
+                    seen_special.add(id(p))
+                    target.append(p)
         for layer in network.layers:
-            if getattr(layer, '_awakened', False):
-                awakened.extend([layer.query.weight, layer.g, layer.log_s, layer.log_c, layer.A])
-                layer._awakened = False
-        special_ids = {id(p) for p in gates} | {id(p) for p in awakened}
-        regular = [p for p in network.parameters() if id(p) not in special_ids]
+            was_awakened = getattr(layer, '_awakened', False)
+            was_layer = getattr(layer, '_layer_boost', False)
+            layer._awakened = layer._layer_boost = False
+            if was_awakened:
+                add_unique(awakened, [layer.query.weight, layer.g, layer.log_s, layer.log_c, layer.A])
+            if was_layer:
+                add_unique(grown_params, list(layer.parameters()))
+        regular = [p for p in network.parameters() if id(p) not in seen_special]
         groups = [{'params': regular, 'lr': lr, 'scale': 1.}]
         if awakened:
-            groups.append({'params': awakened, 'lr': lr * 4., 'scale': 4.})
+            groups.append({'params': awakened, 'lr': lr * 4., 'scale': 4., 'boost': True})
+        if grown_params:
+            groups.append({'params': grown_params, 'lr': lr * 2., 'scale': 2., 'boost': True})
         if gates:
             groups.append({'params': gates, 'lr': lr * 8., 'scale': 8.})
         self.opt = torch.optim.AdamW(groups, lr=lr, weight_decay=0.,
@@ -689,6 +742,7 @@ class Learner:
         self.decay = .01
         self.anchor = None                                     # where the parameters are pulled back to (None: projections only)
         self.lr, self.steps = lr, 0
+        self._boost_steps = 0
         self.horizon = 2000.                                   # Robbins-Monro online EM step decay horizon (in steps)
         self.em_scale = .5                                     # online natural-EM rate matched to gradient step scale
         self.seen = 0                                          # tokens read so far, batch after batch
@@ -713,8 +767,13 @@ class Learner:
             if check is not None:
                 check()
             step_lr = self._step_lr(warmup)
+            anneal = 1. / (1. + getattr(self, '_boost_steps', 0) / 48.)
             for group in self.opt.param_groups:
-                group['lr'] = step_lr * group.get('scale', 1.)
+                if group.get('boost'):
+                    warm_lr = max(step_lr * group.get('scale', 2.), min(self.lr, 3e-3))
+                    group['lr'] = step_lr + anneal * (warm_lr - step_lr)
+                else:
+                    group['lr'] = step_lr * group.get('scale', 1.)
             lp = self.network.target_log_probs(ids_[:, :-1], mask[:, :-1], ids_[:, 1:])
             m = mask[:, 1:] if self.weight is None else mask[:, 1:] * self.weight[ids_[:, 1:]]
             denom = m.sum()
@@ -733,6 +792,7 @@ class Learner:
                             if bool(zero_mask.any()):
                                 sq[zero_mask] = p.grad[zero_mask].square()
             self.opt.step(); self.steps += 1
+            self._boost_steps = getattr(self, '_boost_steps', 0) + 1
             with torch.no_grad():
                 for layer in self.network.layers:
                     layer.gate.clamp_(-1.5, 1.5)
@@ -775,19 +835,24 @@ class Learner:
             return
         maps = {}
         for moment in ('exp_avg', 'exp_avg_sq'):
+            power = 1 if moment == 'exp_avg' else 2
             values = {name: state[moment] for name, state in old.items() if state}
             if kind == 'larghezza':
                 values = before.network._widen(values, moments=True)
             elif kind == 'teste':
-                values = before.network._grow_heads(values)
-            elif split is not None:
+                values = before.network._grow_heads(values, moments=True, moments_power=power)
+            elif isinstance(split, tuple):
                 values = before.network._copy_split(values, *split)
             elif kind == 'concetti':
+                prefix = f'layers.{split}.' if isinstance(split, int) else 'layers.'
+                m_scale, a_scale = .5 ** power, .25 ** power
                 for name in list(values):
+                    if not name.startswith(prefix):
+                        continue
                     if name.endswith(('.g', '.log_s', '.log_c')):
-                        values[name] = torch.cat([values[name]] * 2, 1)
+                        values[name] = torch.cat([values[name] * m_scale] * 2, 1)
                     elif name.endswith('.A'):
-                        values[name] = torch.cat([torch.cat([values[name]] * 2, 2)] * 2, 1)
+                        values[name] = torch.cat([torch.cat([values[name] * a_scale] * 2, 2)] * 2, 1)
             maps[moment] = values
         for name, p in self.network.named_parameters():
             v_sq = maps['exp_avg_sq'].get(name)
