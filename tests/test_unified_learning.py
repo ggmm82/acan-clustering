@@ -268,8 +268,8 @@ class GradualTabularEMTest(unittest.TestCase):
         Learner(net, tokens=64).learn(stream[:600], eos=eos)
         held = documents(stream[600:], eos, 64, begin=True)
         ref = float(-held_out(net, held).mean())
-        sel = net.concepts_to_split(0, held)
-        split_net = copy.deepcopy(net); split_net.split_one(0, sel)
+        net.concepts_to_split(0, held)
+        split_net = copy.deepcopy(net); split_net.split_concepts(0)
         layer_net = copy.deepcopy(net); layer_net.add_layer()
         for name, cand in (('larghezza', net.widened()), ('teste', net.more_heads()),
                            ('strato', layer_net), ('concetti', split_net)):
@@ -283,6 +283,56 @@ class GradualTabularEMTest(unittest.TestCase):
         self.assertIsNotNone(model._learner)
         self.assertIsNone(model._learner.learner.anchor)
         self.assertFalse(model._learner.done)
+
+    @unittest.skipUnless(TORCH, 'PyTorch required')
+    def test_cooled_late_stage_network_still_grows_concepts_multiplicatively(self):
+        """Even at the Robbins-Monro cooling floor (steps=50,000), doubling saturated concepts wins in NetText._race."""
+        import torch
+        from acan.lm.concept_net_training import documents
+        from acan.lm.net_text import NetText
+
+        torch.manual_seed(4)
+        rng = np.random.default_rng(4)
+        eos = 40
+        # Each document mentions 1 value from each of 4 categories (5+4c..8+4c), followed by 4 filler tokens (beyond
+        # window=1), then queries all 4 categories via cue_c (1+c) -> val_c: K=2 slots suffer 2-way category interference
+        # within every document whereas K=4 allocates one dedicated slot per category.
+        def make_slot_docs(count):
+            out = []
+            for _ in range(count):
+                vals = [int(rng.integers(5 + 4 * c, 9 + 4 * c)) for c in range(4)]
+                seq = [vals[int(c)] for c in rng.permutation(4)]
+                seq.extend(rng.integers(21, 39, size=4).tolist())
+                for q in rng.permutation(4):
+                    seq.extend([1 + int(q), vals[int(q)]])
+                seq.append(eos)
+                out.append(np.array(seq, dtype=np.int64))
+            return np.concatenate(out)
+
+        warm_stream = make_slot_docs(800)
+        race_stream = make_slot_docs(400)
+        held_stream = make_slot_docs(300)
+        model = NetText(41, eos, 1 << 22, max_context=32, growth=True,
+                        network=dict(dim=16, layers=1, heads=1, concepts=2, window=1,
+                                     cache=0, grouped=False, passes=False))
+        model.next_race = 10 ** 9
+        # Saturate K=2 first, then jump to the Robbins-Monro cooling floor (steps=50,000 -> cool=0.2).
+        warm_docs = documents(warm_stream, eos, 32, begin=True)
+        model.add(warm_stream, np.r_[warm_stream, race_stream], [held_stream], lambda: None)
+        for _ in range(12):
+            model._learner.learner.learn_documents(warm_docs)
+        model.model.net = model._learner.learner.network.export()
+        self.assertEqual(model.model.net.config['concepts'], [2])
+        model._learner.learner.steps = 50_000
+        self.assertAlmostEqual(model._learner.learner._step_lr(200), model._learner.learner.lr * .2, places=6)
+
+        model.next_race = 0
+        before_nll = float(-model.logp(held_stream, np.arange(1, len(held_stream))).mean())
+        model.add(race_stream, np.r_[warm_stream, race_stream], [held_stream], lambda: None)
+        after_nll = float(-model.logp(held_stream, np.arange(1, len(held_stream))).mean())
+        self.assertEqual(model.races[0]['choice'], 'concetti')
+        self.assertGreaterEqual(model.model.net.config['concepts'][0], 4)
+        self.assertLess(after_nll, before_nll)
 
     def test_eos_less_stream_is_split_into_bounded_bundles(self):
         from acan.lm.concept_trainer import corpus_bundles, piece_from_bundles
