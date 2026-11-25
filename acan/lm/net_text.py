@@ -158,7 +158,8 @@ class NetText:
             self._race_began = time.monotonic()
             all_docs = cut_documents(ids, self.eos, self._learner.learner.longest, begin=True)
             all_tokens = sum(map(len, all_docs))
-            trial_limit = (min(self.RACE_TRIAL, max(2048, all_tokens // len(self.KINDS)))
+            cap = 2 * self.RACE_TRIAL if self.tokens >= 2_000_000 else self.RACE_TRIAL
+            trial_limit = (min(cap, max(2048, all_tokens // len(self.KINDS)))
                            if all_tokens >= 8192 else all_tokens)
             def take_trial(start_idx):
                 picked, total_tok = [], 0
@@ -280,9 +281,12 @@ class NetText:
         else:
             batch = min(grower.batch, max(1, size // 64) if size >= 16384 else max(1, math.isqrt(size)))
         warmup = base.warmup if grower.learned else min(base.warmup, max(1, -(-size // batch)))
-        # Give each layer a chance without adding a full training run for every layer in every race.
-        next_layer = len(self.races) % len(base.network.layers)
-        selected = base.network.concepts_to_split(next_layer, docs)
+        # Prioritize the layer with the fewest concepts, cycling evenly across ties.
+        n_layers = len(base.network.layers)
+        concepts_now = base.network.config['concepts']
+        next_layer = min(range(n_layers), key=lambda i: (concepts_now[i], (i - len(self.races)) % n_layers))
+        if base.network.layers[next_layer].g.shape[1] == 1:
+            base.network.concepts_to_split(next_layer, docs)
         labels = [f'concetti · strato {next_layer + 1}' if kind == 'concetti' else kind for kind in self.KINDS]
         results, trials = [], []
         w = getattr(self, 'weight', None)
@@ -314,7 +318,6 @@ class NetText:
         offset = getattr(self, '_race_offset', 0)
         for number, (kind, label) in enumerate(zip(self.KINDS, labels)):
             layer = next_layer if kind == 'concetti' else None
-            split = (layer, selected) if layer is not None else None
             if kind == "com'è":
                 learner = copy.deepcopy(base)
             else:
@@ -326,14 +329,14 @@ class NetText:
                     network = copy.deepcopy(base.network)
                     if kind == 'strato':
                         network.add_layer()
-                    elif split is not None:
-                        network.split_one(*split)
+                    elif layer is not None:
+                        network.split_concepts(layer)
                 learner = Learner(network, tokens=batch, longest=base.longest, weight=w)
                 # Start from the same optimizer, pace and order of training rows.
                 learner.steps, learner.seen = base.steps, base.seen
                 learner.rng = copy.deepcopy(base.rng)
                 learner.lr = base.lr / 2 if kind == 'larghezza' else base.lr   # its coordinates move in pairs
-                learner.carry(base, kind, split)
+                learner.carry(base, kind, layer)
             learner.anchor = None
             learner.tokens, learner.warmup = batch, warmup
             candidate_shape = learner.network.footprint()
@@ -387,11 +390,18 @@ class NetText:
         if previous is None:
             eligible = list(results)
         else:
+            as_is = results[0][2]
             eligible = []
             for idx, result in enumerate(results):
-                # Same architecture on fresh text needs only to improve held-out likelihood; growing or rereading
-                # must beat the reference by more than one standard error.
-                ok = result[2].mean() > previous.mean() if (idx == 0 and round_number == 1) else self._better(result[2], previous)
+                scores = result[2]
+                if idx == 0:
+                    ok = scores.mean() > previous.mean() if round_number == 1 else self._better(scores, previous)
+                else:
+                    # Grown candidates share the exact mini-batch stream with "com'è", cancelling batch-sampling noise
+                    # in their paired difference while never regressing below the starting reference.
+                    ok = scores.mean() > previous.mean() and (
+                        self._better(scores, previous) or self._better(scores, as_is)
+                    )
                 if ok:
                     eligible.append(result)
         if not eligible:

@@ -214,29 +214,41 @@ class GrowthTest(unittest.TestCase):
         torch.testing.assert_close(new[:, -1], old[heads, selected])
         self.assertTrue(np.isfinite(trial.learn(tokens, eos=49)))
 
-    def test_added_heads_keep_old_adam_moments_and_start_with_zero_output(self):
+    def test_added_heads_keep_scaled_adam_moments_and_receive_first_step_gradients(self):
         import torch
-        from acan.lm.concept_net_training import Learner, Network
+        from acan.lm.concept_net_training import Learner, Network, _pad
 
+        torch.manual_seed(0)
         net = Network(config(dim=8, layers=1, heads=1, concepts=2, window=1))
         ids = np.tile(np.r_[np.arange(1, 10), 49], 4)
         base = Learner(net, tokens=32)
         base.learn(ids, eos=49)
+        np.testing.assert_allclose(net.more_heads(noise=0).export().document(ids[:10]),
+                                   net.export().document(ids[:10]), atol=1e-6)
         grown = net.more_heads()
         trial = Learner(grown, tokens=32)
         trial.carry(base, 'teste')
-        np.testing.assert_allclose(grown.export().document(ids[:10]), net.export().document(ids[:10]), atol=1e-6)
+        np.testing.assert_allclose(grown.export().document(ids[:10]), net.export().document(ids[:10]), atol=5e-4)
         for name in ('g', 'log_s', 'log_c', 'A'):
-            old = base.opt.state[getattr(net.layers[0], name)]['exp_avg']
-            new = trial.opt.state[getattr(grown.layers[0], name)]['exp_avg']
-            torch.testing.assert_close(new[:1], old)
-            self.assertEqual(new[1:].count_nonzero().item(), 0)
-        for moment in ('exp_avg', 'exp_avg_sq'):
+            old_m = base.opt.state[getattr(net.layers[0], name)]['exp_avg']
+            new_m = trial.opt.state[getattr(grown.layers[0], name)]['exp_avg']
+            torch.testing.assert_close(new_m[:1], old_m * .5)
+            torch.testing.assert_close(new_m[1:], old_m * .5)
+            old_v = base.opt.state[getattr(net.layers[0], name)]['exp_avg_sq']
+            new_v = trial.opt.state[getattr(grown.layers[0], name)]['exp_avg_sq']
+            torch.testing.assert_close(new_v[:1], old_v * .25)
+            torch.testing.assert_close(new_v[1:], old_v * .25)
+        for power, moment in ((1, 'exp_avg'), (2, 'exp_avg_sq')):
             old = base.opt.state[net.layers[0].out.weight][moment]
             new = trial.opt.state[grown.layers[0].out.weight][moment]
-            torch.testing.assert_close(new[:, :8], old[:, :8])
+            torch.testing.assert_close(new[:, :8], old[:, :8] * (2. ** power))
+            torch.testing.assert_close(new[:, 8:16], old[:, :8] * (2. ** power))
             torch.testing.assert_close(new[:, 16:], old[:, 8:])
-            self.assertEqual(new[:, 8:16].count_nonzero().item(), 0)
+        batch_ids, mask = _pad([ids[:12]])
+        lp = grown.target_log_probs(batch_ids[:, :-1], mask[:, :-1], batch_ids[:, 1:])
+        (-(lp * mask[:, 1:]).mean()).backward()
+        self.assertGreater(float(grown.layers[0].query.weight.grad[8:].abs().sum()), 0.)
+        self.assertGreater(float(grown.layers[0].g.grad[1:].abs().sum()), 0.)
         self.assertTrue(np.isfinite(trial.learn(ids, eos=49)))
 
 
@@ -497,7 +509,7 @@ class NetTextGrowthTest(unittest.TestCase):
             previous = candidates["com'è"]['concepts']
             split = candidates['concetti']
             expected = previous.copy()
-            expected[split['layer']-1] += 1
+            expected[split['layer']-1] *= 2
             self.assertEqual(split['concepts'], expected)
         self.assertTrue(all(entry['race_total'] == 5 for entry in reported if 'race' in entry))
         doc = ids[:ids.tolist().index(eos) + 1]
