@@ -58,9 +58,25 @@ def backend(workspace, path, method='GET', data=None, raw=False, headers=None, t
         raise ValueError('Worker generativo non raggiungibile.') from None
 
 
-def inside_figure(trace):
+def _trace_segments(points, max_gap=1.05):
+    """Connect contiguous measurements while inserting None breaks across unmeasured multi-step gaps or separate rounds."""
+    xs, ys = [], []
+    prev_x, prev_group = None, None
+    for point in points:
+        x, y = point[0], point[1]
+        kind = point[2] if len(point) > 2 else None
+        rnd = point[3] if len(point) > 3 else None
+        group = (None, None) if kind is None else (math.floor(x - 1e-9), rnd)
+        if prev_x is not None and (group != prev_group or x < prev_x or (x - prev_x) > max_gap):
+            xs.append(None); ys.append(None)
+        xs.append(x); ys.append(y)
+        prev_x, prev_group = x, group
+    return xs, ys
+
+
+def inside_figure(trace, uirevision=None):
     """The last step learned, opened up: its validation as the network reads the piece, token by token; in a race
-    of growth every candidate learns the same piece and has its own line, so the one that goes on can be seen."""
+    of growth every candidate learns the trial window and the winner completes the piece."""
     if not trace:
         return None
     step = math.floor(max(point[0] for point in trace) - 1e-9)
@@ -72,8 +88,6 @@ def inside_figure(trace):
              'strato': 'Gara · uno strato in più', 'concetti': 'Gara · concetti divisi in due',
              'teste': 'Gara · il doppio delle teste'}
     racing = any(len(point) > 2 for point in points)
-    if racing:                                                  # in a race the network itself only starts and ends the step
-        names[None] = 'Misure iniziali e finali della rete'
     figure = go.Figure()
     lines = {}
     for point in points:
@@ -85,10 +99,11 @@ def inside_figure(trace):
         if round_number is not None:
             label = f'Tornata {round_number} · {label.removeprefix("Gara · ")}'
         figure.add_scatter(x=[100 * (point[0] - step) for point in line], y=[point[1] for point in line],
-                           mode='markers', name=label)
+                           mode='lines+markers', marker=dict(size=6), line=dict(width=2), name=label)
     figure.update_layout(title=f'Dentro il passo {step + 1}: la validazione mentre la rete legge il pezzo'
-                         + (' · gara: ogni candidato legge tutto il pezzo, da 0 a 100%' if racing else ''),
+                         + (' · gara sulla finestra iniziale, poi il vincitore completa il pezzo' if racing else ''),
                          xaxis=dict(title='Pezzo letto (%)', range=[0, 100]), yaxis_title='NLL',
+                         uirevision=uirevision or f'inside:{step}',
                          margin=dict(t=50, b=40), height=360)
     return figure
 
@@ -949,9 +964,10 @@ def register(app):
         uploaded = (upload or {}).get('id')
         chosen_corpus = corpus if corpus in corpus_ids else uploaded if uploaded in corpus_ids else None
         job_ids = {item['id'] for item in state['jobs']}
+        running = next((item['id'] for item in state['jobs'] if item.get('status') in ('running', 'preparing')), None)
         chosen_job = state.get('select_job')
         if chosen_job not in job_ids:
-            chosen_job = selected if selected in job_ids else active if active in job_ids else None
+            chosen_job = selected if selected in job_ids else (active if active in job_ids else running)
         return ([dict(label=f"{item['name']} ({item['received']/1048576:.1f} MiB)", value=item['id']) for item in corpora],
                 [dict(label=project_label(item, state['jobs']),value=item['id']) for item in state['jobs']],
                 chosen_corpus, chosen_job if chosen_job!=selected else dash.no_update)
@@ -1066,11 +1082,17 @@ def register(app):
         return (mode!='window',)*3
 
     @app.callback(Output('lm-inside','figure'), Output('lm-inside-box','style'),
-                  Input('lm-state','data'), Input('lm-job','value'))
-    def inside(state, selected):
+                  Input('lm-state','data'), Input('lm-job','value'), State('lm-workspace','data'))
+    def inside(state, selected, workspace):
         job = next((j for j in (state or {}).get('jobs', []) if j['id'] == selected), None)
+        if job and 'detail_job' in (state or {}) and state['detail_job'] != selected:
+            try:
+                job = backend(workspace, f'/jobs/{selected}/view')
+            except ValueError:
+                pass
         trace = ((job or {}).get('progress') or {}).get('network_trace') or []
-        figure = inside_figure(trace)
+        step = math.floor(max(point[0] for point in trace) - 1e-9) if trace else 0
+        figure = inside_figure(trace, uirevision=f'inside:{selected}:{step}')
         return (figure, {'display': 'block'}) if figure is not None else (go.Figure(), {'display': 'none'})
 
     @app.callback(Output('lm-progress','children'), Output('lm-loss','figure'),
@@ -1103,9 +1125,10 @@ def register(app):
         for kind in dict.fromkeys(point[2] if len(point) > 2 else None for point in trace):
             # the network inside the steps, on the same validation; in a race of growth every candidate over the same step
             points = [point for point in trace if (point[2] if len(point) > 2 else None) == kind]
-            figure.add_scatter(x=[point[0] for point in points], y=[point[1] for point in points], mode='markers',
+            xs, ys = _trace_segments(points)
+            figure.add_scatter(x=xs, y=ys, mode='lines+markers',
                                name='Validazione mentre impara' if kind is None else f'Gara · {kind}',
-                               marker=dict(size=4))
+                               marker=dict(size=5), line=dict(width=1.5 if kind is None else 1.2))
         # The project and its dense control on the same chart: same corpus, seed and budget.
         partner, comparison = paired_job((state or {}).get('jobs', []), job), None
         if partner is not None:
@@ -1127,15 +1150,18 @@ def register(app):
                 pair = (job, other, mine, theirs) if own == 'Concetti' else (other, job, theirs, mine)
                 comparison = comparison_summary(*pair)
         figure.update_layout(title='Errore di previsione · più basso è meglio', xaxis_title='Passi', yaxis_title='NLL',uirevision=f'{selected}:{history_mode}:{history_start if history_mode=="window" else 0}',xaxis={'rangeslider':{'visible':True}})
+        max_x = max([row['step'] for row in history if 'step' in row] + [point[0] for point in trace] + [0.])
         saved_range=(chart_view or {}).get(figure.layout.uirevision) if isinstance(chart_view,dict) else None
-        if isinstance(saved_range,list) and len(saved_range)==2 and all(isinstance(v,(int,float)) and math.isfinite(v) for v in saved_range):
+        if (isinstance(saved_range,list) and len(saved_range)==2
+                and all(isinstance(v,(int,float)) and math.isfinite(v) for v in saved_range)
+                and not (job.get('status') in ('running', 'preparing') and saved_range[0] <= 0.05 and max_x > saved_range[1])):
             figure.update_xaxes(range=saved_range,autorange=False)
         protected=next((item for item in job['snapshots'] if item.get('best')),None)
-        if protected and protected.get('validation_nll') is not None:
-            figure.add_hline(y=protected['validation_nll'],line_dash='dot',line_color='purple',annotation_text='Migliore conservato')
         baseline = metrics.get('baseline_nll')
+        if protected and protected.get('validation_nll') is not None and (baseline is None or abs(protected['validation_nll'] - baseline) > 1e-6):
+            figure.add_hline(y=protected['validation_nll'],line_dash='dot',line_color='purple',annotation_text='Migliore conservato',annotation_position='bottom right')
         if baseline is not None:
-            figure.add_hline(y=baseline, line_dash='dash', line_color='green', annotation_text='Prima di leggere il testo' if job['config'].get('architecture') == 'concepts' else 'Modello originale sullo stesso corpus')
+            figure.add_hline(y=baseline, line_dash='dash', line_color='green', annotation_text='Prima di leggere il testo' if job['config'].get('architecture') == 'concepts' else 'Modello originale sullo stesso corpus', annotation_position='top left')
         text = f"{job['status']} · passo {metrics.get('step',0)}/{job['config']['total_steps']} · token elaborati {metrics.get('tokens_trained',0):,} · ultimo checkpoint {job['checkpoint'] or 'ancora nessuno'}"
         detail = [dbc.Alert(history_error,color='warning') if history_error else None,html.P(text), html.P(job['error'], className='text-danger') if job['error'] else None]
         if comparison is not None:
