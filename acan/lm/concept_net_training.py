@@ -349,6 +349,8 @@ class Network(nn.Module):
                 offset = torch.randn_like(values[prefix+'g'][heads, selected]) * scale * noise
                 values[prefix+'g'][heads, selected] += offset
                 values[prefix+'g'][:, -1] -= offset
+                values[prefix+'log_s'][heads, selected] -= .15
+                values[prefix+'log_s'][:, -1] -= .15
                 # Each child slightly favors reading its own summary so their rows in A diverge cleanly.
                 nudge = min(float(noise) * 4., .25)
                 values[prefix+'A'][heads, selected, selected] += nudge
@@ -688,7 +690,7 @@ class Learner:
         self.anchor = None                                     # where the parameters are pulled back to (None: projections only)
         self.lr, self.steps = lr, 0
         self.horizon = 2000.                                   # Robbins-Monro online EM step decay horizon (in steps)
-        self.em_scale = 8.                                     # online natural-EM rate relative to step size
+        self.em_scale = .5                                     # online natural-EM rate matched to gradient step scale
         self.seen = 0                                          # tokens read so far, batch after batch
         self.warmup = 200                                      # steps of the start, at most one pass (Grower)
         self.rng = np.random.default_rng(seed)
@@ -745,7 +747,7 @@ class Learner:
         """Apply the shared Fisher natural-gradient / online-EM update to the Gaussian concepts of every layer."""
         if self.anchor is not None or self.em_scale <= 0.:
             return
-        rate = min(.05, lr * self.em_scale)
+        rate = min(.01, lr * self.em_scale)
         with torch.no_grad():
             for layer in self.network.layers:
                 stats = getattr(layer, '_em_stats', None)
@@ -756,7 +758,7 @@ class Learner:
                 if float(bc.sum()) <= 1e-6:
                     continue
                 new_log_c, new_g, new_log_s = natural_em_parameters(
-                    layer.log_c, layer.g, layer.log_s, bc, bu, bq, root_v, 1., rate, torch
+                    layer.log_c, layer.g, layer.log_s, bc, bu, bq, root_v, 1e-2, rate, torch
                 )
                 layer.log_c.copy_(new_log_c)
                 layer.g.copy_(new_g)
@@ -1014,6 +1016,8 @@ class Grower:
             elif self.best_learner is not None and self._better(self.best_scores, scores):
                 self.learner = copy.deepcopy(self.best_learner)
                 self.learner.lr = max(1e-4, self.learner.lr * .5)
+            elif not self.passes:
+                return self.learner.network.export()
         if self.passes:
             piece, made = sum(map(len, docs)), 0
             interval = piece

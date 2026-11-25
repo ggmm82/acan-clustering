@@ -202,11 +202,14 @@ class NetText:
                     best = self._learner.learner.network.export()
                     self._learner._keep(best, after)
                     self._learner.learned += rest_size
-                else:
+                elif self._better(saved_scores, after):
                     self._learner.learner = saved_learner
                     best, self._learner.best_scores = saved_best, saved_scores
                     self._learner.best = best
                     self._learner.learner.lr = max(1e-4, self._learner.learner.lr * .5)
+                else:
+                    best = self._learner.learner.network.export()
+                    self._learner.learned += rest_size
             counted.update(seen=self._learner.learner.seen, total=len(ids))  # a rereading does not advance the queue
             self.race_gap = len(ids) if len(self.races) > first_race + 1 else max(2 * self.race_gap, len(ids))
             self.next_race = end + self.race_gap

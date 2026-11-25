@@ -284,6 +284,17 @@ class GradualTabularEMTest(unittest.TestCase):
         self.assertIsNone(model._learner.learner.anchor)
         self.assertFalse(model._learner.done)
 
+    def test_eos_less_stream_is_split_into_bounded_bundles(self):
+        from acan.lm.concept_trainer import corpus_bundles, piece_from_bundles
+
+        stream = np.arange(1, 40_001, dtype=np.int64) % 97
+        bundles, offsets = corpus_bundles(stream, len(stream), eos=99, seed=7, bundle_tokens=1024)
+        self.assertGreaterEqual(len(bundles), 9)
+        self.assertTrue(all(b - a <= 4096 for a, b in bundles))
+        rebuilt = piece_from_bundles(stream, bundles, offsets, 0, len(stream))
+        self.assertEqual(len(rebuilt), len(stream))
+        self.assertEqual(sorted(rebuilt.tolist()), sorted(stream.tolist()))
+
 
 if __name__ == '__main__':
     unittest.main()

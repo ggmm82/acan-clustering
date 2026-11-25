@@ -99,13 +99,21 @@ def corpus_bundles(train, read, eos, seed, bundle_tokens=4096):
     while preserving exact token counts and resumability at any step.
     """
     spans, start = [], 0
+    max_bundle = 4 * bundle_tokens
     chunk = 4_000_000
     for offset in range(0, read, chunk):
         part = np.asarray(train[offset:min(offset+chunk, read)])
         for end in np.flatnonzero(part == eos) + 1 + offset:
+            while end - start > max_bundle:
+                spans.append((start, start + max_bundle))
+                start += max_bundle
             if end - start >= bundle_tokens:
                 spans.append((start, int(end)))
                 start = int(end)
+        limit = min(offset + chunk, read)
+        while limit - start >= max_bundle:
+            spans.append((start, start + max_bundle))
+            start += max_bundle
     if start < read:
         spans.append((start, int(read)))
     if len(spans) <= 1:
