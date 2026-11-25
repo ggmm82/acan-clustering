@@ -269,7 +269,7 @@ class NetText:
         """
         import copy
         import math
-        from .concept_net_training import Learner, documents, held_out
+        from .concept_net_training import Learner, documents, held_out, distant_context_scores
         grower, base = self._learner, self._learner.learner
         check()
         docs = documents(ids, self.eos, base.longest, begin=True) if docs is None else docs
@@ -287,7 +287,9 @@ class NetText:
         next_layer = min(range(n_layers), key=lambda i: (concepts_now[i], (i - len(self.races)) % n_layers))
         if base.network.layers[next_layer].g.shape[1] == 1:
             base.network.concepts_to_split(next_layer, docs)
-        labels = [f'concetti · strato {next_layer + 1}' if kind == 'concetti' else kind for kind in self.KINDS]
+        local = base.network.distant_split(next_layer, docs) if concepts_now[next_layer] > 1 else None
+        kinds = self.KINDS if local is None else (*self.KINDS, 'divisione locale')
+        labels = [f'{kind} · strato {next_layer + 1}' if kind in ('concetti', 'divisione locale') else kind for kind in kinds]
         results, trials = [], []
         w = getattr(self, 'weight', None)
         eval_held = (lambda net, d: held_out(net, d)) if w is None else (lambda net, d: held_out(net, d, weight=w))
@@ -304,7 +306,7 @@ class NetText:
         def report(number, read, evaluating=False):
             if self.report is None:
                 return
-            total = len(self.KINDS)
+            total = len(kinds)
             elapsed = time.monotonic() - self._race_began
             spent = ((round_number - 1) * total + number) * size + read
             self.report('network', 0, elapsed, race=number + 1, race_total=total, race_round=round_number,
@@ -316,8 +318,8 @@ class NetText:
 
         report(0, 0)
         offset = getattr(self, '_race_offset', 0)
-        for number, (kind, label) in enumerate(zip(self.KINDS, labels)):
-            layer = next_layer if kind == 'concetti' else None
+        for number, (kind, label) in enumerate(zip(kinds, labels)):
+            layer = next_layer if kind in ('concetti', 'divisione locale') else None
             if kind == "com'è":
                 learner = copy.deepcopy(base)
             else:
@@ -329,6 +331,8 @@ class NetText:
                     network = copy.deepcopy(base.network)
                     if kind == 'strato':
                         network.add_layer()
+                    elif kind == 'divisione locale':
+                        network.split_one(layer, local[0], noise=.22, axis=local[1])
                     elif layer is not None:
                         network.split_concepts(layer)
                 learner = Learner(network, tokens=batch, longest=base.longest, weight=w)
@@ -336,7 +340,7 @@ class NetText:
                 learner.steps, learner.seen = base.steps, base.seen
                 learner.rng = copy.deepcopy(base.rng)
                 learner.lr = base.lr / 2 if kind == 'larghezza' else base.lr   # its coordinates move in pairs
-                learner.carry(base, kind, layer)
+                learner.carry(base, kind, (layer, local[0]) if kind == 'divisione locale' else layer)
             learner.anchor = None
             learner.tokens, learner.warmup = batch, warmup
             candidate_shape = learner.network.footprint()
@@ -354,13 +358,25 @@ class NetText:
                 chart_scores = scores if shown is held else eval_held(learner.network, shown)
                 self._point(self.read + offset + self._race_piece, chart_scores, label, round_number)
             count = candidate_shape['parameters']
-            results.append((kind, learner, scores, count, layer))
+            context = {}
+            admitted = True
+            if kind == 'divisione locale':
+                as_is = results[0][1].network
+                ref_score, ref_gain = distant_context_scores(as_is, held, base.longest)
+                score, gain = distant_context_scores(learner.network, held, base.longest)
+                admitted = (len(score) > 1 and scores.mean() > results[0][2].mean()
+                            and score.mean() > ref_score.mean() and self._better(gain, ref_gain))
+                context = dict(parent_per_head=local[0].tolist(), axis_per_head=local[1].tolist(),
+                               context_documents=len(score), context_admitted=bool(admitted),
+                               context_gain=float((gain-ref_gain).mean()) if len(gain) else None)
+            if admitted:
+                results.append((kind, learner, scores, count, layer))
             trials.append(dict(choice=kind, layer=layer+1 if layer is not None else None,
                                heads=int(learner.network.config['heads']), concepts=list(learner.network.config['concepts']),
-                               held_out=float(-scores.mean()), parameters=count))
+                               held_out=float(-scores.mean()), parameters=count, **context))
             winner, retained = self._race_choice(results, previous, round_number)
             choice, _, choice_scores, _, _ = winner
-            projection = dict(candidate=labels[self.KINDS.index(choice)], held_out=float(-choice_scores.mean()),
+            projection = dict(candidate=labels[kinds.index(choice)], held_out=float(-choice_scores.mean()),
                               grows=choice != "com'è" and not retained, retained=retained)
             if retained:
                 projection = dict(candidate="com'è", held_out=reference_nll, grows=False, retained=True)

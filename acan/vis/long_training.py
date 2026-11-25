@@ -574,8 +574,8 @@ layout = html.Div([
              html.Small("Un passo è un pezzo di al massimo un milione di token nuovi. Alla fine, la rete rilegge tutto il testo finché la validazione migliora. "
                         "Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
              dbc.Checkbox(id='lm-long-growth', value=True, label='La rete cresce con i dati'),
-             html.Small("La rete parte con uno strato, una testa e un concetto. Quando arriva una gara, la rete com'è e quattro copie cresciute "
-                        "(più larga, uno strato in più, più concetti in uno strato, più teste) imparano lo stesso pezzo nuovo. "
+             html.Small("La rete parte con uno strato, una testa e un concetto. Quando arriva una gara, la rete corrente e le candidate alla crescita "
+                        "(larghezza, strati, concetti, teste o divisione di un concetto predittivo) imparano lo stesso pezzo nuovo. "
                         "Se la rete cresce, il vincitore fa una nuova tornata sullo stesso pezzo. Il passo termina quando la validazione conferma la struttura corrente.",
                         className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),

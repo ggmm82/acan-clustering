@@ -164,6 +164,43 @@ class DescribeTest(unittest.TestCase):
 
 @unittest.skipUnless(TORCH, 'torch is needed to learn the network')
 class GrowthTest(unittest.TestCase):
+    def test_distant_scores_compare_identical_targets_and_exclude_copy(self):
+        import torch
+        from acan.lm.concept_net_training import Network, _pad, distant_context_scores
+        torch.manual_seed(21)
+        net = Network(config(window=2))
+        doc = np.arange(32)
+        full, gain = distant_context_scores(net, [doc], 32)
+        local = 1 + 2 * 2
+        def score(tokens):
+            ids, mask = _pad([tokens])
+            return net.target_log_probs(ids[:, :-1], mask[:, :-1], ids[:, 1:], use_cache=False)[0]
+        with torch.no_grad():
+            expected = score(doc)[16 + local - 1:].mean().item()
+            short = score(doc[16:])[local - 1:].mean().item()
+        self.assertAlmostEqual(full[0], expected, places=5)
+        self.assertAlmostEqual(gain[0], expected - short, places=5)
+        self.assertEqual(len(distant_context_scores(net, [doc[:4]], 32)[0]), 0)
+
+    def test_local_split_needs_reproducible_variation_and_preserves_parent_moments(self):
+        import torch
+        from acan.lm.concept_net_training import Network
+        torch.manual_seed(31)
+        net = Network(config(layers=1))
+        constant = np.ones(20, dtype=int)
+        self.assertIsNone(net.distant_split(0, [constant]))
+        self.assertIsNone(net.distant_split(0, [constant, constant]))
+        doc = np.tile(np.arange(4), 8)
+        parent, axis = net.distant_split(0, [doc, doc.copy()])
+        layer = net.layers[0]
+        heads = torch.arange(layer.h)
+        old_g = layer.g[heads, parent].detach().clone()
+        old_var = (2 * layer.log_s[heads, parent]).exp().detach()
+        net.split_one(0, parent, noise=.22, axis=axis)
+        g = layer.g[heads, parent]
+        torch.testing.assert_close((g + layer.g[:, -1]) / 2, old_g)
+        torch.testing.assert_close((2 * layer.log_s[:, -1]).exp() + (g-old_g).square(), old_var)
+
     def test_more_concepts_or_one_more_layer_read_as_before_and_go_on_learning(self):
         import torch
         from acan.lm.concept_net_training import Learner, Network
@@ -437,7 +474,7 @@ class NetTextGrowthTest(unittest.TestCase):
         third_round = next(entry for entry in reported if entry['race_round'] == 3)
         self.assertEqual(third_round['network'], model.model.net.footprint())
         for race in model.races:
-            final = next(entry for entry in reported if entry['race_round'] == race['round'] and len(entry['race_scores']) == 5)
+            final = next(entry for entry in reported if entry['race_round'] == race['round'] and len(entry['race_scores']) == entry['race_total'])
             self.assertEqual(final['race_projection']['held_out'], race['held_out'])
             self.assertEqual(final['race_projection']['grows'], race['choice'] != "com'è")
             self.assertEqual(final['race_projection']['retained'], race['retained'])
@@ -500,10 +537,15 @@ class NetTextGrowthTest(unittest.TestCase):
         grower = model._learner
         self.assertGreater(grower.decision, grower.learned)
         self.assertEqual(list(dict.fromkeys(race['tokens'] for race in model.races)), [390, len(ids)])
-        self.assertTrue(all(race['choice'] in NetText.KINDS for race in model.races))
+        self.assertTrue(all(race['choice'] in (*NetText.KINDS, 'divisione locale') for race in model.races))
         for race in model.races:
             candidates = {candidate['choice']: candidate for candidate in race['candidates']}
-            self.assertEqual(set(candidates), set(NetText.KINDS))
+            self.assertEqual(set(candidates) - {'divisione locale'}, set(NetText.KINDS))
+            if 'divisione locale' in candidates:
+                local = candidates['divisione locale']
+                expected = candidates["com'è"]['concepts'].copy()
+                expected[local['layer'] - 1] += 1
+                self.assertEqual(local['concepts'], expected)
             self.assertEqual(candidates['teste']['heads'], 2 * candidates["com'è"]['heads'])
             self.assertEqual(race['heads'], candidates[race['choice']]['heads'])
             previous = candidates["com'è"]['concepts']
@@ -511,7 +553,7 @@ class NetTextGrowthTest(unittest.TestCase):
             expected = previous.copy()
             expected[split['layer']-1] *= 2
             self.assertEqual(split['concepts'], expected)
-        self.assertTrue(all(entry['race_total'] == 5 for entry in reported if 'race' in entry))
+        self.assertTrue(all(entry['race_total'] == len(entry['race_candidates']) for entry in reported if 'race' in entry))
         doc = ids[:ids.tolist().index(eos) + 1]
         q = model.logp(doc)
         cursor = model.prediction_cursor(())
