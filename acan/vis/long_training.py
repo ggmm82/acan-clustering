@@ -766,6 +766,7 @@ def register(app):
         return html.Div([queue_table(items), note])
 
     @app.callback(Output('lm-long-start-status', 'children'), Output('lm-long-queue', 'value', allow_duplicate=True),
+                  Output('lm-active-job', 'data', allow_duplicate=True),
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
@@ -778,9 +779,10 @@ def register(app):
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
                         milestone_steps=int(milestone or 0), concept_network_growth=bool(growth), probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
-            return result.get('message', 'Coda creata.'), result['queue']
+            first_job = (result.get('jobs') or [{}])[0].get('id', dash.no_update)
+            return result.get('message', 'Coda creata.'), result['queue'], first_job
         except ValueError as exc:
-            return dbc.Alert(str(exc), color='warning'), dash.no_update
+            return dbc.Alert(str(exc), color='warning'), dash.no_update, dash.no_update
 
     @app.callback(Output('lm-long-queue-status', 'children'), Output('lm-active-job', 'data', allow_duplicate=True),
                   Input('lm-long-add', 'n_clicks'), Input('lm-long-pause', 'n_clicks'), Input('lm-long-resume', 'n_clicks'),
@@ -845,12 +847,15 @@ def register(app):
     @app.callback(Output('lm-job', 'value', allow_duplicate=True), Input('lm-long-queue', 'value'), State('lm-job', 'value'),
                   State('lm-state', 'data'), prevent_initial_call=True)
     def follow_queue(queue, job, state):
-        """Step 4 starts on the last text of the chosen queue that has a saved model."""
+        """Step 4 starts on the active or last saved text of the chosen queue."""
         items = queues((state or {}).get('jobs', [])).get(queue) or []
-        if job and any(item['id'] == job for item in items):
+        if not items or (job and any(item['id'] == job for item in items)):
             return dash.no_update
+        active = next((item for item in items if item.get('status') in ('running', 'preparing')), None)
+        if active is not None:
+            return active['id']
         saved = [item for item in items if item['checkpoint']]
-        return saved[-1]['id'] if saved else dash.no_update
+        return (saved[-1] if saved else current_item(items))['id']
 
     @app.callback(Output('lm-long-footprint', 'children'), Input('lm-state', 'data'), Input('lm-long-queue', 'value'),
                   State('lm-workspace', 'data'))

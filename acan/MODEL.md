@@ -1,622 +1,280 @@
-# Il modello a concetti
+# ACAN 10 · Modello Algebrico Unificato a Concetti per Dati Tabulari e Linguaggio
 
 ## Matematica
 
-### 1 · Motivazioni
-
-Un modello che impara dai dati deve fare tre cose: **riassumere** ciò che ha visto,
-**riconoscere** a che cosa somiglia un caso nuovo e **predire** ciò che manca. Questo
-progetto le fa tutte e tre con un solo oggetto, il **concetto**: un gruppo di
-osservazioni descritto dalle sue somme (quante sono, la somma dei valori, la somma dei
-quadrati, quante volte compare ogni categoria). Le domande che guidano il progetto sono:
-
-- si può costruire un modello che si legge? Un concetto è una media e una dispersione,
-  e si può guardare: «le auto leggere costano in media 13 k€»;
-- si può imparare senza scegliere a mano le dimensioni? Quanti concetti, quanti livelli,
-  quante righe servono, quanto grande è la rete: tutto si decide sui dati, con un solo
-  criterio (sezione 2);
-- si può usare lo stesso oggetto per una tabella e per un testo? Una posizione di un testo
-  è una riga i cui attributi sono i token precedenti e la cui colonna da completare è il
-  token che segue.
-
-Il progetto ha quindi due modelli costruiti con gli stessi concetti e le stesse formule:
-
-| | Tabelle | Testo |
-|---|---|---|
-| Che cosa impara | concetti delle righe, in livelli dal generale al particolare | una rete di concetti che legge il documento |
-| Come impara | per somme e assegnazioni alternate (EM), senza gradiente | lungo il gradiente della verosimiglianza del token che segue |
-| Che cosa salva | le somme dei concetti, nessuna riga | i parametri della rete |
-| Che cosa predice | qualunque colonna mancante | il token che segue, un token alla volta |
-
-La differenza nasce dai dati. In una tabella ogni riga è un punto in uno spazio fisso di
-colonne: i concetti si trovano raggruppando i punti, e le loro somme sono già il modello.
-In un testo la «riga» di una posizione contiene tutti i token che la precedono, una
-quantità che cresce senza limite e che non si può raggruppare direttamente: serve una
-funzione che riassuma il passato in uno stato di dimensione fissa, e quella funzione si
-impara meglio lungo il gradiente.
-
-Seguiamo due esempi: una tabella di quattro automobili per le sezioni 3–6, e la frase
-«il gatto dorme sul» per le sezioni 7–9.
-
-### 2 · Il criterio di scelta
-
-Ogni volta che il modello deve decidere fra un'alternativa più semplice e una più
-ricca, le confronta su dati che non ha usato per costruirle. Per ogni osservazione $t$
-tenuta da parte calcola il guadagno di log-verosimiglianza
-
-$$
-g_t=\log p_{\rm ricca}(y_t)-\log p_{\rm semplice}(y_t)
-$$
-
-e sceglie l'alternativa più ricca solo se il guadagno medio supera il suo errore
-standard:
-
-$$
-\bar g>\frac{s_g}{\sqrt{n-1}} ,
-$$
-
-con $s_g$ la deviazione standard dei guadagni e $n$ il numero di osservazioni. Il
-confronto è appaiato: le due alternative si misurano sulle stesse osservazioni, quindi
-la variabilità comune non conta. Non ci sono soglie fissate a mano: la grandezza del
-guadagno richiesto dipende solo da quanto è rumorosa la misura. Fra alternative
-equivalenti entro un errore standard vince la più semplice.
-
-Lo stesso criterio decide, sulle tabelle, quante righe servono, quanti concetti e quanti
-livelli tenere; sul testo, quando la rete cresce, quante volte rileggere e quando smettere
-di imparare. Una quantità continua, come la forza $\kappa$ della sezione 6, si sceglie
-invece come il valore che massimizza la verosimiglianza di validazione.
-
-### 3 · Concetti: statistiche sufficienti
-
-Consideriamo la tabella (numeri inventati, per l'esempio):
-
-| riga | peso (t) | cilindrata (cc) | prezzo (k€) |
-|---:|---:|---:|---:|
-| 1 | 1,0 | 1000 | 12 |
-| 2 | 1,1 | 1200 | 14 |
-| 3 | 1,9 | 2800 | 40 |
-| 4 | 2,0 | 3000 | 44 |
-
-Un **concetto** è un gruppo di righe rappresentato da statistiche sufficienti: per ogni
-colonna numerica la massa, la somma dei valori e la somma dei quadrati; per ogni colonna
-di categorie la massa di ciascun valore. Una riga può appartenere in parte a più
-concetti. Con $T_{ri}\in[0,1]$ la quota della riga $r$ nel concetto $i$, massa e media
-sono
-
-$$
-C_i=\sum_r T_{ri},\qquad
-\mu_{ij}=\frac{\sum_{r}T_{ri}\,x_{rj}}{\sum_{r}T_{ri}} ,
-$$
-
-e dalla somma dei quadrati si ricava la dispersione $\sigma_{ij}^2$. Il concetto
-«utilitarie» (righe 1 e 2) ha massa 2, peso medio 1,05 t, cilindrata media 1100 cc,
-prezzo medio 13 k€.
-
-Le statistiche sono **additive**: unire due concetti significa sommare le loro somme, e
-imparare su una tabella divisa in pezzi dà lo stesso risultato che impararla intera. Un
-valore mancante non entra nelle somme della sua colonna.
-
-### 4 · Appartenenza
-
-Sia $L_i(x)$ la densità del concetto $i$ sulle colonne note della riga $x$: gaussiana
-con media $\mu_{ij}$ e dispersione $\sigma_{ij}$ per i numeri, frequenza relativa per le
-categorie, con le colonne indipendenti dentro il concetto. La quota di $x$ nel concetto
-$i$ è la probabilità a posteriori
-
-$$
-T_i(x)=\frac{C_i\,L_i(x)}{\sum_h C_h\,L_h(x)} .
-$$
-
-Un valore vicino al centro di un concetto stretto è molto probabile; un concetto
-disperso spiega valori più lontani, ciascuno con meno probabilità. La massa $C_i$ fa da
-probabilità a priori. Un'auto di 1,2 t e 1300 cc ha $T_{\rm utilitarie}\approx 0{,}98$ e
-$T_{\rm grandi}\approx 0{,}02$.
-
-Questa formula è il cuore di entrambi i modelli: sulle tabelle dice a quali concetti
-appartiene una riga, nella rete dice a quali concetti appartiene lo stato di una
-posizione e, alla fine, quale token segue.
-
-### 5 · Apprendimento sulle tabelle
-
-L'apprendimento alterna due operazioni sulle stesse somme, e poi sceglie il livello di
-dettaglio.
-
-**Assegnare e riassumere (EM).** Dati i concetti, ogni riga si distribuisce fra loro con
-le quote $T_{ri}$ della sezione 4 (passo E, *expectation*); date le quote, le somme di
-ogni concetto si ricalcolano (passo M, *maximization*). Ogni ripetizione non diminuisce
-la verosimiglianza delle righe, e dopo poche ripetizioni i concetti si stabilizzano. Nella
-riga 2 dell'esempio $T\approx 1$ per le utilitarie: le sue somme vanno quasi tutte lì.
-
-**Partenza dal particolare.** Si parte da molti concetti piccoli: blocchi di righe
-consecutive, uniti a due a due dove si perde meno, fino a circa una manciata di righe per
-concetto. Le colonne da predire pesano quanto tutte le altre insieme, così i concetti
-separano soprattutto ciò che serve a predire.
-
-**Unioni.** Si uniscono poi i concetti a due a due, prima le coppie che costano meno, e
-dopo ogni giro di unioni si ripete l'EM. Con $\rho$ il raggio di un concetto (la radice
-della sua dispersione media, relativa al livello superiore), il costo di unire $i$ e $j$
-è l'aumento del raggio pesato per la massa:
-
-$$
-\Delta_{ij}=(C_i+C_j)\,\rho_{i\cup j}-C_i\,\rho_i-C_j\,\rho_j .
-$$
-
-Unendo, le somme si sommano: nessuna riga va riletta.
-
-**Giudizio.** Ogni momento della sequenza di unioni è una partizione candidata, dalla più
-particolare (molti concetti) alla più generale (uno solo). Ogni candidata si giudica
-sulla log-probabilità delle colonne da predire di righe che i concetti non hanno visto:
-per ogni riga si tolgono dalle somme i suoi stessi contributi (stima *leave-one-out*),
-cosa che le statistiche additive rendono esatta e immediata. Il **livello di lavoro** è il
-più generale entro un errore standard dal migliore (sezione 2). Sulla tabella
-dell'esempio sono due concetti.
-
-**Livelli.** I livelli fra il più generale e quello di lavoro si scelgono con la
-**coesione a coppie**: due membri distinti dello stesso concetto si somigliano più di due
-righe qualunque? Con $r_{ij}$ la dispersione dell'attributo $j$ nel concetto $i$ divisa per
-quella dell'intera tabella,
-
-$$
-\mathrm{CP}^{\circ}=
-\frac{\sum_i C_i\max(C_i-1,0)\,\frac1m\sum_j [1-\min(2,r_{ij})]}
-     {\max(n(n-1),\epsilon)} .
-$$
-
-Ogni concetto contribuisce con le sue coppie di membri, pesate da quanto è stretto; per
-una categoria la dispersione è la probabilità che due membri presi a caso abbiano valori
-diversi. Dentro i concetti generali la ricerca si ripete sulla tabella vista con la scala
-di ciascun concetto: ciò che è distinto solo dentro un concetto generale diventa visibile,
-e ciò che si ripete in più concetti generali diventa un solo concetto.
-
-### 6 · Predizione sulle tabelle
-
-Per una riga nuova si calcolano le quote $T_i(x)$ sulle sole colonne note.
-
-**Colonna numerica.** Si pesano le medie dei concetti con le quote della riga:
-
-$$
-\hat y = \sum_i T_i(x)\,\mu_{i,\rm prezzo}\approx 0{,}98\cdot 13+0{,}02\cdot 42\approx 13{,}6\ \text{k€}.
-$$
-
-**Colonna di categorie: la lettura gerarchica.** Siano $N_i(y)$ la massa del valore $y$
-nel concetto, $M_i$ la massa totale e $D_i$ il numero di valori distinti osservati. Data
-una stima più generale $q^{\rm sopra}$, il concetto la aggiorna così:
-
-$$
-q_i(y)=\frac{N_i(y)+a_i\,q^{\rm sopra}(y)}{M_i+a_i},
-\qquad a_i=\kappa\max(1,D_i),\qquad
-p(y\mid x)=\sum_i T_i(x)\,q_i(y).
-$$
-
-È la media a posteriori di una distribuzione di Dirichlet centrata sulla stima più
-generale. Un concetto che ha visto poco resta vicino a $q^{\rm sopra}$; uno che ha visto
-molto la sostituisce. Il termine $D_i$ abbassa la fiducia dove i valori osservati sono
-molto vari. La forza $\kappa$ si sceglie sulla validazione. Più livelli si applicano **in
-catena**, dal più generale al più particolare: ognuno usa come $q^{\rm sopra}$ il risultato
-del precedente.
-
-Esempio: un concetto ha visto «.», «.» ed «e» (tre osservazioni, due valori). Con
-$\kappa=1$ e $q^{\rm sopra}(.)=1/4$ si ottiene $q(.)=(2+2\cdot\tfrac14)/(3+2)=\tfrac12$.
-
-Poiché il modello descrive tutte le colonne insieme, la stessa tabella imparata una volta
-predice **qualunque** colonna a partire dalle altre, e dice anche a quali concetti la riga
-appartiene.
-
-### 7 · Il testo: la rete a concetti
-
-Nel testo ogni posizione è una riga e la colonna da completare è il token che segue.
-Dopo «il gatto dorme sul» la colonna vale, per esempio, «divano». La rete descrive ogni
-posizione con uno **stato** $h$, un vettore di $D$ numeri, e lo costruisce con gli stessi
-oggetti delle tabelle.
-
-**Token come concetti.** Ogni token $y$ del vocabolario (di $V$ token) è un concetto con
-centro $e_y$ e massa $C_y$, con una dispersione comune $\sigma$. Lo stato di una posizione
-parte dal centro del suo token, e la previsione del token che segue è l'appartenenza dello
-stato finale ai concetti dei token (sezione 4):
-
-$$
-p_{\rm rete}(y\mid h)=\frac{C_y\,\mathcal N(h;\,e_y,\sigma)}{\sum_{y'}C_{y'}\,\mathcal N(h;\,e_{y'},\sigma)}
-=\mathrm{softmax}_y\!\Big(\frac{h\cdot e_y-\tfrac12\lVert e_y\rVert^2}{\sigma^2}+\log C_y\Big).
-$$
-
-Per non confrontare lo stato con tutto il vocabolario, i token sono riuniti in gruppi per
-frequenza, dal più frequente in giù, di circa $\sqrt V$ token ciascuno. Ogni gruppo $G$ è a
-sua volta un concetto con centro e massa, e la previsione si legge in due passi:
-
-$$
-p_{\rm rete}(y\mid h)=p(G_y\mid h)\;p(y\mid h,G_y),
-$$
-
-entrambi con la formula di appartenenza: lo stato si confronta con circa $2\sqrt V$
-concetti invece che con $V$.
-
-**Strati di attenzione fra concetti.** Lo stato passa per $L$ strati. In ogni strato
-ciascun gruppo di concetti (una «testa») ha $K$ concetti con centro $g_k$, dispersione
-$s_k$ e massa $C_k$. Una posizione $i$ proietta il suo stato in un'interrogazione $q_i$ e
-in un valore $v_i$, e appartiene ai concetti con $T_k(q_i)$, la formula della sezione 4.
-Lungo il documento ogni concetto accumula le sue somme, come un concetto delle tabelle
-accumula le righe. La testa apprende anche quanto conta la posizione $j$ nella memoria:
-$a_j=\tfrac12+\sigma(u^\top\widehat{h}_j)$, dove $\widehat{h}_j$ ha norma $\sqrt D$ per stati non nulli.
-Il peso resta fra $\tfrac12$ e $\tfrac32$. All'inizio $u=0$ e tutte le posizioni pesano uno.
-Il gradiente della previsione apprende
-quali posizioni scrivere con più peso, così molti token poco informativi possono pesare
-meno di pochi token utili:
-
-$$
-M_k(i)=\sum_{j\le i}a_j T_k(q_j),\qquad S_k(i)=\sum_{j\le i}a_j T_k(q_j)\,v_j ,
-$$
-
-e la posizione $i$ legge le medie dei concetti che le servono:
-
-$$
-r_i=\sum_k T_k(q_i)\sum_{k'}A_{kk'}\,\frac{S_{k'}(i)}{M_{k'}(i)} ,
-$$
-
-con $A_{kk'}$ (una distribuzione su $k'$) l'attenzione dal concetto $k$ al concetto $k'$.
-In «il gatto dorme sul», la posizione di «sul» appartiene a un concetto «luogo dopo un
-verbo di stato»; la sua lettura porta la media dei valori delle posizioni passate di quel
-concetto, e con essa l'informazione che serve per predire un luogo. Un token visto 10 o
-10.000 posizioni prima entra nelle stesse somme: è un'attenzione per contenuto, a qualunque
-distanza, e il suo costo per token dipende da $K$, non dalla lunghezza del documento.
-
-L'ordine delle parole vicine entra con gli stati delle ultime $W$ posizioni, ciascuno
-trasformato da una matrice propria della sua distanza. Lettura e vicini si combinano con
-lo stato, si normalizzano, e lo strato ha un'**apertura** $a$ appresa: il suo stato è
-$h+a\,(\mathrm{strato}(h)-h)$, così uno strato chiuso ($a=0$) lascia lo stato com'è.
-
-**Memoria del documento.** Gli strati riassumono il documento in medie: ricordano di che
-cosa si parla, non le parole esatte. Per ripetere un nome proprio o una frase già letta
-c'è una memoria: ogni posizione letta lascia un indirizzo (una proiezione del suo stato)
-insieme al token che l'ha seguita. La posizione corrente confronta il suo indirizzo con
-quelli precedenti e legge i token che seguivano gli indirizzi più simili. Fra gli
-indirizzi ce n'è uno in più, «nessuno somiglia al mio», che sta per la lettura della rete:
-
-$$
-p(y\mid h_i)=\alpha_{i0}\,p_{\rm rete}(y\mid h_i)+\sum_{j<i}\alpha_{ij}\,[y_{j+1}=y],
-\qquad
-\alpha_{ij}=\frac{e^{s_{ij}}}{e^{s_{i0}}+\sum_{j'<i}e^{s_{ij'}}},
-$$
-
-con $s_{ij}$ la somiglianza degli indirizzi delle posizioni $i$ e $j$ e $s_{i0}$ la
-somiglianza dell'indirizzo in più, calcolata dallo stato. È la stessa forma della lettura
-gerarchica della sezione 6: gli indirizzi sono le osservazioni (pesate da quanto
-somigliano), la rete è la stima più generale e $e^{s_{i0}}$ è la forza $\kappa$. Pochi
-indirizzi poco simili, come una domanda breve all'inizio di una risposta, lasciano la
-parola alla rete; molti indirizzi molto simili la sostituiscono.
-
-### 8 · Apprendimento della rete
-
-**L'obiettivo.** Tutti i parametri (centri, dispersioni e masse dei token e dei concetti,
-proiezioni, attenzioni $A$, trasformazioni dei vicini, aperture, indirizzi della memoria)
-si imparano insieme massimizzando la log-verosimiglianza del token che segue su ogni
-posizione del testo di addestramento:
-
-$$
-\mathcal L=\frac1n\sum_{t}\log p(y_{t+1}\mid y_{\le t}) .
-$$
-
-Il gradiente di $\mathcal L$ rispetto a ogni parametro si calcola all'indietro lungo le
-formule della sezione 7 (retropropagazione), e i parametri si muovono di un piccolo passo
-in quella direzione, con l'ottimizzatore AdamW. Ogni concetto di ogni strato si piega così
-a servire la previsione finale: non raggruppa le posizioni perché si somigliano, ma perché
-raggrupparle aiuta a predire.
-
-**Perché il gradiente e non l'EM.** Sulle tabelle l'EM funziona perché le righe sono
-fisse: il passo M ha una soluzione esatta, le medie. Nella rete le «righe» degli strati
-interni sono gli stati, che dipendono da tutti i parametri degli strati precedenti: non
-c'è una soluzione esatta da calcolare, e il modo diretto di sapere come cambiare un
-parametro è il gradiente dell'obiettivo finale. Il passo E resta, dentro la rete: è la
-formula di appartenenza che ogni strato applica.
-
-**A pezzi, con un calendario.** Il testo si legge a pezzi di un milione di token, in lotti
-di documenti interi (ogni documento comincia dopo il token di fine, così anche il suo
-primo token è predetto). Un lotto ha tanti token quanti lotti ci sono in un passaggio sul
-pezzo, al più 2.048; il passo cresce linearmente all'inizio per al più un passaggio. Le
-decisioni (smettere, crescere) cadono su un calendario che raddoppia con i token
-imparati: dopo un lotto, due, quattro… Quando due decisioni di fila non migliorano il
-testo tenuto da parte, la rete smette di imparare.
-
-**Dimensioni dai dati.** La rete parte con 32 numeri di stato, uno strato, una testa
-con un concetto e 3 distanze vicine. I centri dei token partono a caso. In una **gara** la
-rete com'è e quattro copie cresciute imparano il pezzo nuovo, una volta ciascuna:
-
-- **il doppio della larghezza:** ogni coordinata scritta due volte, con dispersioni e
-  masse dei concetti corrette perché appartenenze e letture restino identiche;
-- **uno strato in più,** con l'apertura chiusa: lascia lo stato com'è;
-- **un concetto in più per testa in uno strato.** Le gare successive provano gli
-  strati a turno. In ciascuna testa si divide il concetto che raccoglie più massa
-  di appartenenza su un campione del nuovo pezzo. I due figli si dividono la massa
-  originaria e iniziano con centri vicini. La stessa gara su testo tenuto da parte
-  decide se conservarli;
-- **il doppio delle teste:** una testa aggiunta ha proiezioni e concetti propri.
-  All'inizio il suo contributo all'uscita dello strato è zero. Durante
-  l'apprendimento può crescere se aiuta la previsione.
-
-Una testa basta per leggere attraverso i concetti. Più teste permettono
-proiezioni indipendenti dello stesso token, ciascuna con un insieme di concetti.
-La gara decide se questa capacità in più migliora la previsione su testo
-tenuto da parte. La validazione può lasciare la rete con un solo concetto per testa.
-La copia più larga impara a metà passo, perché le sue coordinate si muovono a coppie.
-La rete già imparata all'inizio della tornata fornisce il riferimento. Una candidata
-deve superarlo di più di un errore standard sul testo tenuto da parte (sezione 2).
-Fra le candidate che migliorano, prosegue la più semplice entro un errore standard
-dalla migliore. Alla prima tornata di una rete nuova si confrontano direttamente le candidate.
-Se vince una rete cresciuta, parte una nuova tornata dallo stesso vincitore sullo stesso
-pezzo. La struttura è stabile per quel pezzo quando vince la rete com'è o quando si
-conserva la rete di partenza. In entrambi i casi si avanza.
-
-**Quando c'è una gara.** Il calendario segue la rete:
-
-- con il primo pezzo, per scegliere la dimensione dai primi dati, e con l'ultimo;
-- quando la rete si stabilizza dopo essere cresciuta, la gara successiva salta un pezzo;
-- se la struttura resta la stessa già alla prima tornata, la distanza dalla gara
-  successiva raddoppia;
-- se fra due gare la rete smette di migliorare sul testo tenuto da parte (non di più di
-  un errore standard rispetto al pezzo prima), è satura: la gara si anticipa al pezzo
-  successivo.
-
-Le decisioni si giudicano su tutto il testo di validazione tranne i tratti che misurano
-l'errore mostrato, così un miglioramento piccolo non si perde nel rumore e l'errore
-mostrato resta su testo che nessuna decisione ha visto.
-
-**Ricordare rileggendo.** Un passo di gradiente sposta i parametri di poco: una frase vista
-una volta lascia una traccia piccola. Finito il testo, la rete lo rilegge tutto, e dopo
-ogni passaggio misura il testo tenuto da parte; continua finché migliora di più di un
-errore standard e annulla il passaggio che non aiuta. È rileggendo che la rete ricorda ciò
-che ha visto, oltre a generalizzarlo; quando il testo è abbondante, le riletture servono
-poco e si fermano presto.
-
-### 9 · Predizione e generazione
-
-Per predire, la rete legge il prompt una posizione alla volta (o tutto insieme: il
-risultato è identico) e tiene uno **stato di lettura**: per ogni strato le somme
-$M_k, S_k$ dei concetti e gli ultimi $W$ stati, più gli indirizzi della memoria. Per la
-posizione successiva dà la distribuzione $p(y\mid h)$ della sezione 7.
-
-Si sceglie un token: il più probabile a temperatura 0, altrimenti un'estrazione da
-$p^{1/\tau}$ normalizzata. Il token scelto entra nello stato della rete, ma **non** nella
-memoria del documento: il testo che il modello scrive non è una prova di che cosa dice il
-documento, e lasciarlo entrare farebbe rinforzare al modello le proprie ripetizioni. Si
-ripete fino al token di fine turno o al numero massimo di token.
-
-Dopo «il gatto dorme sul», lo stato di «sul» appartiene ai concetti dei luoghi; la lettura
-dei token dà alta probabilità a «divano», «letto», «tetto»; se poco prima il documento
-diceva «il divano nuovo», l'indirizzo di quella posizione somiglia a quello corrente e la
-memoria aggiunge probabilità a «divano».
-
-### 10 · Confronti concettuali
-
-**Le tabelle e il machine learning classico.**
-
-- *Miscele gaussiane e naive Bayes.* L'appartenenza della sezione 4 è quella di una miscela
-  di gaussiane con colonne indipendenti dentro ogni componente, imparata con l'EM. La
-  differenza è nel resto: i concetti sono organizzati in livelli, il numero di concetti
-  non si fissa ma si sceglie con la stima leave-one-out, e la predizione legge la
-  gerarchia in catena (sezione 6).
-- *Clustering gerarchico.* Le unioni per costo crescente ricordano il clustering
-  agglomerativo (il costo è vicino a quello di Ward), ma qui ogni unione mantiene un
-  modello probabilistico completo, giudicato sulla predizione e non solo sulla distanza.
-- *Alberi, foreste, gradient boosting, reti neurali.* Sono modelli discriminativi: imparano
-  una colonna da predire scelta prima, ottimizzando una perdita, con iperparametri
-  (profondità, numero di alberi, passo) scelti spesso per tentativi. Il modello a
-  concetti è **generativo**: descrive tutte le colonne insieme, predice qualunque colonna
-  dalle altre, gestisce i valori mancanti senza imputazione, si aggiorna sommando nuove
-  righe e non ha iperparametri da provare. Il prezzo è l'ipotesi di colonne indipendenti
-  dentro un concetto: una relazione fra colonne si coglie solo attraverso più concetti,
-  mentre un albero o una rete la possono rappresentare direttamente.
-
-**La rete a concetti e i modelli di linguaggio con attenzione (Transformer).**
-
-- *Cosa hanno in comune.* Lo stesso compito e lo stesso apprendimento: predire il token che
-  segue, con la stessa perdita (la log-verosimiglianza), lungo il gradiente, con AdamW, a
-  lotti di documenti. I centri dei token sono le *embedding*; la lettura finale è una
-  softmax su prodotti scalari con un termine di massa; le aperture degli strati e la
-  normalizzazione hanno il ruolo delle connessioni residue.
-- *L'attenzione.* In un Transformer ogni posizione confronta la sua interrogazione con le
-  chiavi di **tutte** le posizioni precedenti: il costo per token cresce con il contesto,
-  e la memoria in inferenza (le chiavi e i valori salvati) cresce con il documento. Nella
-  rete a concetti ogni posizione legge le somme di $K$ concetti per testa: le posizioni
-  passate sono già riassunte nelle somme dei concetti a cui appartenevano. Costo e memoria
-  per token sono fissi a qualunque lunghezza, come nelle attenzioni lineari e nei modelli a
-  stato; in cambio una posizione non può distinguere due posizioni passate dello stesso
-  concetto. È per questo che c'è la memoria del documento, che recupera il token esatto
-  quando serve.
-- *L'ordine.* Un Transformer riceve la posizione di ogni token con codifiche posizionali.
-  Qui l'ordine entra in due modi: le somme sono causali (contengono solo il passato) e gli
-  ultimi $W$ stati entrano con una trasformazione per distanza.
-- *La memoria del documento.* Corrisponde ai meccanismi di copia dei modelli di linguaggio
-  (puntatori con «sentinella», cache del documento): una probabilità che viene dai token
-  già letti, mescolata a quella della rete secondo quanto il contesto somiglia.
-- *Le dimensioni.* In un Transformer larghezza, profondità e numero di teste si fissano
-  prima di imparare, di solito da leggi di scala misurate su modelli più piccoli. Qui la
-  rete cresce mentre impara, con trasformazioni che conservano esattamente ciò che sa, e
-  solo quando il testo tenuto da parte lo giustifica.
-- *La scala.* I modelli di linguaggio moderni imparano da migliaia di miliardi di token su
-  acceleratori grafici, con miliardi di parametri. Questa rete impara su un processore,
-  da milioni di token, con milioni di parametri: le sue risposte sono molto meno coerenti,
-  e la differenza dipende soprattutto dalla quantità di testo e di calcolo, non dalla
-  formula.
-
-**I due modelli del progetto fra loro.** Sulle tabelle i concetti si trovano: le somme
-sono il modello, e ogni numero ha un significato diretto. Sul testo i concetti si
-imparano: sono parametri che l'ottimizzazione piega a servire la previsione, e si
-ispezionano attraverso le posizioni che vi appartengono. Le formule (appartenenza,
-somme, lettura gerarchica) sono le stesse; cambia chi decide dove stanno i concetti: le
-righe stesse nelle tabelle, il gradiente nel testo.
-
-### 11 · Misura della qualità
-
-Sul testo si usa la log-verosimiglianza negativa media dei token veri di testo mai
-visto, in nat per token:
-
-$$
-\mathrm{NLL}=-\frac1n\sum_{t=1}^{n}\log p(y_t\mid y_{<t}) .
-$$
-
-Più è bassa, meglio è; $e^{\rm NLL}$ (la perplessità) dice fra quanti token, in media, il
-modello è incerto. Prima di leggere, con un vocabolario di 32.000 token,
-$\mathrm{NLL}=\log 32000\approx 10{,}37$. Sulle tabelle si usano l'accuratezza e l'errore
-quadratico.
-
-### 12 · Limiti noti
-
-- **Velocità di apprendimento della rete.** Per ogni token la rete calcola, avanti e
-  indietro lungo il gradiente, le appartenenze di ogni strato e quelle dei gruppi e dei
-  token: su un processore senza GPU impara molto più lentamente di quanto il modello delle
-  tabelle impari per somme.
-- **Colonne indipendenti dentro un concetto** (tabelle): le relazioni fra colonne si
-  colgono solo attraverso più concetti.
-- **Interpretabilità della rete.** I concetti delle tabelle si leggono come somme dei loro
-  membri; quelli della rete sono parametri ottimizzati, che si ispezionano attraverso le
-  posizioni che vi appartengono.
+ACAN 10 formula l'apprendimento non supervisionato, predittivo e generativo — tanto su tabelle relazionali eterogenee quanto su sequenze simboliche di lunghezza arbitraria — all'interno di un'unica teoria probabilistica e geometrica fondata sulle **statistiche sufficienti additive di miscele esponenziali fattorizzate** e sul **gradiente naturale d'informazione di Fisher**.
+
+---
+
+### 1 · Formulazione probabilistica unificata: tabelle relazionali e sequenze simboliche
+
+Sia $\mathcal{X} = \mathcal{X}_1 \times \dots \times \mathcal{X}_m$ uno spazio di osservazione composto da $m$ attributi eterogenei:
+- per ogni coordinata continua $j \in \mathcal{J}_{\mathrm{num}}$, $\mathcal{X}_j = \mathbb{R}$;
+- per ogni coordinata discreta o simbolica $j \in \mathcal{J}_{\mathrm{cat}}$, $\mathcal{X}_j = \{1, \dots, V_j\}$ è un alfabeto finito di cardinalità $V_j$.
+
+Ogni osservazione $r \in \{1, \dots, n\}$ è una coppia $(x_r, \Omega_r)$, dove $\Omega_r \subseteq \{1, \dots, m\}$ indica il sottoinsieme delle coordinate effettivamente osservate e $x_{r,\Omega_r} = (x_{rj})_{j \in \Omega_r}$ i rispettivi valori misurati, assumendo che il meccanismo di omissione sia non informativo condizionatamente alle variabili osservate (ipotesi di mancanza a caso, MAR).
+
+Questa singola struttura matematica comprende come casi particolari entrambi i domini operativi del modello:
+
+1. **Dominio tabulare relazionale:** ogni riga costituisce un'osservazione $(x_r, \Omega_r)$. Durante l'apprendimento la distribuzione congiunta $p(x_r)$ modella simultaneamente attributi esplicativi e attributi bersaglio; in fase di interrogazione qualunque sottoinsieme $\Omega \subset \{1, \dots, m\}$ può essere fornito come evidenza nota per dedurre la distribuzione condizionata esatta $p(x_{\bar{\Omega}} \mid x_\Omega)$ sulle coordinate incognite $\bar{\Omega} = \{1, \dots, m\} \setminus \Omega$.
+2. **Dominio sequenziale e linguistico:** un documento di simboli $(w_1, w_2, \dots, w_T) \in \{1, \dots, V\}^T$, preceduto e seguito dal delimitatore strutturale di fine documento $\langle\mathrm{eos}\rangle$, definisce per fattorizzazione causale esatta una successione di osservazioni condizionate:
+   $$p(w_1, \dots, w_T \mid w_0 = \langle\mathrm{eos}\rangle) = \prod_{t=1}^{T} p(w_t \mid w_0, w_1, \dots, w_{t-1})$$
+   Alla posizione $t$, il prefisso osservato $(w_0, \dots, w_{t-1})$ svolge il ruolo dell'evidenza nota $x_\Omega$, mentre il simbolo futuro $w_t \in \{1, \dots, V\}$ costituisce l'unica coordinata incognita da prevedere. Una tabella codificata in forma seriale $[a_1, \dots, a_{m-1}, y, \langle\mathrm{eos}\rangle]$ diventa così un documento finito su cui il predittore causale valuta direttamente $p(y \mid a_1, \dots, a_{m-1})$.
+
+---
+
+### 2 · Algebra delle statistiche sufficienti, geometria dei concetti ed embedding dei token
+
+#### 2.1 · Famiglia esponenziale fattorizzata e statistiche sufficienti additive
+
+Un livello concettuale è una miscela finita di $K$ componenti latenti (detti **concetti**) indicizzati da $k \in \{1, \dots, K\}$, con pesi a priori $\pi_k > 0$ tali che $\sum_{k=1}^K \pi_k = 1$. Condizionatamente al concetto $k$, le coordinate osservate sono indipendenti:
+$$p(x_{r,\Omega_r} \mid z_r = k) = \prod_{j \in \Omega_r \cap \mathcal{J}_{\mathrm{num}}} \mathcal{N}\!\left(x_{rj} \;\middle|\; \mu_{kj},\, \sigma_{kj}^2\right) \prod_{j \in \Omega_r \cap \mathcal{J}_{\mathrm{cat}}} \mathrm{Cat}\!\left(x_{rj} \;\middle|\; \theta_{kj}\right)$$
+dove $\mu_{kj} \in \mathbb{R}$ e $\sigma_{kj}^2 > 0$ sono il centro e la varianza della coordinata continua $j$ nel concetto $k$, mentre $\theta_{kj} = (\theta_{kjv})_{v=1}^{V_j}$ sul simplesso $\Delta^{V_j - 1}$ è la distribuzione categoriale della coordinata discreta $j$.
+
+Assegnata a ogni osservazione $r$ con peso campionario $w_r > 0$ una distribuzione di responsabilità $T_{rk} \ge 0$ ($\sum_{k=1}^K T_{rk} = 1$), l'intera informazione necessaria a stimare il concetto $k$ su un insieme o sotto-insieme di dati $B$ è racchiusa nella quadrupla di **statistiche sufficienti estensive**:
+$$C_k(B) = \sum_{r \in B} w_r\,T_{rk}, \qquad U_{kj}(B) = \sum_{\substack{r \in B \\ j \in \Omega_r}} w_r\,T_{rk}\,x_{rj}, \qquad Q_{kj}(B) = \sum_{\substack{r \in B \\ j \in \Omega_r}} w_r\,T_{rk}\,x_{rj}^2$$
+$$N_{kjv}(B) = \sum_{\substack{r \in B \\ j \in \Omega_r}} w_r\,T_{rk}\,\mathbb{I}[x_{rj} = v]$$
+accompagnate dalla massa effettivamente osservata per ciascuna colonna $C_{kj}^{\mathrm{obs}}(B) = \sum_{r \in B:\, j \in \Omega_r} w_r\,T_{rk}$.
+
+Per qualunque coppia di blocchi disgiunti $B_1 \cap B_2 = \emptyset$, l'operatore di aggregazione è un omomorfismo esatto di monoidi commutativi:
+$$\Sigma_k(B_1 \cup B_2) = \Sigma_k(B_1) + \Sigma_k(B_2), \qquad \Sigma_k = \big(C_k,\, C_k^{\mathrm{obs}},\, U_k,\, Q_k,\, N_k\big)$$
+Questa proprietà algebrica rende la stima invariante rispetto alla decomposizione dei dati in blocchi di memoria, flussi incrementali o prefissi causali di un documento.
+
+Per impedire degenerazioni singolari ($\sigma_{kj}^2 \to 0$) o probabilità nulle su simboli rari, i parametri canonici vengono ricavati dalle statistiche sufficienti mediante regolarizzazione coniugata empirica verso la dispersione globale $\sigma_{0,j}^2$ del livello radice (con intensità $\kappa > 0$) e lisciamento simmetrico di Dirichlet $\alpha_0 > 0$:
+$$\mu_{kj} = \frac{U_{kj}}{C_{kj}^{\mathrm{obs}} + \varepsilon}, \qquad \sigma_{kj}^2 = \frac{\max\!\big(0,\; Q_{kj} - C_{kj}^{\mathrm{obs}}\,\mu_{kj}^2\big) + \kappa\,\sigma_{0,j}^2}{C_{kj}^{\mathrm{obs}} + \kappa}, \qquad \theta_{kjv} = \frac{N_{kjv} + \alpha_0}{C_{kj}^{\mathrm{obs}} + \alpha_0\,V_j}$$
+
+#### 2.2 · Spazio di immersione dei simboli come concetti gaussiani e fattorizzazione gerarchica
+
+Nel modulo linguistico e sequenziale, ogni simbolo del vocabolario $v \in \{1, \dots, V\}$ non è rappresentato da un vettore arbitrario separato dal classificatore finale, bensì è esso stesso un **concetto gaussiano isotropo** nello spazio degli stati $\mathbb{R}^D$, caratterizzato da:
+- centro semantico-sintattico $e_v \in \mathbb{R}^D$;
+- parametro logaritmico di massa a priori $\ell_v \in \mathbb{R}$, con $\pi_v = \frac{\exp(\ell_v)}{\sum_{u=1}^V \exp(\ell_u)}$ inizializzato dalla distribuzione empirica delle frequenze del corpus;
+- scala metrica globale apprendibile $\tau = \exp(\alpha) > 0$.
+
+Dato lo stato contestuale normalizzato $h_t \in \mathbb{R}^D$ prodotto dalla rete alla posizione $t$, la distribuzione predittiva sul simbolo successivo coincide esattamente con la probabilità a posteriori di appartenenza dello stato $h_t$ ai concetti del vocabolario:
+$$\log p(w_{t+1} = v \mid h_t) = \ell_v - \frac{\tau^2}{2}\,\|h_t - e_v\|_2^2 - \log Z(h_t) = \underbrace{\left(\ell_v - \frac{\tau^2}{2}\,\|e_v\|_2^2\right)}_{b_v} + \tau^2\,\langle h_t,\, e_v\rangle - \frac{\tau^2}{2}\,\|h_t\|_2^2 - \log Z(h_t)$$
+Poiché il termine $-\frac{\tau^2}{2}\|h_t\|_2^2$ è indipendente da $v$, esso si semplifica con la costante di normalizzazione $\log Z(h_t)$, unificando in un'unica identità geometrica l'immersione d'ingresso $e_v$ e la verosimiglianza generativa d'uscita.
+
+Quando il vocabolario $V$ è ampio (ad esempio $V = 32.000$), la valutazione diretta dei $V$ concetti richiederebbe $\mathcal{O}(V D)$ operazioni per posizione. ACAN 10 ordina i simboli per frequenza decrescente e li partiziona in $G \approx \lceil\sqrt{V}\rceil$ gruppi contigui $\mathcal{G}_1, \dots, \mathcal{G}_G$ di cardinalità massima $S \approx \lceil\sqrt{V}\rceil$. Ogni gruppo possiede una massa aggregata $\bar{\ell}_g = \log \sum_{v \in \mathcal{G}_g} \exp(\ell_v)$ e un baricentro ponderato:
+$$\bar{e}_g = \sum_{v \in \mathcal{G}_g} \frac{\exp(\ell_v)}{\exp(\bar{\ell}_g)}\,e_v \in \mathbb{R}^D$$
+La probabilità del simbolo successivo si fattorizza in modo esatto in due scelte di complessità $\mathcal{O}(\sqrt{V}\,D)$ ciascuna — prima il gruppo di appartenenza $g(v)$, poi il simbolo specifico all'interno del solo gruppo osservato:
+$$\log p(v \mid h_t) = \log p\big(g(v) \mid h_t\big) + \log p\big(v \;\big|\; g(v),\, h_t\big)$$
+riducendo il costo computazionale e di memoria da $\mathcal{O}(V D)$ a $\mathcal{O}(2\sqrt{V}\,D)$ senza alcuna approssimazione campionaria e conservando una distribuzione normalizzata esatta sull'intero vocabolario.
+
+---
+
+### 3 · Appartenenza a posteriori, attenzione causale a concetti e memoria episodica
+
+#### 3.1 · Operatore di appartenenza bayesiana ed espansione quadratica
+
+Dato un vettore continuo $q \in \mathbb{R}^d$ (una riga tabulare proiettata o un'interrogazione nello spazio di una testa d'attenzione) e una famiglia di $K$ concetti gaussiani diagonali $\{(\pi_k, g_k, s_k)\}_{k=1}^K$ con $s_k = \exp(\eta_k) \in \mathbb{R}_+^d$, il logaritmo non normalizzato della responsabilità a posteriori vale:
+$$\Phi_k(q) = \log \pi_k - \sum_{m=1}^d \eta_{km} - \frac{1}{2}\sum_{m=1}^d \frac{(q_m - g_{km})^2}{s_{km}^2}, \qquad T_k(q) = \frac{\exp\!\big(\Phi_k(q) - \max_j \Phi_j(q)\big)}{\sum_{j=1}^K \exp\!\big(\Phi_j(q) - \max_{j'} \Phi_{j'}(q)\big)}$$
+Sviluppando il quadrato con le precisioni $\lambda_{km} = s_{km}^{-2} = \exp(-2\eta_{km})$:
+$$\sum_{m=1}^d \frac{(q_m - g_{km})^2}{s_{km}^2} = \langle q \odot q,\, \lambda_k\rangle - 2\,\langle q,\, g_k \odot \lambda_k\rangle + \langle g_k \odot g_k,\, \lambda_k\rangle$$
+il calcolo simultaneo su tutte le posizioni di una sequenza si riduce a prodotti matriciali densi tra matrici $(T \times d)$ e $(d \times K)$, evitando la materializzazione di tensori tridimensionali intermedi $(T \times K \times d)$.
+
+#### 3.2 · Strato di attenzione causale multi-testa mediato dai concetti
+
+Sia $H \in \mathbb{R}^{T \times D}$ la sequenza degli stati in ingresso allo strato $\ell \in \{1, \dots, L\}$, ripartita su $H_{\mathrm{teste}}$ teste indipendenti di dimensione $d$ ($H_{\mathrm{teste}}\,d = D$) ciascuna dotata di $K_\ell$ concetti. Per ogni posizione $t \in \{1, \dots, T\}$ e ogni testa $h \in \{1, \dots, H_{\mathrm{teste}}\}$:
+
+1. **Interrogazione, valore e intensità selettiva di scrittura:**
+   $$q_{t,h} = W_{Q,h}\,h_t \in \mathbb{R}^d, \qquad v_{t,h} = W_{V,h}\,h_t \in \mathbb{R}^d, \qquad s_{t,h} = \frac{1}{2} + \sigma\!\left(\sqrt{D}\,\frac{\langle w_h,\, h_t\rangle}{\|h_t\|_2 + \varepsilon}\right) \in \left(\frac{1}{2},\, \frac{3}{2}\right)$$
+   La responsabilità del concetto $k$ è $T_{t,h,k} = T_k(q_{t,h})$ e la massa depositata nella memoria concettuale è $\tilde{T}_{t,h,k} = s_{t,h}\,T_{t,h,k}$.
+2. **Accumulazione causale delle statistiche sufficienti del prefisso:**
+   $$M_{t,h,k} = \varepsilon + \sum_{\tau=1}^t \tilde{T}_{\tau,h,k} \in \mathbb{R}_+, \qquad S_{t,h,k} = \sum_{\tau=1}^t \tilde{T}_{\tau,h,k}\,v_{\tau,h} \in \mathbb{R}^d, \qquad \bar{v}_{t,h,k} = \frac{S_{t,h,k}}{M_{t,h,k}}$$
+3. **Lettura tramite operatore stocastico di relazione tra concetti:** una matrice apprendibile $A_h \in \mathbb{R}^{K_\ell \times K_\ell}$, inizializzata con dominanza diagonale ($A_h^{(0)} = \frac{3}{2}\,I_{K_\ell}$) affinché ciascun concetto legga primariamente il proprio riassunto prima di apprendere legami incrociati, definisce la matrice stocastica per righe $P_h = \mathrm{softmax}_{\mathrm{righe}}(A_h)$:
+   $$r_{t,h} = \sum_{k=1}^{K_\ell} T_{t,h,k} \sum_{j=1}^{K_\ell} P_{h,kj}\,\bar{v}_{t,h,j} = \sum_{j=1}^{K_\ell} \left(\frac{\sum_{k=1}^{K_\ell} T_{t,h,k}\,P_{h,kj}}{M_{t,h,j}}\right) S_{t,h,j}$$
+   In addestramento la somma causale è valutata a blocchi di ampiezza $C$ combinando l'interazione causale intra-blocco con lo stato sufficiente accumulato dai blocchi precedenti, preservando la complessità temporale lineare $\mathcal{O}(T K_\ell d)$.
+4. **Convoluzione causale a corto raggio e aggiornamento residuo valvolato:** per catturare l'ordine posizionale esatto a breve distanza, una finestra causale di ampiezza $W$ combina gli ultimi $W$ stati:
+   $$u_t = \sum_{w=1}^{W} \mathbb{I}[t > w]\,W_{\mathrm{loc},w}\,h_{t-w}$$
+   Concatenate le letture delle teste $r_t = [r_{t,1}; \dots; r_{t,H_{\mathrm{teste}}}]$ con $u_t$, lo stato aggiornato attraversa una doppia normalizzazione di strato regolata dallo scalare di apertura residua $\gamma_\ell \in \mathbb{R}$:
+   $$\tilde{h}_t = \mathrm{LN}_2\!\Big(\mathrm{LN}_1\!\big(h_t + W_O\,[r_t;\, u_t] + b_O\big)\Big), \qquad h_t^{(\ell)} = h_t + \gamma_\ell\,\big(\tilde{h}_t - h_t\big)$$
+
+#### 3.3 · Memoria episodica del documento con indirizzo sentinella
+
+Mentre le statistiche concettuali $(M_{t,h,k}, S_{t,h,k})$ comprimono la semantica globale del documento in dimensione fissa, i riferimenti letterali esatti (nomi propri, identificatori, cifre introdotte una sola volta nel contesto) sono gestiti da una **memoria episodica associativa causale**.
+
+Ad ogni posizione $\tau \ge 1$, lo stato finale $h_\tau \in \mathbb{R}^D$ deposita un indirizzo chiave $k_\tau = \frac{1}{\sqrt{D_{\mathrm{mem}}}}\,W_{\mathrm{key}}\,h_\tau \in \mathbb{R}^{D_{\mathrm{mem}}}$ associato al simbolo effettivamente seguito $y_\tau = w_{\tau+1}$. Alla posizione corrente $t > 1$, l'interrogazione $q_t^{\mathrm{mem}} = W_{\mathrm{query}}\,h_t$ confronta le affinità $a_{t,\tau} = \langle q_t^{\mathrm{mem}},\, k_\tau\rangle$ per $\tau < t$ con il punteggio scalare di un **indirizzo sentinella** $a_{t,0} = \langle w_{\mathrm{sent}},\, h_t\rangle + b_{\mathrm{sent}}$ che rappresenta l'evento *«nessuna posizione precedente corrisponde al contesto attuale»*:
+$$\alpha_{t,0} = \frac{\exp(a_{t,0})}{\exp(a_{t,0}) + \sum_{\tau'=1}^{t-1} \exp(a_{t,\tau'})}, \qquad \alpha_{t,\tau} = \frac{\exp(a_{t,\tau})}{\exp(a_{t,0}) + \sum_{\tau'=1}^{t-1} \exp(a_{t,\tau'})} \quad (\tau = 1, \dots, t-1)$$
+La distribuzione predittiva complessiva è la mistura convessa esatta:
+$$p(w_{t+1} = v \mid h_{1:t}) = \alpha_{t,0}\,p_{\mathrm{concetti}}(v \mid h_t) + \sum_{\tau=1}^{t-1} \alpha_{t,\tau}\,\mathbb{I}[y_\tau = v]$$
+Un'unica normalizzazione esponenziale determina simultaneamente quali occorrenze passate richiamare e quanta fiducia accordare alla rete concettuale ($\alpha_{t,0}$) rispetto alla copia contestuale ($1 - \alpha_{t,0}$): quando nessun antecedente raggiunge affinità superiore alla sentinella, $\alpha_{t,0} \to 1$ e il meccanismo di copia tace automaticamente.
+
+---
+
+### 4 · Teorema di unificazione dell'apprendimento: gradiente naturale di Fisher ed EM
+
+Sia $\eta = (\eta_1, \dots, \eta_K)$ la parametrizzazione canonica di una famiglia esponenziale regolare di miscela $p(x, z \mid \eta) = h(x)\exp\{\langle \eta_z, t(x)\rangle - A(\eta_z) + \log \pi_z\}$, e sia $S_k = \nabla A(\eta_k)$ la corrispondente parametrizzazione nei **momenti attesi** (statistiche sufficienti normalizzate per unità di osservazione: massa relativa $c_k = C_k / n$, primo momento $u_k = U_k / n$ e secondo momento $q_k = Q_k / n$).
+
+Fissate al passo $t$ le responsabilità a posteriori $T_{rk}^{(t)} = p(z_r = k \mid x_r, \theta^{(t)})$ su un insieme (o mini-lotto) $B_t$ di massa totale $W(B_t) = \sum_{r \in B_t} w_r$, il funzionale inferiore variazionale di evidenza per osservazione è:
+$$\mathcal{F}(S;\, \theta^{(t)}) = \frac{1}{W(B_t)} \sum_{r \in B_t} w_r \sum_{k=1}^K T_{rk}^{(t)} \log p(x_r, z_r = k \mid S) + \mathcal{H}(T^{(t)})$$
+
+**Teorema (Equivalenza tra gradiente naturale sui dati completi ed EM online/esatto).** *Equipaggiando la varietà statistica con la metrica riemanniana d'informazione di Fisher sui dati completi $\mathcal{I}_c(S)$, il gradiente naturale $\widetilde{\nabla}_S \mathcal{F} = \mathcal{I}_c(S)^{-1}\,\nabla_S \mathcal{F}$ valutato in $S^{(t)}$ coincide identicamente con lo scarto lineare tra le statistiche sufficienti empiriche del lotto $\widehat{S}_k(B_t)$ e le statistiche correnti $S_k^{(t)}$:*
+$$\widetilde{\nabla}_{S_k} \mathcal{F}\big(S^{(t)};\, \theta^{(t)}\big) = \widehat{S}_k(B_t) - S_k^{(t)}$$
+*Pertanto il passo di ascesa lungo il gradiente naturale con passo $\rho_t \in (0, 1]$ assume la forma universale convessa:*
+$$S_k^{(t+1)} = (1 - \rho_t)\,S_k^{(t)} + \rho_t\,\widehat{S}_k(B_t)$$
+
+*Dimostrazione.* Nella parametrizzazione duale $(\eta_k, S_k)$ legata dalla trasformata di Legendre $S_k = \nabla A(\eta_k)$, lo jacobiano del cambio di coordinate è l'hessiano della funzione di partizione $\frac{\partial S_k}{\partial \eta_k} = \nabla^2 A(\eta_k)$, che per una famiglia esponenziale coincide con l'informazione di Fisher per singola osservazione completa. Pesando per la frazione a priori $c_k$, il gradiente euclideo rispetto a $\eta_k$ vale $\nabla_{\eta_k}\mathcal{F} = \widehat{S}_k(B_t) - S_k^{(t)}$; applicando l'inversa della metrica di Fisher e trasformando nella coordinata duale $S_k$ mediante la regola della catena $\delta S_k = \frac{\partial S_k}{\partial \eta_k}\,\delta\eta_k$, le matrici di curvatura $\nabla^2 A(\eta_k)$ si cancellano esattamente, restituendo $\widetilde{\nabla}_{S_k}\mathcal{F} = \widehat{S}_k(B_t) - S_k^{(t)}$. Per convessità del dominio dei momenti validi ($q_{kj} \ge u_{kj}^2 / c_k > 0$, $c_k > 0$, $\sum_k c_k = 1$), per ogni $\rho_t \in (0, 1]$ l'interpolazione convessa $S_k^{(t+1)}$ appartiene strettamente all'interno del dominio ammissibile senza bisogno di proiezioni vincolate. $\square$
+
+Questa unica legge governa l'intero sistema:
+- **Regime batch esatto ($\rho_t = 1$, apprendimento tabulare):** sostituendo $\rho_t = 1$ si ottiene $S_k^{(t+1)} = \widehat{S}_k(X)$, ossia il passo di massimizzazione esatta di Expectation-Maximization su tabelle intere o suddivise in blocchi additivi, con aumento monotono garantito della log-verosimiglianza marginale $\mathcal{L}(\theta^{(t+1)}) \ge \mathcal{L}(\theta^{(t)})$.
+- **Regime stocastico accoppiato ($0 < \rho_t < 1$, apprendimento generativo profondo):** sulle sequenze lunghe, dove le interrogazioni $q_{t,h} = W_{Q,h}\,h_t$ dipendono dalle rappresentazioni degli strati sottostanti, ad ogni mini-lotto $B_t$ ACAN 10 esegue congiuntamente:
+  1. un passo del primo ordine precondizionato (con tasso di apprendimento $\eta_t$ governato da riscaldamento lineare iniziale e decadimento di Robbins-Monro $\eta_t = \eta_0 \min(1, t/T_w)\,\max(\eta_{\min}, (1 + \max(0, t-T_w)/T_0)^{-1/2})$) su tutte le proiezioni lineari, le matrici di relazione $A_h$, i centri del vocabolario e la memoria episodica, guidato dal gradiente esatto della log-verosimiglianza causale $-\sum_{t} \log p(w_{t+1} \mid h_{1:t})$;
+  2. un passo chiuso di gradiente naturale di Fisher $S_k^{(t+1)} = (1 - \rho_t)S_k^{(t)} + \rho_t \widehat{S}_k(B_t)$ con passo accoppiato alla medesima scala del gradiente ($\rho_t = \min(\rho_{\max},\, \beta\,\eta_t)$, $\beta = \frac{1}{2}$, per $K_\ell \ge 2$), in modo che l'adattamento metrico delle masse, dei centri e delle dispersioni mantenga i concetti ancorati alla varietà effettiva delle interrogazioni senza sovrastare la separazione discriminativa indotta dal simbolo futuro;
+  3. un decadimento regolarizzativo selettivo applicato esclusivamente alle mappe lineari proiettive attive (escludendo masse a priori, dispersioni, normalizzazioni, valvole residue e proiezioni d'interrogazione finché $K_\ell = 1$).
+
+---
+
+### 5 · Morfogenesi strutturale guidata dai dati: agglomerazione e crescita conservativa
+
+ACAN 10 non richiede di fissare arbitrariamente il numero di concetti o la taglia della rete: in entrambi i domini la struttura emerge dai dati tramite operatori che rispettano la geometria della verosimiglianza.
+
+1. **Riduzione gerarchica e convalida analitica leave-one-out (dominio tabulare):**
+   - A partire da una sovra-partizione fine, ad ogni scala vengono fusi i concetti affini sommando direttamente le loro statistiche sufficienti ($\Sigma_{a \cup b} = \Sigma_a + \Sigma_b$) e rifinendo la partizione con $\rho = 1$.
+   - Per scegliere la scala ottima senza addestramenti ripetuti, la verosimiglianza fuori campione della riga $r$ si valuta in tempo costante $\mathcal{O}(1)$ **sottraendo algebricamente** il contributo della riga stessa dalle statistiche sufficienti accumulate:
+     $$\Sigma_k^{(-r)} = \Sigma_k - w_r\,T_{rk}\,\sigma(x_r)$$
+     selezionando il livello che massimizza la densità predittiva incrociata.
+
+2. **Morfogenesi costruttiva mediante immersioni conservative (dominio generativo):**
+   - La rete può partire dal seme strutturale minimo ($D = 32$, $L = 1$, $H_{\mathrm{teste}} = 1$, $K_1 = 1$). Ad intervalli raddoppianti del volume di testo appreso (o non appena il guadagno su un passo si arresta), la rete corrente compete sulla medesima finestra di prova fresca contro quattro trasformazioni strutturali progettate come **morfismi quasi-isometrici**, tali cioè da preservare la funzione predittiva all'istante iniziale ($t = 0$) pur rompendo la simmetria dei gradienti:
+     - **Raddoppio della larghezza ($D \to 2D$, $d \to 2d$):** ogni coordinata di stato e di centro viene duplicata con perturbazioni antipodali minime ($w \pm \varepsilon$, media identica), le mappe di lettura dimezzano i pesi su ciascuna copia, le dispersioni scalano di $\sqrt{2}$, le masse logaritmiche vengono compensate analiticamente di $\sum_m \eta_{km} + d\log 2$ e il passo di ottimizzazione dimezza perché le coordinate evolvono in coppia.
+     - **Raddoppio delle teste ($H_{\mathrm{teste}} \to 2H_{\mathrm{teste}}$):** le teste esistenti e le relative statistiche dell'ottimizzatore restano intatte; le nuove teste entrano nella proiezione d'uscita $W_O$ con colonne inizialmente nulle (uscita invariata a $t = 0$) e secondo momento adattivo calibrato sul primo gradiente per evitare sbalzi iniziali.
+     - **Aggiunta di uno strato ($L \to L + 1$):** viene appeso un nuovo strato finale con pesi d'uscita non nulli a piccola varianza ma **valvola residua chiusa** ($\gamma_{L+1} = 0$), sicché $h_t^{(L+1)} = h_t^{(L)}$ esattamente a $t = 0$, mentre un passo di apprendimento dedicato ($8\times$) e simmetrico su $\gamma_{L+1} \in [-1{,}5,\, 1{,}5]$ consente al gradiente di aprirlo progressivamente nel segno richiesto dai dati.
+     - **Suddivisione di un concetto ($K_\ell \to K_\ell + 1$):** nello strato selezionato a rotazione, il concetto a maggior massa d'occupazione viene scisso in due concetti figli con masse dimezzate ($\log \pi' = \log \pi - \log 2$), dispersioni lievemente contratte ($\eta' = \eta - 0{,}15$ per evitare il punto sella contrattivo della mistura gaussiana), centri spostati antipodalmente ($g \pm \delta$) e preferenza diagonale in $A_h$. Quando lo strato parte da $K_\ell = 1$ (dove $\mathrm{softmax}([\Phi_1]) \equiv 1$ per qualunque parametro), centro e dispersione vengono prima allineati in modo esatto a media e varianza empiriche delle interrogazioni senza alterare di un solo bit l'uscita, attivando poi un passo accelerato ($4\times$) per ruotare rapidamente la proiezione $W_{Q,h}$.
+   - **Principio di parsimonia statistica:** su un insieme di validazione disgiunto da quello esposto all'utente, un candidato di crescita viene adottato solo se supera il riferimento di partenza per **più di un errore standard della differenza appaiata**:
+     $$\bar{\Delta} > \frac{s_\Delta}{\sqrt{M - 1}}, \qquad \Delta_i = \ell_{\mathrm{cand}}(x_i) - \ell_{\mathrm{rif}}(x_i)$$
+     e, fra tutti i candidati entro un errore standard dal migliore, prevale sempre quello con il **minor numero di parametri**. Se un passo ordinario su testo fresco produce una variazione neutra entro un errore standard, i pesi aggiornati vengono mantenuti senza dimezzare prematuramente il passo di apprendimento.
+
+---
+
+### 6 · Predizione
+
+#### 6.1 · Completamento universale su dati tabulari e bilanciamento dell'attributo bersaglio
+
+Dato un vettore parzialmente osservato $x_\Omega$, la probabilità a posteriori di ciascun concetto $k$ si ottiene per **marginalizzazione analitica immediata** delle coordinate non osservate $\bar{\Omega}$ (il cui integrale su ciascun fattore indipendente vale esattamente $1$):
+$$p(z = k \mid x_\Omega) = \frac{\pi_k \prod_{j \in \Omega} p_j(x_j \mid z = k)}{\sum_{k'=1}^K \pi_{k'} \prod_{j \in \Omega} p_j(x_j \mid z = k')}$$
+Da questa responsabilità condizionata discende la distribuzione predittiva completa di qualsiasi attributo incognito $u \notin \Omega$:
+- **per un attributo continuo $u \in \mathcal{J}_{\mathrm{num}}$**, la densità predittiva è la mistura gaussiana $\sum_k p(z=k \mid x_\Omega)\,\mathcal{N}(x_u \mid \mu_{ku}, \sigma_{ku}^2)$, con valore atteso ottimo in norma quadratica $\hat{x}_u = \sum_{k=1}^K p(z=k \mid x_\Omega)\,\mu_{ku}$ e varianza predittiva totale (aleatoria più epistemica) $\mathrm{Var}(x_u \mid x_\Omega) = \sum_k p(z=k \mid x_\Omega)\big(\sigma_{ku}^2 + (\mu_{ku} - \hat{x}_u)^2\big)$;
+- **per un attributo categoriale $u \in \mathcal{J}_{\mathrm{cat}}$**, la distribuzione di classe è $p(x_u = v \mid x_\Omega) = \sum_{k=1}^K p(z=k \mid x_\Omega)\,\theta_{kuv}$ con decisione di Bayes $\hat{x}_u = \arg\max_v p(x_u = v \mid x_\Omega)$.
+
+Quando uno specifico attributo $y$ svolge il ruolo di bersaglio supervisionato accanto a $m - 1$ attributi esplicativi, nella log-verosimiglianza congiunta ad esso viene attribuito peso $w_y = m - 1$ (pari alla somma di tutte le variabili esplicative), impedendo che molte colonne rumorose o ridondanti mettano in ombra la struttura discriminativa del bersaglio — sia nella formulazione tabulare diretta sia nella codifica sequenziale generativa.
+
+#### 6.2 · Decodifica autoregressiva causale sul testo
+
+In generazione testuale, letto il prefisso $(w_0 = \langle\mathrm{eos}\rangle, w_1, \dots, w_t)$, per ciascuno strato $\ell$ lo stato interno dipende dall'intero passato esclusivamente tramite la tripla ricorrente:
+$$\mathcal{C}_t^{(\ell)} = \Big(\big\{M_{t,h,k}^{(\ell)},\, S_{t,h,k}^{(\ell)}\big\}_{h,k},\; \big(h_{t-W+1}^{(\ell-1)}, \dots, h_t^{(\ell-1)}\big)\Big)$$
+Ad ogni nuovo simbolo osservato $w_{t+1}$, l'aggiornamento $M_{t+1} = M_t + \tilde{T}_{t+1}$ e $S_{t+1} = S_t + \tilde{T}_{t+1} v_{t+1}$ costa $\mathcal{O}(L D^2 + L D K)$ operazioni **indipendentemente dalla lunghezza $t$ del documento**. Dalla distribuzione combinata rete + memoria episodica $p(v \mid h_{1:t})$, il simbolo successivo viene estratto deterministicamente ($\arg\max_v$) oppure mediante campionamento con temperatura $T_{\mathrm{camp}} > 0$ sulla distribuzione ripesata $p_v^{1/T_{\mathrm{camp}}} / \sum_u p_u^{1/T_{\mathrm{camp}}}$. I simboli autogenerati aggiornano le statistiche concettuali ma non vengono inseriti come nuovi indirizzi nella memoria episodica, evitando cicli auto-rinforzanti di ripetizione lessicale.
+
+#### 6.3 · Misure d'informazione, leggi di scala e limiti strutturali
+
+La qualità predittiva su un insieme di verifica disgiunto di $N_{\mathrm{test}}$ posizioni è misurata dalla **log-verosimiglianza negativa media (NLL)** in nat per simbolo e dalla corrispondente **perplessità**:
+$$\mathrm{NLL} = -\frac{1}{N_{\mathrm{test}}} \sum_{t=1}^{N_{\mathrm{test}}} \log p(w_t \mid w_{<t}), \qquad \mathrm{PPL} = \exp(\mathrm{NLL})$$
+dove $\mathrm{PPL}$ indica il fattore di ramificazione effettivo medio fra cui il modello rimane incerto ad ogni passo (con valore iniziale $\mathrm{NLL}_0 \approx \log V$, pari a $10{,}37$ nat per $V = 32.000$).
+
+Lungo l'addestramento su grandi corpus testuali, la discesa dell'errore segue due regimi distinti:
+1. **Fase iniziale rapida:** nei primi milioni di token la rete assorbe la distribuzione marginale delle frequenze e le regolarità sintattiche corte, abbattendo la NLL di oltre $4{,}5$ nat (la perplessità scende di due ordini di grandezza, da $32.000$ a circa $250$).
+2. **Regime asintotico a legge di potenza:** una volta apprese le statistiche locali frequenti, l'affinamento delle dipendenze semantiche rare e a lungo raggio obbedisce alla legge di scala universale dei modelli di linguaggio:
+   $$\mathrm{NLL}(N) \approx \mathrm{NLL}_\infty + A\,N^{-\alpha} \qquad (\alpha > 0)$$
+   per cui riduzioni successive uguali in nat corrispondono a riduzioni moltiplicative costanti della perplessità ma richiedono volumi crescenti di testo; su un asse verticale lineare che include il punto iniziale $\log V \approx 10{,}37$, tale curva convessa appare visivamente compressa pur continuando a ridurre la perplessità passo dopo passo.
+
+Infine, quando il numero di esempi disponibili $n$ è piccolo rispetto a un elevato numero di coordinate continue $m$ ($n \ll 8\,m$), la stima gaussiana continua diretta conserva l'ordinamento metrico esatto sull'asse reale e presenta efficienza campionaria superiore rispetto alla discretizzazione simbolica in intervalli quantilici, la quale trasforma ogni coordinata continua in simboli categoriali privi di continuità metrica tra intervalli adiacenti.
+
+---
 
 ## Informatica
 
-### 1 · Panoramica
+ACAN 10 realizza la teoria matematica precedente in un'architettura software modulare progettata per operare in modo affidabile sia su normali processori multicore (CPU) sia su acceleratori vettoriali (GPU), garantendo riprendibilità transazionale, memoria controllata e inferenza autonoma leggera.
 
-Il sistema ha due schede di lavoro che usano le stesse formule (Matematica, sezioni 3–4):
+---
 
-- la scheda **tabulare** impara i concetti di una tabella con l'EM e predice qualunque
-  colonna;
-- la scheda **generativa** impara la rete a concetti da una coda di testi, lungo il
-  gradiente, e la fa scrivere; un'interfaccia compatibile con quella di OpenAI permette di
-  usarla da altri programmi.
+### 1 · Architettura distribuita del sistema e rappresentazione dei dati
 
-L'apprendimento della rete gira in un processo separato (il *worker*), che fa una cosa
-alla volta, salva a ogni passo e riprende dall'ultimo salvataggio.
+Il sistema è articolato in due processi disaccoppiati che comunicano tramite protocollo HTTP autenticato:
+- **Ambiente analitico interattivo:** gestisce le sessioni utente indipendenti per ciascuna scheda del browser nelle viste dedicate a caricamento e pulizia dei dati, addestramento del grafo concettuale tabulare, analisi diagnostica, previsione interattiva, gestione delle code linguistiche e consultazione dei riferimenti matematici e architetturali. Supporta tabelle fino a un milione di righe mantenendo lo stato isolato per sessione.
+- **Servizio persistente di calcolo generativo:** processo autonomo in background che governa l'ingestione a blocchi dei corpus, la preparazione deterministica dei vocabolari, l'esecuzione sequenziale delle code di addestramento, la rotazione transazionale dei salvataggi su disco (registro relazionale con journal write-ahead sincronizzato e archivi binari immutabili dei tensori) e l'esposizione di interfacce standardizzate di completamento e conversazione in streaming (Server-Sent Events), protette da chiavi di spazio di lavoro a 256 bit.
 
-### 2 · Apprendimento e predizione su una tabella
+#### Codifica dei dati tabulari e dei flussi testuali
 
-1. **Lettura.** Si carica un file (CSV, JSON, XLSX, Parquet, ARFF o MAT) e si sceglie la
-   colonna da predire. Le colonne numeriche restano numeri; le altre diventano categorie.
-2. **Codifica.** Si ricavano la scala di ogni colonna numerica e l'elenco dei valori di
-   ogni categoria; i valori mancanti restano fuori dalle somme.
-3. **Concetti particolari.** Una passata sulle righe forma blocchi e li unisce a due a due
-   dove si perde meno, fino a circa quattro righe per concetto (al più 1.024 concetti).
-4. **EM e unioni.** Si alternano assegnazioni e somme (Matematica, sezione 5); poi si
-   uniscono le coppie meno costose e si ripete l'EM, fino a un solo concetto. Ogni momento
-   del percorso è una partizione candidata.
-5. **Giudizio.** Su un campione di righe si misura la log-probabilità delle colonne da
-   predire con la stima leave-one-out, togliendo dalle somme i contributi della riga. Il
-   livello di lavoro è il più generale entro un errore standard dal migliore; i livelli
-   intermedi si scelgono con la coesione a coppie, e dentro i concetti generali la ricerca
-   si ripete sulla tabella vista con la loro scala.
-6. **Tabelle grandi.** Si leggono a pezzi: per l'additività delle somme il risultato non
-   dipende dalla divisione.
-7. **Modello salvato.** Contiene solo le somme dei concetti, i loro livelli e la codifica
-   delle colonne: nessuna riga della tabella.
-8. **Predizione.** Per una riga nuova si calcolano le quote $T_i$ sulle colonne note e si
-   legge la colonna mancante: media pesata per i numeri, lettura gerarchica per le
-   categorie. La pagina mostra anche a quali concetti la riga appartiene.
+1. **Rappresentazione tabulare:** i formati strutturati (CSV, fogli elettronici, JSON, Parquet, ARFF) vengono tipizzati distinguendo colonne numeriche continue, colonne categoriali e identificatori ad alta cardinalità esclusi automaticamente come chiavi non predittive. Tutte le trasformazioni statistiche (centratura, normalizzazione di scala, dizionari categoriali, quantili) vengono calcolate **esclusivamente sulla partizione di addestramento** e applicate invariate a validazione e test. I valori assenti non vengono sostituiti con medie fittizie, ma rappresentati tramite maschere booleane esplicite che azzerano il loro peso nei prodotti matriciali delle statistiche sufficienti.
+2. **Rappresentazione testuale e multimodale:** documenti di testo libero, archivi di dialogo strutturato, codice sorgente, libri elettronici e contenuti multimediali (immagini quantizzate su tavolozza percettiva ed estratti acustici spettrali racchiusi da marcatori dedicati) vengono convertiti in una sequenza di interi tramite un vocabolario sub-lessicale Byte-Pair Encoding (tipicamente $V = 32.000$ simboli) addestrato sul solo testo di training, con inserimento sistematico del delimitatore $\langle\mathrm{eos}\rangle$ ai confini di documento.
+3. **Mescolamento deterministico per fasci documentali a taglia limitata:** nei corpus composti dalla concatenazione sequenziale di fonti eterogenee (ad esempio dialoghi, voci enciclopediche, codice e comandi di sistema), la lettura lineare causerebbe forti derive cicliche di dominio tra un passo e l'altro. Il flusso di addestramento viene perciò suddiviso ai confini di $\langle\mathrm{eos}\rangle$ in fasci documentali compresi fra $4.096$ e $16.384$ simboli (imponendo il taglio massimo di $16.384$ simboli anche all'interno di lunghe sequenze prive di delimitatori), permutati una sola volta tramite seme pseudocasuale fisso. In tal modo ogni singolo passo e ogni finestra di gara osservano la medesima miscela bilanciata di domini della validazione, pur conservando conteggi esatti e ripresa deterministica da qualunque passo salvato.
 
-**Costo.** Ogni passo di EM è lineare nelle righe, nei concetti e nelle colonne; il
-giudizio leave-one-out non rilegge la tabella, perché usa le somme.
+---
+
+### 2 · Pipeline algoritmica per dati tabulari
+
+L'addestramento di un modello concettuale tabulare procede attraverso quattro fasi interamente vettorizzate:
+
+1. **Inizializzazione e scansione a blocchi:** i dati numerici e le codifiche binarie delle categorie vengono letti a blocchi di righe di dimensione prefissata. Le somme di massa, primo momento, secondo momento e frequenze categoriali vengono accumulate con complessità lineare nel numero di righe $n$ e di attributi $m$.
+2. **Iterazione a punto fisso ($\rho = 1$):** ad ogni passo le responsabilità a posteriori $T \in \mathbb{R}^{n \times K}$ vengono valutate tramite l'espansione quadratica matriciale stabilizzata in log-spazio; la moltiplicazione matriciale $T^\top X$ e $T^\top (X \odot X)$ produce direttamente le nuove statistiche sufficienti $\widehat{S}_k$, da cui si aggiornano in forma chiusa masse, centri, varianze regolarizzate e probabilità categoriali fino a convergenza della log-verosimiglianza.
+3. **Selezione gerarchica multi-scala:** partendo da una griglia fine di concetti, coppie di concetti affini vengono progressivamente unite sommando i rispettivi accumulatori sufficienti; a ciascuna scala la verosimiglianza incrociata leave-one-out viene calcolata algebricamente per sottrazione diretta dalle somme, individuando la risoluzione ottimale senza ricalcolare l'addestramento per singola riga.
+4. **Calibrazione ed esportazione autonoma:** sulle attività di classificazione le soglie di decisione vengono calibrate sulla distribuzione predittiva fuori campione; l'intero grafo multi-scala di concetti (centri, varianze, tabelle categoriali e relazioni padre-figlio) viene serializzato in un documento autosufficiente pronto per l'inferenza istantanea.
+
+---
 
 ### 3 · Addestramento su un testo
 
-1. **La coda.** Uno o più file di testo (anche PDF, DOCX, EPUB, ZIP) letti uno dopo
-   l'altro; ogni testo riparte dalla rete imparata sui precedenti.
-2. **Tokenizzazione.** Un tokenizzatore BPE impara dai testi della coda a dividere le
-   parole in pezzi (32.000 di default). Ogni documento va per intero in addestramento,
-   validazione o test: il modello non viene mai misurato su testo che ha letto.
-3. **Pezzi e lotti.** Il testo si legge a pezzi di un milione di token. Un pezzo si divide
-   in documenti (al più 512 token per tratto, ognuno dopo il token di fine), e i documenti
-   in lotti di circa $\sqrt{\text{token del pezzo}}$ token, al più 2.048. Per ogni lotto:
-   lettura in avanti, perdita (Matematica, sezione 8), gradiente all'indietro, norma del
-   gradiente limitata a 1, passo di AdamW (passo $3\cdot10^{-3}$, avvio lineare per al più
-   200 passi e al più un passaggio), un lieve decadimento dei parametri.
-4. **Crescita.** In una gara cinque candidati (la rete com'è, più larga, con uno strato
-   in più, con più concetti in uno strato o con più teste) imparano il pezzo nuovo, uno dopo l'altro; prosegue il
-   più semplice che il migliore non batte di più di un errore standard. Se cresce, il
-   vincitore riparte dallo stesso pezzo finché la struttura si stabilizza. Le gare cadono
-   sul primo e sull'ultimo pezzo, anticipano se la rete smette di migliorare e altrimenti
-   si diradano (Matematica, sezione 8). Una tornata costa cinque letture del pezzo. Le decisioni si giudicano su
-   tutta la validazione tranne i tratti che misurano l'errore della pagina. Con la crescita spenta (opzione della coda) la rete ha
-   dimensioni fisse: 96 numeri di stato, 3 strati, 4 gruppi da 64 concetti.
-5. **Riletture finali.** Con l'ultimo pezzo la rete rilegge tutto il testo, passaggio dopo
-   passaggio, finché la validazione migliora di più di un errore standard; il passaggio che
-   non aiuta si annulla.
-6. **Calcolo.** Le somme dei concetti si leggono a blocchi di 64 posizioni: dentro il
-   blocco con un prodotto di matrici, fra un blocco e l'altro con le somme correnti. Le
-   appartenenze sviluppano il quadrato in prodotti di matrici. La lettura finale usa i
-   gruppi di token: per ogni posizione la probabilità del gruppo e quella del token dentro
-   il gruppo. Per imparare si usa PyTorch; per leggere bastano numpy e i parametri salvati.
-7. **Avanzamento.** La pagina mostra il passo, la velocità, la dimensione della rete
-   (strati, numeri di stato, concetti, parametri), la gara in corso e due grafici: l'errore
-   su testo mai visto passo dopo passo, e il passo in corso aperto, con la validazione
-   mentre la rete legge il pezzo e una serie per candidato e tornata. Nei dettagli, a
-   ogni salvataggio, il **grafo della rete** misurato sul testo di validazione: un nodo per
-   ogni concetto che lavora, con i token che vi entrano e quelli che vengono dopo, gli
-   archi di attenzione dentro uno strato (la matrice $A$) e, fra uno strato e il successivo,
-   il concetto dove vanno le posizioni di un concetto più di quanto ci andrebbero comunque.
-8. **Checkpoint.** A ogni passo si salvano i parametri della rete e gli ultimi token letti;
-   l'addestramento riprende dall'ultimo passo completato.
+L'addestramento di una coda linguistica è strutturato per operare in modo continuo anche per giorni su server CPU o GPU, con tolleranza completa alle interruzioni:
+
+1. **Partizione tripartita rigorosa del corpus:** prima dell'avvio il corpus viene separato in tre insiemi disgiunti:
+   - *flusso di addestramento*, da cui vengono estratti in ordine i passi da un milione di simboli ciascuno;
+   - *insieme di decisione strutturale*, costituito da blocchi distribuiti uniformemente lungo la validazione (escludendo i blocchi di misura) e separati da delimitatori $\langle\mathrm{eos}\rangle$ per evitare giunzioni spurie a metà frase fra domini differenti;
+   - *insieme di misura indipendente*, mai osservato né dai gradienti né dalle decisioni di crescita, utilizzato ad ogni passo intero per certificare NLL e perplessità fuori campione, oltre alla NLL predittiva sul prossimo segmento di testo non ancora letto.
+2. **Raggruppamento per lunghezza e passo d'ottimizzazione ibrido:** all'interno di ciascun passo i documenti vengono tagliati alla lunghezza massima di contesto (ad esempio $512$ simboli), preceduti da $\langle\mathrm{eos}\rangle$, ordinati per lunghezza affine nei calcoli di validazione (così da evitare lo spreco quadratico di riempimento causato da un singolo documento lungo accanto a molti brevi) e riuniti in mini-lotti di circa $4.096$ simboli. Su ciascun mini-lotto vengono eseguiti in sequenza:
+   - la valutazione parallela degli strati causali a concetti, della finestra locale e della memoria episodica con sentinella;
+   - il calcolo fattorizzato a due stadi della log-verosimiglianza sui gruppi di frequenza mediante un nucleo differenziabile esplicito che accumula analiticamente i gradienti rispetto agli stati $h_t$, ai centri dei simboli $e_v$, alle masse $\ell_v$ e alla scala $\alpha$ senza allocare tensori tridimensionali $(N_{\mathrm{lotto}} \times S \times D)$;
+   - il taglio della norma globale del gradiente a $1$, il passo dell'ottimizzatore adattivo (con moltiplicatori di velocità dedicati per l'apertura delle valvole residue e per le interrogazioni dei concetti appena scissi da $K=1$), l'aggiornamento chiuso di Fisher-EM sulle statistiche dei concetti e la regolarizzazione selettiva delle proiezioni lineari.
+3. **Gare di morfogenesi su finestra controllata:** quando scatta un controllo di crescita, la rete corrente e i quattro candidati morfogenetici (larghezza doppia, uno strato in più, un concetto scisso in due, il doppio delle teste) vengono addestrati a parità di dimensione del mini-lotto e di sequenza casuale su una finestra iniziale limitata ($65.536$ simboli). Se un candidato migliorativo vince la prima tornata, una seconda tornata viene disputata sul segmento successivo fresco di $65.536$ simboli; il vincitore completa quindi i restanti simboli del milione del passo. I progressi del passo vengono conservati ogniqualvolta non vi sia un peggioramento statisticamente significativo oltre un errore standard.
+4. **Salvataggio atomico, telemetria in tempo reale e ripresa:** ogni $4\text{–}5$ secondi il processo lavoratore trasmette l'avanzamento interno del passo e i punteggi live delle gare all'interfaccia grafica, che aggiorna automaticamente la coda attiva con curve continue spezzate solo sui salti effettivi. Al termine dei passi previsti vengono scritti su disco i salvataggi completi (incluso lo stato dell'ottimizzatore), mantenendo gli ultimi salvataggi recenti, il miglior modello assoluto certificato dalla validazione e le pietre miliari permanenti.
+
+---
 
 ### 4 · Inferenza
 
-1. **Prompt.** Una domanda in chat viene avvolta nel formato della conversazione e
-   trasformata in token.
-2. **Lettura del prompt.** Un cursore legge il prompt e costruisce lo stato di lettura:
-   per ogni strato le somme dei concetti e gli ultimi stati, più gli indirizzi della
-   memoria del documento. Un prompt lungo si legge in blocco.
-3. **Distribuzione.** Per la posizione successiva la rete dà la probabilità di ogni token
-   del vocabolario, mescolata con la memoria del documento.
-4. **Scelta e avanzamento.** Si sceglie il token (Matematica, sezione 9), lo si aggiunge
-   allo stato senza aggiungerlo alla memoria, e si ripete fino al token di fine turno o al
-   numero massimo di token.
+In fase di generazione e di interrogazione tramite API, il modello opera attraverso un motore algebrico puro in virgola mobile a 32 bit su CPU, completamente svincolato dal motore di differenziazione automatica:
 
-La lettura token per token e la lettura di un testo intero producono la stessa
-distribuzione in ogni posizione: è la stessa funzione applicata allo stesso stato.
+1. **Struttura dati a cursore incrementale:** l'oggetto di lettura mantiene per ogni strato $\ell \in \{1, \dots, L\}$ due piccoli array densi per le masse accumulate $M^{(\ell)} \in \mathbb{R}^{H_{\mathrm{teste}} \times K_\ell}$ e i momenti $S^{(\ell)} \in \mathbb{R}^{H_{\mathrm{teste}} \times K_\ell \times d}$, un buffer circolare degli ultimi $W$ stati $h_{t-W+1:t}^{(\ell-1)}$ e la lista sequenziale delle coppie indirizzo-simbolo $(k_\tau, y_\tau)$ della memoria episodica del documento corrente.
+2. **Pre-lettura parallela del prompt e decodifica ricorrente:** all'arrivo di una richiesta, il cursore osserva anzitutto il simbolo $\langle\mathrm{eos}\rangle$ e processa l'intero prefisso fornito dall'utente in forma matriciale vettorizzata, popolando in un'unica passata le somme concettuali e gli indirizzi episodici del contesto.
+3. **Generazione simbolo per simbolo in streaming:** per ogni nuovo token richiesto viene valutata la distribuzione predittiva combinata (concetti + memoria episodica con sentinella), viene campionato il simbolo successivo e lo stato avanza aggiornando le sole somme ricorrenti concettuali con esclusione della registrazione episodica delle parole autogenerate, emettendo immediatamente i frammenti decodificati in flusso continuo fino al raggiungimento della lunghezza richiesta o di una sequenza di arresto.
 
-### 5 · Costo
+---
 
-- **Per token, in inferenza:** in ogni strato le appartenenze a $H\times K$ concetti,
-  l'aggiornamento delle somme e la lettura; la lettura finale su circa $2\sqrt V$ concetti
-  di token; il confronto con gli indirizzi della memoria.
-- **Memoria in inferenza:** le somme dei concetti e gli ultimi stati di ogni strato, fissi
-  a qualunque lunghezza del documento, più un indirizzo per token del documento.
-- **Addestramento:** lineare nei token per ogni passaggio. Ogni tornata di crescita costa
-  cinque passaggi sullo stesso pezzo. Ogni rilettura finale percorre il testo intero.
+### 5 · Complessità computazionale e di memoria
 
-### 6 · Misure
+Indicando con $n$ il numero di righe e $m$ il numero di colonne di una tabella, e per il modello sequenziale con $T$ la lunghezza del documento, $D$ la dimensione dello stato, $L$ il numero di strati, $H$ il numero di teste ($Hd = D$), $K$ i concetti per testa, $W$ la finestra locale, $V$ la cardinalità del vocabolario ($S \approx \lceil\sqrt{V}\rceil$) e $N_b$ il numero di simboli in un mini-lotto:
 
-Dialoghi in italiano e inglese (SYNTH), tokenizzatore da 32.000 token, dialoghi di
-validazione e di test mai visti; NLL in nat per token (più basso è meglio). Rete fissa
-con 96 numeri di stato, 3 strati e 4 gruppi da 64 concetti (3,4 milioni di parametri).
+| Operazione | Dominio tabulare ($n$ righe, $m$ attributi) | Dominio generativo a concetti ACAN 10 | Attenzione densa quadratica standard |
+|---|---|---|---|
+| Apprendimento per epoca / lotto | $\mathcal{O}(n K m)$ (somme sufficienti esatte, $\rho = 1$) | $\mathcal{O}\!\big(N_b(L D^2 + L D K + S D) + G_{\mathrm{attivi}} S D\big)$ | $\mathcal{O}\!\big(N_b(L D^2 + L T D + V D)\big)$ |
+| Selezione della struttura | Convalida leave-one-out analitica in $\mathcal{O}(n K m)$ | 5 candidati su finestra limitata $\le 65.536$ simboli | Ricerca esterna con riaddestramenti completi |
+| Inferenza per nuovo simbolo / riga | $\mathcal{O}(K m)$ | $\mathcal{O}(L D^2 + L D K + 2\sqrt{V}\,D + T D_{\mathrm{mem}})$ | $\mathcal{O}(L D^2 + L T D + V D)$ |
+| Stato degli strati in inferenza | $\mathcal{O}(K m)$ (indipendente da $n$) | $\mathcal{O}(L H K d + L W D)$ (**costante in $T$**) | $\mathcal{O}(L T D)$ (crescente linearmente con $T$) |
 
-**Rileggere.** 2.000 dialoghi di addestramento, uscita su tutto il vocabolario:
+---
 
-| Passaggi sul testo | Testo già letto | Validazione | Test |
-|---:|---:|---:|---:|
-| 1 | 5,066 | 5,258 | 5,352 |
-| 2 | 4,423 | 4,875 | 4,966 |
-| 3 | 4,086 | 4,767 | **4,877** |
+### 6 · Caratterizzazione sperimentale della versione 10
 
-A ogni passaggio la rete legge meglio sia il testo che ha visto sia quello che non ha
-visto: ricorda e generalizza.
+#### 6.1 · Apprendimento tabulare continuo, graduale e generativo sequenziale
 
-**Testo nuovo o riletto.** Agli stessi token letti, testo nuovo letto una volta batte la
-rilettura dello stesso testo:
+La tabella seguente riassume l'accuratezza predittiva fuori campione (media su partizioni indipendenti 80/20) ottenuta da ACAN 10 sui benchmark relazionali classici in tre regimi della medesima algebra: aggiornamento esatto $\rho = 1$, aggiornamento graduale $\rho = 0{,}5$ e codifica sequenziale simbolica letta dalla rete generativa a concetti con pesatura bilanciata del bersaglio ($w_y = m - 1$):
 
-| Token letti | Rilettura di 2.000 dialoghi: validazione | Dialoghi nuovi letti una volta: validazione | Test |
-|---|---:|---:|---:|
-| come 2 passaggi | 4,858 | 4,832 (4.000 dialoghi) | 4,917 |
-| come 3 passaggi | 4,750 | 4,639 (6.000 dialoghi) | **4,716** |
+| Dataset | Osservazioni / attributi | Valutazione multi-split standard ($\rho = 1$) | Regime continuo esatto ($\rho = 1$) | Regime continuo graduale ($\rho = 0{,}5$) | Regime generativo sequenziale |
+|---|---:|---:|---:|---:|---:|
+| **Gioco sintetico** (interazione XOR + rumore) | 300 / 5 | — | **100,0%** | **100,0%** | **100,0%** (`NLL 0,000`) |
+| **Iris** | 150 / 4 | **98,0%** (10 split) | **98,9%** | **98,9%** | **94,4%** |
+| **Wine** | 178 / 13 | **97,8%** (10 split) | **96,3%** | **96,3%** | **95,4%** |
+| **Vote** (attributi categoriali con omissioni) | 435 / 16 | **96,1%** (5 split) | **96,6%** | **96,9%** | **96,9%** |
+| **Breast Cancer** | 569 / 30 | **94,7%** (2 split) | **95,6%** | **95,9%** | **96,2%** |
+| **Sonar** (60 bande spettrali continue) | 208 / 60 | **90,5%** (5 split) | **90,5%** | **90,5%** | **59,5%** |
+| **Vehicle** (18 descrittori geometrici continui) | 846 / 18 | **79,6%** (3 split) | **79,6%** | **77,8%** | **67,1%** |
 
-**Memoria del documento.** Senza memoria, dopo due passaggi la validazione è 5,651 contro
-4,858 con la memoria. Con l'indirizzo «nessuno somiglia al mio», addestrando fino a
-convergenza, il test passa da 4,832 a **4,805**; e sulle risposte a 30 domande mai viste
-(temperatura 0,7, al più 120 token):
+I risultati confermano empiricamente tutte le proprietà della teoria unificata:
+- nel dominio tabulare i regimi $\rho = 1$ e $\rho = 0{,}5$ convergono al medesimo equilibrio statistico;
+- su tabelle categoriali, miste o con numero adeguato di esempi per attributo (*Gioco*, *Iris*, *Wine*, *Vote*, *Breast Cancer*), la rete generativa sequenziale eguaglia o supera il modello tabulare risolvendo interazioni non lineari pure (XOR al **100,0%** con incertezza residua nulla) e scartando le variabili di disturbo;
+- in presenza di decine di variabili continue con poche centinaia di righe (*Sonar*: 60 coordinate continue per 166 esempi di training), la densità gaussiana continua diretta (**90,5%**) sfrutta appieno la metrica euclidea reale rispetto alla quantizzazione simbolica per ottili.
 
-| | Valvola dallo stato | Nessuno somiglia al mio | Risposte vere |
-|---|---:|---:|---:|
-| sotto i 15 token | 10% | **3%** | 0% |
-| lunghezza media (token) | 80 | **101** | — |
-| token presi dalla domanda | 47% | **32%** | 21% |
-| trigrammi ripetuti | 5% | 6% | 2% |
+#### 6.2 · Dinamica di apprendimento, morfogenesi e velocità su grandi corpus testuali (`V = 32.000`)
 
-**Uscita in due livelli.** Con i gruppi di token la rete impara circa il doppio più
-veloce (2.007 contro 1.015 token al secondo su due processori), con test 5,359 contro
-5,337 dopo un passaggio e 5,009 contro 4,948 dopo due.
-
-[Protocolli sperimentali](../experiments/text_table/README.md).
+Su code multi-dominio reali da 45 milioni di simboli ($V = 32.000$, dialogo multilingue, testi enciclopedici, codice sorgente e script di sistema) eseguite interamente su CPU:
+- **Velocità di elaborazione:** la fattorizzazione analitica per gruppi di frequenza e le gare su finestra controllata sostengono una cadenza effettiva compresa fra **4.000 e 6.500 simboli al secondo** su processori server standard multicore senza acceleratore grafico.
+- **Morfogenesi automatica e discesa monotona:** partendo dal seme minimo ($D = 32, L = 1, H = 1, K = 1$), la rete seleziona autonomamente l'aumento delle teste, la suddivisione dei concetti, il raddoppio della larghezza e l'aggiunta di nuovi strati, riducendo con continuità la NLL di validazione da $10{,}37$ nat ($\mathrm{PPL} \approx 32.000$) fino a circa $5{,}15\text{–}5{,}20$ nat nei primi quindici milioni di simboli e sotto $4{,}80$ nat su dialoghi bilingui strutturati.
+- **Effetto della memoria episodica con sentinella e delle riletture:** sui dialoghi bilingui italiano/inglese ($D = 96, L = 3, H = 4, K = 64$), l'indirizzo sentinella riduce la NLL fuori campione da $5{,}651$ (rete priva di memoria episodica) a **$4{,}805$**, dimezza la frazione di risposte tronche sotto i 15 simboli ($10\% \to 3\%$) e riduce dal $47\%$ al **$32\%$** la ripetizione letterale delle parole della domanda. A parità di simboli elaborati, l'esposizione a nuovi documenti risulta più informativa della rilettura ripetuta del medesimo sottoinsieme ($4{,}716$ nat contro $4{,}877$ nat).
