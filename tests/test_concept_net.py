@@ -239,7 +239,8 @@ class GrowthTest(unittest.TestCase):
         trial = Learner(grown, tokens=32)
         trial.carry(base, 'teste')
         np.testing.assert_allclose(grown.export().document(ids[:10]), net.export().document(ids[:10]), atol=5e-4)
-        for name in ('g', 'log_s', 'log_c', 'A'):
+        self.assertIsNone(net.layers[0].A)
+        for name in ('g', 'log_s', 'log_c'):
             old_m = base.opt.state[getattr(net.layers[0], name)]['exp_avg']
             new_m = trial.opt.state[getattr(grown.layers[0], name)]['exp_avg']
             torch.testing.assert_close(new_m[:1], old_m * .5)

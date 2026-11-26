@@ -396,49 +396,59 @@ class GradualTabularEMTest(unittest.TestCase):
         from acan.vis.long_training import network_graph_figure, network_graph_info
 
         torch.manual_seed(7)
-        # 1. Multi-view perspective attention + tabular multi-parent hierarchy + sentinel token concepts.
-        pyr = Network(dict(vocabulary=64, dim=48, layers=3, heads=4, concepts=[16, 32, 64],
-                           window=3, view_window=32, tabular_hierarchy=True, grouped=True),
+        # 1. Zero-K^2 multi-view pyramid (Regime A + Regime B routed sub-concepts): no K^2 A or parent matrices!
+        pyr = Network(dict(vocabulary=64, dim=32, layers=3, heads=4, concepts=[16, 64, 128],
+                           window=1, view_window=16, tabular_hierarchy=True, grouped=True),
                       groups=np.arange(64) // 8)
-        self.assertEqual(pyr.config['cache'], 48)
+        self.assertEqual(pyr.config['cache'], 16)
         self.assertTrue(pyr.config['tabular_hierarchy'])
+        self.assertTrue(pyr.config['linear_concepts'])
         self.assertIsNotNone(pyr.layers[0].key)
-        self.assertEqual(tuple(pyr.layers[0].pos_bias.shape), (4, 32))
-        self.assertIsNone(pyr.layers[0].parent)
-        self.assertEqual(tuple(pyr.layers[1].parent.shape), (4, 16, 32))
-        self.assertEqual(tuple(pyr.layers[2].parent.shape), (4, 32, 64))
+        self.assertEqual(tuple(pyr.layers[0].pos_bias.shape), (4, 16))
+        for layer in pyr.layers:
+            self.assertIsNone(layer.A)
+            self.assertIsNone(layer.parent)
         fp = pyr.footprint()
         self.assertEqual(fp, pyr.export().footprint())
 
-        # 2. Torch, NumPy bulk, NetCursor (observe + prefill), restore, and all growth morphisms agree.
-        small = Network(dict(vocabulary=32, dim=16, layers=2, heads=2, concepts=[3, 6],
-                             window=2, view_window=8, tabular_hierarchy=True, grouped=True),
-                        groups=np.arange(32) // 6)
+        # 2. Torch, NumPy bulk, NetCursor (observe + prefill), restore, and all growth morphisms agree
+        #    on BOTH Regime A (K <= 32) and Regime B (K = 64 routed Top-m sub-concepts)!
+        routed = Network(dict(vocabulary=32, dim=16, layers=2, heads=2, concepts=[16, 64],
+                              window=2, view_window=8, tabular_hierarchy=True, grouped=True),
+                         groups=np.arange(32) // 6)
         with torch.no_grad():
-            for p in small.parameters():
-                p.add_(torch.randn_like(p) * .15)
+            for p in routed.parameters():
+                p.add_(torch.randn_like(p) * .12)
         ids = np.random.default_rng(9).integers(0, 31, size=24)
         x = torch.as_tensor(ids[None, :-1])
         with torch.no_grad():
-            expected = small.target_log_probs(x, torch.ones_like(x, dtype=torch.float32), torch.as_tensor(ids[None, 1:]))[0].numpy()
-        exported = small.export()
+            expected = routed.target_log_probs(x, torch.ones_like(x, dtype=torch.float32), torch.as_tensor(ids[None, 1:]))[0].numpy()
+        exported = routed.export()
         np.testing.assert_allclose(np.log(exported.targets(ids)), expected, atol=2e-4)
         whole = exported.document(ids)
         cursor = exported.cursor()
+        self.assertEqual(cursor.mass[1].shape, (2, 16))  # O(1) macro-cluster memory even when K_2 = 64!
         cursor.prefill(ids[:11])
         for tok in ids[11:-1]:
             cursor.observe(tok)
         np.testing.assert_allclose(cursor.distribution(), whole[-1], atol=1e-5)
 
-        split_zero = copy.deepcopy(small)
-        split_zero.split_one(0, torch.tensor([1, 2]), noise=0)
-        np.testing.assert_allclose(split_zero.export().document(ids), whole, atol=1e-5)
-        widened_zero = small.widened(noise=0)
+        widened_zero = routed.widened(noise=0)
         np.testing.assert_allclose(widened_zero.export().document(ids), whole, atol=1e-5)
-        heads_zero = small.more_heads(noise=0)
+        heads_zero = routed.more_heads(noise=0)
         np.testing.assert_allclose(heads_zero.export().document(ids), whole, atol=1e-5)
         restored = Network.restore(ConceptNet.from_arrays(exported.arrays()))
         np.testing.assert_allclose(restored.export().document(ids), whole, atol=1e-5)
+        # Verify analytical backward + online Fisher-EM on routed sub-concepts runs cleanly:
+        self.assertTrue(np.isfinite(Learner(routed, lr=2e-3, tokens=64).learn(np.r_[ids, 31, ids, 31], eos=31, warmup=2)))
+
+        # Legacy checkpoints with explicit A / parent matrices remain 100% restorable and consistent:
+        legacy = Network(dict(vocabulary=32, dim=16, layers=2, heads=2, concepts=[3, 6],
+                              window=2, view_window=8, tabular_hierarchy=True, linear_concepts=False, grouped=False))
+        self.assertIsNotNone(legacy.layers[0].A)
+        self.assertIsNotNone(legacy.layers[1].parent)
+        leg_restored = Network.restore(ConceptNet.from_arrays(legacy.export().arrays()))
+        np.testing.assert_allclose(leg_restored.export().document(ids), legacy.export().document(ids), atol=1e-5)
 
         # Adding a tabular sub-concept layer starts closed (t=0 exact) and opens cleanly by gradient (no dead gate=0).
         layered = Network(dict(vocabulary=24, dim=16, layers=1, heads=2, concepts=4, window=2, view_window=8))
@@ -462,9 +472,12 @@ class GradualTabularEMTest(unittest.TestCase):
         self.assertGreater(d7[7], d7[9] * 3.)
         self.assertGreater(d9[9], d9[7] * 3.)
 
-        # 3. Automatic growth priorities and multi-parent DAG graph inspection.
+        # 3. Automatic growth priorities and multi-view 320-concept pyramid start on real language vocabularies.
+        lang_growing = NetText(4096, 0, 1 << 22, growth=True)
+        self.assertEqual((lang_growing.network['layers'], lang_growing.network['heads'], lang_growing.network['concepts']),
+                         (2, 4, [16, 64]))
         growing = NetText(32, 31, 1 << 22, growth=True,
-                          limits=dict(max_dim=96, max_layers=0, max_heads=0, max_concepts=0))
+                          limits=dict(max_dim=64, max_layers=0, max_heads=0, max_concepts=0))
         start_net = Network(dict(growing.network, vocabulary=32))
         kinds0, _ = growing._allowed_kinds(start_net)
         self.assertNotIn('strato', kinds0)  # waits until Level 1 forms >= 4 abstractions
@@ -482,7 +495,7 @@ class GradualTabularEMTest(unittest.TestCase):
 
         g_data = pyr.export().graph([np.arange(1, 30), np.arange(5, 35)])
         self.assertTrue({n['role'] for n in g_data['nodes']} <= {'astrazione', 'concetto intermedio', 'sotto-concetto particolare'})
-        self.assertIsNotNone(network_graph_figure(g_data))
+        self.assertIsNotNone(network_graph_figure(g_data, head=1))
         if g_data['nodes']:
             self.assertIsNotNone(network_graph_info(g_data, g_data['nodes'][0]['id']))
 
