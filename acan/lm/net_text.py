@@ -46,17 +46,24 @@ class NetCursor:
 
 
 class NetText:
-    NETWORK = dict(dim=96, layers=3, heads=4, concepts=64, window=3, grouped=True)
+    NETWORK = dict(dim=48, layers=3, heads=4, concepts=[16, 32, 64], window=3, grouped=True, pure_concepts=True, cache=0)
     # With growth the network starts small and the data choose how it grows (``_race``)
-    GROWING = dict(dim=32, layers=1, heads=1, concepts=1, window=3, grouped=True)
+    GROWING = dict(dim=48, layers=1, heads=1, concepts=1, window=3, grouped=True, pure_concepts=True, cache=0)
     KINDS = ("com'è", 'larghezza', 'strato', 'concetti', 'teste')
     RACE_TRIAL = 65_536
     MAX_ROUNDS = 4
+    MAX_RACE_GAP = 16_000_000
 
-    def __init__(self, vocabulary, eos, budget, max_context=512, network=None, growth=False, weight=None):
+    @staticmethod
+    def _clean_limits(limits):
+        raw = limits or {}
+        return {k: max(0, int(raw.get(k) or 0)) for k in ('max_dim', 'max_layers', 'max_heads', 'max_concepts')}
+
+    def __init__(self, vocabulary, eos, budget, max_context=512, network=None, growth=False, weight=None, limits=None):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), int(eos), int(budget)
         self.max_context = int(max_context)
         self.growth = bool(growth)
+        self.limits = self._clean_limits(limits)
         self.weight = None if weight is None else np.asarray(weight, np.float32)
         self.network = dict(self.GROWING if self.growth else self.NETWORK, **(network or {}))
         self.next_race, self.races = 0, []                     # with growth: when the next race is, and their results
@@ -67,11 +74,61 @@ class NetText:
         self.model = None                                      # SimpleNamespace(net=ConceptNet, tables={})
         self.device = 'cpu'
         self._learner = None
+        self._saved_steps, self._saved_lr = 0, 3e-3
         self.network_done, self.network_history = False, []
         self.read = 0                                          # tokens of the current text read so far
         self.trace = []                                        # [steps learned, validation NLL] whenever it is measured
         self.watch = None                                      # the pieces the chart is measured on (the queue's validation)
         self.piece = 0
+
+    def prepare_warm_start(self, growth=None, limits=None):
+        """Realign queue-relative counters and optional growth ceilings when starting a new corpus from an earlier model."""
+        if growth is not None:
+            self.growth = bool(growth)
+        if limits is not None:
+            self.limits = self._clean_limits(limits)
+        self.tail = np.empty(0, np.int64)
+        self.read = 0
+        self.next_race = 0
+        self.race_gap = 0
+        self.trace = []
+        self.races = []
+        self._previous = None
+        self.network_done = False
+        self._learner = None
+        self._decide_docs = None
+
+    def _allowed_kinds(self, network):
+        """Growth candidates within the configured ceilings, prioritizing pyramidal sub-concept refinement."""
+        limits = getattr(self, 'limits', None) or {}
+        max_dim = int(limits.get('max_dim') or 0)
+        capped = bool(max_dim or limits.get('max_layers') or limits.get('max_heads') or limits.get('max_concepts'))
+        # Capacity safety guardrails (analogous to tabular ConceptModel.max_concepts / max_levels), not requested sizes.
+        max_layers = int(limits.get('max_layers') or (6 if capped else 0))
+        max_heads = int(limits.get('max_heads') or (8 if capped else 0))
+        max_concepts = int(limits.get('max_concepts') or (512 if capped else 0))
+        dim = int(network.config['dim'])
+        n_layers = len(network.layers)
+        heads = int(network.config['heads'])
+        concepts_now = network.config['concepts']
+        eligible_layers = [i for i in range(n_layers) if not max_concepts or 2 * int(concepts_now[i]) <= max_concepts]
+
+        def _layer_priority(i):
+            if concepts_now[i] <= 1:
+                return (0, float(i), 0)
+            return (1, concepts_now[i] / (2 ** i), (i - len(self.races)) % n_layers)
+
+        next_layer = min(eligible_layers, key=_layer_priority) if eligible_layers else None
+        kinds = ["com'è"]
+        if (not max_dim or 2 * dim <= max_dim) and (not capped or max(concepts_now) * heads >= max(8, dim // 2) or next_layer is None):
+            kinds.append('larghezza')
+        if (not max_layers or n_layers + 1 <= max_layers) and (not capped or min(concepts_now) >= 4 or next_layer is None):
+            kinds.append('strato')
+        if next_layer is not None:
+            kinds.append('concetti')
+        if not max_heads or 2 * heads <= max_heads:
+            kinds.append('teste')
+        return tuple(kinds), next_layer
 
     # ---- learning ------------------------------------------------------------------------------------
     def _held(self, pieces, longest=1 << 30):
@@ -86,26 +143,43 @@ class NetText:
     def add(self, ids, train, tune, check, documents=None, starts_in_piece=None):
         import copy as _copy
         from copy import copy
-        from .concept_net_training import Grower, Network, documents as cut_documents, frequency_groups, held_out
+        from .concept_net_training import Grower, Network, documents as cut_documents, frequency_groups, held_out, lexical_concepts
         ids = np.asarray(ids, np.int64)
         w = getattr(self, 'weight', None)
         if not len(self.tail):                                  # a new text of the queue begins
             self.read = 0
+            if self.model is not None and self.tokens > 0 and self.next_race > len(train):
+                self.next_race = 0
+                self.race_gap = 0
         if self._learner is None:
-            if self.model is not None:                          # a queue that goes on: the network learned so far
+            restoring = self.model is not None
+            if restoring:                                       # a queue that goes on: the network learned so far
                 network = Network.restore(self.model.net)
             else:
                 sample = np.asarray(train[:min(len(train), 4_000_000)], np.int64) if len(train) else ids
                 frequency = np.bincount(sample, minlength=self.vocabulary) + 1.
                 config = {k: v for k, v in self.network.items() if k != 'passes'}
-                network = Network(dict(config, vocabulary=self.vocabulary), frequency=frequency / frequency.sum(),
-                                  groups=frequency_groups(frequency) if config.get('grouped') else None)
+                centres, lex_groups = (lexical_concepts(sample, self.vocabulary, config['dim'], eos=self.eos)
+                                       if config.get('pure_concepts') and config.get('grouped')
+                                       else (None, frequency_groups(frequency) if config.get('grouped') else None))
+                network = Network(dict(config, vocabulary=self.vocabulary), centres=centres,
+                                  frequency=frequency / frequency.sum(), groups=lex_groups)
             options = dict(tokens=256, longest=min(256, self.max_context)) if self.device == 'cuda' else {}
             if w is not None:
                 options['weight'] = w
             self._learner = Grower(network.to(self.device), passes=self.network.get('passes', True), **options)
             self._learner.KINDS = ()                            # the sizes are fixed
             self._learner.begin = True
+            if restoring and self.tokens > 0:
+                batch_ref = max(self._learner.learner.tokens, 1)
+                saved_steps = int(getattr(self, '_saved_steps', 0)) or max(1, self.tokens // batch_ref)
+                saved_lr = float(getattr(self, '_saved_lr', 0.) or self._learner.learner.lr)
+                self._learner.learned = int(self.tokens)
+                self._learner.learner.seen = int(self.tokens)
+                self._learner.learner.steps = saved_steps
+                self._learner.learner.lr = saved_lr
+                while self._learner.decision <= self._learner.learned:
+                    self._learner.decision *= 2
         if self.decide_on is not None:                          # all the validation of the queue: small gains are seen
             if getattr(self, '_decide_docs', None) is None:
                 self._decide_docs = self._held([self.decide_on], self._learner.learner.longest)   # as long as in learning
@@ -152,7 +226,8 @@ class NetText:
                             speed=int((where() - begun[0]) / max(now - started, 1e-9)), network=network.footprint())
         if shown and not self.trace:                            # where the queue starts
             self._point(where(), eval_held(self._learner.learner.network, shown))
-        if self.growth and held and (self.read >= self.next_race or end >= len(train)):
+        can_grow = self.growth and len(self._allowed_kinds(self._learner.learner.network)[0]) > 1
+        if can_grow and held and (self.read >= self.next_race or end >= len(train)):
             self._learner = copy(self._learner)                 # an unfinished piece must not alter the preceding one
             first_race = len(self.races)
             self._race_began = time.monotonic()
@@ -176,7 +251,7 @@ class NetText:
             round_number = 1
             best, grew = self._race(ids, held, check, shown, round_number, docs=trial_docs)
             consumed = self._race_piece if has_rest else len(ids)
-            while grew and round_number < max_rounds:
+            while grew and round_number < max_rounds and len(self._allowed_kinds(self._learner.learner.network)[0]) > 1:
                 round_number += 1
                 if cursor < len(all_docs) and sum(map(len, all_docs[cursor:])) >= max(1024, trial_limit // 2):
                     next_docs, next_size, cursor = take_trial(cursor)
@@ -212,7 +287,8 @@ class NetText:
                     best = self._learner.learner.network.export()
                     self._learner.learned += rest_size
             counted.update(seen=self._learner.learner.seen, total=len(ids))  # a rereading does not advance the queue
-            self.race_gap = len(ids) if len(self.races) > first_race + 1 else max(2 * self.race_gap, len(ids))
+            max_gap = max(self.MAX_RACE_GAP, 16 * max(len(ids), 1))
+            self.race_gap = len(ids) if len(self.races) > first_race + 1 else min(max_gap, max(2 * self.race_gap, len(ids)))
             self.next_race = end + self.race_gap
             if again and len(self.races) > first_race:
                 self._learner._keep(best, self._learner.best_scores)   # restore the stabilized winner if rereading does not help
@@ -222,8 +298,8 @@ class NetText:
             best = self._learner.learn(ids, self.eos, score, watched)
             if self.growth and held and self._learner is not None and not self._learner.done:
                 now = eval_held(self._learner.learner.network, held)
-                if self._previous is not None and not self._better(now, self._previous):
-                    self.next_race = min(self.next_race, end)   # it no longer learns at this size: try to grow
+                if self._previous is not None and now.mean() <= self._previous.mean():
+                    self.next_race = min(self.next_race, end)   # it no longer improves at this size: try to grow
                 self._previous = now
         if again and not self._learner.done:                    # ... and with the last one, the whole text again
             self._learner.passes = True
@@ -235,6 +311,8 @@ class NetText:
         self.read += len(ids)
         self.tokens += len(ids)
         self.tail = ids[-max(self.max_context, 1):]
+        self._saved_steps = int(self._learner.learner.steps)
+        self._saved_lr = float(self._learner.learner.lr)
         self.network_history, self.network_done = self._learner.history, self._learner.done
         if self._learner.done:
             self._learner = None
@@ -275,19 +353,18 @@ class NetText:
         docs = documents(ids, self.eos, base.longest, begin=True) if docs is None else docs
         if not docs:
             return base.network.export(), False
+        kinds, next_layer = self._allowed_kinds(base.network)
+        if len(kinds) <= 1:
+            return base.network.export(), False
         size = sum(map(len, docs))
         if grower.learned and size >= 4 * base.tokens:
             batch = base.tokens
         else:
             batch = min(grower.batch, max(1, size // 64) if size >= 16384 else max(1, math.isqrt(size)))
         warmup = base.warmup if grower.learned else min(base.warmup, max(1, -(-size // batch)))
-        # Prioritize the layer with the fewest concepts, cycling evenly across ties.
-        n_layers = len(base.network.layers)
-        concepts_now = base.network.config['concepts']
-        next_layer = min(range(n_layers), key=lambda i: (concepts_now[i], (i - len(self.races)) % n_layers))
-        if base.network.layers[next_layer].g.shape[1] == 1:
+        if next_layer is not None and base.network.layers[next_layer].g.shape[1] == 1:
             base.network.concepts_to_split(next_layer, docs)
-        labels = [f'concetti · strato {next_layer + 1}' if kind == 'concetti' else kind for kind in self.KINDS]
+        labels = [f'concetti · strato {next_layer + 1}' if kind == 'concetti' else kind for kind in kinds]
         results, trials = [], []
         w = getattr(self, 'weight', None)
         eval_held = (lambda net, d: held_out(net, d)) if w is None else (lambda net, d: held_out(net, d, weight=w))
@@ -304,7 +381,7 @@ class NetText:
         def report(number, read, evaluating=False):
             if self.report is None:
                 return
-            total = len(self.KINDS)
+            total = len(kinds)
             elapsed = time.monotonic() - self._race_began
             spent = ((round_number - 1) * total + number) * size + read
             self.report('network', 0, elapsed, race=number + 1, race_total=total, race_round=round_number,
@@ -316,7 +393,7 @@ class NetText:
 
         report(0, 0)
         offset = getattr(self, '_race_offset', 0)
-        for number, (kind, label) in enumerate(zip(self.KINDS, labels)):
+        for number, (kind, label) in enumerate(zip(kinds, labels)):
             layer = next_layer if kind == 'concetti' else None
             if kind == "com'è":
                 learner = copy.deepcopy(base)
@@ -360,7 +437,7 @@ class NetText:
                                held_out=float(-scores.mean()), parameters=count))
             winner, retained = self._race_choice(results, previous, round_number)
             choice, _, choice_scores, _, _ = winner
-            projection = dict(candidate=labels[self.KINDS.index(choice)], held_out=float(-choice_scores.mean()),
+            projection = dict(candidate=labels[kinds.index(choice)], held_out=float(-choice_scores.mean()),
                               grows=choice != "com'è" and not retained, retained=retained)
             if retained:
                 projection = dict(candidate="com'è", held_out=reference_nll, grows=False, retained=True)
@@ -497,9 +574,14 @@ class NetText:
 
     # ---- persistence -------------------------------------------------------------------------------------
     def arrays(self):
+        learner = self._learner.learner if self._learner is not None else None
+        steps = int(learner.steps) if learner is not None else int(getattr(self, '_saved_steps', 0))
+        lr_scaled = int(round((learner.lr if learner is not None else getattr(self, '_saved_lr', 3e-3)) * 1e7))
+        safe_next = min(max(0, int(self.next_race)), 1 << 60)
+        safe_gap = min(max(0, int(self.race_gap)), 1 << 60)
         data = {"net_text": np.array([VERSION, self.vocabulary, self.eos, self.budget_bytes, self.tokens, self.max_context,
-                                      int(self.network_done), int(self.growth), int(self.next_race),
-                                      int(self.race_gap)], np.int64),
+                                      int(self.network_done), int(self.growth), safe_next, safe_gap,
+                                      max(0, steps), max(1, lr_scaled)], np.int64),
                 "tail": np.asarray(self.tail, np.int64)}
         if self.model is not None:
             data.update(self.model.net.arrays('net.'))
@@ -513,11 +595,14 @@ class NetText:
         if version != VERSION:
             raise ValueError("Versione del checkpoint della rete sconosciuta.")
         text = cls(vocabulary, eos, budget or limit, context, growth=bool(growth))
-        text.next_race = next_race
-        text.race_gap = values[9] if len(values) > 9 else 0
+        text.next_race = min(max(0, next_race), 1 << 60)
+        text.race_gap = min(max(0, values[9] if len(values) > 9 else 0), cls.MAX_RACE_GAP * 4)
+        text._saved_steps = values[10] if len(values) > 10 else max(0, tokens // 4096)
+        text._saved_lr = (values[11] / 1e7) if len(values) > 11 and values[11] > 0 else 3e-3
         text.tokens, text.tail, text.network_done = tokens, np.asarray(data["tail"], np.int64), bool(done)
         net = ConceptNet.from_arrays(data, 'net.')
         if net is not None:
             text.model = SimpleNamespace(net=net, tables={})
-            text.network = {k: net.config[k] for k in ('dim', 'layers', 'heads', 'window') if k in net.config}
+            text.network = {k: net.config[k] for k in ('dim', 'layers', 'heads', 'concepts', 'window', 'grouped', 'pure_concepts', 'cache')
+                            if k in net.config}
         return text

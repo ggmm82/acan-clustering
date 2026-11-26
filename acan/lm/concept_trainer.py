@@ -231,9 +231,16 @@ def run_training(root, identifier, stop_event=None):
         previous = checkpoints.for_resume(root_checkpoints, identity, job['checkpoint'], job['progress'].get('step', 0))
         budget = int(config.get('concept_memory_mb') or 0)*(1 << 20) or default_budget()
         tune, judge = judged_pieces(blocks, config['validation_batches'], disjoint=True)
+        growth = bool(config.get('concept_network_growth', True))
+        limits = dict(max_dim=int(config.get('concept_max_dim') or 0),
+                      max_layers=int(config.get('concept_max_layers') or 0),
+                      max_heads=int(config.get('concept_max_heads') or 0),
+                      max_concepts=int(config.get('concept_max_concepts') or 0))
         if previous:
             model, state = load(previous, identity, budget)
             model.max_context = config.get('concept_context', 512)   # used if the scales are not learned yet
+            if isinstance(model, NetText):
+                model.limits = model._clean_limits(limits)
             with store.db() as db:
                 db.execute('DELETE FROM metrics WHERE job=? AND step>?', (identifier, state['step']))
         else:
@@ -246,10 +253,27 @@ def run_training(root, identifier, stop_event=None):
             if start is not None and not isinstance(start, NetText):
                 raise ValueError('Il testo precedente della coda è stato imparato con il modello dei conteggi: '
                                  'la rete a concetti non può ripartire da lì. Crea una coda nuova.')
-            # the model of a text is the concept network alone: its concepts learned along the gradient
-            model = start if start is not None else NetText(len(tokenizer), tokenizer.eos_token_id, budget,
-                                                            config.get('concept_context', 512),
-                                                            growth=bool(config.get('concept_network_growth', True)))
+            if start is not None:
+                start.prepare_warm_start(growth=growth, limits=limits)
+                model = start
+            else:
+                fixed_net = None
+                if not growth:
+                    fixed_net = {k: v for k, v in (
+                        ('dim', limits['max_dim']),
+                        ('layers', limits['max_layers']),
+                        ('heads', limits['max_heads']),
+                    ) if v > 0}
+                    if limits['max_concepts'] > 0:
+                        n_lvl = fixed_net.get('layers', NetText.NETWORK['layers'])
+                        k_max = limits['max_concepts']
+                        fixed_net['concepts'] = ([max(2, k_max // (2 ** (n_lvl - 1 - i))) for i in range(n_lvl)]
+                                                 if n_lvl > 1 and k_max >= 4 else k_max)
+                    fixed_net = fixed_net or None
+                # the model of a text is the concept network alone: its concepts learned along the gradient
+                model = NetText(len(tokenizer), tokenizer.eos_token_id, budget,
+                                config.get('concept_context', 512),
+                                network=fixed_net, growth=growth, limits=limits)
             model.tail = np.empty(0, np.int64)                   # a new text starts with an empty prefix
             state = dict(step=0, tokens_trained=0, device=device, identity=identity, model_contract=contract(profile), profile=profile,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},
@@ -263,11 +287,24 @@ def run_training(root, identifier, stop_event=None):
             state.update(quantities(model, config))
             previous = save(root_checkpoints, model, state, identity)
             store.record(identifier, 0, dict(state))           # the chart starts from the error before reading
+        sample_docs = [p[:512] for p in tune[:8] if len(p) >= 2]
+        quick_docs = [p[:256] for p in tune[:4] if len(p) >= 2]
+
+        def refresh_graph(net, dest=None, quick=False):
+            docs = quick_docs if quick else sample_docs
+            if net is None or not docs:
+                return
+            target = state if dest is None else dest
+            target['network_concepts'] = net.describe(docs, tokenizer.decode)
+            target['network_graph'] = net.graph(docs, tokenizer.decode)
+
         model.device = state['device'] = device
         model.read, model.piece = state['tokens_trained'], piece   # the current text, also when resuming a queue
         model.trace = list(state.get('network_trace') or [])
         model.races = list(state.get('network_races') or [])
         state.pop('structure', None)
+        if getattr(model.model, 'net', None) is not None and not (state.get('network_graph') or {}).get('nodes'):
+            refresh_graph(model.model.net)
         store.update(identifier, checkpoint=previous.name, progress=state, status='running')
 
         model.watch = judge                                     # the chart inside a step: the same text as its validation
@@ -293,11 +330,26 @@ def run_training(root, identifier, stop_event=None):
             updated = copy(model)
             updated.trace = model.trace.copy()
             updated.races = model.races.copy()
+            live_extra = {k: state[k] for k in ('network_graph', 'network_concepts') if k in state}
+            last_live_graph = [0.]
 
             def structure(phase, width, seconds, **facts):
                 live = dict(phase=phase, width=int(width), seconds=float(seconds),
                             **facts)
-                store.update(identifier, progress=dict(state, structure=live, network_trace=list(updated.trace)))
+                now_mono = time.monotonic()
+                race_done = (facts.get('race_projection') is not None
+                             and len(facts.get('race_scores') or ()) == facts.get('race_total'))
+                need_first = not (live_extra.get('network_graph') or {}).get('nodes')
+                grower = getattr(updated, '_learner', None)
+                live_net = (grower.learner.network if grower is not None
+                            and getattr(grower, 'learner', None) is not None and grower.learner.seen > 0 else None)
+                if live_net is not None and (need_first or race_done or now_mono - last_live_graph[0] >= 20.):
+                    refresh_graph(live_net.export(), live_extra, quick=True)
+                    last_live_graph[0] = now_mono
+                elif need_first and getattr(getattr(updated, 'model', None), 'net', None) is not None:
+                    refresh_graph(updated.model.net, live_extra, quick=True)
+                    last_live_graph[0] = now_mono
+                store.update(identifier, progress=dict(state, **live_extra, structure=live, network_trace=list(updated.trace)))
 
             updated.report = structure
             if model.model is not None:
@@ -307,6 +359,8 @@ def run_training(root, identifier, stop_event=None):
                 with threadpool_limits(limits=threads):
                     updated.add(ids, train[:read], tune, check)
             except PreparationPaused:
+                if not (state.get('network_graph') or {}).get('nodes') and (live_extra.get('network_graph') or {}).get('nodes'):
+                    state.update(live_extra)
                 break
             model = updated
             state.update(step=state['step']+1, tokens_trained=state['tokens_trained']+len(ids))
@@ -329,10 +383,9 @@ def run_training(root, identifier, stop_event=None):
                 state.update(quantities(model, config))
             elif model.model is not None:
                 state['network'] = model.model.net.footprint()
-            if last and model.model is not None and getattr(model.model, 'net', None) is not None:
+            if (measured or not (state.get('network_graph') or {}).get('nodes')) and getattr(model.model, 'net', None) is not None:
                 # What the concepts of the network hold, on validation text, for the page
-                state['network_concepts'] = model.model.net.describe([p[:512] for p in tune[:8]], tokenizer.decode)
-                state['network_graph'] = model.model.net.graph([p[:512] for p in tune[:8]], tokenizer.decode)
+                refresh_graph(model.model.net)
                 state['network_stopped'] = bool(model.network_done)
             if last:
                 previous = save(root_checkpoints, model, state, identity)
@@ -349,12 +402,17 @@ def run_training(root, identifier, stop_event=None):
         if state['step'] != saved_step:                          # paused between two saves: keep what was read
             model.judge(tune)
             state.update(quantities(model, config))
+            if getattr(model.model, 'net', None) is not None:
+                refresh_graph(model.model.net)
+                state['network_stopped'] = bool(model.network_done)
             state['validation_nll'] = measure(model, judge)
             state['validation_perplexity'] = math.exp(state['validation_nll'])
             state['best_validation_nll'] = min(state['best_validation_nll'], state['validation_nll'])
             previous = save(root_checkpoints, model, state, identity)
             store.update(identifier, checkpoint=previous.name)
-            store.record(identifier, state['step'], dict(state), progress=state)
+            pause_row = {key: value for key, value in state.items()
+                         if key not in ('network_trace', 'network_races', 'network_graph', 'network_concepts')}
+            store.record(identifier, state['step'], pause_row, progress=state)
             retain_with_milestones(root_checkpoints, milestone=config.get('milestone_steps', 0))
         store.update(identifier, status='completed' if state['step'] >= config['total_steps'] else 'paused',
                      pause=0, progress=state, error=None)
