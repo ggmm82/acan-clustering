@@ -295,6 +295,9 @@ def concept_footprint_view(item):
     levels = [heads * concepts for heads, concepts in shape['groups']] if shape else progress.get('concepts_per_level') or []
     size = shape.get('bytes', progress.get('statistics_bytes')) if shape else None
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
+    cap_parts = [f"{label} {int(config.get(key) or 0) or 'illimitato'}" for label, key in (
+        ('larghezza', 'concept_max_dim'), ('strati', 'concept_max_layers'),
+        ('teste', 'concept_max_heads'), ('concetti/testa', 'concept_max_concepts'))]
     rows = [
         ('Modello', [
             ('Tipo', 'rete a concetti: i concetti dei token e di ogni strato imparati col gradiente prevedendo il token che segue'),
@@ -304,6 +307,7 @@ def concept_footprint_view(item):
             ('Contesto letto', 'tutto il documento, attraverso le somme dei concetti di ogni strato'),
             ('Concetti per strato', ' · '.join(f'{count:,}' for count in levels) if levels else '—'),
             ('Concetti in tutto', f'{sum(levels):,}' if levels else '—'),
+            *( [('Tetti di crescita', ' · '.join(cap_parts))] if config.get('concept_network_growth', True) else [('Taglia fissa', 'crescita disattivata')] ),
             ('Dimensione dei parametri', _bytes(size) if size else '—')]),
         ('Avanzamento e velocità', [
             ('Dispositivo di addestramento', (progress.get('device') or '—').upper()),
@@ -574,9 +578,18 @@ layout = html.Div([
              html.Small("Un passo è un pezzo di al massimo un milione di token nuovi. Alla fine, la rete rilegge tutto il testo finché la validazione migliora. "
                         "Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
              dbc.Checkbox(id='lm-long-growth', value=True, label='La rete cresce con i dati'),
-             html.Small("La rete parte con uno strato, una testa e un concetto. Quando arriva una gara, la rete com'è e quattro copie cresciute "
-                        "(più larga, uno strato in più, più concetti in uno strato, più teste) imparano lo stesso pezzo nuovo. "
-                        "Se la rete cresce, il vincitore fa una nuova tornata sullo stesso pezzo. Il passo termina quando la validazione conferma la struttura corrente.",
+             html.Small("La rete parte con uno strato, una testa e un concetto. Quando arriva una gara, la rete com'è e le copie cresciute "
+                        "(più larga, uno strato in più, il doppio dei concetti in uno strato, il doppio delle teste) imparano lo stesso pezzo nuovo. "
+                        "Se la rete cresce, il vincitore fa una nuova tornata sullo stesso pezzo.",
+                        className='text-muted d-block mb-2'),
+             dbc.Row([
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=256, min=0, max=2048, step=16)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=6, min=0, max=32, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-max-heads', type='number', value=4, min=0, max=64, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=64, min=0, max=1024, step=1)]), md=3, className='mb-1'),
+             ], className='mb-1'),
+             html.Small("Con crescita attiva sono i tetti oltre i quali quella direzione non gareggia più («0» = senza tetto); "
+                        "con crescita disattivata fissano direttamente la taglia iniziale della rete («0» = valore predefinito).",
                         className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
@@ -598,8 +611,15 @@ layout = html.Div([
          dbc.Accordion([dbc.AccordionItem([
              dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-add-corpus', placeholder='Un testo già preparato'), md=8),
                       dbc.Col(dbc.Button('Aggiungi in fondo alla coda', id='lm-long-add', outline=True, color='primary'), md=4)], className='mb-2'),
+             dbc.Checkbox(id='lm-long-add-growth', value=True, label='Continua a far crescere la rete sul nuovo testo', className='small mb-1'),
+             dbc.Row([
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=256, min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-add-max-layers', type='number', value=6, min=0, max=32, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-add-max-heads', type='number', value=4, min=0, max=64, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-add-max-concepts', type='number', value=64, min=0, max=1024, step=1)], size='sm'), md=3, className='mb-1'),
+             ], className='mb-2'),
              html.Small(f'Oppure un documento dal computer ({FORMATS}): viene caricato, convertito in testo e aggiunto in fondo alla coda scelta. '
-                        'Usa il vocabolario della coda, imparato all\'avvio.', className='text-muted d-block'),
+                        'Usa il vocabolario della coda, imparato all\'avvio («0» nei tetti = senza limite).', className='text-muted d-block'),
              html.Div(id='lm-long-file-upload'), html.Div(id='lm-long-upload-status', role='status', className='small'),
              dcc.Store(id='lm-long-upload-state'),
          ], title='Aggiungi un testo alla coda')], start_collapsed=True, className='my-2'),
@@ -770,14 +790,23 @@ def register(app):
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
-                  State('lm-long-length', 'value'), State('lm-long-growth', 'value'), prevent_initial_call=True)
-    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, growth=False):
+                  State('lm-long-length', 'value'), State('lm-long-growth', 'value'),
+                  State('lm-long-max-dim', 'value'), State('lm-long-max-layers', 'value'),
+                  State('lm-long-max-heads', 'value'), State('lm-long-max-concepts', 'value'),
+                  prevent_initial_call=True)
+    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, growth=False,
+              max_dim=0, max_layers=0, max_heads=0, max_concepts=0):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
-                        milestone_steps=int(milestone or 0), concept_network_growth=bool(growth), probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
+                        milestone_steps=int(milestone or 0), concept_network_growth=bool(growth),
+                        concept_max_dim=max(0, int(max_dim or 0)),
+                        concept_max_layers=max(0, int(max_layers or 0)),
+                        concept_max_heads=max(0, int(max_heads or 0)),
+                        concept_max_concepts=max(0, int(max_concepts or 0)),
+                        probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             first_job = (result.get('jobs') or [{}])[0].get('id', dash.no_update)
             return result.get('message', 'Coda creata.'), result['queue'], first_job
@@ -788,8 +817,12 @@ def register(app):
                   Input('lm-long-add', 'n_clicks'), Input('lm-long-pause', 'n_clicks'), Input('lm-long-resume', 'n_clicks'),
                   Input('lm-long-control', 'n_clicks'),
                   State('lm-workspace', 'data'), State('lm-long-queue', 'value'), State('lm-long-add-corpus', 'value'),
-                  State('lm-state', 'data'), prevent_initial_call=True)
-    def queue_action(add, pause, resume, control, workspace, queue, corpus, state):
+                  State('lm-state', 'data'), State('lm-long-add-growth', 'value'),
+                  State('lm-long-add-max-dim', 'value'), State('lm-long-add-max-layers', 'value'),
+                  State('lm-long-add-max-heads', 'value'), State('lm-long-add-max-concepts', 'value'),
+                  prevent_initial_call=True)
+    def queue_action(add, pause, resume, control, workspace, queue, corpus, state,
+                     add_growth=None, max_dim=None, max_layers=None, max_heads=None, max_concepts=None):
         items = queues((state or {}).get('jobs', [])).get(queue)
         try:
             if not items:
@@ -797,7 +830,14 @@ def register(app):
             if dash.ctx.triggered_id == 'lm-long-add':
                 if not corpus:
                     raise ValueError('Scegli il testo da aggiungere.')
-                job = backend(workspace, f'/queues/{queue}/add', 'POST', dict(corpus_id=corpus))
+                payload = dict(corpus_id=corpus)
+                if add_growth is not None:
+                    payload['concept_network_growth'] = bool(add_growth)
+                for key, val in (('concept_max_dim', max_dim), ('concept_max_layers', max_layers),
+                                 ('concept_max_heads', max_heads), ('concept_max_concepts', max_concepts)):
+                    if val is not None:
+                        payload[key] = max(0, int(val or 0))
+                job = backend(workspace, f'/queues/{queue}/add', 'POST', payload)
                 return f"Aggiunto come testo {job['config']['series']['order']+1}.", dash.no_update
             job = current_item(items)
             if dash.ctx.triggered_id == 'lm-long-control':
@@ -816,15 +856,27 @@ def register(app):
             return dbc.Alert(str(exc), color='warning'), dash.no_update
 
     @app.callback(Output('lm-long-queue-status', 'children', allow_duplicate=True), Input('lm-long-upload-state', 'data'),
-                  State('lm-workspace', 'data'), State('lm-long-queue', 'value'), State('lm-state', 'data'), prevent_initial_call=True)
-    def add_uploaded(uploaded, workspace, queue, state):
+                  State('lm-workspace', 'data'), State('lm-long-queue', 'value'), State('lm-state', 'data'),
+                  State('lm-long-add-growth', 'value'),
+                  State('lm-long-add-max-dim', 'value'), State('lm-long-add-max-layers', 'value'),
+                  State('lm-long-add-max-heads', 'value'), State('lm-long-add-max-concepts', 'value'),
+                  prevent_initial_call=True)
+    def add_uploaded(uploaded, workspace, queue, state,
+                     add_growth=None, max_dim=None, max_layers=None, max_heads=None, max_concepts=None):
         """A document just uploaded from the queue section goes to the end of the chosen queue."""
         try:
             if not uploaded or not uploaded.get('id'):
                 raise ValueError('Caricamento non riuscito.')
             if not queues((state or {}).get('jobs', [])).get(queue):
                 raise ValueError(f"«{uploaded.get('name', 'Il documento')}» è caricato: scegli una coda e aggiungilo dal menu qui sopra.")
-            job = backend(workspace, f'/queues/{queue}/add', 'POST', dict(corpus_id=uploaded['id']))
+            payload = dict(corpus_id=uploaded['id'])
+            if add_growth is not None:
+                payload['concept_network_growth'] = bool(add_growth)
+            for key, val in (('concept_max_dim', max_dim), ('concept_max_layers', max_layers),
+                             ('concept_max_heads', max_heads), ('concept_max_concepts', max_concepts)):
+                if val is not None:
+                    payload[key] = max(0, int(val or 0))
+            job = backend(workspace, f'/queues/{queue}/add', 'POST', payload)
             return f"«{uploaded.get('name', 'Documento')}» aggiunto come testo {job['config']['series']['order']+1} della coda."
         except ValueError as exc:
             return dbc.Alert(str(exc), color='warning')

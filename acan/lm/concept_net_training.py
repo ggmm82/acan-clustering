@@ -216,7 +216,7 @@ class Network(nn.Module):
         self.log_scale = nn.Parameter(torch.zeros(()))
         concepts = config['concepts'] if isinstance(config['concepts'], list) else [config['concepts']] * config['layers']
         self.config['concepts'] = list(concepts)
-        self.config.setdefault('head_dim', dim // config['heads'])
+        self.config.setdefault('head_dim', max(1, dim // max(int(config['heads']), 1)))
         self.layers = nn.ModuleList([ConceptAttention(dim, config['heads'], k, config['window'], self.config['head_dim'])
                                      for k in concepts])
         self.final = nn.Linear(dim, dim)
@@ -530,11 +530,11 @@ class Network(nn.Module):
         return grown
 
     def _grow_heads(self, values, moments=False, moments_power=1, noise=0.):
-        """Duplicate head slices of parameters or optimizer moments (scaled so paired head copies step without overshoot)."""
+        """Duplicate head slices of parameters or optimizer moments (1x first moment, 4x second moment -> 0.5x step per copy)."""
         heads, width = self.config['heads'], self.config['head_dim']
         read_width = heads * width
         head_scale = (.5 ** moments_power) if moments else 1.
-        out_scale = (2. ** moments_power) if moments else .5
+        out_scale = (4. if moments_power == 2 else 1.) if moments else .5
         def apart(W, scale_ref=None):
             if moments or not noise:
                 return torch.cat((W * head_scale, W * head_scale), dim=0)

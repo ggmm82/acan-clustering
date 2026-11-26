@@ -220,13 +220,17 @@ def create_app(root=None, token=None):
 
     @app.post('/queues/<queue>/add')
     def add_to_queue(queue):
-        """Another text at the end of an existing queue, with the same settings."""
-        corpus = (request.get_json() or {}).get('corpus_id')
+        """Another text at the end of an existing queue, with the same settings (plus optional growth/ceiling overrides)."""
+        payload = request.get_json() or {}
+        corpus = payload.get('corpus_id')
         members = [job for job in store.jobs(request.workspace) if (job['config'].get('series') or {}).get('id') == queue]
         if not members:
             raise KeyError(queue)
         last = max(members, key=lambda job: job['config']['series']['order'])
         base = {key: value for key, value in last['config'].items() if key not in ('series', 'corpus_id', 'name', 'warm_start')}
+        for key in ('concept_network_growth', 'concept_max_dim', 'concept_max_layers', 'concept_max_heads', 'concept_max_concepts'):
+            if key in payload and payload[key] is not None:
+                base[key] = payload[key]
         base['name'] = last['config']['name'].split(' · ')[0]
         job = store.create_job(request.workspace, queue_item(base, corpus, queue, last['config']['series']['order']+1))
         if not any(other['status'] in ACTIVE or other['status'] == 'created' for other in members) and not store.busy():

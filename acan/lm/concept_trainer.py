@@ -231,9 +231,16 @@ def run_training(root, identifier, stop_event=None):
         previous = checkpoints.for_resume(root_checkpoints, identity, job['checkpoint'], job['progress'].get('step', 0))
         budget = int(config.get('concept_memory_mb') or 0)*(1 << 20) or default_budget()
         tune, judge = judged_pieces(blocks, config['validation_batches'], disjoint=True)
+        growth = bool(config.get('concept_network_growth', True))
+        limits = dict(max_dim=int(config.get('concept_max_dim') or 0),
+                      max_layers=int(config.get('concept_max_layers') or 0),
+                      max_heads=int(config.get('concept_max_heads') or 0),
+                      max_concepts=int(config.get('concept_max_concepts') or 0))
         if previous:
             model, state = load(previous, identity, budget)
             model.max_context = config.get('concept_context', 512)   # used if the scales are not learned yet
+            if isinstance(model, NetText):
+                model.limits = model._clean_limits(limits)
             with store.db() as db:
                 db.execute('DELETE FROM metrics WHERE job=? AND step>?', (identifier, state['step']))
         else:
@@ -246,10 +253,22 @@ def run_training(root, identifier, stop_event=None):
             if start is not None and not isinstance(start, NetText):
                 raise ValueError('Il testo precedente della coda è stato imparato con il modello dei conteggi: '
                                  'la rete a concetti non può ripartire da lì. Crea una coda nuova.')
-            # the model of a text is the concept network alone: its concepts learned along the gradient
-            model = start if start is not None else NetText(len(tokenizer), tokenizer.eos_token_id, budget,
-                                                            config.get('concept_context', 512),
-                                                            growth=bool(config.get('concept_network_growth', True)))
+            if start is not None:
+                start.prepare_warm_start(growth=growth, limits=limits)
+                model = start
+            else:
+                fixed_net = None
+                if not growth:
+                    fixed_net = {k: v for k, v in (
+                        ('dim', limits['max_dim']),
+                        ('layers', limits['max_layers']),
+                        ('heads', limits['max_heads']),
+                        ('concepts', limits['max_concepts']),
+                    ) if v > 0} or None
+                # the model of a text is the concept network alone: its concepts learned along the gradient
+                model = NetText(len(tokenizer), tokenizer.eos_token_id, budget,
+                                config.get('concept_context', 512),
+                                network=fixed_net, growth=growth, limits=limits)
             model.tail = np.empty(0, np.int64)                   # a new text starts with an empty prefix
             state = dict(step=0, tokens_trained=0, device=device, identity=identity, model_contract=contract(profile), profile=profile,
                          dataset={key: tokens[key] for key in ('tokens', 'documents', 'duplicates', 'sha256')},

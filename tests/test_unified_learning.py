@@ -345,6 +345,47 @@ class GradualTabularEMTest(unittest.TestCase):
         self.assertEqual(len(rebuilt), len(stream))
         self.assertEqual(sorted(rebuilt.tolist()), sorted(stream.tolist()))
 
+    @unittest.skipUnless(TORCH, 'PyTorch required')
+    def test_parametric_ceilings_bounded_race_gap_and_resume_warm_start_continuity(self):
+        from acan.lm.concept_lm import from_checkpoint_arrays
+        from acan.lm.net_text import NetText
+
+        rng = np.random.default_rng(12)
+        eos = 30
+        stream = np.concatenate([np.r_[rng.integers(1, 29, size=14), eos] for _ in range(80)])
+        held = [stream[-300:]]
+
+        # 1. Parametric ceilings filter candidate directions and skip races entirely once all ceilings are reached.
+        capped = NetText(31, eos, 1 << 22, max_context=32, growth=True,
+                         network=dict(dim=16, layers=2, heads=2, concepts=4, window=1, grouped=False, passes=False),
+                         limits=dict(max_dim=16, max_layers=2, max_heads=2, max_concepts=8))
+        capped.add(stream[:300], stream, held, lambda: None)
+        self.assertTrue(capped.races)
+        self.assertEqual({c['choice'] for c in capped.races[0]['candidates']}, {"com'è", 'concetti'})
+
+        saturated = NetText(31, eos, 1 << 22, max_context=32, growth=True,
+                            network=dict(dim=16, layers=2, heads=2, concepts=4, window=1, grouped=False, passes=False),
+                            limits=dict(max_dim=16, max_layers=2, max_heads=2, max_concepts=4))
+        saturated.add(stream[:300], stream, held, lambda: None)
+        self.assertEqual(saturated.races, [])
+
+        # 2. Checkpoint save/restore preserves steps, lr, and never overflows int64 even at astronomical race_gap;
+        #    prepare_warm_start cleanly resets queue-relative counters while preserving learned token/step cooling.
+        saturated._learner.learner.steps = 12_345
+        saturated._learner.learner.lr = 1.5e-3
+        saturated.next_race = 10 ** 22
+        saturated.race_gap = 10 ** 22
+        restored = from_checkpoint_arrays(saturated.arrays())
+        self.assertEqual(restored._saved_steps, 12_345)
+        self.assertAlmostEqual(restored._saved_lr, 1.5e-3, places=6)
+        self.assertLessEqual(restored.race_gap, NetText.MAX_RACE_GAP * 4)
+
+        restored.prepare_warm_start(growth=True, limits=dict(max_dim=32, max_layers=3, max_heads=4, max_concepts=16))
+        self.assertEqual((restored.read, restored.next_race, restored.race_gap), (0, 0, 0))
+        self.assertEqual(restored.limits['max_dim'], 32)
+        restored.add(stream[300:600], stream[300:900], held, lambda: None)
+        self.assertGreaterEqual(restored._learner.learner.steps, 12_345)
+
 
 if __name__ == '__main__':
     unittest.main()
