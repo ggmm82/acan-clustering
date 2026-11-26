@@ -46,11 +46,13 @@ class NetCursor:
 
 
 class NetText:
-    NETWORK = dict(dim=64, layers=3, heads=4, concepts=[16, 32, 64], window=3,
-                   grouped=True, tabular_hierarchy=True, sentinel=True)
-    # With growth the network starts small and the data choose how it grows (``_race``)
-    GROWING = dict(dim=48, layers=1, heads=1, concepts=1, window=3,
-                   grouped=True, tabular_hierarchy=True, sentinel=True)
+    NETWORK = dict(dim=32, layers=3, heads=4, concepts=[16, 64, 256], window=1, view_window=16, cache=16,
+                   grouped=True, tabular_hierarchy=True, linear_concepts=True, sentinel=True)
+    # With growth: small synthetic vocabularies start minimal; full language vocabularies start with a multi-view pyramid
+    GROWING = dict(dim=32, layers=1, heads=1, concepts=1, window=2,
+                   grouped=True, tabular_hierarchy=True, linear_concepts=True, sentinel=True)
+    LANGUAGE_GROWING = dict(dim=32, layers=2, heads=4, concepts=[16, 64], window=1, view_window=16, cache=16,
+                            grouped=True, tabular_hierarchy=True, linear_concepts=True, sentinel=True)
     KINDS = ("com'è", 'larghezza', 'strato', 'concetti', 'teste')
     RACE_TRIAL = 65_536
     MAX_ROUNDS = 4
@@ -67,7 +69,20 @@ class NetText:
         self.growth = bool(growth)
         self.limits = self._clean_limits(limits)
         self.weight = None if weight is None else np.asarray(weight, np.float32)
-        self.network = dict(self.GROWING if self.growth else self.NETWORK, **(network or {}))
+        if self.growth and network is None and self.vocabulary >= 2048:
+            base = dict(self.LANGUAGE_GROWING, concepts=list(self.LANGUAGE_GROWING['concepts']))
+            if 0 < self.limits['max_dim'] < base['dim']:
+                base['dim'] = self.limits['max_dim']
+            if 0 < self.limits['max_heads'] < base['heads']:
+                base['heads'] = self.limits['max_heads']
+            if 0 < self.limits['max_layers'] < base['layers']:
+                base['layers'] = self.limits['max_layers']
+                base['concepts'] = base['concepts'][:base['layers']]
+            if 0 < self.limits['max_concepts']:
+                base['concepts'] = [min(c, self.limits['max_concepts']) for c in base['concepts']]
+            self.network = base
+        else:
+            self.network = dict(self.GROWING if self.growth else self.NETWORK, **(network or {}))
         self.next_race, self.races = 0, []                     # with growth: when the next race is, and their results
         self.race_gap = 0                                      # text skipped after a race the network as it is won
         self.decide_on = None                                  # the text the decisions are judged on (the queue's validation)
@@ -108,7 +123,7 @@ class NetText:
         # Capacity safety guardrails (analogous to tabular ConceptModel.max_concepts / max_levels), not requested sizes.
         max_layers = int(limits.get('max_layers') or (6 if capped else 0))
         max_heads = int(limits.get('max_heads') or (8 if capped else 0))
-        max_concepts = int(limits.get('max_concepts') or (512 if capped else 0))
+        max_concepts = int(limits.get('max_concepts') or (1024 if capped else 0))
         dim = int(network.config['dim'])
         n_layers = len(network.layers)
         heads = int(network.config['heads'])

@@ -29,7 +29,7 @@ def profile(cuda, size=None):
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='auto',
                 chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000,
-                concept_max_dim=96, concept_max_layers=0, concept_max_heads=0, concept_max_concepts=0)
+                concept_max_dim=64, concept_max_layers=0, concept_max_heads=0, concept_max_concepts=0)
 
 
 def queues(jobs):
@@ -726,10 +726,10 @@ layout = html.Div([
              dbc.Checkbox(id='lm-long-growth', value=True, label='Il grafo di concetti cresce con i dati'),
              html.Small("Come nel modello tabulare, non c'è alcun numero di concetti da scegliere: «0» lascia che concetti, punti di vista "
                         "e livelli di sotto-concetti con più concetti padre siano scelti automaticamente dalla validazione, "
-                        "mantenendo il modello decine di volte più leggero di un LLM (fino a 96 coordinate).",
+                        "mantenendo il modello decine di volte più leggero di un LLM (fino a 64 coordinate, senza matrici quadratiche).",
                         className='text-muted d-block mb-2'),
              dbc.Row([
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=96, min=0, max=2048, step=16)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=64, min=0, max=2048, step=16)]), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=0, min=0, max=32, step=1)]), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-max-heads', type='number', value=0, min=0, max=64, step=1)]), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=0, min=0, max=1024, step=1)]), md=3, className='mb-1'),
@@ -759,7 +759,7 @@ layout = html.Div([
                       dbc.Col(dbc.Button('Aggiungi in fondo alla coda', id='lm-long-add', outline=True, color='primary'), md=4)], className='mb-2'),
              dbc.Checkbox(id='lm-long-add-growth', value=True, label='Continua a far crescere il grafo di concetti sul nuovo testo', className='small mb-1'),
              dbc.Row([
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=96, min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=64, min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-add-max-layers', type='number', value=0, min=0, max=32, step=1)], size='sm'), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-add-max-heads', type='number', value=0, min=0, max=64, step=1)], size='sm'), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-add-max-concepts', type='number', value=0, min=0, max=1024, step=1)], size='sm'), md=3, className='mb-1'),
