@@ -251,9 +251,10 @@ class GrowthTest(unittest.TestCase):
         for scale, moment in ((1., 'exp_avg'), (4., 'exp_avg_sq')):
             old = base.opt.state[net.layers[0].out.weight][moment]
             new = trial.opt.state[grown.layers[0].out.weight][moment]
-            torch.testing.assert_close(new[:, :8], old[:, :8] * scale)
-            torch.testing.assert_close(new[:, 8:16], old[:, :8] * scale)
-            torch.testing.assert_close(new[:, 16:], old[:, 8:])
+            for j in range(3):
+                torch.testing.assert_close(new[:, j * 16:j * 16 + 8], old[:, j * 8:(j + 1) * 8] * scale)
+                torch.testing.assert_close(new[:, j * 16 + 8:(j + 1) * 16], old[:, j * 8:(j + 1) * 8] * scale)
+            torch.testing.assert_close(new[:, -8:], old[:, -8:])
         batch_ids, mask = _pad([ids[:12]])
         lp = grown.target_log_probs(batch_ids[:, :-1], mask[:, :-1], batch_ids[:, 1:])
         (-(lp * mask[:, 1:]).mean()).backward()

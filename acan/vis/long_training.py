@@ -29,7 +29,7 @@ def profile(cuda, size=None):
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='auto',
                 chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000,
-                concept_max_dim=48, concept_max_layers=0, concept_max_heads=0, concept_max_concepts=0)
+                concept_max_dim=96, concept_max_layers=0, concept_max_heads=0, concept_max_concepts=0)
 
 
 def queues(jobs):
@@ -406,11 +406,23 @@ def network_graph_figure(graph, selected=None):
         shown = [e for e in graph['edges'] if selected in (e['source'], e['target'])]
         near = {selected} | {e['source'] for e in shown} | {e['target'] for e in shown}
     else:
-        strongest = {}                                          # between layers, each concept's most telling specialization
+        strongest, by_child = {}, {}                            # show both outgoing specializations and multi-parent DAG links
         for e in graph['edges']:
-            if e['kind'] == 'porta a' and e.get('lift', 0) > strongest.get(e['source'], {}).get('lift', 0):
-                strongest[e['source']] = e
-        shown, near = [e for e in graph['edges'] if e['kind'] == 'legge'] + list(strongest.values()), None
+            if e['kind'] == 'porta a':
+                if e.get('lift', 0) > strongest.get(e['source'], {}).get('lift', 0):
+                    strongest[e['source']] = e
+                by_child.setdefault(e['target'], []).append(e)
+        multi_parents = []
+        for child_edges in by_child.values():
+            ranked = sorted(child_edges, key=lambda e: -(e.get('parent_share', e['weight'])))
+            multi_parents.extend(ranked[:2])
+        seen_pairs, inter = set(), []
+        for e in list(strongest.values()) + multi_parents:
+            pair = (e['source'], e['target'])
+            if pair not in seen_pairs:
+                seen_pairs.add(pair)
+                inter.append(e)
+        shown, near = [e for e in graph['edges'] if e['kind'] == 'legge'] + inter, None
     figure = go.Figure()
     for e in shown:
         if e['source'] not in place or e['target'] not in place:
@@ -420,8 +432,9 @@ def network_graph_figure(graph, selected=None):
         xs = [x0, x0 - .25, x1] if inside else [x0, (x0 + x1) / 2, x1]
         ys = [y0, (y0 + y1) / 2, y1]
         rel = 'legge' if inside else ('specializza in' if e.get('relation') == 'specializza' else e['kind'])
+        pshare = f" · padre {e['parent_share']:.0%}" if not inside and 'parent_share' in e else ''
         figure.add_scatter(x=xs, y=ys, mode='lines', showlegend=False, hoverinfo='text' if selected in place else 'skip',
-                           hovertext=f"{e['source']} {rel} {e['target']} · peso {e['weight']:.2f}",
+                           hovertext=f"{e['source']} {rel} {e['target']} · peso {e['weight']:.2f}{pshare}",
                            line=dict(width=1 + 4 * e['weight'], dash='dot' if inside else 'solid',
                                      color='rgba(220,90,40,.6)' if inside else 'rgba(60,110,200,.45)'))
     faded = lambda n: near is not None and n['id'] not in near
@@ -431,13 +444,13 @@ def network_graph_figure(graph, selected=None):
                        textfont=dict(color=['#bbb' if faded(n) else '#222' for n in nodes]),
                        marker=dict(size=[8 + 40 * n['mass'] for n in nodes],
                                    color=['#ddd' if faded(n) else ('#d9480f' if n['id'] == selected else '#2c6fbb') for n in nodes]),
-                       hovertext=[f"{n.get('role', 'concetto')} {n['id']} · {n['mass']:.0%} del gruppo<br>"
-                                  f"entrano: {', '.join(n['enters'])}<br>"
-                                  f"poi viene: {', '.join(n['follows'])}" for n in nodes], hoverinfo='text')
+                       hovertext=[f"{n.get('role', 'concetto')} {n['id']} · {n['mass']:.0%} della vista {n['group']}<br>"
+                                  f"contesto riconosciuto: {', '.join(n['enters'])}<br>"
+                                  f"token predetti: {', '.join(n['follows'])}" for n in nodes], hoverinfo='text')
     layers = sorted(rows)
     total_layers = max(layers) if layers else 1
     figure.update_layout(height=max(320, 26 * max(rows.values()) + 120), margin=dict(l=20, r=20, t=40, b=30),
-                         title='Grafo di astrazioni, concetti e sotto-concetti particolari (sul testo di validazione)',
+                         title='Grafo multi-vista di astrazioni, sotto-concetti multi-padre e token predetti',
                          uirevision='network-graph', clickmode='event', hovermode='closest',
                          xaxis=dict(tickvals=layers, ticktext=[_level_label(i, total_layers) for i in layers],
                                     range=[min(layers) - .35, max(layers) + .9]),
@@ -446,22 +459,27 @@ def network_graph_figure(graph, selected=None):
 
 
 def network_graph_info(graph, selected):
-    """What a chosen concept is: its abstraction/sub-concept role, parents, specializations, and lateral context links."""
+    """What a chosen concept is: its abstraction/sub-concept role, multiple parents, specializations, and predicted tokens."""
     by = {n['id']: n for n in graph['nodes']}
     if selected not in by:
         return None
     n = by[selected]
     out = sorted([e for e in graph['edges'] if e['source'] == selected], key=lambda e: -e['weight'])
-    into = sorted([e for e in graph['edges'] if e['target'] == selected], key=lambda e: -e['weight'])
+    into = sorted([e for e in graph['edges'] if e['target'] == selected],
+                  key=lambda e: -(e.get('parent_share', e['weight'])))
     out_label = lambda e: 'specializza in sotto-concetto' if e['kind'] == 'porta a' else 'legge nel contesto'
-    in_label = lambda e: 'sotto-concetto di astrazione' if e['kind'] == 'porta a' else 'è letto da'
-    rows = [html.Tr([html.Td(out_label(e)), html.Td(f"{e['target']} · {_concept_name(by[e['target']])}"), html.Td(f"{e['weight']:.2f}")])
-            for e in out if e['target'] in by] + \
-           [html.Tr([html.Td(in_label(e)), html.Td(f"{e['source']} · {_concept_name(by[e['source']])}"), html.Td(f"{e['weight']:.2f}")])
-            for e in into if e['source'] in by]
+    in_label = lambda e: 'concetto padre' if e['kind'] == 'porta a' else 'è letto da'
+    in_metric = lambda e: (f"{e['parent_share']:.0%} padre" if e['kind'] == 'porta a' and 'parent_share' in e
+                           else f"{e['weight']:.2f}")
+    rows = [html.Tr([html.Td(in_label(e)), html.Td(f"{e['source']} · {_concept_name(by[e['source']])}"), html.Td(in_metric(e))])
+            for e in into if e['source'] in by] + \
+           [html.Tr([html.Td(out_label(e)), html.Td(f"{e['target']} · {_concept_name(by[e['target']])}"), html.Td(f"{e['weight']:.2f}")])
+            for e in out if e['target'] in by]
     role_title = n.get('role', 'concetto').capitalize()
-    return html.Div([html.P([html.B(f"{role_title} {n['id']}"), f" (livello {n['layer']}, gruppo {n['group']}, {n['mass']:.0%} del gruppo) · "
-                             f"entrano: {', '.join(n['enters'])} · poi viene: {', '.join(n['follows'])}"], className='small mb-1'),
+    return html.Div([html.P([html.B(f"{role_title} {n['id']}"),
+                             f" (livello {n['layer']}, vista {n['group']}, {n['mass']:.0%} della vista) · "
+                             f"contesto: {', '.join(n['enters'])} · token predetti: {', '.join(n['follows'])}"],
+                            className='small mb-1'),
                      dbc.Table(html.Tbody(rows), size='sm', bordered=True, className='small') if rows else
                      html.P('Nessun arco che pesi più di una parte uguale.', className='small text-muted')])
 
@@ -606,12 +624,12 @@ layout = html.Div([
              html.Small("Un passo è un pezzo di al massimo un milione di token nuovi. Alla fine, la rete rilegge tutto il testo finché la validazione migliora. "
                         "Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
              dbc.Checkbox(id='lm-long-growth', value=True, label='Il grafo di concetti cresce con i dati'),
-             html.Small("Come nel modello tabulare, non c'è alcun numero di concetti da scegliere: «0» lascia che concetti, gruppi e livelli "
-                        "di specializzazione (astrazioni → concetti → sotto-concetti particolari) siano scelti automaticamente dalla validazione, "
-                        "tenendo compatto lo spazio metrico (48 coordinate).",
+             html.Small("Come nel modello tabulare, non c'è alcun numero di concetti da scegliere: «0» lascia che concetti, punti di vista "
+                        "e livelli di sotto-concetti con più concetti padre siano scelti automaticamente dalla validazione, "
+                        "mantenendo il modello decine di volte più leggero di un LLM (fino a 96 coordinate).",
                         className='text-muted d-block mb-2'),
              dbc.Row([
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=48, min=0, max=2048, step=16)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=96, min=0, max=2048, step=16)]), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=0, min=0, max=32, step=1)]), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-max-heads', type='number', value=0, min=0, max=64, step=1)]), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=0, min=0, max=1024, step=1)]), md=3, className='mb-1'),
@@ -641,7 +659,7 @@ layout = html.Div([
                       dbc.Col(dbc.Button('Aggiungi in fondo alla coda', id='lm-long-add', outline=True, color='primary'), md=4)], className='mb-2'),
              dbc.Checkbox(id='lm-long-add-growth', value=True, label='Continua a far crescere il grafo di concetti sul nuovo testo', className='small mb-1'),
              dbc.Row([
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=48, min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=96, min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-add-max-layers', type='number', value=0, min=0, max=32, step=1)], size='sm'), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-add-max-heads', type='number', value=0, min=0, max=64, step=1)], size='sm'), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-add-max-concepts', type='number', value=0, min=0, max=1024, step=1)], size='sm'), md=3, className='mb-1'),

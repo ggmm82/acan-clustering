@@ -46,13 +46,15 @@ class NetCursor:
 
 
 class NetText:
-    NETWORK = dict(dim=48, layers=3, heads=4, concepts=[16, 32, 64], window=3, grouped=True, pure_concepts=True, cache=0)
+    NETWORK = dict(dim=64, layers=3, heads=4, concepts=[16, 32, 64], window=3,
+                   grouped=True, tabular_hierarchy=True, sentinel=True)
     # With growth the network starts small and the data choose how it grows (``_race``)
-    GROWING = dict(dim=48, layers=1, heads=1, concepts=1, window=3, grouped=True, pure_concepts=True, cache=0)
+    GROWING = dict(dim=48, layers=1, heads=1, concepts=1, window=3,
+                   grouped=True, tabular_hierarchy=True, sentinel=True)
     KINDS = ("com'è", 'larghezza', 'strato', 'concetti', 'teste')
     RACE_TRIAL = 65_536
     MAX_ROUNDS = 4
-    MAX_RACE_GAP = 16_000_000
+    MAX_RACE_GAP = 4_000_000
 
     @staticmethod
     def _clean_limits(limits):
@@ -120,7 +122,7 @@ class NetText:
 
         next_layer = min(eligible_layers, key=_layer_priority) if eligible_layers else None
         kinds = ["com'è"]
-        if (not max_dim or 2 * dim <= max_dim) and (not capped or max(concepts_now) * heads >= max(8, dim // 2) or next_layer is None):
+        if (not max_dim or 2 * dim <= max_dim) and (not capped or max(concepts_now) >= 4 or next_layer is None):
             kinds.append('larghezza')
         if (not max_layers or n_layers + 1 <= max_layers) and (not capped or min(concepts_now) >= 4 or next_layer is None):
             kinds.append('strato')
@@ -160,8 +162,9 @@ class NetText:
                 frequency = np.bincount(sample, minlength=self.vocabulary) + 1.
                 config = {k: v for k, v in self.network.items() if k != 'passes'}
                 centres, lex_groups = (lexical_concepts(sample, self.vocabulary, config['dim'], eos=self.eos)
-                                       if config.get('pure_concepts') and config.get('grouped')
-                                       else (None, frequency_groups(frequency) if config.get('grouped') else None))
+                                       if config.get('grouped') else (None, None))
+                if config.get('grouped') and lex_groups is None:
+                    lex_groups = frequency_groups(frequency)
                 network = Network(dict(config, vocabulary=self.vocabulary), centres=centres,
                                   frequency=frequency / frequency.sum(), groups=lex_groups)
             options = dict(tokens=256, longest=min(256, self.max_context)) if self.device == 'cuda' else {}
@@ -245,7 +248,7 @@ class NetText:
                 return picked, total_tok, start_idx + len(picked)
             trial_docs, trial_size, cursor = take_trial(0)
             has_rest = cursor < len(all_docs)
-            max_rounds = 2 if has_rest else self.MAX_ROUNDS
+            max_rounds = (4 if self.tokens == 0 else 3) if has_rest else self.MAX_ROUNDS
             self._race_offset = 0
             self._race_piece = len(ids) if not has_rest else max(1, int(len(ids) * trial_size / max(all_tokens, 1)))
             round_number = 1
@@ -287,9 +290,14 @@ class NetText:
                     best = self._learner.learner.network.export()
                     self._learner.learned += rest_size
             counted.update(seen=self._learner.learner.seen, total=len(ids))  # a rereading does not advance the queue
-            max_gap = max(self.MAX_RACE_GAP, 16 * max(len(ids), 1))
-            self.race_gap = len(ids) if len(self.races) > first_race + 1 else min(max_gap, max(2 * self.race_gap, len(ids)))
-            self.next_race = end + self.race_gap
+            grew_any = any(not r['retained'] and r['choice'] != "com'è" for r in self.races[first_race:])
+            if has_rest and grew_any:
+                self.race_gap = 0
+                self.next_race = end
+            else:
+                max_gap = max(self.MAX_RACE_GAP, 4 * max(len(ids), 1))
+                self.race_gap = len(ids) if len(self.races) > first_race + 1 else min(max_gap, max(2 * self.race_gap, len(ids)))
+                self.next_race = end + self.race_gap
             if again and len(self.races) > first_race:
                 self._learner._keep(best, self._learner.best_scores)   # restore the stabilized winner if rereading does not help
             self._previous = self._learner.best_scores
@@ -603,6 +611,8 @@ class NetText:
         net = ConceptNet.from_arrays(data, 'net.')
         if net is not None:
             text.model = SimpleNamespace(net=net, tables={})
-            text.network = {k: net.config[k] for k in ('dim', 'layers', 'heads', 'concepts', 'window', 'grouped', 'pure_concepts', 'cache')
+            text.network = {k: net.config[k] for k in ('dim', 'layers', 'heads', 'concepts', 'window', 'view_window',
+                                                       'grouped', 'tabular_hierarchy', 'pure_concepts', 'cache',
+                                                       'sentinel', 'res_var_div')
                             if k in net.config}
         return text

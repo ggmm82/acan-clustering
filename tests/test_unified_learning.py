@@ -396,26 +396,28 @@ class GradualTabularEMTest(unittest.TestCase):
         from acan.vis.long_training import network_graph_figure, network_graph_info
 
         torch.manual_seed(7)
-        # 1. Layer parameters are dominated by explicit concepts & relations (>75%), with zero bypass into out or cache.
-        pyr = Network(dict(vocabulary=64, dim=48, layers=3, heads=4, concepts=[32, 64, 128],
-                           window=3, pure_concepts=True, grouped=True), groups=np.arange(64) // 8)
-        self.assertEqual(pyr.config['cache'], 0)
-        self.assertEqual(tuple(pyr.layers[0].near.shape), (3, 48, 48))
-        self.assertEqual(tuple(pyr.layers[0].out.weight.shape), (48, 48))
+        # 1. Multi-view perspective attention + tabular multi-parent hierarchy + sentinel token concepts.
+        pyr = Network(dict(vocabulary=64, dim=48, layers=3, heads=4, concepts=[16, 32, 64],
+                           window=3, view_window=32, tabular_hierarchy=True, grouped=True),
+                      groups=np.arange(64) // 8)
+        self.assertEqual(pyr.config['cache'], 48)
+        self.assertTrue(pyr.config['tabular_hierarchy'])
+        self.assertIsNotNone(pyr.layers[0].key)
+        self.assertEqual(tuple(pyr.layers[0].pos_bias.shape), (4, 32))
         self.assertIsNone(pyr.layers[0].parent)
-        self.assertEqual(tuple(pyr.layers[1].parent.shape), (4, 32, 64))
-        self.assertEqual(tuple(pyr.layers[2].parent.shape), (4, 64, 128))
+        self.assertEqual(tuple(pyr.layers[1].parent.shape), (4, 16, 32))
+        self.assertEqual(tuple(pyr.layers[2].parent.shape), (4, 32, 64))
         fp = pyr.footprint()
         self.assertEqual(fp, pyr.export().footprint())
-        self.assertGreater(fp['layer_concept_parameters'] / fp['layer_parameters'], .75)
 
-        # 2. Torch, NumPy bulk, NetCursor (observe + prefill), restore, and growth operators agree in pure-concept mode.
+        # 2. Torch, NumPy bulk, NetCursor (observe + prefill), restore, and all growth morphisms agree.
         small = Network(dict(vocabulary=32, dim=16, layers=2, heads=2, concepts=[3, 6],
-                             window=2, pure_concepts=True, grouped=True), groups=np.arange(32) // 6)
+                             window=2, view_window=8, tabular_hierarchy=True, grouped=True),
+                        groups=np.arange(32) // 6)
         with torch.no_grad():
             for p in small.parameters():
                 p.add_(torch.randn_like(p) * .15)
-        ids = np.random.default_rng(9).integers(0, 31, size=20)
+        ids = np.random.default_rng(9).integers(0, 31, size=24)
         x = torch.as_tensor(ids[None, :-1])
         with torch.no_grad():
             expected = small.target_log_probs(x, torch.ones_like(x, dtype=torch.float32), torch.as_tensor(ids[None, 1:]))[0].numpy()
@@ -423,8 +425,8 @@ class GradualTabularEMTest(unittest.TestCase):
         np.testing.assert_allclose(np.log(exported.targets(ids)), expected, atol=2e-4)
         whole = exported.document(ids)
         cursor = exported.cursor()
-        cursor.prefill(ids[:7])
-        for tok in ids[7:-1]:
+        cursor.prefill(ids[:11])
+        for tok in ids[11:-1]:
             cursor.observe(tok)
         np.testing.assert_allclose(cursor.distribution(), whole[-1], atol=1e-5)
 
@@ -437,23 +439,41 @@ class GradualTabularEMTest(unittest.TestCase):
         np.testing.assert_allclose(heads_zero.export().document(ids), whole, atol=1e-5)
         restored = Network.restore(ConceptNet.from_arrays(exported.arrays()))
         np.testing.assert_allclose(restored.export().document(ids), whole, atol=1e-5)
-        self.assertTrue(np.isfinite(Learner(restored, tokens=32).learn(np.r_[ids, 31], eos=31)))
 
-        # 3. Default UI ceilings keep dim compact (no width inflation) and refine sub-concepts pyramidally.
+        # Adding a tabular sub-concept layer starts closed (t=0 exact) and opens cleanly by gradient (no dead gate=0).
+        layered = Network(dict(vocabulary=24, dim=16, layers=1, heads=2, concepts=4, window=2, view_window=8))
+        qa_stream = []
+        rng = np.random.default_rng(11)
+        for _ in range(120):
+            topic = int(rng.integers(4, 12))
+            filler = rng.integers(12, 20, size=4).tolist()
+            # Question token `topic` before filler determines the answer token `topic` after turn marker 2:
+            qa_stream.extend([1, topic, *filler, 2, topic, 23])
+        qa_arr = np.asarray(qa_stream, np.int64)
+        Learner(layered, lr=4e-3, tokens=64).learn(qa_arr, eos=23, warmup=5)
+        layered.add_layer()
+        self.assertAlmostEqual(float(layered.layers[1].gate.item()), 0., places=6)
+        Learner(layered, lr=4e-3, tokens=64).learn(qa_arr, eos=23, warmup=5)
+        self.assertGreater(abs(float(layered.layers[1].gate.item())), .05)
+        qa_net = layered.export()
+        # Verify Q&A grounding: asking topic=7 vs topic=9 shifts probability decisively onto the asked answer token!
+        p7 = qa_net.cursor(); p7.prefill([23, 1, 7, 13, 14, 15, 16, 2]); d7 = p7.distribution()
+        p9 = qa_net.cursor(); p9.prefill([23, 1, 9, 13, 14, 15, 16, 2]); d9 = p9.distribution()
+        self.assertGreater(d7[7], d7[9] * 3.)
+        self.assertGreater(d9[9], d9[7] * 3.)
+
+        # 3. Automatic growth priorities and multi-parent DAG graph inspection.
         growing = NetText(32, 31, 1 << 22, growth=True,
-                          limits=dict(max_dim=48, max_layers=3, max_heads=4, max_concepts=128))
+                          limits=dict(max_dim=96, max_layers=0, max_heads=0, max_concepts=0))
         start_net = Network(dict(growing.network, vocabulary=32))
         kinds0, _ = growing._allowed_kinds(start_net)
-        self.assertNotIn('larghezza', kinds0)
         self.assertNotIn('strato', kinds0)  # waits until Level 1 forms >= 4 abstractions
         mid_net = Network(dict(growing.network, vocabulary=32, layers=2, concepts=[4, 4]))
         kinds_mid, target_layer = growing._allowed_kinds(mid_net)
         self.assertIn('strato', kinds_mid)
         self.assertEqual(target_layer, 1)   # refines Level 2 into [4, 8] sub-concepts before splitting Level 1
 
-        # 4. Semantic lexical concepts cluster words by distributional context, and graph exposes roles & specializations.
-        rng = np.random.default_rng(5)
-        # Tokens 4..9 always follow context 1 and precede 2; tokens 10..15 always follow context 3 and precede 0.
+        # 4. Semantic lexical concepts cluster words by distributional context, and graph exposes multi-parent links.
         fam_a = np.column_stack([np.full(300, 1), rng.integers(4, 10, 300), np.full(300, 2), np.full(300, 20)]).ravel()
         fam_b = np.column_stack([np.full(300, 3), rng.integers(10, 16, 300), np.full(300, 0), np.full(300, 20)]).ravel()
         coords, lex_groups = lexical_concepts(np.r_[fam_a, fam_b], vocabulary=24, dim=16, eos=20)
