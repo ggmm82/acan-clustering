@@ -150,6 +150,16 @@ class DescribeTest(unittest.TestCase):
         from acan.vis.long_training import network_graph_view
         self.assertIsNotNone(network_graph_view(g))
 
+        from acan.lm.concept_net_training import Network
+        tiny = Network(config(layers=1, heads=1, concepts=1))
+        g1 = tiny.export().graph(docs)
+        self.assertEqual([n['id'] for n in g1['nodes']], ['1.1.1'])
+        self.assertIsNotNone(network_graph_view(g1))
+        tiny.split_concepts(0)
+        g2 = tiny.export().graph(docs)
+        self.assertTrue(len(g2['nodes']) >= 1)
+        self.assertIsNotNone(network_graph_view(g2))
+
     def test_every_layer_says_how_many_concepts_work_and_shows_examples(self):
         from acan.lm.concept_net_training import Network
         net = Network(config()).export()
@@ -238,11 +248,11 @@ class GrowthTest(unittest.TestCase):
             new_v = trial.opt.state[getattr(grown.layers[0], name)]['exp_avg_sq']
             torch.testing.assert_close(new_v[:1], old_v * .25)
             torch.testing.assert_close(new_v[1:], old_v * .25)
-        for power, moment in ((1, 'exp_avg'), (2, 'exp_avg_sq')):
+        for scale, moment in ((1., 'exp_avg'), (4., 'exp_avg_sq')):
             old = base.opt.state[net.layers[0].out.weight][moment]
             new = trial.opt.state[grown.layers[0].out.weight][moment]
-            torch.testing.assert_close(new[:, :8], old[:, :8] * (2. ** power))
-            torch.testing.assert_close(new[:, 8:16], old[:, :8] * (2. ** power))
+            torch.testing.assert_close(new[:, :8], old[:, :8] * scale)
+            torch.testing.assert_close(new[:, 8:16], old[:, :8] * scale)
             torch.testing.assert_close(new[:, 16:], old[:, 8:])
         batch_ids, mask = _pad([ids[:12]])
         lp = grown.target_log_probs(batch_ids[:, :-1], mask[:, :-1], batch_ids[:, 1:])

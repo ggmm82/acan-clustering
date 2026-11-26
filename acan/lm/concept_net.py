@@ -53,11 +53,20 @@ class ConceptNet:
             self._members = np.split(order, np.cumsum(counts)[:-1])
 
     # ---- one layer -------------------------------------------------------------------------------------
-    def _memberships(self, i, q):
+    def _pure_layer(self, i):
+        H, d, _ = self.shape(i)
+        return self.p[f'layers.{i}.out.weight'].shape[1] == H * d
+
+    def _memberships(self, i, q, t_prev=None):
         g, log_s, log_c = self.p[f'layers.{i}.g'], self.p[f'layers.{i}.log_s'], self.p[f'layers.{i}.log_c']
         inv = np.exp(-2 * log_s)                                             # the square expanded: no position x concept x d
         quad = np.einsum('...hd,hkd->...hk', q * q, inv) - 2 * np.einsum('...hd,hkd->...hk', q, g * inv) + (g * g * inv).sum(-1)
-        return _softmax(log_c - .5 * quad - log_s.sum(-1))
+        logits = log_c - .5 * quad - log_s.sum(-1)
+        parent = self.p.get(f'layers.{i}.parent')
+        if parent is not None and t_prev is not None:
+            lift = np.einsum('...hp,hpk->...hk', t_prev, np.exp(np.clip(parent, -10., 10.)))
+            logits = logits + np.log(np.maximum(lift, 1e-12))
+        return _softmax(logits)
 
     def shape(self, i):
         """Groups, coordinates of a group and nearby distances of layer i."""
@@ -65,10 +74,14 @@ class ConceptNet:
         return H, d, self.p[f'layers.{i}.near'].shape[0]
 
     def footprint(self):
-        weights = [value for name, value in self.p.items() if name != 'group']
+        weights = [(name, value) for name, value in self.p.items() if name != 'group']
+        layer_params = sum(v.size for name, v in weights if name.startswith('layers.'))
+        concept_params = sum(v.size for name, v in weights
+                             if name.startswith('layers.') and name.endswith(('.g', '.log_s', '.log_c', '.A', '.parent')))
         return dict(dim=self.dim, layers=self.layers,
                     groups=[list(self.p[f'layers.{i}.g'].shape[:2]) for i in range(self.layers)],
-                    parameters=sum(value.size for value in weights), bytes=sum(value.nbytes for value in weights))
+                    parameters=sum(v.size for _, v in weights), bytes=sum(v.nbytes for _, v in weights),
+                    layer_parameters=layer_params, layer_concept_parameters=concept_params)
 
     def _project(self, i, h):
         H, d, _ = self.shape(i)
@@ -76,8 +89,9 @@ class ConceptNet:
         v = (h @ self.p[f'layers.{i}.value.weight'].T).reshape(*h.shape[:-1], H, d)
         return q, v
 
-    def _finish(self, i, h, read, near):
-        out = np.concatenate([read, near], -1) @ self.p[f'layers.{i}.out.weight'].T + self.p[f'layers.{i}.out.bias']
+    def _finish(self, i, h, read, near=None):
+        inp = read if near is None else np.concatenate([read, near], -1)
+        out = inp @ self.p[f'layers.{i}.out.weight'].T + self.p[f'layers.{i}.out.bias']
         new = _layer_norm(h + out, self.p[f'layers.{i}.norm1.weight'], self.p[f'layers.{i}.norm1.bias'])
         new = _layer_norm(new, self.p[f'layers.{i}.norm2.weight'], self.p[f'layers.{i}.norm2.bias'])
         gate = self.p.get(f'layers.{i}.gate')                      # how open the layer is (older networks: open)
@@ -102,9 +116,16 @@ class ConceptNet:
         memberships of every layer (T x H x K)."""
         h = self.p['centre.weight'][np.asarray(ids, np.int64)]
         T = len(h)
+        t_prev = None
         for i in range(self.layers):
-            q, v = self._project(i, h)
-            t = self._memberships(i, q)                                       # T H K
+            W = self.shape(i)[2]
+            pure = self._pure_layer(i)
+            near = np.zeros_like(h)
+            for w in range(1, W + 1):
+                if w < T:
+                    near[w:] += h[:-w] @ self.p[f'layers.{i}.near'][w - 1]
+            q, v = self._project(i, h + near if pure else h)
+            t = self._memberships(i, q, t_prev)                               # T H K
             if memberships is not None:
                 memberships.append(t)
             written = self._written(i, h, t)
@@ -112,11 +133,8 @@ class ConceptNet:
             sums = np.cumsum(written[..., None] * v[:, :, None, :], 0)        # T H K d
             weight = np.einsum('thk,hkj->thj', t, self._looked(i)) / mass
             read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
-            near = np.zeros_like(h)
-            for w in range(1, self.shape(i)[2] + 1):
-                if w < T:
-                    near[w:] += h[:-w] @ self.p[f'layers.{i}.near'][w - 1]
-            h = self._finish(i, h, read, near)
+            h = self._finish(i, h, read, None if pure else near)
+            t_prev = t
         return h @ self.p['final.weight'].T + self.p['final.bias']
 
     def _logits(self, h, centres, log_mass):
@@ -254,16 +272,24 @@ class ConceptNet:
         word = (lambda ids: [decode([int(x)]).strip() or repr(decode([int(x)])) for x in ids]) if decode else (lambda ids: [str(int(x)) for x in ids])
         nodes, edges, kept = [], [], []
         for i in range(self.layers):
+            role = ('concetto' if self.layers == 1 else
+                    ('astrazione' if i == 0 else
+                     ('sotto-concetto particolare' if i == self.layers - 1 else 'concetto intermedio')))
             t = np.concatenate(found[i])                                       # positions x H x K
             H, K = t.shape[1:]
-            share = t.sum(0) / t.sum((0, 2))[:, None]                          # H x K
-            keep = {(h, k) for h in range(H) for k in range(K) if share[h, k] > 1 / K}
+            share = t.sum(0) / np.maximum(t.sum((0, 2))[:, None], 1e-12)       # H x K
+            threshold = 0. if K <= 1 else (max(1e-3, .25 / K) if K <= 8 else (1. - 1e-5) / K)
+            keep = {(h, k) for h in range(H) for k in range(K) if share[h, k] >= threshold}
+            for h in range(H):
+                if not any(h0 == h for h0, _ in keep):
+                    keep.add((h, int(np.argmax(share[h]))))
             kept.append((t, keep))
             for h, k in sorted(keep):
                 w = t[:, h, k]
                 into = np.bincount(now, weights=w, minlength=self.vocabulary)
                 out = np.bincount(after, weights=w, minlength=self.vocabulary)
-                nodes.append(dict(id=f'{i + 1}.{h + 1}.{k + 1}', layer=i + 1, group=h + 1, concept=k + 1, mass=float(share[h, k]),
+                nodes.append(dict(id=f'{i + 1}.{h + 1}.{k + 1}', layer=i + 1, group=h + 1, concept=k + 1,
+                                  role=role, mass=float(share[h, k]),
                                   enters=word(telling(into, everywhere_in)), follows=word(telling(out, everywhere_out))))
             A = self._looked(i)                                                # H x K x K: k reads k'
             for h, k in sorted(keep):
@@ -275,14 +301,21 @@ class ConceptNet:
             (t1, keep1), (t2, keep2) = kept[i], kept[i + 1]
             H2, K2 = t2.shape[1:]
             base = t2.mean(0)                                                  # what a next concept holds anyway
+            parent_mat = self.p.get(f'layers.{i + 1}.parent')
+            log_c_next = self.p.get(f'layers.{i + 1}.log_c')
+            struct_prob = (_softmax(np.clip(parent_mat, -10., 10.) + log_c_next[:, None, :], axis=-1)
+                           if parent_mat is not None and log_c_next is not None else None)
             for h, k in sorted(keep1):
                 w = t1[:, h, k]
                 spread = (w[:, None, None] * t2).sum(0) / max(w.sum(), 1e-12)  # H2 x K2, each group sums to one
                 for h2, k2 in sorted(keep2):
-                    if spread[h2, k2] > 1 / K2 and spread[h2, k2] > base[h2, k2]:
+                    spec = (float(struct_prob[h, k, k2])
+                            if struct_prob is not None and h == h2 and h < struct_prob.shape[0] else None)
+                    weight = float(.5 * (spec + spread[h2, k2]) if spec is not None else spread[h2, k2])
+                    if (K2 == 1 and h == h2) or (weight > 1 / K2 and weight > base[h2, k2]):
                         edges.append(dict(source=f'{i + 1}.{h + 1}.{k + 1}', target=f'{i + 2}.{h2 + 1}.{k2 + 1}',
-                                          weight=float(spread[h2, k2]), kind='porta a',
-                                          lift=float(spread[h2, k2] / max(base[h2, k2], 1e-12))))
+                                          weight=weight, kind='porta a', relation='specializza',
+                                          lift=float(weight / max(base[h2, k2], 1e-12))))
         return dict(nodes=nodes, edges=edges)
 
     def describe(self, documents, decode=None, concepts=3, examples=4):
@@ -372,23 +405,26 @@ class NetCursor:
         net = self.net
         h = net.p['centre.weight'][ids]
         T = len(h)
+        t_prev = None
         for i in range(net.layers):
-            q, v = net._project(i, h)
-            t = net._memberships(i, q)
-            written = net._written(i, h, t)
-            mass = np.cumsum(written, 0) + self.mass[i]
-            sums = np.cumsum(written[..., None] * v[:, :, None, :], 0) + self.sums[i]
-            weight = np.einsum('thk,hkj->thj', t, net._looked(i)) / mass
-            read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
             W = net.shape(i)[2]
+            pure = net._pure_layer(i)
             before = np.array(self.recent[i][-W:]).reshape(-1, net.dim)
             padded = np.vstack([np.zeros((W - len(before), net.dim), np.float32), before, h])
             near = np.zeros_like(h)
             for w in range(1, W + 1):
                 near += padded[W - w:W - w + T] @ net.p[f'layers.{i}.near'][w - 1]
+            q, v = net._project(i, h + near if pure else h)
+            t = net._memberships(i, q, t_prev)
+            written = net._written(i, h, t)
+            mass = np.cumsum(written, 0) + self.mass[i]
+            sums = np.cumsum(written[..., None] * v[:, :, None, :], 0) + self.sums[i]
+            weight = np.einsum('thk,hkj->thj', t, net._looked(i)) / mass
+            read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
             self.mass[i], self.sums[i] = mass[-1], sums[-1]
             self.recent[i] = list(padded[-W:])
-            h = net._finish(i, h, read, near)
+            h = net._finish(i, h, read, None if pure else near)
+            t_prev = t
         states = h @ net.p['final.weight'].T + net.p['final.bias']
         if net.cached:
             if self.state is not None:
@@ -402,20 +438,23 @@ class NetCursor:
         if net.cached and self.state is not None:                           # the last state was followed by token
             self.keys.append(net._addresses(self.state)[1]); self.after.append(int(token))
         h = net.p['centre.weight'][int(token)]
+        t_prev = None
         for i in range(net.layers):
-            q, v = net._project(i, h)
-            t = net._memberships(i, q)                                         # H K
+            W = net.shape(i)[2]
+            pure = net._pure_layer(i)
+            near = np.zeros_like(h)
+            for w, previous in enumerate(reversed(self.recent[i][-W:]), 1):
+                near += previous @ net.p[f'layers.{i}.near'][w - 1]
+            q, v = net._project(i, h + near if pure else h)
+            t = net._memberships(i, q, t_prev)                                 # H K
             written = net._written(i, h, t)
             self.mass[i] += written
             self.sums[i] += written[..., None] * v[:, None, :]
             weight = np.einsum('hk,hkj->hj', t, net._looked(i)) / self.mass[i]
             read = np.einsum('hj,hjd->hd', weight, self.sums[i]).reshape(-1)
-            W = net.shape(i)[2]
-            near = np.zeros_like(h)
-            for w, previous in enumerate(reversed(self.recent[i][-W:]), 1):
-                near += previous @ net.p[f'layers.{i}.near'][w - 1]
             self.recent[i] = (self.recent[i] + [h])[-W:]
-            h = net._finish(i, h, read, near)
+            h = net._finish(i, h, read, None if pure else near)
+            t_prev = t
         self.state = h @ net.p['final.weight'].T + net.p['final.bias']
 
     def distribution(self):

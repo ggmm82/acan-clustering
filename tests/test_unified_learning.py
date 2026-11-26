@@ -345,6 +345,127 @@ class GradualTabularEMTest(unittest.TestCase):
         self.assertEqual(len(rebuilt), len(stream))
         self.assertEqual(sorted(rebuilt.tolist()), sorted(stream.tolist()))
 
+    @unittest.skipUnless(TORCH, 'PyTorch required')
+    def test_parametric_ceilings_bounded_race_gap_and_resume_warm_start_continuity(self):
+        from acan.lm.concept_lm import from_checkpoint_arrays
+        from acan.lm.net_text import NetText
+
+        rng = np.random.default_rng(12)
+        eos = 30
+        stream = np.concatenate([np.r_[rng.integers(1, 29, size=14), eos] for _ in range(80)])
+        held = [stream[-300:]]
+
+        # 1. Parametric ceilings filter candidate directions and skip races entirely once all ceilings are reached.
+        capped = NetText(31, eos, 1 << 22, max_context=32, growth=True,
+                         network=dict(dim=16, layers=2, heads=2, concepts=4, window=1, grouped=False, passes=False),
+                         limits=dict(max_dim=16, max_layers=2, max_heads=2, max_concepts=8))
+        capped.add(stream[:300], stream, held, lambda: None)
+        self.assertTrue(capped.races)
+        self.assertEqual({c['choice'] for c in capped.races[0]['candidates']}, {"com'è", 'concetti'})
+
+        saturated = NetText(31, eos, 1 << 22, max_context=32, growth=True,
+                            network=dict(dim=16, layers=2, heads=2, concepts=4, window=1, grouped=False, passes=False),
+                            limits=dict(max_dim=16, max_layers=2, max_heads=2, max_concepts=4))
+        saturated.add(stream[:300], stream, held, lambda: None)
+        self.assertEqual(saturated.races, [])
+
+        # 2. Checkpoint save/restore preserves steps, lr, and never overflows int64 even at astronomical race_gap;
+        #    prepare_warm_start cleanly resets queue-relative counters while preserving learned token/step cooling.
+        saturated._learner.learner.steps = 12_345
+        saturated._learner.learner.lr = 1.5e-3
+        saturated.next_race = 10 ** 22
+        saturated.race_gap = 10 ** 22
+        restored = from_checkpoint_arrays(saturated.arrays())
+        self.assertEqual(restored._saved_steps, 12_345)
+        self.assertAlmostEqual(restored._saved_lr, 1.5e-3, places=6)
+        self.assertLessEqual(restored.race_gap, NetText.MAX_RACE_GAP * 4)
+
+        restored.prepare_warm_start(growth=True, limits=dict(max_dim=32, max_layers=3, max_heads=4, max_concepts=16))
+        self.assertEqual((restored.read, restored.next_race, restored.race_gap), (0, 0, 0))
+        self.assertEqual(restored.limits['max_dim'], 32)
+        restored.add(stream[300:600], stream[300:900], held, lambda: None)
+        self.assertGreaterEqual(restored._learner.learner.steps, 12_345)
+
+    @unittest.skipUnless(TORCH, 'PyTorch required')
+    def test_hierarchical_abstraction_subconcept_graph_and_pure_concept_share(self):
+        import copy
+        import torch
+        from acan.lm.concept_net import ConceptNet
+        from acan.lm.concept_net_training import Learner, Network, lexical_concepts
+        from acan.lm.net_text import NetText
+        from acan.vis.long_training import network_graph_figure, network_graph_info
+
+        torch.manual_seed(7)
+        # 1. Layer parameters are dominated by explicit concepts & relations (>75%), with zero bypass into out or cache.
+        pyr = Network(dict(vocabulary=64, dim=48, layers=3, heads=4, concepts=[32, 64, 128],
+                           window=3, pure_concepts=True, grouped=True), groups=np.arange(64) // 8)
+        self.assertEqual(pyr.config['cache'], 0)
+        self.assertEqual(tuple(pyr.layers[0].near.shape), (3, 48, 48))
+        self.assertEqual(tuple(pyr.layers[0].out.weight.shape), (48, 48))
+        self.assertIsNone(pyr.layers[0].parent)
+        self.assertEqual(tuple(pyr.layers[1].parent.shape), (4, 32, 64))
+        self.assertEqual(tuple(pyr.layers[2].parent.shape), (4, 64, 128))
+        fp = pyr.footprint()
+        self.assertEqual(fp, pyr.export().footprint())
+        self.assertGreater(fp['layer_concept_parameters'] / fp['layer_parameters'], .75)
+
+        # 2. Torch, NumPy bulk, NetCursor (observe + prefill), restore, and growth operators agree in pure-concept mode.
+        small = Network(dict(vocabulary=32, dim=16, layers=2, heads=2, concepts=[3, 6],
+                             window=2, pure_concepts=True, grouped=True), groups=np.arange(32) // 6)
+        with torch.no_grad():
+            for p in small.parameters():
+                p.add_(torch.randn_like(p) * .15)
+        ids = np.random.default_rng(9).integers(0, 31, size=20)
+        x = torch.as_tensor(ids[None, :-1])
+        with torch.no_grad():
+            expected = small.target_log_probs(x, torch.ones_like(x, dtype=torch.float32), torch.as_tensor(ids[None, 1:]))[0].numpy()
+        exported = small.export()
+        np.testing.assert_allclose(np.log(exported.targets(ids)), expected, atol=2e-4)
+        whole = exported.document(ids)
+        cursor = exported.cursor()
+        cursor.prefill(ids[:7])
+        for tok in ids[7:-1]:
+            cursor.observe(tok)
+        np.testing.assert_allclose(cursor.distribution(), whole[-1], atol=1e-5)
+
+        split_zero = copy.deepcopy(small)
+        split_zero.split_one(0, torch.tensor([1, 2]), noise=0)
+        np.testing.assert_allclose(split_zero.export().document(ids), whole, atol=1e-5)
+        widened_zero = small.widened(noise=0)
+        np.testing.assert_allclose(widened_zero.export().document(ids), whole, atol=1e-5)
+        heads_zero = small.more_heads(noise=0)
+        np.testing.assert_allclose(heads_zero.export().document(ids), whole, atol=1e-5)
+        restored = Network.restore(ConceptNet.from_arrays(exported.arrays()))
+        np.testing.assert_allclose(restored.export().document(ids), whole, atol=1e-5)
+        self.assertTrue(np.isfinite(Learner(restored, tokens=32).learn(np.r_[ids, 31], eos=31)))
+
+        # 3. Default UI ceilings keep dim compact (no width inflation) and refine sub-concepts pyramidally.
+        growing = NetText(32, 31, 1 << 22, growth=True,
+                          limits=dict(max_dim=48, max_layers=3, max_heads=4, max_concepts=128))
+        start_net = Network(dict(growing.network, vocabulary=32))
+        kinds0, _ = growing._allowed_kinds(start_net)
+        self.assertNotIn('larghezza', kinds0)
+        self.assertNotIn('strato', kinds0)  # waits until Level 1 forms >= 4 abstractions
+        mid_net = Network(dict(growing.network, vocabulary=32, layers=2, concepts=[4, 4]))
+        kinds_mid, target_layer = growing._allowed_kinds(mid_net)
+        self.assertIn('strato', kinds_mid)
+        self.assertEqual(target_layer, 1)   # refines Level 2 into [4, 8] sub-concepts before splitting Level 1
+
+        # 4. Semantic lexical concepts cluster words by distributional context, and graph exposes roles & specializations.
+        rng = np.random.default_rng(5)
+        # Tokens 4..9 always follow context 1 and precede 2; tokens 10..15 always follow context 3 and precede 0.
+        fam_a = np.column_stack([np.full(300, 1), rng.integers(4, 10, 300), np.full(300, 2), np.full(300, 20)]).ravel()
+        fam_b = np.column_stack([np.full(300, 3), rng.integers(10, 16, 300), np.full(300, 0), np.full(300, 20)]).ravel()
+        coords, lex_groups = lexical_concepts(np.r_[fam_a, fam_b], vocabulary=24, dim=16, eos=20)
+        self.assertIsNotNone(coords)
+        self.assertEqual(len(set(lex_groups[4:10]) & set(lex_groups[10:16])), 0)
+
+        g_data = pyr.export().graph([np.arange(1, 30), np.arange(5, 35)])
+        self.assertTrue({n['role'] for n in g_data['nodes']} <= {'astrazione', 'concetto intermedio', 'sotto-concetto particolare'})
+        self.assertIsNotNone(network_graph_figure(g_data))
+        if g_data['nodes']:
+            self.assertIsNotNone(network_graph_info(g_data, g_data['nodes'][0]['id']))
+
 
 if __name__ == '__main__':
     unittest.main()
