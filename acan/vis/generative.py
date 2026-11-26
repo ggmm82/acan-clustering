@@ -1247,7 +1247,7 @@ def register(app):
         available = [dict(label=("Migliore conservato · " if s.get('best') else "")+f"Passo {s['step']}"+(f" · validazione {s['validation_nll']:.3f}" if s.get('validation_nll') is not None else ""), value=s['name']) for s in job['snapshots']]
         selected_snapshot = checkpoint if checkpoint in {s['value'] for s in available} else available[0]['value'] if available else None
         if job['config'].get('architecture') == 'concepts':
-            # The concept model: the main numbers as tiles, everything else folded.
+            # The concept model: the main numbers as tiles, its concept graph directly visible, everything else folded.
             status = {'completed': 'ha finito', 'running': 'sta imparando', 'preparing': 'prepara i token', 'paused': 'in pausa',
                       'queued': 'in partenza', 'failed': 'errore', 'created': 'in attesa'}.get(job['status'], job['status'])
             head = [html.P([html.B(job['config'].get('name', 'Progetto')), f' · {status}'], className='mb-1'),
@@ -1255,7 +1255,7 @@ def register(app):
                     long_training.concept_summary(metrics, job['config'], status=job['status'])]
             fold = long_training.folded('Tutti i dettagli del progetto', [item for item in detail if item is not None],
                                         'lm-project-details', 'mb-2')
-            return head+[fold], figure, available, selected_snapshot
+            return [h for h in head if h is not None]+[fold], figure, available, selected_snapshot
         return detail, figure, available, selected_snapshot
 
     @app.callback(Output('lm-manage-status','children'),Output('lm-refresh','n_clicks',allow_duplicate=True),
