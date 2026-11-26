@@ -46,9 +46,9 @@ class NetCursor:
 
 
 class NetText:
-    NETWORK = dict(dim=96, layers=3, heads=4, concepts=64, window=3, grouped=True)
+    NETWORK = dict(dim=48, layers=3, heads=4, concepts=[16, 32, 64], window=3, grouped=True, pure_concepts=True, cache=0)
     # With growth the network starts small and the data choose how it grows (``_race``)
-    GROWING = dict(dim=32, layers=1, heads=1, concepts=1, window=3, grouped=True)
+    GROWING = dict(dim=48, layers=1, heads=1, concepts=1, window=3, grouped=True, pure_concepts=True, cache=0)
     KINDS = ("com'è", 'larghezza', 'strato', 'concetti', 'teste')
     RACE_TRIAL = 65_536
     MAX_ROUNDS = 4
@@ -99,23 +99,29 @@ class NetText:
         self._decide_docs = None
 
     def _allowed_kinds(self, network):
-        """Growth candidates still within the configured architectural ceilings (0 = unlimited)."""
+        """Growth candidates within the configured ceilings, prioritizing pyramidal sub-concept refinement."""
         limits = getattr(self, 'limits', None) or {}
         max_dim = int(limits.get('max_dim') or 0)
         max_layers = int(limits.get('max_layers') or 0)
         max_heads = int(limits.get('max_heads') or 0)
         max_concepts = int(limits.get('max_concepts') or 0)
+        capped = bool(max_dim or max_layers or max_heads or max_concepts)
         dim = int(network.config['dim'])
         n_layers = len(network.layers)
         heads = int(network.config['heads'])
         concepts_now = network.config['concepts']
         eligible_layers = [i for i in range(n_layers) if not max_concepts or 2 * int(concepts_now[i]) <= max_concepts]
-        next_layer = (min(eligible_layers, key=lambda i: (concepts_now[i], (i - len(self.races)) % n_layers))
-                      if eligible_layers else None)
+
+        def _layer_priority(i):
+            if concepts_now[i] <= 1:
+                return (0, float(i), 0)
+            return (1, concepts_now[i] / (2 ** i), (i - len(self.races)) % n_layers)
+
+        next_layer = min(eligible_layers, key=_layer_priority) if eligible_layers else None
         kinds = ["com'è"]
-        if not max_dim or 2 * dim <= max_dim:
+        if (not max_dim or 2 * dim <= max_dim) and (not capped or max(concepts_now) * heads >= max(8, dim // 2) or next_layer is None):
             kinds.append('larghezza')
-        if not max_layers or n_layers + 1 <= max_layers:
+        if (not max_layers or n_layers + 1 <= max_layers) and (not capped or min(concepts_now) >= 4 or next_layer is None):
             kinds.append('strato')
         if next_layer is not None:
             kinds.append('concetti')
@@ -136,7 +142,7 @@ class NetText:
     def add(self, ids, train, tune, check, documents=None, starts_in_piece=None):
         import copy as _copy
         from copy import copy
-        from .concept_net_training import Grower, Network, documents as cut_documents, frequency_groups, held_out
+        from .concept_net_training import Grower, Network, documents as cut_documents, frequency_groups, held_out, lexical_concepts
         ids = np.asarray(ids, np.int64)
         w = getattr(self, 'weight', None)
         if not len(self.tail):                                  # a new text of the queue begins
@@ -152,8 +158,11 @@ class NetText:
                 sample = np.asarray(train[:min(len(train), 4_000_000)], np.int64) if len(train) else ids
                 frequency = np.bincount(sample, minlength=self.vocabulary) + 1.
                 config = {k: v for k, v in self.network.items() if k != 'passes'}
-                network = Network(dict(config, vocabulary=self.vocabulary), frequency=frequency / frequency.sum(),
-                                  groups=frequency_groups(frequency) if config.get('grouped') else None)
+                centres, lex_groups = (lexical_concepts(sample, self.vocabulary, config['dim'], eos=self.eos)
+                                       if config.get('pure_concepts') and config.get('grouped')
+                                       else (None, frequency_groups(frequency) if config.get('grouped') else None))
+                network = Network(dict(config, vocabulary=self.vocabulary), centres=centres,
+                                  frequency=frequency / frequency.sum(), groups=lex_groups)
             options = dict(tokens=256, longest=min(256, self.max_context)) if self.device == 'cuda' else {}
             if w is not None:
                 options['weight'] = w
@@ -593,6 +602,6 @@ class NetText:
         net = ConceptNet.from_arrays(data, 'net.')
         if net is not None:
             text.model = SimpleNamespace(net=net, tables={})
-            text.network = {k: net.config[k] for k in ('dim', 'layers', 'heads', 'concepts', 'window', 'grouped')
+            text.network = {k: net.config[k] for k in ('dim', 'layers', 'heads', 'concepts', 'window', 'grouped', 'pure_concepts', 'cache')
                             if k in net.config}
         return text

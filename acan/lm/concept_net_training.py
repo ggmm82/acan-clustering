@@ -146,12 +146,17 @@ def causal_read(weight, t, v, chunk):
 
 
 class ConceptAttention(nn.Module):
-    def __init__(self, dim, heads, concepts, window, head_dim=None):
+    def __init__(self, dim, heads, concepts, window, head_dim=None, prev_concepts=0, pure_concepts=False):
         super().__init__()
         self.h, self.d = heads, int(head_dim or dim // heads)
+        self.pure_concepts = bool(pure_concepts)
         self.g = nn.Parameter(torch.randn(heads, concepts, self.d) * .5)
         self.log_s = nn.Parameter(torch.zeros(heads, concepts, self.d))
         self.log_c = nn.Parameter(torch.zeros(heads, concepts))
+        if prev_concepts > 0:
+            self.parent = nn.Parameter(torch.zeros(heads, prev_concepts, concepts))
+        else:
+            self.register_parameter('parent', None)
         # Each concept starts by reading primarily its own summary (with A=0 every concept read the same uniform mean).
         eye = torch.eye(concepts).unsqueeze(0).expand(heads, -1, -1).clone() if concepts > 1 else torch.zeros(heads, 1, 1)
         self.A = nn.Parameter(1.5 * eye)
@@ -159,7 +164,7 @@ class ConceptAttention(nn.Module):
         self.value = nn.Linear(dim, heads * self.d, bias=False)
         self.write = nn.Parameter(torch.zeros(heads, dim))  # one content-dependent write strength per head
         self.near = nn.Parameter(torch.randn(window, dim, dim) * .02)
-        self.out = nn.Linear(heads * self.d + dim, dim)
+        self.out = nn.Linear(heads * self.d if self.pure_concepts else heads * self.d + dim, dim)
         self.norm1, self.norm2 = nn.LayerNorm(dim), nn.LayerNorm(dim)
         # how open the layer is: its state is h + gate (layer(h) - h). An existing layer is open (1); a layer just
         # added is closed (0), so it leaves the state as it is, whatever the state is, and the gradient opens it
@@ -168,11 +173,27 @@ class ConceptAttention(nn.Module):
         self.chunk = 64
         self._em_stats = None
 
-    def forward(self, h, mask):
+    def _local(self, h):
+        if not self.pure_concepts:
+            return h
+        T = h.shape[1]
+        return h + sum(F.pad(h, (0, 0, w, 0))[:, :T] @ self.near[w - 1] for w in range(1, self.window + 1))
+
+    def _logits(self, q, t_prev=None):
+        logits = memberships_logits(q, self.g, self.log_s, self.log_c)
+        if self.parent is not None and t_prev is not None:
+            lift = torch.einsum('bthp,hpk->bthk', t_prev, torch.exp(self.parent.clamp(-10., 10.)))
+            logits = logits + torch.log(lift.clamp_min(1e-12))
+        return logits
+
+    def forward(self, h, mask, t_prev=None, return_memberships=False):
         B, T, D = h.shape
-        q = self.query(h).view(B, T, self.h, self.d)
-        v = self.value(h).view(B, T, self.h, self.d)
-        t = torch.softmax(memberships_logits(q, self.g, self.log_s, self.log_c), -1) * mask[:, :, None, None]
+        near = sum(F.pad(h, (0, 0, w, 0))[:, :T] @ self.near[w - 1] for w in range(1, self.window + 1))
+        h_in = h + near if self.pure_concepts else h
+        q = self.query(h_in).view(B, T, self.h, self.d)
+        v = self.value(h_in).view(B, T, self.h, self.d)
+        t_prob = torch.softmax(self._logits(q, t_prev), -1)
+        t = t_prob * mask[:, :, None, None]
         if self.training:
             with torch.no_grad():
                 qd, td = q.detach(), t.detach()
@@ -194,9 +215,10 @@ class ConceptAttention(nn.Module):
         mass = torch.cumsum(written, 1) + 1e-6
         weight = torch.einsum('bthk,hkj->bthj', t, torch.softmax(self.A, -1)) / mass
         read = causal_read(weight, written, v, self.chunk).reshape(B, T, self.h * self.d)
-        near = sum(F.pad(h, (0, 0, w, 0))[:, :T] @ self.near[w - 1] for w in range(1, self.window + 1))
-        new = self.norm2(self.norm1(h + self.out(torch.cat([read, near], -1))))
-        return h + self.gate * (new - h)
+        out_proj = self.out(read) if self.pure_concepts else self.out(torch.cat([read, near], -1))
+        new = self.norm2(self.norm1(h + out_proj))
+        out_h = h + self.gate * (new - h)
+        return (out_h, t_prob) if return_memberships else out_h
 
 
 class Network(nn.Module):
@@ -217,14 +239,19 @@ class Network(nn.Module):
         concepts = config['concepts'] if isinstance(config['concepts'], list) else [config['concepts']] * config['layers']
         self.config['concepts'] = list(concepts)
         self.config.setdefault('head_dim', max(1, dim // max(int(config['heads']), 1)))
-        self.layers = nn.ModuleList([ConceptAttention(dim, config['heads'], k, config['window'], self.config['head_dim'])
-                                     for k in concepts])
+        pure = bool(config.get('pure_concepts', False))
+        self.config['pure_concepts'] = pure
+        self.layers = nn.ModuleList([
+            ConceptAttention(dim, config['heads'], k, config['window'], self.config['head_dim'],
+                             prev_concepts=(concepts[idx - 1] if idx > 0 else 0), pure_concepts=pure)
+            for idx, k in enumerate(concepts)
+        ])
         self.final = nn.Linear(dim, dim)
         # The memory of the document, learned: every position read leaves an address (a projection of its state) with
         # the token that followed it; a position reads the tokens that followed the addresses most like its own. One
         # more address, "none is like mine" (its likeness learned from the state), stands for the reading of the
         # network: the memory counts only as far as some address is more alike than that one.
-        self.config.setdefault('cache', dim)                   # its addresses are as wide as the state
+        self.config.setdefault('cache', 0 if pure else dim)    # pure concept graphs keep memory solely in concepts
         self.config.setdefault('sentinel', True)
         c = self.config['cache']
         if c:
@@ -260,8 +287,9 @@ class Network(nn.Module):
 
     def states(self, ids, mask):
         h = self.centre(ids)
+        t_prev = None
         for layer in self.layers:
-            h = layer(h, mask)
+            h, t_prev = layer(h, mask, t_prev=t_prev, return_memberships=True)
         return self.final(h)
 
     def _logits(self, h, centres, log_mass):
@@ -342,7 +370,21 @@ class Network(nn.Module):
                 A[:, idx + K, idx + K] += stay
                 A[:, idx, idx + K] += cross
                 A[:, idx + K, idx] += cross
+            new_parent = None
+            if layer.parent is not None:
+                p_eps = torch.randn_like(layer.parent) * (float(scale) * .04) if scale else 0.
+                new_parent = torch.cat([layer.parent + p_eps, layer.parent - p_eps], 2)
+            next_parent = None
+            if i + 1 < len(self.layers) and self.layers[i + 1].parent is not None:
+                nxt_p = self.layers[i + 1].parent
+                next_parent = torch.cat([nxt_p, nxt_p], 1)
         layer.g, layer.log_s, layer.log_c, layer.A = (nn.Parameter(x.contiguous()) for x in (g, log_s, log_c, A))
+        if new_parent is not None:
+            layer.parent = nn.Parameter(new_parent.contiguous())
+        if next_parent is not None:
+            self.layers[i + 1].parent = nn.Parameter(next_parent.contiguous())
+            if scale:
+                self.layers[i + 1]._parent_boost = True
         if scale:
             layer._awakened = True
         self.config['concepts'][i] = int(g.shape[1])
@@ -351,13 +393,15 @@ class Network(nn.Module):
         """Split one concept per head in a single layer, preserving its mass and attention."""
         layer = self.layers[layer_index]
         prefix = f'layers.{layer_index}.'
+        next_prefix = f'layers.{layer_index + 1}.'
         with torch.no_grad():
-            raw = layer.state_dict(prefix=prefix)
+            raw = dict(layer.state_dict(prefix=prefix))
+            if layer_index + 1 < len(self.layers) and self.layers[layer_index + 1].parent is not None:
+                raw[next_prefix + 'parent'] = self.layers[layer_index + 1].parent.detach().clone()
             if layer.g.shape[1] == 1 and noise and getattr(layer, '_k1_stats', None) is not None:
                 # For K=1, softmax([logit]) == 1 identically for any (g, log_s); aligning to the empirical
                 # query mean/dispersion before splitting gives 50/50 child responsibilities with zero output drift.
                 mean_q, log_std_q = layer._k1_stats
-                raw = dict(raw)
                 raw[prefix+'g'] = mean_q.to(device=self.device, dtype=layer.g.dtype).unsqueeze(1).clone()
                 raw[prefix+'log_s'] = log_std_q.to(device=self.device, dtype=layer.log_s.dtype).unsqueeze(1).clone()
             values = self._copy_split(raw, layer_index, selected)
@@ -382,6 +426,10 @@ class Network(nn.Module):
         was_single = layer.g.shape[1] == 1
         for name in ('g', 'log_s', 'log_c', 'A'):
             setattr(layer, name, nn.Parameter(values[prefix+name].contiguous()))
+        if layer.parent is not None and prefix + 'parent' in values:
+            layer.parent = nn.Parameter(values[prefix + 'parent'].contiguous())
+        if layer_index + 1 < len(self.layers) and next_prefix + 'parent' in values:
+            self.layers[layer_index + 1].parent = nn.Parameter(values[next_prefix + 'parent'].contiguous())
         if was_single and noise:
             layer._awakened = True
         self.config['concepts'][layer_index] += 1
@@ -401,6 +449,14 @@ class Network(nn.Module):
         key = prefix+'A'
         if key in values:
             copied[key] = values[key][heads[:, None, None], order[:, :, None], order[:, None, :]]
+        pkey = prefix + 'parent'
+        if pkey in values:
+            prev_idx = torch.arange(values[pkey].shape[1], device=self.device)[None, :, None]
+            copied[pkey] = values[pkey][heads[:, None, None], prev_idx, order[:, None, :]]
+        nkey = f'layers.{layer_index + 1}.parent'
+        if nkey in values:
+            next_idx = torch.arange(values[nkey].shape[2], device=self.device)[None, None, :]
+            copied[nkey] = values[nkey][heads[:, None, None], order[:, :, None], next_idx]
         return copied
 
     @torch.no_grad()
@@ -417,9 +473,10 @@ class Network(nn.Module):
                         continue
                     tokens, mask = _pad([docs[index][:-1]], self.device)
                     hidden = self.centre(tokens)
+                    t_prev = None
                     for previous in self.layers[:layer_index]:
-                        hidden = previous(hidden, mask)
-                    q = layer.query(hidden).view(-1, layer.h, layer.d)
+                        hidden, t_prev = previous(hidden, mask, t_prev=t_prev, return_memberships=True)
+                    q = layer.query(layer._local(hidden)).view(-1, layer.h, layer.d)
                     sum_q += q.sum(0)
                     sum_q2 += q.square().sum(0)
                     count += int(q.shape[0])
@@ -433,25 +490,31 @@ class Network(nn.Module):
         for index in np.linspace(0, len(docs)-1, min(8, len(docs)), dtype=int):
             tokens, mask = _pad([docs[index][:-1]], self.device)
             hidden = self.centre(tokens)
+            t_prev = None
             for previous in self.layers[:layer_index]:
-                hidden = previous(hidden, mask)
-            q = layer.query(hidden).view(1, tokens.shape[1], layer.h, layer.d)
-            logits = memberships_logits(q, layer.g, layer.log_s, layer.log_c)
+                hidden, t_prev = previous(hidden, mask, t_prev=t_prev, return_memberships=True)
+            q = layer.query(layer._local(hidden)).view(1, tokens.shape[1], layer.h, layer.d)
+            logits = layer._logits(q, t_prev)
             usage += logits.softmax(-1)[0].sum(0)
         return usage.argmax(dim=-1)
 
     def add_layer(self):
-        """A new last layer that leaves the states as they are: it starts closed, and the gradient opens it."""
+        """A new sub-concept layer specialized from the layer above: it starts closed, and the gradient opens it."""
         dim, last = self.config['dim'], self.layers[-1]
-        layer = ConceptAttention(dim, self.config['heads'], int(last.g.shape[1]), self.config['window'], self.config['head_dim']).to(self.device)
+        prev_k = int(last.g.shape[1])
+        layer = ConceptAttention(dim, self.config['heads'], prev_k, self.config['window'], self.config['head_dim'],
+                                 prev_concepts=prev_k, pure_concepts=bool(self.config.get('pure_concepts', False))).to(self.device)
         with torch.no_grad():
             # Keep out non-zero so (new - h) carries signal on step 1 while gate=0 preserves the state exactly.
             nn.init.normal_(layer.out.weight, std=.02); layer.out.bias.zero_()
+            if layer.parent is not None and prev_k > 1:
+                eye = torch.eye(prev_k, device=self.device).unsqueeze(0).expand(layer.h, -1, -1).clone()
+                layer.parent.copy_(1.0 * eye)
             layer.gate.zero_()                                         # closed: the state goes through as it is
         layer._layer_boost = True
         self.layers.append(layer)
         self.config['layers'] = len(self.layers)
-        self.config['concepts'].append(int(last.g.shape[1]))
+        self.config['concepts'].append(prev_k)
 
     def _like(self, **change):
         """A network with the configuration changed, its own parameters at their start (to be filled)."""
@@ -503,7 +566,7 @@ class Network(nn.Module):
                 elif part == 'write':
                     v = half_in(v)
                 elif part == 'near':
-                    v = torch.cat([torch.cat([half(v), half(v)], -1)] * 2, -2)
+                    v = torch.cat([v, v], -1) if v.ndim == 2 else torch.cat([torch.cat([half(v), half(v)], -1)] * 2, -2)
                 elif part == 'out.weight':
                     read, near = v[:, :H * d], v[:, H * d:]
                     read = torch.cat([half(read.view(D, H, d))] * 2, -1).reshape(D, 2 * H * d)
@@ -551,7 +614,7 @@ class Network(nn.Module):
                     value = apart(value, ref)
                 elif part in ('query.weight', 'value.weight'):
                     value = apart(value)
-                elif part in ('log_s', 'log_c', 'A', 'write'):
+                elif part in ('log_s', 'log_c', 'A', 'parent', 'write'):
                     value = torch.cat((value * head_scale, value * head_scale), dim=0)
                 elif part == 'out.weight':
                     read, near = value[:, :read_width], value[:, read_width:]
@@ -574,11 +637,15 @@ class Network(nn.Module):
 
     def footprint(self):
         """Architecture of the live network without exporting or moving its weights."""
-        weights = tuple(self.parameters())
+        named = tuple(self.named_parameters())
+        layer_params = sum(w.numel() for name, w in named if name.startswith('layers.'))
+        concept_params = sum(w.numel() for name, w in named
+                             if name.startswith('layers.') and name.endswith(('.g', '.log_s', '.log_c', '.A', '.parent')))
         return dict(dim=int(self.config['dim']), layers=len(self.layers),
                     groups=[list(layer.g.shape[:2]) for layer in self.layers],
-                    parameters=sum(weight.numel() for weight in weights),
-                    bytes=sum(weight.numel() * weight.element_size() for weight in weights))
+                    parameters=sum(w.numel() for _, w in named),
+                    bytes=sum(w.numel() * w.element_size() for _, w in named),
+                    layer_parameters=layer_params, layer_concept_parameters=concept_params)
 
     def export(self):
         """The parameters as numpy arrays, read by ConceptNet."""
@@ -589,13 +656,19 @@ class Network(nn.Module):
     def restore(cls, net):
         """A network that goes on learning from a ConceptNet (the parameters saved in a checkpoint)."""
         groups = net.p['group'].astype(np.int64) if 'group' in net.p else None
-        config = dict(net.config, cache=net.config.get('cache', 0) if 'cache_query.weight' in net.p else 0)
+        pure_default = (net.p['layers.0.out.weight'].shape[1] == net.p['layers.0.g'].shape[0] * net.p['layers.0.g'].shape[2]
+                        if 'layers.0.out.weight' in net.p and 'layers.0.g' in net.p else False)
+        pure = bool(net.config.get('pure_concepts', pure_default))
+        config = dict(net.config, pure_concepts=pure,
+                      cache=net.config.get('cache', 0) if 'cache_query.weight' in net.p else 0)
         config.setdefault('sentinel', False)                   # older networks: the memory with its valve
         model = cls(config, groups=groups)
         state = {k: torch.as_tensor(v) for k, v in net.p.items()}
         for i in range(len(model.layers)):                             # older networks: every layer open
             state.setdefault(f'layers.{i}.gate', torch.ones(()))
             state.setdefault(f'layers.{i}.write', torch.zeros_like(model.layers[i].write))
+            if model.layers[i].parent is not None:
+                state.setdefault(f'layers.{i}.parent', torch.zeros_like(model.layers[i].parent))
         if groups is not None:
             state['group'] = torch.as_tensor(groups)
         model.load_state_dict(state)
@@ -623,6 +696,76 @@ def output_groups(token_classes, frequency, limit=512):
         for start in range(0, len(members), limit):
             group[members[start:start + limit]] = n; n += 1
     return group
+
+
+def lexical_concepts(sample, vocabulary, dim, eos=None):
+    """Discover distributional coordinates and semantic lexical sub-concepts of the vocabulary using ACAN's Fisher-EM
+    algebra on context co-occurrences."""
+    sample = np.asarray(sample, np.int64)
+    counts = np.bincount(sample, minlength=vocabulary).astype(np.float64)
+    frequency = counts + 1.
+    if len(sample) < 64 or vocabulary < 16:
+        return None, frequency_groups(frequency)
+    order = np.argsort(-counts, kind='stable')
+    anchors = [int(t) for t in order if t != eos and counts[t] > 0][:min(32, vocabulary)]
+    if len(anchors) < 4:
+        return None, frequency_groups(frequency)
+    k_anc = len(anchors)
+    rank = np.full(vocabulary, -1, np.int32)
+    rank[anchors] = np.arange(k_anc, dtype=np.int32)
+    width = 2 * k_anc
+    cooc = np.zeros((vocabulary, width), np.float64)
+    left_r = rank[sample[:-1]]
+    sel_l = left_r >= 0
+    if np.any(sel_l):
+        idx_l = sample[1:][sel_l] * width + left_r[sel_l]
+        cooc += np.bincount(idx_l, minlength=vocabulary * width).reshape(vocabulary, width)
+    right_r = rank[sample[1:]]
+    sel_r = right_r >= 0
+    if np.any(sel_r):
+        idx_r = sample[:-1][sel_r] * width + (k_anc + right_r[sel_r])
+        cooc += np.bincount(idx_r, minlength=vocabulary * width).reshape(vocabulary, width)
+    total = max(cooc.sum(), 1.)
+    ppmi = np.maximum(np.log((cooc * total) / ((cooc.sum(1, keepdims=True) + 1e-9) * (cooc.sum(0, keepdims=True) + 1e-9)) + 1e-9), 0.)
+    ppmi /= np.maximum(np.linalg.norm(ppmi, axis=1, keepdims=True), 1e-6)
+    _, evecs = np.linalg.eigh(ppmi.T @ ppmi)
+    coord_dim = min(int(dim), width)
+    coords = ppmi @ evecs[:, ::-1][:, :coord_dim]
+    em_dim = min(coord_dim, 16)
+    x = coords[:, :em_dim]
+    seen = counts > 0
+    seen_idx = np.flatnonzero(seen)
+    if len(seen_idx) < 4:
+        return coords.astype(np.float32), frequency_groups(frequency)
+    n_clusters = max(2, min(128, int(round(math.sqrt(vocabulary))), len(seen_idx) // 2))
+    x_seen = x[seen_idx]
+    rng = np.random.default_rng(0)
+    picks = np.linspace(0, len(seen_idx) - 1, n_clusters, dtype=int)
+    g = x_seen[picks].copy() + rng.normal(0., 1e-3, size=(n_clusters, em_dim))
+    root_v = np.maximum(x_seen.var(axis=0, keepdims=True), 1e-3)
+    log_s = .5 * np.log(np.repeat(root_v, n_clusters, axis=0))
+    log_c = np.full(n_clusters, -math.log(n_clusters))
+    token_w = np.log1p(counts[seen_idx])
+    for _ in range(6):
+        inv_v = np.exp(-2. * log_s)
+        quad = (x_seen * x_seen) @ inv_v.T - 2. * x_seen @ (g * inv_v).T + (g * g * inv_v).sum(-1)[None, :]
+        logits = log_c[None, :] - .5 * quad - log_s.sum(-1)[None, :]
+        logits -= logits.max(axis=1, keepdims=True)
+        resp = np.exp(logits)
+        resp /= np.maximum(resp.sum(axis=1, keepdims=True), 1e-12)
+        w_resp = resp * token_w[:, None]
+        bc = w_resp.sum(0)
+        bu = w_resp.T @ x_seen
+        bq = w_resp.T @ (x_seen * x_seen)
+        log_c, g, log_s = natural_em_parameters(log_c, g, log_s, bc, bu, bq, root_v, 1e-2, 1.0, np)
+        log_s = np.clip(log_s, -4., 3.)
+    inv_v = np.exp(-2. * log_s)
+    quad_all = (x_seen * x_seen) @ inv_v.T - 2. * x_seen @ (g * inv_v).T + (g * g * inv_v).sum(-1)[None, :]
+    logits_all = log_c[None, :] - .5 * quad_all - log_s.sum(-1)[None, :]
+    classes = np.full(vocabulary, n_clusters, dtype=np.int64)
+    classes[seen_idx] = logits_all.argmax(axis=1)
+    limit = max(16, int(math.ceil(2. * math.sqrt(vocabulary))))
+    return coords.astype(np.float32), output_groups(classes, frequency, limit=limit)
 
 
 def documents(ids, eos, longest, begin=False):
@@ -723,10 +866,14 @@ class Learner:
                     target.append(p)
         for layer in network.layers:
             was_awakened = getattr(layer, '_awakened', False)
+            was_parent = getattr(layer, '_parent_boost', False)
             was_layer = getattr(layer, '_layer_boost', False)
-            layer._awakened = layer._layer_boost = False
+            layer._awakened = layer._parent_boost = layer._layer_boost = False
             if was_awakened:
-                add_unique(awakened, [layer.query.weight, layer.g, layer.log_s, layer.log_c, layer.A])
+                extra = [layer.parent] if layer.parent is not None else []
+                add_unique(awakened, [layer.query.weight, layer.g, layer.log_s, layer.log_c, layer.A, *extra])
+            elif was_parent and layer.parent is not None:
+                add_unique(awakened, [layer.parent])
             if was_layer:
                 add_unique(grown_params, list(layer.parameters()))
         regular = [p for p in network.parameters() if id(p) not in seen_special]
@@ -796,6 +943,8 @@ class Learner:
             with torch.no_grad():
                 for layer in self.network.layers:
                     layer.gate.clamp_(-1.5, 1.5)
+                    if layer.parent is not None:
+                        layer.parent.clamp_(-8., 8.)
             self._concept_em_step(step_lr)
             self._pull_back(step_lr)
             total += loss.item() * m.sum().item(); n += m.sum().item()
@@ -844,15 +993,28 @@ class Learner:
             elif isinstance(split, tuple):
                 values = before.network._copy_split(values, *split)
             elif kind == 'concetti':
-                prefix = f'layers.{split}.' if isinstance(split, int) else 'layers.'
                 m_scale, a_scale = .5 ** power, .25 ** power
-                for name in list(values):
-                    if not name.startswith(prefix):
-                        continue
-                    if name.endswith(('.g', '.log_s', '.log_c')):
-                        values[name] = torch.cat([values[name] * m_scale] * 2, 1)
-                    elif name.endswith('.A'):
-                        values[name] = torch.cat([torch.cat([values[name] * a_scale] * 2, 2)] * 2, 1)
+                if isinstance(split, int):
+                    prefix = f'layers.{split}.'
+                    next_parent = f'layers.{split + 1}.parent'
+                    for name in list(values):
+                        if name == next_parent:
+                            values[name] = torch.cat([values[name] * m_scale] * 2, 1)
+                        elif name.startswith(prefix):
+                            if name.endswith(('.g', '.log_s', '.log_c')):
+                                values[name] = torch.cat([values[name] * m_scale] * 2, 1)
+                            elif name.endswith('.parent'):
+                                values[name] = torch.cat([values[name] * m_scale] * 2, 2)
+                            elif name.endswith('.A'):
+                                values[name] = torch.cat([torch.cat([values[name] * a_scale] * 2, 2)] * 2, 1)
+                else:
+                    for name in list(values):
+                        if not name.startswith('layers.'):
+                            continue
+                        if name.endswith(('.g', '.log_s', '.log_c')):
+                            values[name] = torch.cat([values[name] * m_scale] * 2, 1)
+                        elif name.endswith(('.A', '.parent')):
+                            values[name] = torch.cat([torch.cat([values[name] * a_scale] * 2, 2)] * 2, 1)
             maps[moment] = values
         for name, p in self.network.named_parameters():
             v_sq = maps['exp_avg_sq'].get(name)

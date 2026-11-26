@@ -24,11 +24,12 @@ QUEUE_NAME = 'Modello a concetti'
 
 
 def profile(cuda, size=None):
-    """The settings of the concept language model: the concept network, its concepts learned along the gradient.
+    """The settings of the concept language model: a hierarchical graph of concepts, abstractions and sub-concepts.
     ``size`` is accepted for earlier callers and ignored."""
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='auto',
-                chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000)
+                chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000,
+                concept_max_dim=48, concept_max_layers=3, concept_max_heads=4, concept_max_concepts=128)
 
 
 def queues(jobs):
@@ -296,17 +297,22 @@ def concept_footprint_view(item):
     size = shape.get('bytes', progress.get('statistics_bytes')) if shape else None
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
     cap_parts = [f"{label} {int(config.get(key) or 0) or 'illimitato'}" for label, key in (
-        ('larghezza', 'concept_max_dim'), ('strati', 'concept_max_layers'),
-        ('teste', 'concept_max_heads'), ('concetti/testa', 'concept_max_concepts'))]
+        ('larghezza', 'concept_max_dim'), ('livelli', 'concept_max_layers'),
+        ('gruppi', 'concept_max_heads'), ('concetti/gruppo', 'concept_max_concepts'))]
+    layer_p = (shape or {}).get('layer_parameters') or 0
+    concept_p = (shape or {}).get('layer_concept_parameters') or 0
+    concept_share = (f"{100 * concept_p / layer_p:.0f}% ({concept_p:,} su {layer_p:,} parametri degli strati)"
+                     if layer_p > 0 else None)
     rows = [
         ('Modello', [
-            ('Tipo', 'rete a concetti: i concetti dei token e di ogni strato imparati col gradiente prevedendo il token che segue'),
+            ('Tipo', 'grafo gerarchico di concetti, astrazioni e sotto-concetti particolari collegati da matrici esplicite'),
             ('Vocabolario', f"{(progress.get('graft') or {}).get('vocabulary', 0):,} token" if progress.get('graft') else
              (f"{config.get('vocabulary', 32000):,} token, lo stesso del testo precedente della coda (si stanno preparando i token di questo testo)"
-              if config.get('warm_start') else f"{config.get('vocabulary', 32000):,} token (si sta imparando dai testi della coda)")),
-            ('Contesto letto', 'tutto il documento, attraverso le somme dei concetti di ogni strato'),
-            ('Concetti per strato', ' · '.join(f'{count:,}' for count in levels) if levels else '—'),
+              if config.get('warm_start') else f"{config.get('vocabulary', 32000):,} token (raggruppati in concetti lessicali semantici)")),
+            ('Contesto letto', 'tutto il documento, esclusivamente attraverso le somme dei concetti e le loro relazioni'),
+            ('Concetti per livello', ' → '.join(f'{count:,}' for count in levels) if levels else '—'),
             ('Concetti in tutto', f'{sum(levels):,}' if levels else '—'),
+            *([('Quota concetti negli strati', concept_share)] if concept_share else []),
             *( [('Tetti di crescita', ' · '.join(cap_parts))] if config.get('concept_network_growth', True) else [('Taglia fissa', 'crescita disattivata')] ),
             ('Dimensione dei parametri', _bytes(size) if size else '—')]),
         ('Avanzamento e velocità', [
@@ -321,11 +327,11 @@ def concept_footprint_view(item):
             ('Errore su testo mai visto', number(progress.get('validation_nll'))),
             ('Migliore finora', number(progress.get('best_validation_nll'))),
             ('Prima di leggere questo testo', number(progress.get('baseline_nll')))]),
-        *([('Rete a concetti', [
-            ('Apprendimento', 'si è fermata: la validazione non migliorava più' if progress.get('network_stopped') else 'impara a ogni pezzo'),
+        *([('Grafo dei concetti', [
+            ('Apprendimento', 'si è fermata: la validazione non migliorava più' if progress.get('network_stopped') else 'raffina concetti e sotto-concetti a ogni pezzo'),
             *[(f"Crescita a {race['tokens']:,} token" + (f" · tornata {race['round']}" if race.get('round') else ''), _race_summary(race))
               for race in progress.get('network_races') or []],
-            *[(f"Strato {layer['layer']}",
+            *[(f"Livello {layer['layer']}",
                f"{' · '.join(f'{a:.0f}' for a in layer['active'])} concetti attivi per gruppo; "
                + (f"in un concetto il token più frequente è il {layer['tied']:.0%}. " if layer['tied'] is not None else '')
                + ' '.join(f"Concetto {c['concept']} ({c['mass']:.0%}): " + ' | '.join(c['examples']) for c in layer['concepts']))
@@ -351,20 +357,27 @@ def concept_footprint_view(item):
     return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')), details])
 
 
+def _level_label(layer, total):
+    if total <= 1:
+        return f'livello {layer} · concetti'
+    if layer == 1:
+        return 'livello 1 · astrazioni'
+    if layer == total:
+        return f'livello {layer} · sotto-concetti particolari'
+    return f'livello {layer} · concetti intermedi'
+
+
 def network_graph_view(graph):
-    """The graph of the network, to explore: a column per layer, a node per concept that works (its size is its mass,
-    its name the tokens that enter it and the tokens that follow it), solid edges from a layer to the next (where the
-    positions of a concept go), dotted edges inside a layer (which concepts a concept reads). A click on a concept shows
-    all its edges and lists them; a second click lets it go."""
+    """The inspectable graph of concepts, abstractions and particular sub-concepts."""
     if not graph or not graph.get('nodes'):
         return None
-    note = html.P("Un nodo è un concetto che lavora: il nome dice quali token vi entrano → quali token vengono dopo; la grandezza, "
-                  "la sua parte del gruppo. Linee continue: il concetto dello strato dopo dove vanno le posizioni del concetto, "
-                  "più di quanto ci andrebbero comunque. Linee punteggiate: quali concetti dello stesso strato il concetto legge. "
-                  "Si mostrano i concetti e gli archi che pesano più di una parte uguale; senza scelta, fra gli strati solo l'arco "
-                  "più caratteristico di ogni concetto. Clic su un concetto: tutti i suoi archi, e l'elenco qui sotto.",
+    note = html.P("Ogni colonna è un livello di astrazione (dalle astrazioni generali a sinistra fino ai sotto-concetti particolari a destra). "
+                  "Ogni nodo mostra le espressioni che vi entrano → le espressioni che seguono; la grandezza è la sua quota nel gruppo. "
+                  "Linee continue: specializzazione tra un'astrazione e i suoi sotto-concetti particolari. "
+                  "Linee punteggiate: quali altri concetti dello stesso livello un concetto legge nel contesto. "
+                  "Clic su un nodo per ispezionare astrazioni madri, sotto-concetti figli e relazioni contestuali.",
                   className='small text-muted')
-    return html.Div([html.H6('Il grafo della rete', className='mt-3'),
+    return html.Div([html.H6('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti', className='mt-3'),
                      dcc.Graph(id='lm-network-graph', figure=network_graph_figure(graph), config={'scrollZoom': True}),
                      dcc.Store(id='lm-network-data', data=graph), html.Div(id='lm-network-info'), note])
 
@@ -384,7 +397,7 @@ def network_graph_figure(graph, selected=None):
         shown = [e for e in graph['edges'] if selected in (e['source'], e['target'])]
         near = {selected} | {e['source'] for e in shown} | {e['target'] for e in shown}
     else:
-        strongest = {}                                          # between layers, each concept's most telling edge
+        strongest = {}                                          # between layers, each concept's most telling specialization
         for e in graph['edges']:
             if e['kind'] == 'porta a' and e.get('lift', 0) > strongest.get(e['source'], {}).get('lift', 0):
                 strongest[e['source']] = e
@@ -397,8 +410,9 @@ def network_graph_figure(graph, selected=None):
         inside = e['kind'] == 'legge'
         xs = [x0, x0 - .25, x1] if inside else [x0, (x0 + x1) / 2, x1]
         ys = [y0, (y0 + y1) / 2, y1]
+        rel = 'legge' if inside else ('specializza in' if e.get('relation') == 'specializza' else e['kind'])
         figure.add_scatter(x=xs, y=ys, mode='lines', showlegend=False, hoverinfo='text' if selected in place else 'skip',
-                           hovertext=f"{e['source']} {e['kind']} {e['target']} · peso {e['weight']:.2f}",
+                           hovertext=f"{e['source']} {rel} {e['target']} · peso {e['weight']:.2f}",
                            line=dict(width=1 + 4 * e['weight'], dash='dot' if inside else 'solid',
                                      color='rgba(220,90,40,.6)' if inside else 'rgba(60,110,200,.45)'))
     faded = lambda n: near is not None and n['id'] not in near
@@ -408,31 +422,36 @@ def network_graph_figure(graph, selected=None):
                        textfont=dict(color=['#bbb' if faded(n) else '#222' for n in nodes]),
                        marker=dict(size=[8 + 40 * n['mass'] for n in nodes],
                                    color=['#ddd' if faded(n) else ('#d9480f' if n['id'] == selected else '#2c6fbb') for n in nodes]),
-                       hovertext=[f"concetto {n['id']} · {n['mass']:.0%} del gruppo<br>entrano: {', '.join(n['enters'])}<br>"
+                       hovertext=[f"{n.get('role', 'concetto')} {n['id']} · {n['mass']:.0%} del gruppo<br>"
+                                  f"entrano: {', '.join(n['enters'])}<br>"
                                   f"poi viene: {', '.join(n['follows'])}" for n in nodes], hoverinfo='text')
     layers = sorted(rows)
+    total_layers = max(layers) if layers else 1
     figure.update_layout(height=max(320, 26 * max(rows.values()) + 120), margin=dict(l=20, r=20, t=40, b=30),
-                         title='Il grafo della rete: concetti e relazioni, misurati sul testo di validazione',
+                         title='Grafo di astrazioni, concetti e sotto-concetti particolari (sul testo di validazione)',
                          uirevision='network-graph', clickmode='event', hovermode='closest',
-                         xaxis=dict(tickvals=layers, ticktext=[f'strato {i}' for i in layers], range=[min(layers) - .35, max(layers) + .9]),
+                         xaxis=dict(tickvals=layers, ticktext=[_level_label(i, total_layers) for i in layers],
+                                    range=[min(layers) - .35, max(layers) + .9]),
                          yaxis=dict(visible=False, autorange='reversed'))
     return figure
 
 
 def network_graph_info(graph, selected):
-    """What a chosen concept is: its tokens, the concepts it reads and that read it, where its positions go and come from."""
+    """What a chosen concept is: its abstraction/sub-concept role, parents, specializations, and lateral context links."""
     by = {n['id']: n for n in graph['nodes']}
     if selected not in by:
         return None
     n = by[selected]
     out = sorted([e for e in graph['edges'] if e['source'] == selected], key=lambda e: -e['weight'])
     into = sorted([e for e in graph['edges'] if e['target'] == selected], key=lambda e: -e['weight'])
-    words = {'legge': ('legge', 'è letto da'), 'porta a': ('porta a', 'viene da')}
-    rows = [html.Tr([html.Td(words[e['kind']][0]), html.Td(f"{e['target']} · {_concept_name(by[e['target']])}"), html.Td(f"{e['weight']:.2f}")])
-            for e in out] + \
-           [html.Tr([html.Td(words[e['kind']][1]), html.Td(f"{e['source']} · {_concept_name(by[e['source']])}"), html.Td(f"{e['weight']:.2f}")])
-            for e in into]
-    return html.Div([html.P([html.B(f"Concetto {n['id']}"), f" (strato {n['layer']}, gruppo {n['group']}, {n['mass']:.0%} del gruppo) · "
+    out_label = lambda e: 'specializza in sotto-concetto' if e['kind'] == 'porta a' else 'legge nel contesto'
+    in_label = lambda e: 'sotto-concetto di astrazione' if e['kind'] == 'porta a' else 'è letto da'
+    rows = [html.Tr([html.Td(out_label(e)), html.Td(f"{e['target']} · {_concept_name(by[e['target']])}"), html.Td(f"{e['weight']:.2f}")])
+            for e in out if e['target'] in by] + \
+           [html.Tr([html.Td(in_label(e)), html.Td(f"{e['source']} · {_concept_name(by[e['source']])}"), html.Td(f"{e['weight']:.2f}")])
+            for e in into if e['source'] in by]
+    role_title = n.get('role', 'concetto').capitalize()
+    return html.Div([html.P([html.B(f"{role_title} {n['id']}"), f" (livello {n['layer']}, gruppo {n['group']}, {n['mass']:.0%} del gruppo) · "
                              f"entrano: {', '.join(n['enters'])} · poi viene: {', '.join(n['follows'])}"], className='small mb-1'),
                      dbc.Table(html.Tbody(rows), size='sm', bordered=True, className='small') if rows else
                      html.P('Nessun arco che pesi più di una parte uguale.', className='small text-muted')])
@@ -577,19 +596,18 @@ layout = html.Div([
                      className='mb-1'),
              html.Small("Un passo è un pezzo di al massimo un milione di token nuovi. Alla fine, la rete rilegge tutto il testo finché la validazione migliora. "
                         "Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
-             dbc.Checkbox(id='lm-long-growth', value=True, label='La rete cresce con i dati'),
-             html.Small("La rete parte con uno strato, una testa e un concetto. Quando arriva una gara, la rete com'è e le copie cresciute "
-                        "(più larga, uno strato in più, il doppio dei concetti in uno strato, il doppio delle teste) imparano lo stesso pezzo nuovo. "
-                        "Se la rete cresce, il vincitore fa una nuova tornata sullo stesso pezzo.",
+             dbc.Checkbox(id='lm-long-growth', value=True, label='Il grafo di concetti cresce con i dati'),
+             html.Small("Lo spazio metrico resta compatto (48 coordinate) e il modello cresce articolando concetti, gruppi di concetti e livelli "
+                        "di specializzazione (astrazioni → concetti → sotto-concetti particolari) quando migliorano la validazione.",
                         className='text-muted d-block mb-2'),
              dbc.Row([
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=256, min=0, max=2048, step=16)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=6, min=0, max=32, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=48, min=0, max=2048, step=16)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=3, min=0, max=32, step=1)]), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-max-heads', type='number', value=4, min=0, max=64, step=1)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=64, min=0, max=1024, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=128, min=0, max=1024, step=1)]), md=3, className='mb-1'),
              ], className='mb-1'),
              html.Small("Con crescita attiva sono i tetti oltre i quali quella direzione non gareggia più («0» = senza tetto); "
-                        "con crescita disattivata fissano direttamente la taglia iniziale della rete («0» = valore predefinito).",
+                        "con crescita disattivata fissano direttamente la piramide iniziale di astrazioni e sotto-concetti («0» = valore predefinito).",
                         className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
@@ -611,12 +629,12 @@ layout = html.Div([
          dbc.Accordion([dbc.AccordionItem([
              dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-add-corpus', placeholder='Un testo già preparato'), md=8),
                       dbc.Col(dbc.Button('Aggiungi in fondo alla coda', id='lm-long-add', outline=True, color='primary'), md=4)], className='mb-2'),
-             dbc.Checkbox(id='lm-long-add-growth', value=True, label='Continua a far crescere la rete sul nuovo testo', className='small mb-1'),
+             dbc.Checkbox(id='lm-long-add-growth', value=True, label='Continua a far crescere il grafo di concetti sul nuovo testo', className='small mb-1'),
              dbc.Row([
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=256, min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-add-max-layers', type='number', value=6, min=0, max=32, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=48, min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-add-max-layers', type='number', value=3, min=0, max=32, step=1)], size='sm'), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-add-max-heads', type='number', value=4, min=0, max=64, step=1)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-add-max-concepts', type='number', value=64, min=0, max=1024, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-add-max-concepts', type='number', value=128, min=0, max=1024, step=1)], size='sm'), md=3, className='mb-1'),
              ], className='mb-2'),
              html.Small(f'Oppure un documento dal computer ({FORMATS}): viene caricato, convertito in testo e aggiunto in fondo alla coda scelta. '
                         'Usa il vocabolario della coda, imparato all\'avvio («0» nei tetti = senza limite).', className='text-muted d-block'),

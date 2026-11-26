@@ -263,8 +263,13 @@ def run_training(root, identifier, stop_event=None):
                         ('dim', limits['max_dim']),
                         ('layers', limits['max_layers']),
                         ('heads', limits['max_heads']),
-                        ('concepts', limits['max_concepts']),
-                    ) if v > 0} or None
+                    ) if v > 0}
+                    if limits['max_concepts'] > 0:
+                        n_lvl = fixed_net.get('layers', NetText.NETWORK['layers'])
+                        k_max = limits['max_concepts']
+                        fixed_net['concepts'] = ([max(2, k_max // (2 ** (n_lvl - 1 - i))) for i in range(n_lvl)]
+                                                 if n_lvl > 1 and k_max >= 4 else k_max)
+                    fixed_net = fixed_net or None
                 # the model of a text is the concept network alone: its concepts learned along the gradient
                 model = NetText(len(tokenizer), tokenizer.eos_token_id, budget,
                                 config.get('concept_context', 512),
