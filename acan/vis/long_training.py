@@ -29,7 +29,7 @@ def profile(cuda, size=None):
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='auto',
                 chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000,
-                concept_max_dim=48, concept_max_layers=3, concept_max_heads=4, concept_max_concepts=128)
+                concept_max_dim=48, concept_max_layers=0, concept_max_heads=0, concept_max_concepts=0)
 
 
 def queues(jobs):
@@ -606,17 +606,18 @@ layout = html.Div([
              html.Small("Un passo è un pezzo di al massimo un milione di token nuovi. Alla fine, la rete rilegge tutto il testo finché la validazione migliora. "
                         "Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
              dbc.Checkbox(id='lm-long-growth', value=True, label='Il grafo di concetti cresce con i dati'),
-             html.Small("Lo spazio metrico resta compatto (48 coordinate) e il modello cresce articolando concetti, gruppi di concetti e livelli "
-                        "di specializzazione (astrazioni → concetti → sotto-concetti particolari) quando migliorano la validazione.",
+             html.Small("Come nel modello tabulare, non c'è alcun numero di concetti da scegliere: «0» lascia che concetti, gruppi e livelli "
+                        "di specializzazione (astrazioni → concetti → sotto-concetti particolari) siano scelti automaticamente dalla validazione, "
+                        "tenendo compatto lo spazio metrico (48 coordinate).",
                         className='text-muted d-block mb-2'),
              dbc.Row([
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=48, min=0, max=2048, step=16)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=3, min=0, max=32, step=1)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-max-heads', type='number', value=4, min=0, max=64, step=1)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=128, min=0, max=1024, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=0, min=0, max=32, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-max-heads', type='number', value=0, min=0, max=64, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=0, min=0, max=1024, step=1)]), md=3, className='mb-1'),
              ], className='mb-1'),
-             html.Small("Con crescita attiva sono i tetti oltre i quali quella direzione non gareggia più («0» = senza tetto); "
-                        "con crescita disattivata fissano direttamente la piramide iniziale di astrazioni e sotto-concetti («0» = valore predefinito).",
+             html.Small("Tetti hardware facoltativi: «0» = automatico dai dati senza tetto utente; un valore > 0 impone un massimale esplicito "
+                        "(o fissa direttamente la piramide iniziale se si disattiva la crescita).",
                         className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
@@ -641,12 +642,12 @@ layout = html.Div([
              dbc.Checkbox(id='lm-long-add-growth', value=True, label='Continua a far crescere il grafo di concetti sul nuovo testo', className='small mb-1'),
              dbc.Row([
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=48, min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-add-max-layers', type='number', value=3, min=0, max=32, step=1)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-add-max-heads', type='number', value=4, min=0, max=64, step=1)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-add-max-concepts', type='number', value=128, min=0, max=1024, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-add-max-layers', type='number', value=0, min=0, max=32, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-add-max-heads', type='number', value=0, min=0, max=64, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-add-max-concepts', type='number', value=0, min=0, max=1024, step=1)], size='sm'), md=3, className='mb-1'),
              ], className='mb-2'),
              html.Small(f'Oppure un documento dal computer ({FORMATS}): viene caricato, convertito in testo e aggiunto in fondo alla coda scelta. '
-                        'Usa il vocabolario della coda, imparato all\'avvio («0» nei tetti = senza limite).', className='text-muted d-block'),
+                        'Usa il vocabolario della coda, imparato all\'avvio («0» = automatico dai dati senza tetto utente).', className='text-muted d-block'),
              html.Div(id='lm-long-file-upload'), html.Div(id='lm-long-upload-status', role='status', className='small'),
              dcc.Store(id='lm-long-upload-state'),
          ], title='Aggiungi un testo alla coda')], start_collapsed=True, className='my-2'),

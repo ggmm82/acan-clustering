@@ -505,6 +505,16 @@ class Network(nn.Module):
         layer = ConceptAttention(dim, self.config['heads'], prev_k, self.config['window'], self.config['head_dim'],
                                  prev_concepts=prev_k, pure_concepts=bool(self.config.get('pure_concepts', False))).to(self.device)
         with torch.no_grad():
+            # Anchor the nascent sub-concept layer to its parent abstractions so parent=I matches 1-to-1 as gate opens.
+            if layer.query.weight.shape == last.query.weight.shape:
+                layer.query.weight.copy_(last.query.weight)
+            if layer.value.weight.shape == last.value.weight.shape:
+                layer.value.weight.copy_(last.value.weight)
+            if layer.g.shape == last.g.shape:
+                jitter = torch.randn_like(last.g) * .01 * (last.g.std() + 1e-6)
+                layer.g.copy_(last.g + jitter)
+                layer.log_s.copy_(last.log_s)
+                layer.log_c.copy_(last.log_c)
             # Keep out non-zero so (new - h) carries signal on step 1 while gate=0 preserves the state exactly.
             nn.init.normal_(layer.out.weight, std=.02); layer.out.bias.zero_()
             if layer.parent is not None and prev_k > 1:
