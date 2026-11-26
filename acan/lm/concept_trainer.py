@@ -287,11 +287,24 @@ def run_training(root, identifier, stop_event=None):
             state.update(quantities(model, config))
             previous = save(root_checkpoints, model, state, identity)
             store.record(identifier, 0, dict(state))           # the chart starts from the error before reading
+        sample_docs = [p[:512] for p in tune[:8] if len(p) >= 2]
+        quick_docs = [p[:256] for p in tune[:4] if len(p) >= 2]
+
+        def refresh_graph(net, dest=None, quick=False):
+            docs = quick_docs if quick else sample_docs
+            if net is None or not docs:
+                return
+            target = state if dest is None else dest
+            target['network_concepts'] = net.describe(docs, tokenizer.decode)
+            target['network_graph'] = net.graph(docs, tokenizer.decode)
+
         model.device = state['device'] = device
         model.read, model.piece = state['tokens_trained'], piece   # the current text, also when resuming a queue
         model.trace = list(state.get('network_trace') or [])
         model.races = list(state.get('network_races') or [])
         state.pop('structure', None)
+        if getattr(model.model, 'net', None) is not None and not (state.get('network_graph') or {}).get('nodes'):
+            refresh_graph(model.model.net)
         store.update(identifier, checkpoint=previous.name, progress=state, status='running')
 
         model.watch = judge                                     # the chart inside a step: the same text as its validation
@@ -317,11 +330,26 @@ def run_training(root, identifier, stop_event=None):
             updated = copy(model)
             updated.trace = model.trace.copy()
             updated.races = model.races.copy()
+            live_extra = {k: state[k] for k in ('network_graph', 'network_concepts') if k in state}
+            last_live_graph = [0.]
 
             def structure(phase, width, seconds, **facts):
                 live = dict(phase=phase, width=int(width), seconds=float(seconds),
                             **facts)
-                store.update(identifier, progress=dict(state, structure=live, network_trace=list(updated.trace)))
+                now_mono = time.monotonic()
+                race_done = (facts.get('race_projection') is not None
+                             and len(facts.get('race_scores') or ()) == facts.get('race_total'))
+                need_first = not (live_extra.get('network_graph') or {}).get('nodes')
+                grower = getattr(updated, '_learner', None)
+                live_net = (grower.learner.network if grower is not None
+                            and getattr(grower, 'learner', None) is not None and grower.learner.seen > 0 else None)
+                if live_net is not None and (need_first or race_done or now_mono - last_live_graph[0] >= 20.):
+                    refresh_graph(live_net.export(), live_extra, quick=True)
+                    last_live_graph[0] = now_mono
+                elif need_first and getattr(getattr(updated, 'model', None), 'net', None) is not None:
+                    refresh_graph(updated.model.net, live_extra, quick=True)
+                    last_live_graph[0] = now_mono
+                store.update(identifier, progress=dict(state, **live_extra, structure=live, network_trace=list(updated.trace)))
 
             updated.report = structure
             if model.model is not None:
@@ -331,6 +359,8 @@ def run_training(root, identifier, stop_event=None):
                 with threadpool_limits(limits=threads):
                     updated.add(ids, train[:read], tune, check)
             except PreparationPaused:
+                if not (state.get('network_graph') or {}).get('nodes') and (live_extra.get('network_graph') or {}).get('nodes'):
+                    state.update(live_extra)
                 break
             model = updated
             state.update(step=state['step']+1, tokens_trained=state['tokens_trained']+len(ids))
@@ -353,10 +383,9 @@ def run_training(root, identifier, stop_event=None):
                 state.update(quantities(model, config))
             elif model.model is not None:
                 state['network'] = model.model.net.footprint()
-            if last and model.model is not None and getattr(model.model, 'net', None) is not None:
+            if (measured or not (state.get('network_graph') or {}).get('nodes')) and getattr(model.model, 'net', None) is not None:
                 # What the concepts of the network hold, on validation text, for the page
-                state['network_concepts'] = model.model.net.describe([p[:512] for p in tune[:8]], tokenizer.decode)
-                state['network_graph'] = model.model.net.graph([p[:512] for p in tune[:8]], tokenizer.decode)
+                refresh_graph(model.model.net)
                 state['network_stopped'] = bool(model.network_done)
             if last:
                 previous = save(root_checkpoints, model, state, identity)
@@ -373,12 +402,17 @@ def run_training(root, identifier, stop_event=None):
         if state['step'] != saved_step:                          # paused between two saves: keep what was read
             model.judge(tune)
             state.update(quantities(model, config))
+            if getattr(model.model, 'net', None) is not None:
+                refresh_graph(model.model.net)
+                state['network_stopped'] = bool(model.network_done)
             state['validation_nll'] = measure(model, judge)
             state['validation_perplexity'] = math.exp(state['validation_nll'])
             state['best_validation_nll'] = min(state['best_validation_nll'], state['validation_nll'])
             previous = save(root_checkpoints, model, state, identity)
             store.update(identifier, checkpoint=previous.name)
-            store.record(identifier, state['step'], dict(state), progress=state)
+            pause_row = {key: value for key, value in state.items()
+                         if key not in ('network_trace', 'network_races', 'network_graph', 'network_concepts')}
+            store.record(identifier, state['step'], pause_row, progress=state)
             retain_with_milestones(root_checkpoints, milestone=config.get('milestone_steps', 0))
         store.update(identifier, status='completed' if state['step'] >= config['total_steps'] else 'paused',
                      pause=0, progress=state, error=None)

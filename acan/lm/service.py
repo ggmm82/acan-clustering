@@ -50,6 +50,45 @@ def resume_after_restart(store):
         pass                                                    # the worker became busy meanwhile
 
 
+def _ensure_concept_graph(store, job):
+    """Populate network_graph and network_concepts from the latest saved checkpoint when missing on an idle job."""
+    progress = job.get('progress') or {}
+    if (job['config'].get('architecture') != 'concepts'
+            or job['status'] in ACTIVE
+            or not job.get('checkpoint')
+            or (progress.get('network_graph') or {}).get('nodes')):
+        return job
+    directory = store.directory('jobs', job['id'])
+    latest = directory / 'checkpoints' / job['checkpoint']
+    if not latest.exists():
+        return job
+    try:
+        from transformers import AutoTokenizer
+        from .concept_lm import default_budget, load
+        from .concept_trainer import judged_pieces
+        from .native import resolve
+        from .research_data import Blocks
+        tok_path, _ = resolve(store, job, job['config'])
+        tokenizer = AutoTokenizer.from_pretrained(tok_path, trust_remote_code=False, local_files_only=True)
+        budget = int(job['config'].get('concept_memory_mb') or 0) * (1 << 20) or default_budget()
+        loaded, _ = load(latest, budget_bytes=budget)
+        net = getattr(getattr(loaded, 'model', None), 'net', None)
+        if net is not None:
+            blocks = Blocks(directory, job['config']['sequence_length'], job['config']['seed'],
+                            job['config']['validation_batches'])
+            tune, _ = judged_pieces(blocks, job['config']['validation_batches'], disjoint=True)
+            docs = [p[:512] for p in tune[:8] if len(p) >= 2]
+            if docs:
+                progress = dict(progress,
+                                network_concepts=net.describe(docs, tokenizer.decode),
+                                network_graph=net.graph(docs, tokenizer.decode))
+                store.update(job['id'], progress=progress)
+                job['progress'] = progress
+    except Exception:
+        pass
+    return job
+
+
 def create_app(root=None, token=None):
     app = Flask(__name__)
     app.config['MAX_CONTENT_LENGTH'] = 2*1024*1024
@@ -91,7 +130,7 @@ def create_app(root=None, token=None):
         for job in jobs:
             detailed=not summaries or job['id']==selected
             if not detailed:
-                job['progress']={key:job['progress'][key] for key in ('step','tokens_trained','validation_nll','best_validation_nll','tokens_per_second') if key in job['progress']}
+                job['progress']={key:job['progress'][key] for key in ('step','tokens_trained','validation_nll','best_validation_nll','tokens_per_second','graft') if key in job['progress']}
             job['snapshots'] = snapshots(store, job) if detailed else []
             job['history'] = [{key:row[key] for key in ('step','training_nll','validation_nll') if key in row}
                               for row in store.history(job['id'],request.workspace,overview=True)] if detailed else []
@@ -115,7 +154,7 @@ def create_app(root=None, token=None):
 
     @app.get('/jobs/<identifier>/view')
     def job_view(identifier):
-        job=store.job(identifier,request.workspace)
+        job=_ensure_concept_graph(store, store.job(identifier,request.workspace))
         job['snapshots']=snapshots(store,job)
         job['history']=[{key:row[key] for key in ('step','training_nll','validation_nll') if key in row}
                         for row in store.history(identifier,request.workspace,overview=True)]
@@ -285,7 +324,7 @@ def create_app(root=None, token=None):
     def job_footprint(identifier):
         """The sizes of a project while it learns: parameters, speed, memory and disk."""
         import shutil
-        job = store.job(identifier, request.workspace)
+        job = _ensure_concept_graph(store, store.job(identifier, request.workspace))
         directory = store.directory('jobs', identifier)
         size = lambda path: sum(item.stat().st_size for item in path.rglob('*') if item.is_file()) if path.exists() else 0
         root = directory/'checkpoints'

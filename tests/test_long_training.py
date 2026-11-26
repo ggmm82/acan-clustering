@@ -516,3 +516,19 @@ class StructureProgressTest(unittest.TestCase):
         self.assertIn('si conserva la rete di partenza (5.980)', text)
         self.assertIn('La gara per questo pezzo si chiude', text)
         self.assertNotIn('In testa per NLL', str(concept_summary(progress, config, status='paused')))
+
+        from acan.vis.long_training import concept_footprint_view
+        item = dict(progress=dict(step=0, graft=dict(vocabulary=8)),
+                    config=dict(architecture='concepts', total_steps=10),
+                    status='running', checkpoint_bytes=1024,
+                    checkpoints={k: dict(count=0, bytes=0) for k in ('step', 'milestone', 'best')},
+                    token_bytes=1024, corpus_bytes=2048, disk_free=10 * 1024 ** 3, disk_total=20 * 1024 ** 3)
+        waiting_view = concept_footprint_view(item)
+        self.assertIn('si sta popolando sul testo di validazione', str(waiting_view.children[1]))
+        item['progress']['network_graph'] = dict(
+            nodes=[dict(id='1.1.1', layer=1, group=1, concept=1, role='concetto', mass=1.,
+                        enters=['ciao'], follows=['mondo'])],
+            edges=[])
+        live_view = concept_footprint_view(item)
+        self.assertIn('lm-network-graph', str(live_view.children[1]))
+        self.assertNotIn('lm-network-graph', str(live_view.children[2]))

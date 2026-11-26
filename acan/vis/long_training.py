@@ -351,10 +351,19 @@ def concept_footprint_view(item):
     note = html.P("Gli errori sono in nat per token: e elevato all'errore è fra quanti token, in media, il modello è incerto. "
                   "Si misurano solo su testo che il modello non ha letto.", className='small text-muted')
     graph = network_graph_view(progress.get('network_graph'))
+    if graph is None:
+        waiting = ('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti compare appena i token sono pronti e la rete legge il primo brano.'
+                   if item.get('status') in ('queued', 'preparing') or not progress.get('graft') else
+                   'Il grafo ispezionabile di concetti, astrazioni e sotto-concetti si sta popolando sul testo di validazione…')
+        graph_section = html.Div([html.H6('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti', className='mt-3'),
+                                  html.P(waiting, className='small text-muted')])
+    else:
+        graph_section = graph
     details = folded('Tutti i dettagli: vocabolario, concetti, contesto, memoria e disco',
-                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note] + ([graph] if graph is not None else []),
+                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note],
                      'lm-long-details')
-    return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')), details])
+    return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')),
+                     graph_section, details])
 
 
 def _level_label(layer, total):

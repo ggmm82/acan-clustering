@@ -150,6 +150,16 @@ class DescribeTest(unittest.TestCase):
         from acan.vis.long_training import network_graph_view
         self.assertIsNotNone(network_graph_view(g))
 
+        from acan.lm.concept_net_training import Network
+        tiny = Network(config(layers=1, heads=1, concepts=1))
+        g1 = tiny.export().graph(docs)
+        self.assertEqual([n['id'] for n in g1['nodes']], ['1.1.1'])
+        self.assertIsNotNone(network_graph_view(g1))
+        tiny.split_concepts(0)
+        g2 = tiny.export().graph(docs)
+        self.assertTrue(len(g2['nodes']) >= 1)
+        self.assertIsNotNone(network_graph_view(g2))
+
     def test_every_layer_says_how_many_concepts_work_and_shows_examples(self):
         from acan.lm.concept_net_training import Network
         net = Network(config()).export()

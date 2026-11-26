@@ -277,8 +277,12 @@ class ConceptNet:
                      ('sotto-concetto particolare' if i == self.layers - 1 else 'concetto intermedio')))
             t = np.concatenate(found[i])                                       # positions x H x K
             H, K = t.shape[1:]
-            share = t.sum(0) / t.sum((0, 2))[:, None]                          # H x K
-            keep = {(h, k) for h in range(H) for k in range(K) if share[h, k] > 1 / K}
+            share = t.sum(0) / np.maximum(t.sum((0, 2))[:, None], 1e-12)       # H x K
+            threshold = 0. if K <= 1 else (max(1e-3, .25 / K) if K <= 8 else (1. - 1e-5) / K)
+            keep = {(h, k) for h in range(H) for k in range(K) if share[h, k] >= threshold}
+            for h in range(H):
+                if not any(h0 == h for h0, _ in keep):
+                    keep.add((h, int(np.argmax(share[h]))))
             kept.append((t, keep))
             for h, k in sorted(keep):
                 w = t[:, h, k]
@@ -308,7 +312,7 @@ class ConceptNet:
                     spec = (float(struct_prob[h, k, k2])
                             if struct_prob is not None and h == h2 and h < struct_prob.shape[0] else None)
                     weight = float(.5 * (spec + spread[h2, k2]) if spec is not None else spread[h2, k2])
-                    if weight > 1 / K2 and weight > base[h2, k2]:
+                    if (K2 == 1 and h == h2) or (weight > 1 / K2 and weight > base[h2, k2]):
                         edges.append(dict(source=f'{i + 1}.{h + 1}.{k + 1}', target=f'{i + 2}.{h2 + 1}.{k2 + 1}',
                                           weight=weight, kind='porta a', relation='specializza',
                                           lift=float(weight / max(base[h2, k2], 1e-12))))
