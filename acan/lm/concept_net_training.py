@@ -220,15 +220,44 @@ class ConceptAttention(nn.Module):
         return self.query(self._local(h)).view(B, T, self.h, self.d)
 
     def _view_read(self, q0, k, v, mask):
+        B, T, H, d = q0.shape
         W_v = self.pos_bias.shape[1]
-        k_win = F.pad(k, (0, 0, 0, 0, W_v - 1, 0)).unfold(1, W_v, 1)    # B T H d W_v
-        v_win = F.pad(v, (0, 0, 0, 0, W_v - 1, 0)).unfold(1, W_v, 1)    # B T H d W_v
-        valid_w = F.pad(mask, (W_v - 1, 0)).unfold(1, W_v, 1).clone()   # B T W_v
-        valid_w[..., -1] = 1.
-        scores = torch.einsum('bthd,bthdw->bthw', q0, k_win) * (self.d ** -.5) + self.pos_bias[None, None, :, :]
-        scores = scores.masked_fill(valid_w[:, :, None, :] <= 0, float('-inf'))
+        if W_v <= 1:
+            return v * mask[:, :, None, None]
+        rem = (-T) % W_v
+        if rem:
+            q_p = F.pad(q0, (0, 0, 0, 0, 0, rem))
+            k_p = F.pad(k, (0, 0, 0, 0, 0, rem))
+            v_p = F.pad(v, (0, 0, 0, 0, 0, rem))
+            m_p = F.pad(mask, (0, rem))
+        else:
+            q_p, k_p, v_p, m_p = q0, k, v, mask
+        nb = q_p.shape[1] // W_v
+        q_b = q_p.transpose(1, 2).reshape(B, H, nb, W_v, d)
+        k_b = k_p.transpose(1, 2).reshape(B, H, nb, W_v, d)
+        v_b = v_p.transpose(1, 2).reshape(B, H, nb, W_v, d)
+        z_kv = k_b.new_zeros(B, H, 1, W_v - 1, d)
+        k_ctx = torch.cat([torch.cat([z_kv, k_b[:, :, :-1, 1:, :]], dim=2), k_b], dim=3)
+        v_ctx = torch.cat([torch.cat([z_kv, v_b[:, :, :-1, 1:, :]], dim=2), v_b], dim=3)
+        m_b = m_p.reshape(B, nb, W_v)
+        m_ctx = torch.cat([torch.cat([m_b.new_zeros(B, 1, W_v - 1), m_b[:, :-1, 1:]], dim=1), m_b], dim=2)
+        span = 2 * W_v - 1
+        cache_key = (W_v, q0.device)
+        if getattr(self, '_band_key', None) != cache_key:
+            r_idx = torch.arange(W_v, device=q0.device)[:, None]
+            c_idx = torch.arange(span, device=q0.device)[None, :]
+            off = c_idx - r_idx
+            self._band_off = off.clamp(0, W_v - 1)
+            self._band_in = (off >= 0) & (off < W_v)
+            self._band_diag = (off == W_v - 1)
+            self._band_key = cache_key
+        scores = torch.matmul(q_b, k_ctx.transpose(-1, -2)) * (d ** -.5)
+        pb = self.pos_bias[:, self._band_off]
+        valid = ((m_ctx[:, None, :, None, :] > 0) | self._band_diag[None, None, None, :, :]) & self._band_in[None, None, None, :, :]
+        scores = (scores + pb[None, :, None, :, :]).masked_fill(~valid, float('-inf'))
         attn = torch.softmax(scores, dim=-1)
-        return torch.einsum('bthw,bthdw->bthd', attn, v_win) * mask[:, :, None, None]
+        out = torch.matmul(attn, v_ctx).reshape(B, H, nb * W_v, d)[:, :, :T, :].transpose(1, 2)
+        return out * mask[:, :, None, None]
 
     def forward(self, h, mask, prev_ctx=None, return_context=False):
         B, T, D = h.shape

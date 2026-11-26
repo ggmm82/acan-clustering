@@ -236,7 +236,8 @@ class NetText:
             self._race_began = time.monotonic()
             all_docs = cut_documents(ids, self.eos, self._learner.learner.longest, begin=True)
             all_tokens = sum(map(len, all_docs))
-            cap = 2 * self.RACE_TRIAL if self.tokens >= 2_000_000 else self.RACE_TRIAL
+            cap = (self.RACE_TRIAL // 2 if self.tokens < 2_000_000
+                   else (2 * self.RACE_TRIAL if self.tokens >= 8_000_000 else self.RACE_TRIAL))
             trial_limit = (min(cap, max(2048, all_tokens // len(self.KINDS)))
                            if all_tokens >= 8192 else all_tokens)
             def take_trial(start_idx):
@@ -248,7 +249,7 @@ class NetText:
                 return picked, total_tok, start_idx + len(picked)
             trial_docs, trial_size, cursor = take_trial(0)
             has_rest = cursor < len(all_docs)
-            max_rounds = (4 if self.tokens == 0 else 3) if has_rest else self.MAX_ROUNDS
+            max_rounds = 2 if has_rest else self.MAX_ROUNDS
             self._race_offset = 0
             self._race_piece = len(ids) if not has_rest else max(1, int(len(ids) * trial_size / max(all_tokens, 1)))
             round_number = 1
@@ -291,13 +292,9 @@ class NetText:
                     self._learner.learned += rest_size
             counted.update(seen=self._learner.learner.seen, total=len(ids))  # a rereading does not advance the queue
             grew_any = any(not r['retained'] and r['choice'] != "com'è" for r in self.races[first_race:])
-            if has_rest and grew_any:
-                self.race_gap = 0
-                self.next_race = end
-            else:
-                max_gap = max(self.MAX_RACE_GAP, 4 * max(len(ids), 1))
-                self.race_gap = len(ids) if len(self.races) > first_race + 1 else min(max_gap, max(2 * self.race_gap, len(ids)))
-                self.next_race = end + self.race_gap
+            max_gap = max(self.MAX_RACE_GAP, 4 * max(len(ids), 1))
+            self.race_gap = len(ids) if grew_any else min(max_gap, max(2 * self.race_gap, len(ids)))
+            self.next_race = end + self.race_gap
             if again and len(self.races) > first_race:
                 self._learner._keep(best, self._learner.best_scores)   # restore the stabilized winner if rereading does not help
             self._previous = self._learner.best_scores

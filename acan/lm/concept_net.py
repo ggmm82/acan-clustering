@@ -327,16 +327,36 @@ class ConceptNet:
         if not now:
             return dict(nodes=[], edges=[])
         now, after = np.concatenate(now), np.concatenate(after)
-        everywhere_in = np.bincount(now, minlength=self.vocabulary) / len(now)
-        everywhere_out = np.bincount(after, minlength=self.vocabulary) / len(after)
+        u_in, inv_in = np.unique(now, return_inverse=True)
+        u_out, inv_out = np.unique(after, return_inverse=True)
+        everywhere_in = np.bincount(inv_in, minlength=len(u_in)) / len(now)
+        everywhere_out = np.bincount(inv_out, minlength=len(u_out)) / len(after)
 
-        def telling(mass, everywhere):
-            # the concept's own tokens: much in it, and more in it than in all the text (mass times the log of how
-            # much more): a token found everywhere, as the newline, names no concept
-            share = mass / max(mass.sum(), 1e-12)
+        def clean_token(tok_id):
+            if not decode:
+                return str(int(tok_id)), True
+            raw = decode([int(tok_id)])
+            stripped = raw.strip()
+            is_word = (len(stripped) >= 2 and '<' not in stripped and '>' not in stripped
+                       and stripped.lower() not in ('user', 'assistant', 'system', 'endoftext', 'im_start', 'im_end')
+                       and any(ch.isalpha() for ch in stripped))
+            return (stripped or repr(raw)), is_word
+
+        in_meta = [clean_token(x) for x in u_in]
+        out_meta = [clean_token(x) for x in u_out]
+        in_labels = [m[0] for m in in_meta]
+        out_labels = [m[0] for m in out_meta]
+        in_good = np.array([m[1] for m in in_meta], dtype=bool)
+        out_good = np.array([m[1] for m in out_meta], dtype=bool)
+
+        def telling(mass, everywhere, text_list, good_mask):
+            share = mass / max(float(mass.sum()), 1e-12)
             score = np.where(mass > 0, mass * np.log(np.maximum(share, 1e-300) / np.maximum(everywhere, 1e-300)), -np.inf)
-            return np.argsort(-score)[:labels]
-        word = (lambda ids: [decode([int(x)]).strip() or repr(decode([int(x)])) for x in ids]) if decode else (lambda ids: [str(int(x)) for x in ids])
+            word_scores = np.where(good_mask, score, -np.inf)
+            chosen_scores = word_scores if np.isfinite(word_scores).sum() >= min(labels, len(score)) else score
+            order = np.argsort(-chosen_scores)[:labels]
+            return [text_list[int(idx)] for idx in order]
+
         nodes, edges, kept = [], [], []
         for i in range(self.layers):
             role = ('concetto' if self.layers == 1 else
@@ -353,11 +373,12 @@ class ConceptNet:
             kept.append((t, keep))
             for h, k in sorted(keep):
                 w = t[:, h, k]
-                into = np.bincount(now, weights=w, minlength=self.vocabulary)
-                out = np.bincount(after, weights=w, minlength=self.vocabulary)
+                into = np.bincount(inv_in, weights=w, minlength=len(u_in))
+                out = np.bincount(inv_out, weights=w, minlength=len(u_out))
                 nodes.append(dict(id=f'{i + 1}.{h + 1}.{k + 1}', layer=i + 1, group=h + 1, concept=k + 1,
                                   role=role, mass=float(share[h, k]),
-                                  enters=word(telling(into, everywhere_in)), follows=word(telling(out, everywhere_out))))
+                                  enters=telling(into, everywhere_in, in_labels, in_good),
+                                  follows=telling(out, everywhere_out, out_labels, out_good)))
             A = self._looked(i)                                                # H x K x K: k reads k'
             for h, k in sorted(keep):
                 for k2 in np.flatnonzero(A[h, k] > 1 / K):
@@ -369,15 +390,16 @@ class ConceptNet:
             K1 = t1.shape[2]
             H2, K2 = t2.shape[1:]
             base = t2.mean(0)                                                  # what a next concept holds anyway
+            parent_mass = np.maximum(t1.sum(0), 1e-12)                         # H1 x K1
             child_mass = np.maximum(t2.sum(0), 1e-12)                          # H2 x K2
+            co_all = np.einsum('thp,tjq->hpjq', t1, t2)                        # H1 x K1 x H2 x K2
             parent_mat = self.p.get(f'layers.{i + 1}.parent')
             log_c_next = self.p.get(f'layers.{i + 1}.log_c')
             struct_prob = (_softmax(np.clip(parent_mat, -10., 10.) + log_c_next[:, None, :], axis=-1)
                            if parent_mat is not None and log_c_next is not None else None)
             for h, k in sorted(keep1):
-                w = t1[:, h, k]
-                co_mass = (w[:, None, None] * t2).sum(0)                       # H2 x K2
-                spread = co_mass / max(w.sum(), 1e-12)                         # P(child | parent)
+                co_mass = co_all[h, k]                                         # H2 x K2
+                spread = co_mass / parent_mass[h, k]                           # P(child | parent)
                 parent_share = co_mass / child_mass                            # P(parent | child), as in concepts.py
                 for h2, k2 in sorted(keep2):
                     spec = (float(struct_prob[h, k, k2])

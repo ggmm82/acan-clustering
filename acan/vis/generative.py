@@ -1250,17 +1250,9 @@ def register(app):
             # The concept model: the main numbers as tiles, its concept graph directly visible, everything else folded.
             status = {'completed': 'ha finito', 'running': 'sta imparando', 'preparing': 'prepara i token', 'paused': 'in pausa',
                       'queued': 'in partenza', 'failed': 'errore', 'created': 'in attesa'}.get(job['status'], job['status'])
-            graph_data = metrics.get('network_graph')
-            graph_card = (html.Div([
-                html.H6('Grafo di concetti, astrazioni e sotto-concetti', className='mt-2'),
-                dcc.Graph(figure=long_training.network_graph_figure(graph_data), config={'scrollZoom': True}),
-                html.P('Per cliccare sui singoli nodi e ispezionare astrazioni madri e sotto-concetti figli usa il grafo interattivo al passo 3.',
-                       className='small text-muted')
-            ]) if graph_data and graph_data.get('nodes') else None)
             head = [html.P([html.B(job['config'].get('name', 'Progetto')), f' · {status}'], className='mb-1'),
                     html.P(job['error'], className='text-danger') if job['error'] else None,
-                    long_training.concept_summary(metrics, job['config'], status=job['status']),
-                    graph_card]
+                    long_training.concept_summary(metrics, job['config'], status=job['status'])]
             fold = long_training.folded('Tutti i dettagli del progetto', [item for item in detail if item is not None],
                                         'lm-project-details', 'mb-2')
             return [h for h in head if h is not None]+[fold], figure, available, selected_snapshot

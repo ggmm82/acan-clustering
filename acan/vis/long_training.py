@@ -366,48 +366,114 @@ def concept_footprint_view(item):
                      graph_section, details])
 
 
+MAX_GRAPH_CONCEPTS_PER_LEVEL = 8
+
+
 def _level_label(layer, total):
     if total <= 1:
-        return f'livello {layer} · concetti'
+        return f'Livello {layer} · Concetti'
     if layer == 1:
-        return 'livello 1 · astrazioni'
+        return 'Livello 1 · Astrazioni generali'
     if layer == total:
-        return f'livello {layer} · sotto-concetti particolari'
-    return f'livello {layer} · concetti intermedi'
+        return f'Livello {layer} · Sotto-concetti particolari'
+    return f'Livello {layer} · Concetti intermedi'
 
 
-def network_graph_view(graph):
-    """The inspectable graph of concepts, abstractions and particular sub-concepts."""
-    if not graph or not graph.get('nodes'):
-        return None
-    note = html.P("Ogni colonna è un livello di astrazione (dalle astrazioni generali a sinistra fino ai sotto-concetti particolari a destra). "
-                  "Ogni nodo mostra le espressioni che vi entrano → le espressioni che seguono; la grandezza è la sua quota nel gruppo. "
-                  "Linee continue: specializzazione tra un'astrazione e i suoi sotto-concetti particolari. "
-                  "Linee punteggiate: quali altri concetti dello stesso livello un concetto legge nel contesto. "
-                  "Clic su un nodo per ispezionare astrazioni madri, sotto-concetti figli e relazioni contestuali.",
-                  className='small text-muted')
-    return html.Div([html.H6('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti', className='mt-3'),
-                     dcc.Graph(id='lm-network-graph', figure=network_graph_figure(graph), config={'scrollZoom': True}),
-                     dcc.Store(id='lm-network-data', data=graph), html.Div(id='lm-network-info'), note])
+def _short_word(words):
+    for w in (words or []):
+        s = str(w).strip()
+        if s:
+            return s[:14] + ('…' if len(s) > 14 else '')
+    return '—'
 
 
 def _concept_name(n):
-    return f"{' '.join(n['enters'])} → {' '.join(n['follows'])}"
+    return f"{', '.join((n.get('enters') or [])[:2])} → {', '.join((n.get('follows') or [])[:2])}"
 
 
-def network_graph_figure(graph, selected=None):
+def _node_badge(n, show_head=False):
+    prefix = f"V{n['group']}·C{n['concept']}" if show_head else f"C{n['concept']}"
+    return f"{prefix} ({n['mass']:.0%})<br>{_short_word(n.get('enters'))} → {_short_word(n.get('follows'))}"
+
+
+def network_graph_view(graph):
+    """The inspectable top-down graph of concepts, abstractions and multi-parent sub-concepts."""
+    if not graph or not graph.get('nodes'):
+        return None
+    heads = sorted({int(n.get('group', 1)) for n in graph['nodes']})
+    default_head = heads[0] if heads else 1
+    head_options = ([dict(label=f'Punto di vista {h}', value=h) for h in heads]
+                    + ([dict(label='Tutte le viste (principali)', value=0)] if len(heads) > 1 else []))
+    selector = (dbc.Row([
+        dbc.Col(html.Small('Testa di attenzione:', className='text-muted fw-semibold'), width='auto'),
+        dbc.Col(dbc.RadioItems(id='lm-network-head', options=head_options, value=default_head, inline=True,
+                               persistence=True, persistence_type='session', className='small')),
+    ], className='align-items-center mb-1') if len(heads) > 1 else
+        html.Div(dbc.RadioItems(id='lm-network-head', options=[dict(label='Vista 1', value=default_head)],
+                                value=default_head, style={'display': 'none'})))
+    note = html.P("Dall'alto verso il basso: dal livello delle astrazioni generali fino ai sotto-concetti particolari (come nel grafo tabulare). "
+                  "Ogni nodo indica «contesto riconosciuto → token predetto» e la sua quota nella vista. "
+                  "Le linee blu mostrano l'ereditarietà padre → sotto-concetto (anche da più concetti padre contemporaneamente). "
+                  "Clicca su un nodo per vedere tutti i suoi concetti padre (% padre), i sotto-concetti figli e i legami contestuali.",
+                  className='small text-muted mt-1')
+    return html.Div([html.H6('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti', className='mt-3'),
+                     selector,
+                     dcc.Graph(id='lm-network-graph', figure=network_graph_figure(graph, head=default_head),
+                               config={'displayModeBar': False}),
+                     dcc.Store(id='lm-network-data', data=graph), html.Div(id='lm-network-info'), note])
+
+
+def network_graph_figure(graph, selected=None, head=1):
     import plotly.graph_objects as go
-    nodes = sorted(graph['nodes'], key=lambda n: (n['layer'], n['group'], n['concept']))
-    rows, place = {}, {}
-    for n in nodes:
-        rows[n['layer']] = rows.get(n['layer'], -1) + 1
-        place[n['id']] = (n['layer'], rows[n['layer']])
-    if selected in place:                                       # a chosen concept: all its edges
-        shown = [e for e in graph['edges'] if selected in (e['source'], e['target'])]
+    all_nodes = graph.get('nodes') or []
+    if not all_nodes:
+        return go.Figure()
+    heads = sorted({int(n.get('group', 1)) for n in all_nodes})
+    chosen_head = int(head) if head is not None else (heads[0] if heads else 1)
+    if chosen_head > 0 and chosen_head not in heads:
+        chosen_head = heads[0]
+    by_id = {n['id']: n for n in all_nodes}
+    if selected not in by_id or (chosen_head > 0 and by_id[selected].get('group') != chosen_head):
+        selected = None
+    pool = [n for n in all_nodes if chosen_head == 0 or n.get('group') == chosen_head]
+    layers = sorted({n['layer'] for n in pool})
+    total_layers = max(layers) if layers else 1
+
+    # Keep any neighbor of the selected concept visible even if outside top-8 mass.
+    pinned = set()
+    if selected:
+        pinned.add(selected)
+        for e in graph.get('edges') or ():
+            if e['source'] == selected and e['target'] in by_id:
+                if chosen_head == 0 or by_id[e['target']].get('group') == chosen_head:
+                    pinned.add(e['target'])
+            elif e['target'] == selected and e['source'] in by_id:
+                if chosen_head == 0 or by_id[e['source']].get('group') == chosen_head:
+                    pinned.add(e['source'])
+
+    visible_nodes, omitted = [], 0
+    place = {}
+    for lyr in layers:
+        in_layer = sorted([n for n in pool if n['layer'] == lyr], key=lambda n: (-n['mass'], n['group'], n['concept']))
+        top = in_layer[:MAX_GRAPH_CONCEPTS_PER_LEVEL]
+        top_ids = {n['id'] for n in top}
+        extra = [n for n in in_layer[MAX_GRAPH_CONCEPTS_PER_LEVEL:] if n['id'] in pinned and n['id'] not in top_ids]
+        row_nodes = sorted(top + extra, key=lambda n: (n['group'], -n['mass'], n['concept']))
+        omitted += max(0, len(in_layer) - len(row_nodes))
+        count = len(row_nodes)
+        for idx, n in enumerate(row_nodes):
+            x_pos = (idx - (count - 1) / 2.) * 1.35
+            place[n['id']] = (x_pos, float(lyr))
+            visible_nodes.append(n)
+
+    vis_ids = set(place)
+    edges_pool = [e for e in (graph.get('edges') or ()) if e['source'] in vis_ids and e['target'] in vis_ids]
+    if selected in place:
+        shown = [e for e in edges_pool if selected in (e['source'], e['target'])]
         near = {selected} | {e['source'] for e in shown} | {e['target'] for e in shown}
     else:
-        strongest, by_child = {}, {}                            # show both outgoing specializations and multi-parent DAG links
-        for e in graph['edges']:
+        strongest, by_child = {}, {}
+        for e in edges_pool:
             if e['kind'] == 'porta a':
                 if e.get('lift', 0) > strongest.get(e['source'], {}).get('lift', 0):
                     strongest[e['source']] = e
@@ -416,45 +482,79 @@ def network_graph_figure(graph, selected=None):
         for child_edges in by_child.values():
             ranked = sorted(child_edges, key=lambda e: -(e.get('parent_share', e['weight'])))
             multi_parents.extend(ranked[:2])
-        seen_pairs, inter = set(), []
+        seen_pairs, shown = set(), []
         for e in list(strongest.values()) + multi_parents:
             pair = (e['source'], e['target'])
             if pair not in seen_pairs:
                 seen_pairs.add(pair)
-                inter.append(e)
-        shown, near = [e for e in graph['edges'] if e['kind'] == 'legge'] + inter, None
+                shown.append(e)
+        near = None
+
     figure = go.Figure()
     for e in shown:
-        if e['source'] not in place or e['target'] not in place:
-            continue
         (x0, y0), (x1, y1) = place[e['source']], place[e['target']]
         inside = e['kind'] == 'legge'
-        xs = [x0, x0 - .25, x1] if inside else [x0, (x0 + x1) / 2, x1]
-        ys = [y0, (y0 + y1) / 2, y1]
-        rel = 'legge' if inside else ('specializza in' if e.get('relation') == 'specializza' else e['kind'])
-        pshare = f" · padre {e['parent_share']:.0%}" if not inside and 'parent_share' in e else ''
-        figure.add_scatter(x=xs, y=ys, mode='lines', showlegend=False, hoverinfo='text' if selected in place else 'skip',
-                           hovertext=f"{e['source']} {rel} {e['target']} · peso {e['weight']:.2f}{pshare}",
-                           line=dict(width=1 + 4 * e['weight'], dash='dot' if inside else 'solid',
-                                     color='rgba(220,90,40,.6)' if inside else 'rgba(60,110,200,.45)'))
+        xs = [x0, (x0 + x1) / 2., x1]
+        ys = [y0, y0 - .22, y1] if inside else [y0, (y0 + y1) / 2., y1]
+        rel = 'legge nel contesto' if inside else 'specializza in'
+        pshare = f" · quota padre {e['parent_share']:.0%}" if not inside and 'parent_share' in e else ''
+        strength = e.get('parent_share', e['weight']) if not inside else e['weight']
+        figure.add_scatter(x=xs, y=ys, mode='lines', showlegend=False, hoverinfo='text',
+                           hovertext=f"{e['source']} → {e['target']} ({rel}) · peso {e['weight']:.2f}{pshare}",
+                           line=dict(width=1.3 + 4. * min(float(strength), 1.),
+                                     dash='dot' if inside else 'solid',
+                                     color='rgba(217,72,15,.65)' if inside else 'rgba(44,111,187,.52)'))
+
     faded = lambda n: near is not None and n['id'] not in near
-    figure.add_scatter(x=[place[n['id']][0] for n in nodes], y=[place[n['id']][1] for n in nodes], mode='markers+text',
-                       text=[_concept_name(n) for n in nodes], textposition='middle right', showlegend=False,
-                       customdata=[n['id'] for n in nodes],
-                       textfont=dict(color=['#bbb' if faded(n) else '#222' for n in nodes]),
-                       marker=dict(size=[8 + 40 * n['mass'] for n in nodes],
-                                   color=['#ddd' if faded(n) else ('#d9480f' if n['id'] == selected else '#2c6fbb') for n in nodes]),
-                       hovertext=[f"{n.get('role', 'concetto')} {n['id']} · {n['mass']:.0%} della vista {n['group']}<br>"
-                                  f"contesto riconosciuto: {', '.join(n['enters'])}<br>"
-                                  f"token predetti: {', '.join(n['follows'])}" for n in nodes], hoverinfo='text')
-    layers = sorted(rows)
-    total_layers = max(layers) if layers else 1
-    figure.update_layout(height=max(320, 26 * max(rows.values()) + 120), margin=dict(l=20, r=20, t=40, b=30),
-                         title='Grafo multi-vista di astrazioni, sotto-concetti multi-padre e token predetti',
-                         uirevision='network-graph', clickmode='event', hovermode='closest',
-                         xaxis=dict(tickvals=layers, ticktext=[_level_label(i, total_layers) for i in layers],
-                                    range=[min(layers) - .35, max(layers) + .9]),
-                         yaxis=dict(visible=False, autorange='reversed'))
+    level_palette = {1: '#1c7ed6', total_layers: '#0ca678'}
+    node_colors = [
+        '#dee2e6' if faded(n) else ('#d9480f' if n['id'] == selected else level_palette.get(n['layer'], '#5c7cfa'))
+        for n in visible_nodes
+    ]
+    show_head = chosen_head == 0 and len(heads) > 1
+    figure.add_scatter(
+        x=[place[n['id']][0] for n in visible_nodes],
+        y=[place[n['id']][1] for n in visible_nodes],
+        mode='markers+text',
+        text=[_node_badge(n, show_head=show_head) for n in visible_nodes],
+        textposition='bottom center',
+        showlegend=False,
+        customdata=[n['id'] for n in visible_nodes],
+        textfont=dict(size=11, color=['#adb5bd' if faded(n) else '#212529' for n in visible_nodes]),
+        marker=dict(
+            size=[18 + 28 * min(float(n['mass']), 1.) for n in visible_nodes],
+            color=node_colors,
+            line=dict(width=2, color='#ffffff'),
+        ),
+        hovertext=[
+            f"<b>{n.get('role', 'concetto').capitalize()} {n['id']}</b> (vista {n['group']} · {n['mass']:.1%})<br>"
+            f"Contesto riconosciuto: {', '.join(n.get('enters') or ())}<br>"
+            f"Token predetti: {', '.join(n.get('follows') or ())}"
+            for n in visible_nodes
+        ],
+        hoverinfo='text',
+    )
+    max_cols = max(1, max(sum(1 for n in visible_nodes if n['layer'] == lyr) for lyr in layers))
+    half_span = max(2.2, (max_cols * 1.35) / 2. + .7)
+    view_title = f'Punto di vista {chosen_head}' if chosen_head > 0 else 'Tutte le viste'
+    extra_note = f' · principali su +{omitted} concetti minori' if omitted > 0 else ''
+    figure.update_layout(
+        height=max(260, 155 * len(layers) + 85),
+        margin=dict(l=180, r=30, t=45, b=45),
+        plot_bgcolor='#f8f9fa',
+        title=f'Gerarchia dei concetti ({view_title}{extra_note})',
+        uirevision=f'network-graph:{chosen_head}',
+        clickmode='event',
+        hovermode='closest',
+        xaxis=dict(visible=False, range=[-half_span, half_span]),
+        yaxis=dict(
+            tickvals=[float(lyr) for lyr in layers],
+            ticktext=[_level_label(lyr, total_layers) for lyr in layers],
+            range=[max(layers) + .55, min(layers) - .4],
+            gridcolor='rgba(0,0,0,0.06)',
+            zeroline=False,
+        ),
+    )
     return figure
 
 
@@ -477,11 +577,11 @@ def network_graph_info(graph, selected):
             for e in out if e['target'] in by]
     role_title = n.get('role', 'concetto').capitalize()
     return html.Div([html.P([html.B(f"{role_title} {n['id']}"),
-                             f" (livello {n['layer']}, vista {n['group']}, {n['mass']:.0%} della vista) · "
-                             f"contesto: {', '.join(n['enters'])} · token predetti: {', '.join(n['follows'])}"],
+                             f" (livello {n['layer']}, punto di vista {n['group']}, {n['mass']:.1%} della vista) · "
+                             f"contesto riconosciuto: {', '.join(n['enters'])} · token predetti: {', '.join(n['follows'])}"],
                             className='small mb-1'),
                      dbc.Table(html.Tbody(rows), size='sm', bordered=True, className='small') if rows else
-                     html.P('Nessun arco che pesi più di una parte uguale.', className='small text-muted')])
+                     html.P('Nessun arco significativo sopra la media uniforme.', className='small text-muted')])
 
 
 def footprint_view(item):
@@ -717,17 +817,21 @@ def guide(state, builds):
 
 def register(app):
     @app.callback(Output('lm-network-graph', 'figure'), Output('lm-network-info', 'children'), Output('lm-network-selected', 'data'),
-                  Input('lm-network-graph', 'clickData'), Input('lm-network-data', 'data'), State('lm-network-selected', 'data'),
-                  prevent_initial_call=True)
-    def explore(click, graph, selected):
-        # A click chooses a concept (a second click on it lets it go); a new graph keeps the concept chosen.
+                  Input('lm-network-graph', 'clickData'), Input('lm-network-data', 'data'), Input('lm-network-head', 'value'),
+                  State('lm-network-selected', 'data'), prevent_initial_call=True)
+    def explore(click, graph, head, selected):
+        # A click chooses a concept (a second click on it lets it go); switching head clears an out-of-view selection.
         if not graph:
             return dash.no_update, None, selected
-        if dash.ctx.triggered_id == 'lm-network-graph' and click:
+        if dash.ctx.triggered_id == 'lm-network-head' and head and selected:
+            by_id = {n['id']: n for n in graph.get('nodes') or ()}
+            if selected in by_id and by_id[selected].get('group') != int(head):
+                selected = None
+        elif dash.ctx.triggered_id == 'lm-network-graph' and click:
             chosen = (click.get('points') or [{}])[0].get('customdata')
             if chosen:
                 selected = None if chosen == selected else chosen
-        return network_graph_figure(graph, selected), network_graph_info(graph, selected), selected
+        return network_graph_figure(graph, selected, head=head), network_graph_info(graph, selected), selected
 
     @app.callback(Output('lm-long-catalog', 'data'), Output('lm-long-builds', 'data'),
                   Input('lm-long-poll', 'n_intervals'), Input('lm-workspace', 'data'), State('tabs', 'value'),
