@@ -10,7 +10,7 @@ from .core.network import ModularClusterNet, HAS_TORCH
 from .core.model import AlgebraicClusterModel, GraphClusterModel
 from .core.learner import AlgebraicClusterLearner, ACANPredictor
 
-__version__ = "10.0.1"
+__version__ = "10.0.2"
 __all__ = [
     "ModularClusterNet",
     "AlgebraicClusterModel",

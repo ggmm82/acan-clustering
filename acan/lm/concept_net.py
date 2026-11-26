@@ -53,11 +53,30 @@ class ConceptNet:
             self._members = np.split(order, np.cumsum(counts)[:-1])
 
     # ---- one layer -------------------------------------------------------------------------------------
-    def _memberships(self, i, q):
+    def _tabular_layer(self, i):
+        return f'layers.{i}.key.weight' in self.p
+
+    def _pure_layer(self, i):
+        H, d, _ = self.shape(i)
+        return not self._tabular_layer(i) and self.p[f'layers.{i}.out.weight'].shape[1] == H * d
+
+    def _memberships(self, i, q, t_prev=None):
         g, log_s, log_c = self.p[f'layers.{i}.g'], self.p[f'layers.{i}.log_s'], self.p[f'layers.{i}.log_c']
         inv = np.exp(-2 * log_s)                                             # the square expanded: no position x concept x d
         quad = np.einsum('...hd,hkd->...hk', q * q, inv) - 2 * np.einsum('...hd,hkd->...hk', q, g * inv) + (g * g * inv).sum(-1)
-        return _softmax(log_c - .5 * quad - log_s.sum(-1))
+        logits = log_c - .5 * quad - log_s.sum(-1)
+        parent = self.p.get(f'layers.{i}.parent')
+        if parent is not None and t_prev is not None and t_prev.shape[-2:] == (parent.shape[0], parent.shape[1]):
+            lift = np.einsum('...hp,hpk->...hk', t_prev, np.exp(np.clip(parent, -10., 10.)))
+            logits = logits + np.log(np.maximum(lift, 1e-12))
+        return _softmax(logits)
+
+    def _above_stats(self, i, t):
+        div = np.float32(self.config.get('res_var_div', 1.))
+        g, log_s = self.p[f'layers.{i}.g'], self.p[f'layers.{i}.log_s']
+        g_bar = np.einsum('...hk,hkd->...hd', t, g)
+        s_bar = np.sqrt(np.einsum('...hk,hkd->...hd', t, np.exp(2 * log_s) / div) + np.float32(1e-4))
+        return g_bar, s_bar
 
     def shape(self, i):
         """Groups, coordinates of a group and nearby distances of layer i."""
@@ -65,10 +84,14 @@ class ConceptNet:
         return H, d, self.p[f'layers.{i}.near'].shape[0]
 
     def footprint(self):
-        weights = [value for name, value in self.p.items() if name != 'group']
+        weights = [(name, value) for name, value in self.p.items() if name != 'group']
+        layer_params = sum(v.size for name, v in weights if name.startswith('layers.'))
+        concept_params = sum(v.size for name, v in weights
+                             if name.startswith('layers.') and name.endswith(('.g', '.log_s', '.log_c', '.A', '.parent')))
         return dict(dim=self.dim, layers=self.layers,
                     groups=[list(self.p[f'layers.{i}.g'].shape[:2]) for i in range(self.layers)],
-                    parameters=sum(value.size for value in weights), bytes=sum(value.nbytes for value in weights))
+                    parameters=sum(v.size for _, v in weights), bytes=sum(v.nbytes for _, v in weights),
+                    layer_parameters=layer_params, layer_concept_parameters=concept_params)
 
     def _project(self, i, h):
         H, d, _ = self.shape(i)
@@ -76,8 +99,50 @@ class ConceptNet:
         v = (h @ self.p[f'layers.{i}.value.weight'].T).reshape(*h.shape[:-1], H, d)
         return q, v
 
-    def _finish(self, i, h, read, near):
-        out = np.concatenate([read, near], -1) @ self.p[f'layers.{i}.out.weight'].T + self.p[f'layers.{i}.out.bias']
+    def _project_tabular(self, i, h, prev_ctx=None):
+        H, d, _ = self.shape(i)
+        h_norm = _layer_norm(h, self.p[f'layers.{i}.norm1.weight'], self.p[f'layers.{i}.norm1.bias'])
+        q0 = (h_norm @ self.p[f'layers.{i}.query.weight'].T).reshape(*h.shape[:-1], H, d)
+        k = (h_norm @ self.p[f'layers.{i}.key.weight'].T).reshape(*h.shape[:-1], H, d)
+        v = (h_norm @ self.p[f'layers.{i}.value.weight'].T).reshape(*h.shape[:-1], H, d)
+        if prev_ctx is not None and prev_ctx[0].shape[-2:] == (H, d):
+            q = q0 + (prev_ctx[0] - prev_ctx[1]) / prev_ctx[2]
+        else:
+            q = q0
+        return q0, q, k, v
+
+    def _view_bulk(self, i, q0, k, v, past_k=None, past_v=None):
+        pos_bias = self.p[f'layers.{i}.pos_bias']
+        W_v = pos_bias.shape[1]
+        T, H, d = q0.shape
+        keep_past = past_k[-(W_v - 1):] if (W_v > 1 and past_k) else []
+        keep_val = past_v[-(W_v - 1):] if (W_v > 1 and past_v) else []
+        pk = np.zeros((0, H, d), np.float32) if not keep_past else np.asarray(keep_past, np.float32).reshape(-1, H, d)
+        pv = np.zeros((0, H, d), np.float32) if not keep_val else np.asarray(keep_val, np.float32).reshape(-1, H, d)
+        pad_len = max(0, W_v - 1 - len(pk))
+        k_pad = np.concatenate([np.zeros((pad_len, H, d), np.float32), pk, k], axis=0)
+        v_pad = np.concatenate([np.zeros((pad_len, H, d), np.float32), pv, v], axis=0)
+        valid = np.concatenate([np.zeros(pad_len, bool), np.ones(len(pk) + T, bool)])
+        k_win = np.lib.stride_tricks.sliding_window_view(k_pad, W_v, axis=0)      # T H d W_v
+        v_win = np.lib.stride_tricks.sliding_window_view(v_pad, W_v, axis=0)      # T H d W_v
+        valid_w = np.lib.stride_tricks.sliding_window_view(valid, W_v, axis=0)    # T W_v
+        scores = np.einsum('thd,thdw->thw', q0, k_win) * np.float32(d ** -.5) + pos_bias[None, :, :]
+        scores = np.where(valid_w[:, None, :], scores, -np.inf)
+        attn = _softmax(scores, -1)
+        tail_k = list((np.concatenate([pk, k], axis=0))[-W_v:])
+        tail_v = list((np.concatenate([pv, v], axis=0))[-W_v:])
+        return np.einsum('thw,thdw->thd', attn, v_win), tail_k, tail_v
+
+    def _finish_tabular(self, i, h, read, view, proto, near):
+        inp = np.concatenate([read, view, proto, near], -1)
+        out = inp @ self.p[f'layers.{i}.out.weight'].T + self.p[f'layers.{i}.out.bias']
+        delta = _layer_norm(out, self.p[f'layers.{i}.norm2.weight'], self.p[f'layers.{i}.norm2.bias'])
+        gate = self.p.get(f'layers.{i}.gate')
+        return h + delta if gate is None else h + gate * delta
+
+    def _finish(self, i, h, read, near=None):
+        inp = read if near is None else np.concatenate([read, near], -1)
+        out = inp @ self.p[f'layers.{i}.out.weight'].T + self.p[f'layers.{i}.out.bias']
         new = _layer_norm(h + out, self.p[f'layers.{i}.norm1.weight'], self.p[f'layers.{i}.norm1.bias'])
         new = _layer_norm(new, self.p[f'layers.{i}.norm2.weight'], self.p[f'layers.{i}.norm2.bias'])
         gate = self.p.get(f'layers.{i}.gate')                      # how open the layer is (older networks: open)
@@ -102,21 +167,41 @@ class ConceptNet:
         memberships of every layer (T x H x K)."""
         h = self.p['centre.weight'][np.asarray(ids, np.int64)]
         T = len(h)
+        prev_ctx = None
         for i in range(self.layers):
-            q, v = self._project(i, h)
-            t = self._memberships(i, q)                                       # T H K
-            if memberships is not None:
-                memberships.append(t)
-            written = self._written(i, h, t)
-            mass = np.cumsum(written, 0) + EPS_MASS
-            sums = np.cumsum(written[..., None] * v[:, :, None, :], 0)        # T H K d
-            weight = np.einsum('thk,hkj->thj', t, self._looked(i)) / mass
-            read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
+            W = self.shape(i)[2]
             near = np.zeros_like(h)
-            for w in range(1, self.shape(i)[2] + 1):
+            for w in range(1, W + 1):
                 if w < T:
                     near[w:] += h[:-w] @ self.p[f'layers.{i}.near'][w - 1]
-            h = self._finish(i, h, read, near)
+            t_prev = prev_ctx[3] if prev_ctx is not None else None
+            if self._tabular_layer(i):
+                q0, q, k, v = self._project_tabular(i, h, prev_ctx)
+                t = self._memberships(i, q, t_prev)
+                if memberships is not None:
+                    memberships.append(t)
+                written = self._written(i, h, t)
+                mass = np.cumsum(written, 0) + EPS_MASS
+                sums = np.cumsum(written[..., None] * v[:, :, None, :], 0)
+                weight = np.einsum('thk,hkj->thj', t, self._looked(i)) / mass
+                read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
+                view, _, _ = self._view_bulk(i, q0, k, v)
+                g_bar, s_bar = self._above_stats(i, t)
+                h = self._finish_tabular(i, h, read, view.reshape(T, -1), g_bar.reshape(T, -1), near)
+                prev_ctx = (q, g_bar, s_bar, t)
+            else:
+                pure = self._pure_layer(i)
+                q, v = self._project(i, h + near if pure else h)
+                t = self._memberships(i, q, t_prev)
+                if memberships is not None:
+                    memberships.append(t)
+                written = self._written(i, h, t)
+                mass = np.cumsum(written, 0) + EPS_MASS
+                sums = np.cumsum(written[..., None] * v[:, :, None, :], 0)
+                weight = np.einsum('thk,hkj->thj', t, self._looked(i)) / mass
+                read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
+                h = self._finish(i, h, read, None if pure else near)
+                prev_ctx = (q, None, None, t)
         return h @ self.p['final.weight'].T + self.p['final.bias']
 
     def _logits(self, h, centres, log_mass):
@@ -242,29 +327,58 @@ class ConceptNet:
         if not now:
             return dict(nodes=[], edges=[])
         now, after = np.concatenate(now), np.concatenate(after)
-        everywhere_in = np.bincount(now, minlength=self.vocabulary) / len(now)
-        everywhere_out = np.bincount(after, minlength=self.vocabulary) / len(after)
+        u_in, inv_in = np.unique(now, return_inverse=True)
+        u_out, inv_out = np.unique(after, return_inverse=True)
+        everywhere_in = np.bincount(inv_in, minlength=len(u_in)) / len(now)
+        everywhere_out = np.bincount(inv_out, minlength=len(u_out)) / len(after)
 
-        def telling(mass, everywhere):
-            # the concept's own tokens: much in it, and more in it than in all the text (mass times the log of how
-            # much more): a token found everywhere, as the newline, names no concept
-            share = mass / max(mass.sum(), 1e-12)
+        def clean_token(tok_id):
+            if not decode:
+                return str(int(tok_id)), True
+            raw = decode([int(tok_id)])
+            stripped = raw.strip()
+            is_word = (len(stripped) >= 2 and '<' not in stripped and '>' not in stripped
+                       and stripped.lower() not in ('user', 'assistant', 'system', 'endoftext', 'im_start', 'im_end')
+                       and any(ch.isalpha() for ch in stripped))
+            return (stripped or repr(raw)), is_word
+
+        in_meta = [clean_token(x) for x in u_in]
+        out_meta = [clean_token(x) for x in u_out]
+        in_labels = [m[0] for m in in_meta]
+        out_labels = [m[0] for m in out_meta]
+        in_good = np.array([m[1] for m in in_meta], dtype=bool)
+        out_good = np.array([m[1] for m in out_meta], dtype=bool)
+
+        def telling(mass, everywhere, text_list, good_mask):
+            share = mass / max(float(mass.sum()), 1e-12)
             score = np.where(mass > 0, mass * np.log(np.maximum(share, 1e-300) / np.maximum(everywhere, 1e-300)), -np.inf)
-            return np.argsort(-score)[:labels]
-        word = (lambda ids: [decode([int(x)]).strip() or repr(decode([int(x)])) for x in ids]) if decode else (lambda ids: [str(int(x)) for x in ids])
+            word_scores = np.where(good_mask, score, -np.inf)
+            chosen_scores = word_scores if np.isfinite(word_scores).sum() >= min(labels, len(score)) else score
+            order = np.argsort(-chosen_scores)[:labels]
+            return [text_list[int(idx)] for idx in order]
+
         nodes, edges, kept = [], [], []
         for i in range(self.layers):
+            role = ('concetto' if self.layers == 1 else
+                    ('astrazione' if i == 0 else
+                     ('sotto-concetto particolare' if i == self.layers - 1 else 'concetto intermedio')))
             t = np.concatenate(found[i])                                       # positions x H x K
             H, K = t.shape[1:]
-            share = t.sum(0) / t.sum((0, 2))[:, None]                          # H x K
-            keep = {(h, k) for h in range(H) for k in range(K) if share[h, k] > 1 / K}
+            share = t.sum(0) / np.maximum(t.sum((0, 2))[:, None], 1e-12)       # H x K
+            threshold = 0. if K <= 1 else (max(1e-3, .25 / K) if K <= 8 else (1. - 1e-5) / K)
+            keep = {(h, k) for h in range(H) for k in range(K) if share[h, k] >= threshold}
+            for h in range(H):
+                if not any(h0 == h for h0, _ in keep):
+                    keep.add((h, int(np.argmax(share[h]))))
             kept.append((t, keep))
             for h, k in sorted(keep):
                 w = t[:, h, k]
-                into = np.bincount(now, weights=w, minlength=self.vocabulary)
-                out = np.bincount(after, weights=w, minlength=self.vocabulary)
-                nodes.append(dict(id=f'{i + 1}.{h + 1}.{k + 1}', layer=i + 1, group=h + 1, concept=k + 1, mass=float(share[h, k]),
-                                  enters=word(telling(into, everywhere_in)), follows=word(telling(out, everywhere_out))))
+                into = np.bincount(inv_in, weights=w, minlength=len(u_in))
+                out = np.bincount(inv_out, weights=w, minlength=len(u_out))
+                nodes.append(dict(id=f'{i + 1}.{h + 1}.{k + 1}', layer=i + 1, group=h + 1, concept=k + 1,
+                                  role=role, mass=float(share[h, k]),
+                                  enters=telling(into, everywhere_in, in_labels, in_good),
+                                  follows=telling(out, everywhere_out, out_labels, out_good)))
             A = self._looked(i)                                                # H x K x K: k reads k'
             for h, k in sorted(keep):
                 for k2 in np.flatnonzero(A[h, k] > 1 / K):
@@ -273,16 +387,32 @@ class ConceptNet:
                                           weight=float(A[h, k, k2]), kind='legge'))
         for i in range(self.layers - 1):
             (t1, keep1), (t2, keep2) = kept[i], kept[i + 1]
+            K1 = t1.shape[2]
             H2, K2 = t2.shape[1:]
             base = t2.mean(0)                                                  # what a next concept holds anyway
+            parent_mass = np.maximum(t1.sum(0), 1e-12)                         # H1 x K1
+            child_mass = np.maximum(t2.sum(0), 1e-12)                          # H2 x K2
+            co_all = np.einsum('thp,tjq->hpjq', t1, t2)                        # H1 x K1 x H2 x K2
+            parent_mat = self.p.get(f'layers.{i + 1}.parent')
+            log_c_next = self.p.get(f'layers.{i + 1}.log_c')
+            struct_prob = (_softmax(np.clip(parent_mat, -10., 10.) + log_c_next[:, None, :], axis=-1)
+                           if parent_mat is not None and log_c_next is not None else None)
             for h, k in sorted(keep1):
-                w = t1[:, h, k]
-                spread = (w[:, None, None] * t2).sum(0) / max(w.sum(), 1e-12)  # H2 x K2, each group sums to one
+                co_mass = co_all[h, k]                                         # H2 x K2
+                spread = co_mass / parent_mass[h, k]                           # P(child | parent)
+                parent_share = co_mass / child_mass                            # P(parent | child), as in concepts.py
                 for h2, k2 in sorted(keep2):
-                    if spread[h2, k2] > 1 / K2 and spread[h2, k2] > base[h2, k2]:
+                    spec = (float(struct_prob[h, k, k2])
+                            if struct_prob is not None and h == h2 and h < struct_prob.shape[0] else None)
+                    weight = float(.5 * (spec + spread[h2, k2]) if spec is not None else spread[h2, k2])
+                    pshare = float(parent_share[h2, k2])
+                    lift = float(weight / max(base[h2, k2], 1e-12))
+                    if ((K2 == 1 and h == h2)
+                            or (weight > 1 / K2 and weight > base[h2, k2])
+                            or (K1 > 1 and pshare > 1 / K1 and lift > 1.05)):
                         edges.append(dict(source=f'{i + 1}.{h + 1}.{k + 1}', target=f'{i + 2}.{h2 + 1}.{k2 + 1}',
-                                          weight=float(spread[h2, k2]), kind='porta a',
-                                          lift=float(spread[h2, k2] / max(base[h2, k2], 1e-12))))
+                                          weight=weight, parent_share=pshare,
+                                          kind='porta a', relation='specializza', lift=lift))
         return dict(nodes=nodes, edges=edges)
 
     def describe(self, documents, decode=None, concepts=3, examples=4):
@@ -351,6 +481,8 @@ class NetCursor:
         self.mass = [np.full((H, k), EPS_MASS, np.float32) for H, k, _ in shapes]
         self.sums = [np.zeros((H, k, d), np.float32) for H, k, d in shapes]
         self.recent = [[] for _ in range(net.layers)]                       # inputs of the layer, newest last
+        self.view_k = [[] for _ in range(net.layers)]                       # perspective keys within view_window
+        self.view_v = [[] for _ in range(net.layers)]                       # perspective values within view_window
         self.state = None
         self.keys, self.after = [], []                                       # the memory of the document
 
@@ -360,6 +492,8 @@ class NetCursor:
         other.mass = [m.copy() for m in self.mass]
         other.sums = [s.copy() for s in self.sums]
         other.recent = [list(r) for r in self.recent]
+        other.view_k = [list(r) for r in self.view_k]
+        other.view_v = [list(r) for r in self.view_v]
         other.state = None if self.state is None else self.state.copy()
         other.keys, other.after = list(self.keys), list(self.after)
         return other
@@ -372,23 +506,42 @@ class NetCursor:
         net = self.net
         h = net.p['centre.weight'][ids]
         T = len(h)
+        prev_ctx = None
         for i in range(net.layers):
-            q, v = net._project(i, h)
-            t = net._memberships(i, q)
-            written = net._written(i, h, t)
-            mass = np.cumsum(written, 0) + self.mass[i]
-            sums = np.cumsum(written[..., None] * v[:, :, None, :], 0) + self.sums[i]
-            weight = np.einsum('thk,hkj->thj', t, net._looked(i)) / mass
-            read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
             W = net.shape(i)[2]
             before = np.array(self.recent[i][-W:]).reshape(-1, net.dim)
             padded = np.vstack([np.zeros((W - len(before), net.dim), np.float32), before, h])
             near = np.zeros_like(h)
             for w in range(1, W + 1):
                 near += padded[W - w:W - w + T] @ net.p[f'layers.{i}.near'][w - 1]
-            self.mass[i], self.sums[i] = mass[-1], sums[-1]
-            self.recent[i] = list(padded[-W:])
-            h = net._finish(i, h, read, near)
+            t_prev = prev_ctx[3] if prev_ctx is not None else None
+            if net._tabular_layer(i):
+                q0, q, k, v = net._project_tabular(i, h, prev_ctx)
+                t = net._memberships(i, q, t_prev)
+                written = net._written(i, h, t)
+                mass = np.cumsum(written, 0) + self.mass[i]
+                sums = np.cumsum(written[..., None] * v[:, :, None, :], 0) + self.sums[i]
+                weight = np.einsum('thk,hkj->thj', t, net._looked(i)) / mass
+                read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
+                view, self.view_k[i], self.view_v[i] = net._view_bulk(i, q0, k, v, self.view_k[i], self.view_v[i])
+                g_bar, s_bar = net._above_stats(i, t)
+                self.mass[i], self.sums[i] = mass[-1], sums[-1]
+                self.recent[i] = list(padded[-W:])
+                h = net._finish_tabular(i, h, read, view.reshape(T, -1), g_bar.reshape(T, -1), near)
+                prev_ctx = (q, g_bar, s_bar, t)
+            else:
+                pure = net._pure_layer(i)
+                q, v = net._project(i, h + near if pure else h)
+                t = net._memberships(i, q, t_prev)
+                written = net._written(i, h, t)
+                mass = np.cumsum(written, 0) + self.mass[i]
+                sums = np.cumsum(written[..., None] * v[:, :, None, :], 0) + self.sums[i]
+                weight = np.einsum('thk,hkj->thj', t, net._looked(i)) / mass
+                read = np.einsum('thj,thjd->thd', weight, sums).reshape(T, -1)
+                self.mass[i], self.sums[i] = mass[-1], sums[-1]
+                self.recent[i] = list(padded[-W:])
+                h = net._finish(i, h, read, None if pure else near)
+                prev_ctx = (q, None, None, t)
         states = h @ net.p['final.weight'].T + net.p['final.bias']
         if net.cached:
             if self.state is not None:
@@ -402,20 +555,47 @@ class NetCursor:
         if net.cached and self.state is not None:                           # the last state was followed by token
             self.keys.append(net._addresses(self.state)[1]); self.after.append(int(token))
         h = net.p['centre.weight'][int(token)]
+        prev_ctx = None
         for i in range(net.layers):
-            q, v = net._project(i, h)
-            t = net._memberships(i, q)                                         # H K
-            written = net._written(i, h, t)
-            self.mass[i] += written
-            self.sums[i] += written[..., None] * v[:, None, :]
-            weight = np.einsum('hk,hkj->hj', t, net._looked(i)) / self.mass[i]
-            read = np.einsum('hj,hjd->hd', weight, self.sums[i]).reshape(-1)
             W = net.shape(i)[2]
             near = np.zeros_like(h)
             for w, previous in enumerate(reversed(self.recent[i][-W:]), 1):
                 near += previous @ net.p[f'layers.{i}.near'][w - 1]
-            self.recent[i] = (self.recent[i] + [h])[-W:]
-            h = net._finish(i, h, read, near)
+            t_prev = prev_ctx[3] if prev_ctx is not None else None
+            if net._tabular_layer(i):
+                q0, q, k, v = net._project_tabular(i, h, prev_ctx)
+                t = net._memberships(i, q, t_prev)
+                written = net._written(i, h, t)
+                self.mass[i] += written
+                self.sums[i] += written[..., None] * v[:, None, :]
+                weight = np.einsum('hk,hkj->hj', t, net._looked(i)) / self.mass[i]
+                read = np.einsum('hj,hjd->hd', weight, self.sums[i]).reshape(-1)
+                pos_bias = net.p[f'layers.{i}.pos_bias']
+                W_v = pos_bias.shape[1]
+                self.view_k[i] = (self.view_k[i] + [k])[-W_v:]
+                self.view_v[i] = (self.view_v[i] + [v])[-W_v:]
+                L_cur = len(self.view_k[i])
+                k_buf = np.stack(self.view_k[i], axis=0)                    # L_cur H d
+                v_buf = np.stack(self.view_v[i], axis=0)                    # L_cur H d
+                scores = np.einsum('hd,whd->hw', q0, k_buf) * np.float32(q0.shape[-1] ** -.5) + pos_bias[:, W_v - L_cur:]
+                attn = _softmax(scores, -1)
+                view = np.einsum('hw,whd->hd', attn, v_buf).reshape(-1)
+                g_bar, s_bar = net._above_stats(i, t)
+                self.recent[i] = (self.recent[i] + [h])[-W:]
+                h = net._finish_tabular(i, h, read, view, g_bar.reshape(-1), near)
+                prev_ctx = (q, g_bar, s_bar, t)
+            else:
+                pure = net._pure_layer(i)
+                q, v = net._project(i, h + near if pure else h)
+                t = net._memberships(i, q, t_prev)
+                written = net._written(i, h, t)
+                self.mass[i] += written
+                self.sums[i] += written[..., None] * v[:, None, :]
+                weight = np.einsum('hk,hkj->hj', t, net._looked(i)) / self.mass[i]
+                read = np.einsum('hj,hjd->hd', weight, self.sums[i]).reshape(-1)
+                self.recent[i] = (self.recent[i] + [h])[-W:]
+                h = net._finish(i, h, read, None if pure else near)
+                prev_ctx = (q, None, None, t)
         self.state = h @ net.p['final.weight'].T + net.p['final.bias']
 
     def distribution(self):

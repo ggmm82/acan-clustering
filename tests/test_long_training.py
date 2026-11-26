@@ -121,8 +121,14 @@ class QueueTest(unittest.TestCase):
         self.assertEqual([job['config']['series']['order'] for job in jobs], [0, 1])
         self.assertEqual([job['config']['warm_start'] for job in jobs], [False, True])
         self.assertEqual({job['config']['graft_fraction'] for job in jobs}, {1.})               # all concepts
-        added = self.client.post(f"/queues/{body['queue']}/add", headers=self.headers, json=dict(corpus_id=third['id'])).get_json()
+        added = self.client.post(f"/queues/{body['queue']}/add", headers=self.headers,
+                                 json=dict(corpus_id=third['id'], concept_network_growth=True,
+                                           concept_max_dim=192, concept_max_layers=4,
+                                           concept_max_heads=4, concept_max_concepts=32)).get_json()
         self.assertEqual((added['config']['series']['order'], added['config']['warm_start'], added['config']['passes']), (2, True, 1))
+        self.assertEqual((added['config']['concept_max_dim'], added['config']['concept_max_layers'],
+                          added['config']['concept_max_heads'], added['config']['concept_max_concepts']),
+                         (192, 4, 4, 32))
         self.assertTrue(added['config']['name'].startswith('Dialogo · 3 · tre.txt'))
         from acan.lm.research_trainer import warm_source
         from acan.lm.store import Store
@@ -510,3 +516,19 @@ class StructureProgressTest(unittest.TestCase):
         self.assertIn('si conserva la rete di partenza (5.980)', text)
         self.assertIn('La gara per questo pezzo si chiude', text)
         self.assertNotIn('In testa per NLL', str(concept_summary(progress, config, status='paused')))
+
+        from acan.vis.long_training import concept_footprint_view
+        item = dict(progress=dict(step=0, graft=dict(vocabulary=8)),
+                    config=dict(architecture='concepts', total_steps=10),
+                    status='running', checkpoint_bytes=1024,
+                    checkpoints={k: dict(count=0, bytes=0) for k in ('step', 'milestone', 'best')},
+                    token_bytes=1024, corpus_bytes=2048, disk_free=10 * 1024 ** 3, disk_total=20 * 1024 ** 3)
+        waiting_view = concept_footprint_view(item)
+        self.assertIn('si sta popolando sul testo di validazione', str(waiting_view.children[1]))
+        item['progress']['network_graph'] = dict(
+            nodes=[dict(id='1.1.1', layer=1, group=1, concept=1, role='concetto', mass=1.,
+                        enters=['ciao'], follows=['mondo'])],
+            edges=[])
+        live_view = concept_footprint_view(item)
+        self.assertIn('lm-network-graph', str(live_view.children[1]))
+        self.assertNotIn('lm-network-graph', str(live_view.children[2]))

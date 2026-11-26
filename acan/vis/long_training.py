@@ -24,11 +24,12 @@ QUEUE_NAME = 'Modello a concetti'
 
 
 def profile(cuda, size=None):
-    """The settings of the concept language model: the concept network, its concepts learned along the gradient.
+    """The settings of the concept language model: a hierarchical graph of concepts, abstractions and sub-concepts.
     ``size`` is accepted for earlier callers and ignored."""
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='auto',
-                chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000)
+                chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000,
+                concept_max_dim=96, concept_max_layers=0, concept_max_heads=0, concept_max_concepts=0)
 
 
 def queues(jobs):
@@ -295,15 +296,24 @@ def concept_footprint_view(item):
     levels = [heads * concepts for heads, concepts in shape['groups']] if shape else progress.get('concepts_per_level') or []
     size = shape.get('bytes', progress.get('statistics_bytes')) if shape else None
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
+    cap_parts = [f"{label} {int(config.get(key) or 0) or 'illimitato'}" for label, key in (
+        ('larghezza', 'concept_max_dim'), ('livelli', 'concept_max_layers'),
+        ('gruppi', 'concept_max_heads'), ('concetti/gruppo', 'concept_max_concepts'))]
+    layer_p = (shape or {}).get('layer_parameters') or 0
+    concept_p = (shape or {}).get('layer_concept_parameters') or 0
+    concept_share = (f"{100 * concept_p / layer_p:.0f}% ({concept_p:,} su {layer_p:,} parametri degli strati)"
+                     if layer_p > 0 else None)
     rows = [
         ('Modello', [
-            ('Tipo', 'rete a concetti: i concetti dei token e di ogni strato imparati col gradiente prevedendo il token che segue'),
+            ('Tipo', 'grafo gerarchico di concetti, astrazioni e sotto-concetti particolari collegati da matrici esplicite'),
             ('Vocabolario', f"{(progress.get('graft') or {}).get('vocabulary', 0):,} token" if progress.get('graft') else
              (f"{config.get('vocabulary', 32000):,} token, lo stesso del testo precedente della coda (si stanno preparando i token di questo testo)"
-              if config.get('warm_start') else f"{config.get('vocabulary', 32000):,} token (si sta imparando dai testi della coda)")),
-            ('Contesto letto', 'tutto il documento, attraverso le somme dei concetti di ogni strato'),
-            ('Concetti per strato', ' · '.join(f'{count:,}' for count in levels) if levels else '—'),
+              if config.get('warm_start') else f"{config.get('vocabulary', 32000):,} token (raggruppati in concetti lessicali semantici)")),
+            ('Contesto letto', 'tutto il documento, esclusivamente attraverso le somme dei concetti e le loro relazioni'),
+            ('Concetti per livello', ' → '.join(f'{count:,}' for count in levels) if levels else '—'),
             ('Concetti in tutto', f'{sum(levels):,}' if levels else '—'),
+            *([('Quota concetti negli strati', concept_share)] if concept_share else []),
+            *( [('Tetti di crescita', ' · '.join(cap_parts))] if config.get('concept_network_growth', True) else [('Taglia fissa', 'crescita disattivata')] ),
             ('Dimensione dei parametri', _bytes(size) if size else '—')]),
         ('Avanzamento e velocità', [
             ('Dispositivo di addestramento', (progress.get('device') or '—').upper()),
@@ -317,11 +327,11 @@ def concept_footprint_view(item):
             ('Errore su testo mai visto', number(progress.get('validation_nll'))),
             ('Migliore finora', number(progress.get('best_validation_nll'))),
             ('Prima di leggere questo testo', number(progress.get('baseline_nll')))]),
-        *([('Rete a concetti', [
-            ('Apprendimento', 'si è fermata: la validazione non migliorava più' if progress.get('network_stopped') else 'impara a ogni pezzo'),
+        *([('Grafo dei concetti', [
+            ('Apprendimento', 'si è fermata: la validazione non migliorava più' if progress.get('network_stopped') else 'raffina concetti e sotto-concetti a ogni pezzo'),
             *[(f"Crescita a {race['tokens']:,} token" + (f" · tornata {race['round']}" if race.get('round') else ''), _race_summary(race))
               for race in progress.get('network_races') or []],
-            *[(f"Strato {layer['layer']}",
+            *[(f"Livello {layer['layer']}",
                f"{' · '.join(f'{a:.0f}' for a in layer['active'])} concetti attivi per gruppo; "
                + (f"in un concetto il token più frequente è il {layer['tied']:.0%}. " if layer['tied'] is not None else '')
                + ' '.join(f"Concetto {c['concept']} ({c['mass']:.0%}): " + ' | '.join(c['examples']) for c in layer['concepts']))
@@ -341,97 +351,237 @@ def concept_footprint_view(item):
     note = html.P("Gli errori sono in nat per token: e elevato all'errore è fra quanti token, in media, il modello è incerto. "
                   "Si misurano solo su testo che il modello non ha letto.", className='small text-muted')
     graph = network_graph_view(progress.get('network_graph'))
+    if graph is None:
+        waiting = ('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti compare appena i token sono pronti e la rete legge il primo brano.'
+                   if item.get('status') in ('queued', 'preparing') or not progress.get('graft') else
+                   'Il grafo ispezionabile di concetti, astrazioni e sotto-concetti si sta popolando sul testo di validazione…')
+        graph_section = html.Div([html.H6('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti', className='mt-3'),
+                                  html.P(waiting, className='small text-muted')])
+    else:
+        graph_section = graph
     details = folded('Tutti i dettagli: vocabolario, concetti, contesto, memoria e disco',
-                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note] + ([graph] if graph is not None else []),
+                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note],
                      'lm-long-details')
-    return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')), details])
+    return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')),
+                     graph_section, details])
 
 
-def network_graph_view(graph):
-    """The graph of the network, to explore: a column per layer, a node per concept that works (its size is its mass,
-    its name the tokens that enter it and the tokens that follow it), solid edges from a layer to the next (where the
-    positions of a concept go), dotted edges inside a layer (which concepts a concept reads). A click on a concept shows
-    all its edges and lists them; a second click lets it go."""
-    if not graph or not graph.get('nodes'):
-        return None
-    note = html.P("Un nodo è un concetto che lavora: il nome dice quali token vi entrano → quali token vengono dopo; la grandezza, "
-                  "la sua parte del gruppo. Linee continue: il concetto dello strato dopo dove vanno le posizioni del concetto, "
-                  "più di quanto ci andrebbero comunque. Linee punteggiate: quali concetti dello stesso strato il concetto legge. "
-                  "Si mostrano i concetti e gli archi che pesano più di una parte uguale; senza scelta, fra gli strati solo l'arco "
-                  "più caratteristico di ogni concetto. Clic su un concetto: tutti i suoi archi, e l'elenco qui sotto.",
-                  className='small text-muted')
-    return html.Div([html.H6('Il grafo della rete', className='mt-3'),
-                     dcc.Graph(id='lm-network-graph', figure=network_graph_figure(graph), config={'scrollZoom': True}),
-                     dcc.Store(id='lm-network-data', data=graph), html.Div(id='lm-network-info'), note])
+MAX_GRAPH_CONCEPTS_PER_LEVEL = 8
+
+
+def _level_label(layer, total):
+    if total <= 1:
+        return f'Livello {layer} · Concetti'
+    if layer == 1:
+        return 'Livello 1 · Astrazioni generali'
+    if layer == total:
+        return f'Livello {layer} · Sotto-concetti particolari'
+    return f'Livello {layer} · Concetti intermedi'
+
+
+def _short_word(words):
+    for w in (words or []):
+        s = str(w).strip()
+        if s:
+            return s[:14] + ('…' if len(s) > 14 else '')
+    return '—'
 
 
 def _concept_name(n):
-    return f"{' '.join(n['enters'])} → {' '.join(n['follows'])}"
+    return f"{', '.join((n.get('enters') or [])[:2])} → {', '.join((n.get('follows') or [])[:2])}"
 
 
-def network_graph_figure(graph, selected=None):
+def _node_badge(n, show_head=False):
+    prefix = f"V{n['group']}·C{n['concept']}" if show_head else f"C{n['concept']}"
+    return f"{prefix} ({n['mass']:.0%})<br>{_short_word(n.get('enters'))} → {_short_word(n.get('follows'))}"
+
+
+def network_graph_view(graph):
+    """The inspectable top-down graph of concepts, abstractions and multi-parent sub-concepts."""
+    if not graph or not graph.get('nodes'):
+        return None
+    heads = sorted({int(n.get('group', 1)) for n in graph['nodes']})
+    default_head = heads[0] if heads else 1
+    head_options = ([dict(label=f'Punto di vista {h}', value=h) for h in heads]
+                    + ([dict(label='Tutte le viste (principali)', value=0)] if len(heads) > 1 else []))
+    selector = (dbc.Row([
+        dbc.Col(html.Small('Testa di attenzione:', className='text-muted fw-semibold'), width='auto'),
+        dbc.Col(dbc.RadioItems(id='lm-network-head', options=head_options, value=default_head, inline=True,
+                               persistence=True, persistence_type='session', className='small')),
+    ], className='align-items-center mb-1') if len(heads) > 1 else
+        html.Div(dbc.RadioItems(id='lm-network-head', options=[dict(label='Vista 1', value=default_head)],
+                                value=default_head, style={'display': 'none'})))
+    note = html.P("Dall'alto verso il basso: dal livello delle astrazioni generali fino ai sotto-concetti particolari (come nel grafo tabulare). "
+                  "Ogni nodo indica «contesto riconosciuto → token predetto» e la sua quota nella vista. "
+                  "Le linee blu mostrano l'ereditarietà padre → sotto-concetto (anche da più concetti padre contemporaneamente). "
+                  "Clicca su un nodo per vedere tutti i suoi concetti padre (% padre), i sotto-concetti figli e i legami contestuali.",
+                  className='small text-muted mt-1')
+    return html.Div([html.H6('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti', className='mt-3'),
+                     selector,
+                     dcc.Graph(id='lm-network-graph', figure=network_graph_figure(graph, head=default_head),
+                               config={'displayModeBar': False}),
+                     dcc.Store(id='lm-network-data', data=graph), html.Div(id='lm-network-info'), note])
+
+
+def network_graph_figure(graph, selected=None, head=1):
     import plotly.graph_objects as go
-    nodes = sorted(graph['nodes'], key=lambda n: (n['layer'], n['group'], n['concept']))
-    rows, place = {}, {}
-    for n in nodes:
-        rows[n['layer']] = rows.get(n['layer'], -1) + 1
-        place[n['id']] = (n['layer'], rows[n['layer']])
-    if selected in place:                                       # a chosen concept: all its edges
-        shown = [e for e in graph['edges'] if selected in (e['source'], e['target'])]
+    all_nodes = graph.get('nodes') or []
+    if not all_nodes:
+        return go.Figure()
+    heads = sorted({int(n.get('group', 1)) for n in all_nodes})
+    chosen_head = int(head) if head is not None else (heads[0] if heads else 1)
+    if chosen_head > 0 and chosen_head not in heads:
+        chosen_head = heads[0]
+    by_id = {n['id']: n for n in all_nodes}
+    if selected not in by_id or (chosen_head > 0 and by_id[selected].get('group') != chosen_head):
+        selected = None
+    pool = [n for n in all_nodes if chosen_head == 0 or n.get('group') == chosen_head]
+    layers = sorted({n['layer'] for n in pool})
+    total_layers = max(layers) if layers else 1
+
+    # Keep any neighbor of the selected concept visible even if outside top-8 mass.
+    pinned = set()
+    if selected:
+        pinned.add(selected)
+        for e in graph.get('edges') or ():
+            if e['source'] == selected and e['target'] in by_id:
+                if chosen_head == 0 or by_id[e['target']].get('group') == chosen_head:
+                    pinned.add(e['target'])
+            elif e['target'] == selected and e['source'] in by_id:
+                if chosen_head == 0 or by_id[e['source']].get('group') == chosen_head:
+                    pinned.add(e['source'])
+
+    visible_nodes, omitted = [], 0
+    place = {}
+    for lyr in layers:
+        in_layer = sorted([n for n in pool if n['layer'] == lyr], key=lambda n: (-n['mass'], n['group'], n['concept']))
+        top = in_layer[:MAX_GRAPH_CONCEPTS_PER_LEVEL]
+        top_ids = {n['id'] for n in top}
+        extra = [n for n in in_layer[MAX_GRAPH_CONCEPTS_PER_LEVEL:] if n['id'] in pinned and n['id'] not in top_ids]
+        row_nodes = sorted(top + extra, key=lambda n: (n['group'], -n['mass'], n['concept']))
+        omitted += max(0, len(in_layer) - len(row_nodes))
+        count = len(row_nodes)
+        for idx, n in enumerate(row_nodes):
+            x_pos = (idx - (count - 1) / 2.) * 1.35
+            place[n['id']] = (x_pos, float(lyr))
+            visible_nodes.append(n)
+
+    vis_ids = set(place)
+    edges_pool = [e for e in (graph.get('edges') or ()) if e['source'] in vis_ids and e['target'] in vis_ids]
+    if selected in place:
+        shown = [e for e in edges_pool if selected in (e['source'], e['target'])]
         near = {selected} | {e['source'] for e in shown} | {e['target'] for e in shown}
     else:
-        strongest = {}                                          # between layers, each concept's most telling edge
-        for e in graph['edges']:
-            if e['kind'] == 'porta a' and e.get('lift', 0) > strongest.get(e['source'], {}).get('lift', 0):
-                strongest[e['source']] = e
-        shown, near = [e for e in graph['edges'] if e['kind'] == 'legge'] + list(strongest.values()), None
+        strongest, by_child = {}, {}
+        for e in edges_pool:
+            if e['kind'] == 'porta a':
+                if e.get('lift', 0) > strongest.get(e['source'], {}).get('lift', 0):
+                    strongest[e['source']] = e
+                by_child.setdefault(e['target'], []).append(e)
+        multi_parents = []
+        for child_edges in by_child.values():
+            ranked = sorted(child_edges, key=lambda e: -(e.get('parent_share', e['weight'])))
+            multi_parents.extend(ranked[:2])
+        seen_pairs, shown = set(), []
+        for e in list(strongest.values()) + multi_parents:
+            pair = (e['source'], e['target'])
+            if pair not in seen_pairs:
+                seen_pairs.add(pair)
+                shown.append(e)
+        near = None
+
     figure = go.Figure()
     for e in shown:
-        if e['source'] not in place or e['target'] not in place:
-            continue
         (x0, y0), (x1, y1) = place[e['source']], place[e['target']]
         inside = e['kind'] == 'legge'
-        xs = [x0, x0 - .25, x1] if inside else [x0, (x0 + x1) / 2, x1]
-        ys = [y0, (y0 + y1) / 2, y1]
-        figure.add_scatter(x=xs, y=ys, mode='lines', showlegend=False, hoverinfo='text' if selected in place else 'skip',
-                           hovertext=f"{e['source']} {e['kind']} {e['target']} · peso {e['weight']:.2f}",
-                           line=dict(width=1 + 4 * e['weight'], dash='dot' if inside else 'solid',
-                                     color='rgba(220,90,40,.6)' if inside else 'rgba(60,110,200,.45)'))
+        xs = [x0, (x0 + x1) / 2., x1]
+        ys = [y0, y0 - .22, y1] if inside else [y0, (y0 + y1) / 2., y1]
+        rel = 'legge nel contesto' if inside else 'specializza in'
+        pshare = f" · quota padre {e['parent_share']:.0%}" if not inside and 'parent_share' in e else ''
+        strength = e.get('parent_share', e['weight']) if not inside else e['weight']
+        figure.add_scatter(x=xs, y=ys, mode='lines', showlegend=False, hoverinfo='text',
+                           hovertext=f"{e['source']} → {e['target']} ({rel}) · peso {e['weight']:.2f}{pshare}",
+                           line=dict(width=1.3 + 4. * min(float(strength), 1.),
+                                     dash='dot' if inside else 'solid',
+                                     color='rgba(217,72,15,.65)' if inside else 'rgba(44,111,187,.52)'))
+
     faded = lambda n: near is not None and n['id'] not in near
-    figure.add_scatter(x=[place[n['id']][0] for n in nodes], y=[place[n['id']][1] for n in nodes], mode='markers+text',
-                       text=[_concept_name(n) for n in nodes], textposition='middle right', showlegend=False,
-                       customdata=[n['id'] for n in nodes],
-                       textfont=dict(color=['#bbb' if faded(n) else '#222' for n in nodes]),
-                       marker=dict(size=[8 + 40 * n['mass'] for n in nodes],
-                                   color=['#ddd' if faded(n) else ('#d9480f' if n['id'] == selected else '#2c6fbb') for n in nodes]),
-                       hovertext=[f"concetto {n['id']} · {n['mass']:.0%} del gruppo<br>entrano: {', '.join(n['enters'])}<br>"
-                                  f"poi viene: {', '.join(n['follows'])}" for n in nodes], hoverinfo='text')
-    layers = sorted(rows)
-    figure.update_layout(height=max(320, 26 * max(rows.values()) + 120), margin=dict(l=20, r=20, t=40, b=30),
-                         title='Il grafo della rete: concetti e relazioni, misurati sul testo di validazione',
-                         uirevision='network-graph', clickmode='event', hovermode='closest',
-                         xaxis=dict(tickvals=layers, ticktext=[f'strato {i}' for i in layers], range=[min(layers) - .35, max(layers) + .9]),
-                         yaxis=dict(visible=False, autorange='reversed'))
+    level_palette = {1: '#1c7ed6', total_layers: '#0ca678'}
+    node_colors = [
+        '#dee2e6' if faded(n) else ('#d9480f' if n['id'] == selected else level_palette.get(n['layer'], '#5c7cfa'))
+        for n in visible_nodes
+    ]
+    show_head = chosen_head == 0 and len(heads) > 1
+    figure.add_scatter(
+        x=[place[n['id']][0] for n in visible_nodes],
+        y=[place[n['id']][1] for n in visible_nodes],
+        mode='markers+text',
+        text=[_node_badge(n, show_head=show_head) for n in visible_nodes],
+        textposition='bottom center',
+        showlegend=False,
+        customdata=[n['id'] for n in visible_nodes],
+        textfont=dict(size=11, color=['#adb5bd' if faded(n) else '#212529' for n in visible_nodes]),
+        marker=dict(
+            size=[18 + 28 * min(float(n['mass']), 1.) for n in visible_nodes],
+            color=node_colors,
+            line=dict(width=2, color='#ffffff'),
+        ),
+        hovertext=[
+            f"<b>{n.get('role', 'concetto').capitalize()} {n['id']}</b> (vista {n['group']} · {n['mass']:.1%})<br>"
+            f"Contesto riconosciuto: {', '.join(n.get('enters') or ())}<br>"
+            f"Token predetti: {', '.join(n.get('follows') or ())}"
+            for n in visible_nodes
+        ],
+        hoverinfo='text',
+    )
+    max_cols = max(1, max(sum(1 for n in visible_nodes if n['layer'] == lyr) for lyr in layers))
+    half_span = max(2.2, (max_cols * 1.35) / 2. + .7)
+    view_title = f'Punto di vista {chosen_head}' if chosen_head > 0 else 'Tutte le viste'
+    extra_note = f' · principali su +{omitted} concetti minori' if omitted > 0 else ''
+    figure.update_layout(
+        height=max(260, 155 * len(layers) + 85),
+        margin=dict(l=180, r=30, t=45, b=45),
+        plot_bgcolor='#f8f9fa',
+        title=f'Gerarchia dei concetti ({view_title}{extra_note})',
+        uirevision=f'network-graph:{chosen_head}',
+        clickmode='event',
+        hovermode='closest',
+        xaxis=dict(visible=False, range=[-half_span, half_span]),
+        yaxis=dict(
+            tickvals=[float(lyr) for lyr in layers],
+            ticktext=[_level_label(lyr, total_layers) for lyr in layers],
+            range=[max(layers) + .55, min(layers) - .4],
+            gridcolor='rgba(0,0,0,0.06)',
+            zeroline=False,
+        ),
+    )
     return figure
 
 
 def network_graph_info(graph, selected):
-    """What a chosen concept is: its tokens, the concepts it reads and that read it, where its positions go and come from."""
+    """What a chosen concept is: its abstraction/sub-concept role, multiple parents, specializations, and predicted tokens."""
     by = {n['id']: n for n in graph['nodes']}
     if selected not in by:
         return None
     n = by[selected]
     out = sorted([e for e in graph['edges'] if e['source'] == selected], key=lambda e: -e['weight'])
-    into = sorted([e for e in graph['edges'] if e['target'] == selected], key=lambda e: -e['weight'])
-    words = {'legge': ('legge', 'è letto da'), 'porta a': ('porta a', 'viene da')}
-    rows = [html.Tr([html.Td(words[e['kind']][0]), html.Td(f"{e['target']} · {_concept_name(by[e['target']])}"), html.Td(f"{e['weight']:.2f}")])
-            for e in out] + \
-           [html.Tr([html.Td(words[e['kind']][1]), html.Td(f"{e['source']} · {_concept_name(by[e['source']])}"), html.Td(f"{e['weight']:.2f}")])
-            for e in into]
-    return html.Div([html.P([html.B(f"Concetto {n['id']}"), f" (strato {n['layer']}, gruppo {n['group']}, {n['mass']:.0%} del gruppo) · "
-                             f"entrano: {', '.join(n['enters'])} · poi viene: {', '.join(n['follows'])}"], className='small mb-1'),
+    into = sorted([e for e in graph['edges'] if e['target'] == selected],
+                  key=lambda e: -(e.get('parent_share', e['weight'])))
+    out_label = lambda e: 'specializza in sotto-concetto' if e['kind'] == 'porta a' else 'legge nel contesto'
+    in_label = lambda e: 'concetto padre' if e['kind'] == 'porta a' else 'è letto da'
+    in_metric = lambda e: (f"{e['parent_share']:.0%} padre" if e['kind'] == 'porta a' and 'parent_share' in e
+                           else f"{e['weight']:.2f}")
+    rows = [html.Tr([html.Td(in_label(e)), html.Td(f"{e['source']} · {_concept_name(by[e['source']])}"), html.Td(in_metric(e))])
+            for e in into if e['source'] in by] + \
+           [html.Tr([html.Td(out_label(e)), html.Td(f"{e['target']} · {_concept_name(by[e['target']])}"), html.Td(f"{e['weight']:.2f}")])
+            for e in out if e['target'] in by]
+    role_title = n.get('role', 'concetto').capitalize()
+    return html.Div([html.P([html.B(f"{role_title} {n['id']}"),
+                             f" (livello {n['layer']}, punto di vista {n['group']}, {n['mass']:.1%} della vista) · "
+                             f"contesto riconosciuto: {', '.join(n['enters'])} · token predetti: {', '.join(n['follows'])}"],
+                            className='small mb-1'),
                      dbc.Table(html.Tbody(rows), size='sm', bordered=True, className='small') if rows else
-                     html.P('Nessun arco che pesi più di una parte uguale.', className='small text-muted')])
+                     html.P('Nessun arco significativo sopra la media uniforme.', className='small text-muted')])
 
 
 def footprint_view(item):
@@ -573,10 +723,19 @@ layout = html.Div([
                      className='mb-1'),
              html.Small("Un passo è un pezzo di al massimo un milione di token nuovi. Alla fine, la rete rilegge tutto il testo finché la validazione migliora. "
                         "Si salva anche ogni 5 minuti e alla fine; «0» non tiene salvataggi permanenti.", className='text-muted d-block mb-2'),
-             dbc.Checkbox(id='lm-long-growth', value=True, label='La rete cresce con i dati'),
-             html.Small("La rete parte con uno strato, una testa e un concetto. Quando arriva una gara, la rete com'è e quattro copie cresciute "
-                        "(più larga, uno strato in più, più concetti in uno strato, più teste) imparano lo stesso pezzo nuovo. "
-                        "Se la rete cresce, il vincitore fa una nuova tornata sullo stesso pezzo. Il passo termina quando la validazione conferma la struttura corrente.",
+             dbc.Checkbox(id='lm-long-growth', value=True, label='Il grafo di concetti cresce con i dati'),
+             html.Small("Come nel modello tabulare, non c'è alcun numero di concetti da scegliere: «0» lascia che concetti, punti di vista "
+                        "e livelli di sotto-concetti con più concetti padre siano scelti automaticamente dalla validazione, "
+                        "mantenendo il modello decine di volte più leggero di un LLM (fino a 96 coordinate).",
+                        className='text-muted d-block mb-2'),
+             dbc.Row([
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=96, min=0, max=2048, step=16)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=0, min=0, max=32, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-max-heads', type='number', value=0, min=0, max=64, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=0, min=0, max=1024, step=1)]), md=3, className='mb-1'),
+             ], className='mb-1'),
+             html.Small("Tetti hardware facoltativi: «0» = automatico dai dati senza tetto utente; un valore > 0 impone un massimale esplicito "
+                        "(o fissa direttamente la piramide iniziale se si disattiva la crescita).",
                         className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
@@ -598,8 +757,15 @@ layout = html.Div([
          dbc.Accordion([dbc.AccordionItem([
              dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-add-corpus', placeholder='Un testo già preparato'), md=8),
                       dbc.Col(dbc.Button('Aggiungi in fondo alla coda', id='lm-long-add', outline=True, color='primary'), md=4)], className='mb-2'),
+             dbc.Checkbox(id='lm-long-add-growth', value=True, label='Continua a far crescere il grafo di concetti sul nuovo testo', className='small mb-1'),
+             dbc.Row([
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=96, min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-add-max-layers', type='number', value=0, min=0, max=32, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-add-max-heads', type='number', value=0, min=0, max=64, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-add-max-concepts', type='number', value=0, min=0, max=1024, step=1)], size='sm'), md=3, className='mb-1'),
+             ], className='mb-2'),
              html.Small(f'Oppure un documento dal computer ({FORMATS}): viene caricato, convertito in testo e aggiunto in fondo alla coda scelta. '
-                        'Usa il vocabolario della coda, imparato all\'avvio.', className='text-muted d-block'),
+                        'Usa il vocabolario della coda, imparato all\'avvio («0» = automatico dai dati senza tetto utente).', className='text-muted d-block'),
              html.Div(id='lm-long-file-upload'), html.Div(id='lm-long-upload-status', role='status', className='small'),
              dcc.Store(id='lm-long-upload-state'),
          ], title='Aggiungi un testo alla coda')], start_collapsed=True, className='my-2'),
@@ -651,17 +817,21 @@ def guide(state, builds):
 
 def register(app):
     @app.callback(Output('lm-network-graph', 'figure'), Output('lm-network-info', 'children'), Output('lm-network-selected', 'data'),
-                  Input('lm-network-graph', 'clickData'), Input('lm-network-data', 'data'), State('lm-network-selected', 'data'),
-                  prevent_initial_call=True)
-    def explore(click, graph, selected):
-        # A click chooses a concept (a second click on it lets it go); a new graph keeps the concept chosen.
+                  Input('lm-network-graph', 'clickData'), Input('lm-network-data', 'data'), Input('lm-network-head', 'value'),
+                  State('lm-network-selected', 'data'), prevent_initial_call=True)
+    def explore(click, graph, head, selected):
+        # A click chooses a concept (a second click on it lets it go); switching head clears an out-of-view selection.
         if not graph:
             return dash.no_update, None, selected
-        if dash.ctx.triggered_id == 'lm-network-graph' and click:
+        if dash.ctx.triggered_id == 'lm-network-head' and head and selected:
+            by_id = {n['id']: n for n in graph.get('nodes') or ()}
+            if selected in by_id and by_id[selected].get('group') != int(head):
+                selected = None
+        elif dash.ctx.triggered_id == 'lm-network-graph' and click:
             chosen = (click.get('points') or [{}])[0].get('customdata')
             if chosen:
                 selected = None if chosen == selected else chosen
-        return network_graph_figure(graph, selected), network_graph_info(graph, selected), selected
+        return network_graph_figure(graph, selected, head=head), network_graph_info(graph, selected), selected
 
     @app.callback(Output('lm-long-catalog', 'data'), Output('lm-long-builds', 'data'),
                   Input('lm-long-poll', 'n_intervals'), Input('lm-workspace', 'data'), State('tabs', 'value'),
@@ -770,14 +940,23 @@ def register(app):
                   Input('lm-long-start', 'n_clicks'), State('lm-workspace', 'data'), State('lm-long-corpora', 'value'),
                   State('lm-long-model', 'value'), State('lm-long-passes', 'value'), State('lm-long-save', 'value'),
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
-                  State('lm-long-length', 'value'), State('lm-long-growth', 'value'), prevent_initial_call=True)
-    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, growth=False):
+                  State('lm-long-length', 'value'), State('lm-long-growth', 'value'),
+                  State('lm-long-max-dim', 'value'), State('lm-long-max-layers', 'value'),
+                  State('lm-long-max-heads', 'value'), State('lm-long-max-concepts', 'value'),
+                  prevent_initial_call=True)
+    def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, growth=False,
+              max_dim=0, max_layers=0, max_heads=0, max_concepts=0):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
             cuda = ((state or {}).get('capabilities') or {}).get('cuda', False)
             base = dict(profile(cuda), name=QUEUE_NAME, passes=1., save_steps=int(save or 10),
-                        milestone_steps=int(milestone or 0), concept_network_growth=bool(growth), probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
+                        milestone_steps=int(milestone or 0), concept_network_growth=bool(growth),
+                        concept_max_dim=max(0, int(max_dim or 0)),
+                        concept_max_layers=max(0, int(max_layers or 0)),
+                        concept_max_heads=max(0, int(max_heads or 0)),
+                        concept_max_concepts=max(0, int(max_concepts or 0)),
+                        probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             first_job = (result.get('jobs') or [{}])[0].get('id', dash.no_update)
             return result.get('message', 'Coda creata.'), result['queue'], first_job
@@ -788,8 +967,12 @@ def register(app):
                   Input('lm-long-add', 'n_clicks'), Input('lm-long-pause', 'n_clicks'), Input('lm-long-resume', 'n_clicks'),
                   Input('lm-long-control', 'n_clicks'),
                   State('lm-workspace', 'data'), State('lm-long-queue', 'value'), State('lm-long-add-corpus', 'value'),
-                  State('lm-state', 'data'), prevent_initial_call=True)
-    def queue_action(add, pause, resume, control, workspace, queue, corpus, state):
+                  State('lm-state', 'data'), State('lm-long-add-growth', 'value'),
+                  State('lm-long-add-max-dim', 'value'), State('lm-long-add-max-layers', 'value'),
+                  State('lm-long-add-max-heads', 'value'), State('lm-long-add-max-concepts', 'value'),
+                  prevent_initial_call=True)
+    def queue_action(add, pause, resume, control, workspace, queue, corpus, state,
+                     add_growth=None, max_dim=None, max_layers=None, max_heads=None, max_concepts=None):
         items = queues((state or {}).get('jobs', [])).get(queue)
         try:
             if not items:
@@ -797,7 +980,14 @@ def register(app):
             if dash.ctx.triggered_id == 'lm-long-add':
                 if not corpus:
                     raise ValueError('Scegli il testo da aggiungere.')
-                job = backend(workspace, f'/queues/{queue}/add', 'POST', dict(corpus_id=corpus))
+                payload = dict(corpus_id=corpus)
+                if add_growth is not None:
+                    payload['concept_network_growth'] = bool(add_growth)
+                for key, val in (('concept_max_dim', max_dim), ('concept_max_layers', max_layers),
+                                 ('concept_max_heads', max_heads), ('concept_max_concepts', max_concepts)):
+                    if val is not None:
+                        payload[key] = max(0, int(val or 0))
+                job = backend(workspace, f'/queues/{queue}/add', 'POST', payload)
                 return f"Aggiunto come testo {job['config']['series']['order']+1}.", dash.no_update
             job = current_item(items)
             if dash.ctx.triggered_id == 'lm-long-control':
@@ -816,15 +1006,27 @@ def register(app):
             return dbc.Alert(str(exc), color='warning'), dash.no_update
 
     @app.callback(Output('lm-long-queue-status', 'children', allow_duplicate=True), Input('lm-long-upload-state', 'data'),
-                  State('lm-workspace', 'data'), State('lm-long-queue', 'value'), State('lm-state', 'data'), prevent_initial_call=True)
-    def add_uploaded(uploaded, workspace, queue, state):
+                  State('lm-workspace', 'data'), State('lm-long-queue', 'value'), State('lm-state', 'data'),
+                  State('lm-long-add-growth', 'value'),
+                  State('lm-long-add-max-dim', 'value'), State('lm-long-add-max-layers', 'value'),
+                  State('lm-long-add-max-heads', 'value'), State('lm-long-add-max-concepts', 'value'),
+                  prevent_initial_call=True)
+    def add_uploaded(uploaded, workspace, queue, state,
+                     add_growth=None, max_dim=None, max_layers=None, max_heads=None, max_concepts=None):
         """A document just uploaded from the queue section goes to the end of the chosen queue."""
         try:
             if not uploaded or not uploaded.get('id'):
                 raise ValueError('Caricamento non riuscito.')
             if not queues((state or {}).get('jobs', [])).get(queue):
                 raise ValueError(f"«{uploaded.get('name', 'Il documento')}» è caricato: scegli una coda e aggiungilo dal menu qui sopra.")
-            job = backend(workspace, f'/queues/{queue}/add', 'POST', dict(corpus_id=uploaded['id']))
+            payload = dict(corpus_id=uploaded['id'])
+            if add_growth is not None:
+                payload['concept_network_growth'] = bool(add_growth)
+            for key, val in (('concept_max_dim', max_dim), ('concept_max_layers', max_layers),
+                             ('concept_max_heads', max_heads), ('concept_max_concepts', max_concepts)):
+                if val is not None:
+                    payload[key] = max(0, int(val or 0))
+            job = backend(workspace, f'/queues/{queue}/add', 'POST', payload)
             return f"«{uploaded.get('name', 'Documento')}» aggiunto come testo {job['config']['series']['order']+1} della coda."
         except ValueError as exc:
             return dbc.Alert(str(exc), color='warning')
