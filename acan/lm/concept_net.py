@@ -445,6 +445,23 @@ class ConceptNet:
         how the positions of a concept spread over the concepts of the next layer. An edge is kept when it weighs more
         than an even share and, between layers, more than the next concept holds anyway: what is shown says something."""
         found, now, after = [[] for _ in range(self.layers)], [], []
+        specials = ('user', 'assistant', 'system', 'endoftext', 'im_start', 'im_end')
+
+        def words(doc):
+            """The whole word every position belongs to: a token that does not start with a space goes on the word of
+            the one before, so a concept is named «cartella», not «tella»."""
+            if not decode:
+                return [str(int(x)) for x in doc]
+            pieces = [decode([int(x)]) for x in doc]
+            starts = [i == 0 or not p or p[0].isspace() or not p[0].isalnum() or '<' in p
+                      or not pieces[i - 1] or not pieces[i - 1][-1].isalnum() for i, p in enumerate(pieces)]
+            out, first = [], 0
+            for i in range(len(pieces) + 1):
+                if i == len(pieces) or (starts[i] and i > first):
+                    word = ''.join(pieces[first:i]).strip() or repr(''.join(pieces[first:i]))
+                    out += [word] * (i - first); first = i
+            return out
+
         for doc in documents:
             doc = np.asarray(doc, np.int64)
             if len(doc) < 2:
@@ -453,31 +470,22 @@ class ConceptNet:
             self.states(doc[:-1], layers)
             for i, t in enumerate(layers):
                 found[i].append(t)
-            now.append(doc[:-1]); after.append(doc[1:])
+            named = words(doc)
+            now += named[:-1]; after += named[1:]
         if not now:
             return dict(nodes=[], edges=[])
-        now, after = np.concatenate(now), np.concatenate(after)
-        u_in, inv_in = np.unique(now, return_inverse=True)
-        u_out, inv_out = np.unique(after, return_inverse=True)
+        u_in, inv_in = np.unique(np.array(now, dtype=object).astype(str), return_inverse=True)
+        u_out, inv_out = np.unique(np.array(after, dtype=object).astype(str), return_inverse=True)
         everywhere_in = np.bincount(inv_in, minlength=len(u_in)) / len(now)
         everywhere_out = np.bincount(inv_out, minlength=len(u_out)) / len(after)
 
-        def clean_token(tok_id):
-            if not decode:
-                return str(int(tok_id)), True
-            raw = decode([int(tok_id)])
-            stripped = raw.strip()
-            is_word = (len(stripped) >= 2 and '<' not in stripped and '>' not in stripped
-                       and stripped.lower() not in ('user', 'assistant', 'system', 'endoftext', 'im_start', 'im_end')
-                       and any(ch.isalpha() for ch in stripped))
-            return (stripped or repr(raw)), is_word
+        def good(word):
+            return (len(word) >= 2 and '<' not in word and '>' not in word and word.lower() not in specials
+                    and any(ch.isalpha() for ch in word))
 
-        in_meta = [clean_token(x) for x in u_in]
-        out_meta = [clean_token(x) for x in u_out]
-        in_labels = [m[0] for m in in_meta]
-        out_labels = [m[0] for m in out_meta]
-        in_good = np.array([m[1] for m in in_meta], dtype=bool)
-        out_good = np.array([m[1] for m in out_meta], dtype=bool)
+        in_labels, out_labels = [str(x) for x in u_in], [str(x) for x in u_out]
+        in_good = np.array([good(x) for x in in_labels], dtype=bool)
+        out_good = np.array([good(x) for x in out_labels], dtype=bool)
 
         def telling(mass, everywhere, text_list, good_mask):
             share = mass / max(float(mass.sum()), 1e-12)

@@ -101,7 +101,7 @@ def inside_figure(trace, uirevision=None):
         figure.add_scatter(x=[100 * (point[0] - step) for point in line], y=[point[1] for point in line],
                            mode='lines+markers', marker=dict(size=6), line=dict(width=2), name=label)
     figure.update_layout(title=f'Dentro il passo {step + 1}: la validazione mentre la rete legge il pezzo'
-                         + (' · gara sulla finestra iniziale, poi il vincitore completa il pezzo' if racing else ''),
+                         + (' · gara: ogni candidato legge il pezzo intero' if racing else ''),
                          xaxis=dict(title='Pezzo letto (%)', range=[0, 100]), yaxis_title='NLL',
                          uirevision=uirevision or f'inside:{step}',
                          margin=dict(t=50, b=40), height=360)
@@ -1119,16 +1119,16 @@ def register(app):
         next_piece_nll = job['config'].get('architecture') == 'concepts'
         for key, label in [('training_nll', 'prossimo pezzo' if next_piece_nll else 'training'), ('validation_nll', 'validazione')]:
             rows = [row for row in history if key in row]
-            figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows],
-                               mode='lines+markers' if job['config'].get('architecture') == 'concepts' else 'lines', name=f'{own} · {label}')
+            # the next piece is a different text each time: its points are not a path, so no line joins them
+            mode = ('markers' if key == 'training_nll' else 'lines+markers') if next_piece_nll else 'lines'
+            figure.add_scatter(x=[row['step'] for row in rows], y=[row[key] for row in rows], mode=mode,
+                               name=f'{own} · {label}', **({'marker': dict(size=5, opacity=.6)} if mode == 'markers' else {}))
         trace = metrics.get('network_trace') or []
-        for kind in dict.fromkeys(point[2] if len(point) > 2 else None for point in trace):
-            # the network inside the steps, on the same validation; in a race of growth every candidate over the same step
-            points = [point for point in trace if (point[2] if len(point) > 2 else None) == kind]
+        points = [point for point in trace if len(point) <= 2 or point[2] is None]
+        if points:                                              # the network inside the steps; the races are in «Dentro il passo»
             xs, ys = _trace_segments(points)
-            figure.add_scatter(x=xs, y=ys, mode='lines+markers',
-                               name='Validazione mentre impara' if kind is None else f'Gara · {kind}',
-                               marker=dict(size=5), line=dict(width=1.5 if kind is None else 1.2))
+            figure.add_scatter(x=xs, y=ys, mode='lines+markers', name='Validazione mentre impara',
+                               marker=dict(size=5), line=dict(width=1.5))
         # The project and its dense control on the same chart: same corpus, seed and budget.
         partner, comparison = paired_job((state or {}).get('jobs', []), job), None
         if partner is not None:
@@ -1250,9 +1250,17 @@ def register(app):
             # The concept model: the main numbers as tiles, its concept graph directly visible, everything else folded.
             status = {'completed': 'ha finito', 'running': 'sta imparando', 'preparing': 'prepara i token', 'paused': 'in pausa',
                       'queued': 'in partenza', 'failed': 'errore', 'created': 'in attesa'}.get(job['status'], job['status'])
-            head = [html.P([html.B(job['config'].get('name', 'Progetto')), f' · {status}'], className='mb-1'),
-                    html.P(job['error'], className='text-danger') if job['error'] else None,
-                    long_training.concept_summary(metrics, job['config'], status=job['status'])]
+            # one line: the tiles with these numbers are at step 3, for the queue that is learning
+            shape = metrics.get('network') or {}
+            numbers = [f"passo {metrics.get('step', 0):,} di {job['config'].get('total_steps') or 0:,}"]
+            if metrics.get('validation_nll') is not None:
+                numbers.append(f"errore su testo mai visto {metrics['validation_nll']:.3f}")
+            if shape:
+                numbers.append(f"{shape['layers']} strati, {shape['dim']} numeri di stato, "
+                               + ', '.join(f'{g}×{k}' for g, k in shape['groups']) + ' concetti, '
+                               + f"{shape['parameters']:,} parametri")
+            head = [html.P([html.B(job['config'].get('name', 'Progetto')), f' · {status} · ' + ' · '.join(numbers)], className='mb-1'),
+                    html.P(job['error'], className='text-danger') if job['error'] else None]
             fold = long_training.folded('Tutti i dettagli del progetto', [item for item in detail if item is not None],
                                         'lm-project-details', 'mb-2')
             return [h for h in head if h is not None]+[fold], figure, available, selected_snapshot
