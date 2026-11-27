@@ -606,6 +606,9 @@ class NetText:
                     t = member[i][at]                           # H x K
                     best = np.dstack(np.unravel_index(np.argsort(-t, axis=None)[:2], t.shape))[0]
                     entry['concepts'] = [dict(id=f'{i + 1}.{h + 1}.{k + 1}', membership=float(t[h, k])) for h, k in best]
+                    # every view's most held concept: what lights up in the graph, token after token
+                    entry['lit'] = [dict(id=f'{i + 1}.{h + 1}.{int(np.argmax(t[h])) + 1}', membership=float(t[h].max()))
+                                    for h in range(t.shape[0])]
                 levels.append(entry)
             steps.append(dict(position=len(prompt) + n, token=words[len(prompt) + n], logp=full[n], memory=memory[n], levels=levels))
         return dict(words=words, prompt_length=len(prompt), steps=steps)

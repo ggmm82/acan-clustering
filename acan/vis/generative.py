@@ -74,6 +74,70 @@ def _trace_segments(points, max_gap=1.05):
     return xs, ys
 
 
+def path_animation(path, pick=None):
+    """The answer played token after token on the graph of the network: the concepts each view's position belongs to
+    most light up (size: how much), the edges between lit concepts of consecutive levels with them; beside, how much
+    the memory and every level counted for that token. Lit says where the position is, the bars what weighed."""
+    from plotly.subplots import make_subplots
+    steps = path.get('steps') or []
+    if not steps:
+        return None
+    graph = path.get('graph') or {}
+    names = {node['id']: f"{' '.join(node.get('enters', []))} → {' '.join(node.get('follows', []))}" for node in graph.get('nodes', [])}
+    ids = set(names) | {lit['id'] for step in steps for level in step['levels'] for lit in level.get('lit', [])}
+    parse = lambda key: tuple(int(x) for x in key.split('.'))
+    levels = sorted({parse(key)[0] for key in ids})
+    place = {}
+    for level in levels:
+        row = sorted((key for key in ids if parse(key)[0] == level), key=lambda key: parse(key)[1:])
+        for n, key in enumerate(row):
+            place[key] = ((n + .5) / max(len(row), 1), -level)
+    keys = sorted(place)
+    words = path['words']
+    colors = ['#2c6fbb', '#2a9d8f', '#e76f51', '#8e44ad', '#f4a261', '#264653']
+
+    def frame_data(step):
+        lit = {item['id']: item['membership'] for level in step['levels'] for item in level.get('lit', [])}
+        sizes = [6 + 30 * lit[key] if key in lit else 5 for key in keys]
+        tint = [colors[(parse(key)[0] - 1) % len(colors)] if key in lit else '#d0d0d0' for key in keys]
+        xs, ys = [], []
+        # one path per view: its lit concept of a level to its lit concept of the next level
+        pairs = [(a, b) for a in lit for b in lit if parse(b)[0] == parse(a)[0] + 1 and parse(b)[1] == parse(a)[1]]
+        for a, b in pairs:
+            xs += [place[a][0], place[b][0], None]; ys += [place[a][1], place[b][1], None]
+        parts = ['memoria'] + [f"livello {level['level']}" for level in step['levels']]
+        weights = [step['memory']['weight']] + [max(0., min(1., (level.get('effect') or 0) / 5)) for level in step['levels']]
+        return [dict(type='scatter', x=xs, y=ys), dict(type='scatter', marker=dict(size=sizes, color=tint)),
+                dict(type='bar', x=parts, y=weights)]
+
+    figure = make_subplots(rows=1, cols=2, column_widths=[.8, .2], horizontal_spacing=.06)
+    first = next((n for n, step in enumerate(steps) if step['position'] == pick), 0)
+    start = frame_data(steps[first])
+    figure.add_scatter(x=start[0]['x'], y=start[0]['y'], mode='lines', line=dict(color='rgba(231,111,81,.6)', width=2),
+                       hoverinfo='skip', showlegend=False, row=1, col=1)
+    figure.add_scatter(x=[place[key][0] for key in keys], y=[place[key][1] for key in keys], mode='markers', showlegend=False,
+                       marker=start[1]['marker'], hovertext=[f"{key} · {names.get(key, '')}" for key in keys], hoverinfo='text',
+                       row=1, col=1)
+    figure.add_bar(x=start[2]['x'], y=start[2]['y'], marker_color=['#f4a261'] + ['#2c6fbb'] * (len(start[2]['x']) - 1),
+                   showlegend=False, row=1, col=2)
+    label = lambda step: words[step['position']].replace('\n', '⏎') or '·'
+    figure.frames = [dict(name=str(n), data=frame_data(step), traces=[0, 1, 2]) for n, step in enumerate(steps)]
+    play = dict(frame=dict(duration=1100, redraw=True), transition=dict(duration=300), fromcurrent=True)
+    figure.update_layout(
+        height=420 + 40 * len(levels), margin=dict(l=20, r=20, t=50, b=90), uirevision='path',
+        title=f"La risposta, token dopo token: in colore i concetti accesi in ogni punto di vista",
+        updatemenus=[dict(type='buttons', x=0, y=-.12, xanchor='left', yanchor='top', direction='left', showactive=False,
+                          buttons=[dict(label='▶ Riproduci', method='animate', args=[None, play]),
+                                   dict(label='⏸ Pausa', method='animate', args=[[None], dict(mode='immediate', frame=dict(duration=0))])])],
+        sliders=[dict(active=first, x=.22, len=.75, y=-.04, currentvalue=dict(prefix='token: '),
+                      steps=[dict(label=label(step), method='animate',
+                                  args=[[str(n)], dict(mode='immediate', frame=dict(duration=0, redraw=True))]) for n, step in enumerate(steps)])])
+    figure.update_xaxes(visible=False, row=1, col=1)
+    figure.update_yaxes(tickvals=[-level for level in levels], ticktext=[f'livello {level}' for level in levels], row=1, col=1)
+    figure.update_yaxes(range=[0, 1], title='peso', row=1, col=2)
+    return figure
+
+
 def path_view(path, pick=None):
     """The path of an answer: its tokens in a row (the prompt grey, the answer to click); for the chosen token, the
     memory (its weight and the words it copied from), every level (how much closing it moves the token's
@@ -118,7 +182,11 @@ def path_view(path, pick=None):
         html.Div(row, className='mb-2'),
         html.P([html.B(f"«{chosen['token']}»"), f" · probabilità {math.exp(chosen['logp']):.0%}"], className='mb-1'),
         dbc.Table([html.Thead(html.Tr([html.Th('Parte'), html.Th('Peso'), html.Th('Dettaglio')])), html.Tbody(rows)],
-                  size='sm', bordered=True, className='small')])
+                  size='sm', bordered=True, className='small'),
+        dcc.Graph(figure=path_animation(path, chosen['position']), config={'displaylogo': False}),
+        html.P('Il grafo mostra dove si trova ogni posizione (la grandezza del nodo è quanto le appartiene), non che cosa ha '
+               'deciso il token: quello lo dicono le barre a destra, la memoria e l\'effetto di chiudere ogni livello '
+               '(1 = la probabilità del token scende di e⁵ volte o più).', className='small text-muted')])
 
 
 def inside_figure(trace, uirevision=None):

@@ -444,7 +444,10 @@ def generate(store, job, request, directory):
     path = None
     if request.get('inspect_layers') and hasattr(model, 'explain'):   # the path of every written token, on request
         path = model.explain(ids, produced, tokenizer.decode)
-        names = {node['id']: node for node in (state.get('network_graph') or {}).get('nodes', [])}
+        graph = state.get('network_graph') or {}
+        names = {node['id']: node for node in graph.get('nodes', [])}
+        if path:
+            path['graph'] = graph                                 # the map the path lights up, token after token
         for step in path.get('steps', []) if path else []:
             for level in step['levels']:
                 for concept in level.get('concepts', []):
