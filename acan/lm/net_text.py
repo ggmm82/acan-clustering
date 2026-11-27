@@ -312,7 +312,7 @@ class NetText:
             # a growth won: the next piece races again; else the next race further away, 1, 2, 4... pieces, without
             # a ceiling: a network that stops improving races sooner anyway (below)
             self.race_gap = len(ids) if grew_any else max(2 * self.race_gap, len(ids))
-            self.next_race = end + self.race_gap
+            self.next_race = end if grew_any else end + self.race_gap   # it grew: the very next piece races again
             if again and len(self.races) > first_race:
                 self._learner._keep(best, self._learner.best_scores)   # restore the stabilized winner if rereading does not help
             self._previous = self._learner.best_scores
