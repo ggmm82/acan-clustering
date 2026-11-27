@@ -108,7 +108,7 @@ jobs:
           name: browser-server-log
           path: /tmp/acan-browser-server.log
   paper:
-    name: Paper contracts and CPU backend parity
+    name: Software contracts and CPU backend parity
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -180,8 +180,6 @@ jobs:
             --cap-drop ALL --security-opt no-new-privileges \
             --mount "type=bind,src=$PWD/tests,dst=/checks/tests,readonly" \
             --mount "type=bind,src=$PWD/scripts,dst=/checks/scripts,readonly" \
-            --mount "type=bind,src=$PWD/references,dst=/checks/references,readonly" \
-            --mount "type=bind,src=$PWD/paper,dst=/checks/paper,readonly" \
             --mount "type=bind,src=$PWD/reports/generative,dst=/reports" \
             -e ACAN_SOURCE_COMMIT="$GITHUB_SHA" -e ACAN_SOURCE_TREE="$source_tree" -e GITHUB_RUN_ID \
             -w /checks acan-generative:test python scripts/check_lm.py --output /reports/lm-audit.json
@@ -283,7 +281,6 @@ jobs:
         run: |
           docker run --rm --network=none --entrypoint python \
             --mount "type=bind,src=$PWD/tests,dst=/tests,readonly" \
-            --mount "type=bind,src=$PWD/experiments,dst=/app/experiments,readonly" \
             --mount "type=bind,src=$PWD/scripts,dst=/app/scripts,readonly" \
             --mount "type=bind,src=$PWD/config,dst=/app/config,readonly" \
             "$IMAGE" -m unittest discover -s /tests -v
