@@ -388,7 +388,7 @@ class NetTextTest(unittest.TestCase):
 class NetTextPathTest(unittest.TestCase):
     def test_the_path_of_an_answer_says_memory_levels_words_and_concepts(self):
         from acan.lm.net_text import NetText
-        from acan.vis.generative import path_view
+        from acan.vis.long_training import answer_walk_view
         rng = np.random.default_rng(3)
         eos = 40
         ids = np.array([int(t) for _ in range(40) for t in list(rng.integers(1, 39, 10)) + [eos]])
@@ -410,7 +410,11 @@ class NetTextPathTest(unittest.TestCase):
         for n, token in enumerate(produced):
             self.assertAlmostEqual(np.log(cursor.distribution()[token]), path['steps'][n]['logp'], places=5)
             cursor.observe(token, remember=False)
-        self.assertIsNotNone(path_view(path, len(prompt) + 1))
+        data = dict(step=1, questions=['?'], paths=[path])           # the walk of the page, from a token to a concept
+        for trail in ([f'token:{len(prompt)}'], [f'token:{len(prompt)}', f'level:{len(prompt)}:1'],
+                      [f'token:{len(prompt)}', f'level:{len(prompt)}:1', f'view:{len(prompt)}:1:1'],
+                      [f'memory:{len(prompt)}']):
+            self.assertIsNotNone(answer_walk_view(data, dict(question=0, trail=trail)))
 
 
 @unittest.skipUnless(TORCH, 'torch is needed to learn the network')

@@ -132,6 +132,14 @@ class ConceptLongLearningTests(unittest.TestCase):
             self.assertLess(len(measured), len(history)+1)
             answers = [json.loads(line) for line in (store.directory('jobs', job['id'])/'answers.jsonl').read_text().splitlines()]
             self.assertTrue(answers and answers[-1]['answers'][0]['question'] == 'Ciao!')
+            # How the last answers were written, token by token, for the walk of the page (latest save only).
+            walked = json.loads((store.directory('jobs', job['id'])/'answer_paths.json').read_text())
+            self.assertEqual((walked['step'], walked['questions'][0]), (answers[-1]['step'], 'Ciao!'))
+            first = next(path for path in walked['paths'] if path)
+            self.assertTrue(first['steps'] and first['steps'][0]['levels'])
+            from acan.vis.long_training import answer_walk_view
+            self.assertIsNotNone(answer_walk_view(walked, dict(question=walked['paths'].index(first),
+                                                               trail=[f"token:{first['steps'][0]['position']}"])))
             checkpoint = store.directory('jobs', job['id'])/'checkpoints'/done['checkpoint']
             result = generate(store, done, dict(prompt='Ciao!', chat=True, max_new_tokens=20, temperature=0., seed=0,
                                                 checkpoint=done['checkpoint']), checkpoint)
