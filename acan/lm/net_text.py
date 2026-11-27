@@ -584,13 +584,19 @@ class NetText:
             p[key] = np.zeros_like(p[key])
             closed.append(follow(ConceptNet(net.config, p))[0])
         sequence = np.asarray([self.eos] + prompt + produced, np.int64)
-        member = []
+        member, after = [], []
         net._views = []
+        finish = net._finish_tabular
+
+        def kept(*args, **kwargs):                             # the state after every level, read with the token concepts
+            state = finish(*args, **kwargs); after.append(state); return state
+        net._finish_tabular = kept
         try:
             net.states(sequence[:-1], member)
             views = net._views
         finally:
             net._views = None
+            net._finish_tabular = finish
         words = [decode([t]) if decode else str(t) for t in prompt + produced]
         steps = []
         for n, token in enumerate(produced):
@@ -598,6 +604,9 @@ class NetText:
             levels = []
             for i in range(net.layers):
                 entry = dict(level=i + 1, effect=None if closed[i] is None else float(full[n] - closed[i][n]))
+                if i < len(after):                              # what the network would say after this level
+                    p = net.probabilities(after[i][at] @ net.p['final.weight'].T + net.p['final.bias'])[0]
+                    entry['says'] = [(decode([int(t)]) if decode else str(int(t)), float(p[t])) for t in np.argsort(-p)[:5]]
                 if i < len(views):                              # T x H x W: the last W positions, oldest first
                     w = views[i][at].mean(0); W = len(w)
                     looked = [(at - (W - 1 - k) - 1, float(w[k])) for k in np.argsort(-w)[:top] if at - (W - 1 - k) >= 1]
@@ -607,8 +616,18 @@ class NetText:
                     best = np.dstack(np.unravel_index(np.argsort(-t, axis=None)[:2], t.shape))[0]
                     entry['concepts'] = [dict(id=f'{i + 1}.{h + 1}.{k + 1}', membership=float(t[h, k])) for h, k in best]
                     # every view's most held concept: what lights up in the graph, token after token
-                    entry['lit'] = [dict(id=f'{i + 1}.{h + 1}.{int(np.argmax(t[h])) + 1}', membership=float(t[h].max()))
-                                    for h in range(t.shape[0])]
+                    heads = []
+                    for h in range(t.shape[0]):
+                        k = int(np.argmax(t[h]))
+                        column = member[i][:, h, k]             # the positions of this text that belong to it most
+                        held = [(int(q) - 1, float(column[q])) for q in np.argsort(-column)[:top] if q >= 1]
+                        looked_h = []
+                        if i < len(views):
+                            w = views[i][at][h]; W = len(w)
+                            looked_h = [(at - (W - 1 - j) - 1, float(w[j])) for j in np.argsort(-w)[:top]
+                                        if at - (W - 1 - j) >= 1 and w[j] > .05]
+                        heads.append(dict(id=f'{i + 1}.{h + 1}.{k + 1}', membership=float(t[h, k]), held=held, looked=looked_h))
+                    entry['lit'] = heads
                 levels.append(entry)
             steps.append(dict(position=len(prompt) + n, token=words[len(prompt) + n], logp=full[n], memory=memory[n], levels=levels))
         return dict(words=words, prompt_length=len(prompt), steps=steps)

@@ -74,6 +74,115 @@ def _trace_segments(points, max_gap=1.05):
     return xs, ys
 
 
+def _walk_node(path, key):
+    """A node of the walk through the model: its title, its card (what was measured there) and its neighbours,
+    each (key, label, weight). Keys: token:p, level:p:l, view:p:l:h, concept:id, word:j, memory:p."""
+    words, steps = path['words'], {step['position']: step for step in path['steps']}
+    names = {node['id']: node for node in (path.get('graph') or {}).get('nodes', [])}
+    edges = (path.get('graph') or {}).get('edges', [])
+    w = lambda j: (words[j].replace('\n', '⏎') if 0 <= j < len(words) else '?') or '·'
+    kind, _, rest = key.partition(':')
+    parts = rest.split(':')
+    if kind == 'token':
+        step = steps[int(parts[0])]; pos = step['position']
+        near = [(f'level:{pos}:{level["level"]}', f"livello {level['level']}: «{(level.get('says') or [('?', 0)])[0][0].strip()}»",
+                 min(1., abs(level.get('effect') or 0) / 5)) for level in step['levels']]
+        near.append((f'memoria:{pos}'.replace('memoria', 'memory'), f"memoria {step['memory']['weight']:.0%}", step['memory']['weight']))
+        seen = {}
+        for level in step['levels']:
+            for j, weight in level.get('looked', []):
+                seen[j] = max(seen.get(j, 0), weight)
+        near += [(f'word:{j}', f'«{w(j)}»', weight) for j, weight in sorted(seen.items(), key=lambda x: -x[1])[:4]]
+        card = [html.B(f"Token «{w(pos)}»"), f" · probabilità {math.exp(step['logp']):.0%}. ",
+                'Viene dai livelli della rete e dalla memoria del documento: scegli un nodo per entrarci.']
+        return f"«{w(pos)}»", card, near
+    if kind == 'level':
+        pos, l = int(parts[0]), int(parts[1]); level = steps[pos]['levels'][l - 1]
+        says = ', '.join(f"«{t.strip() or t}» {q:.0%}" for t, q in level.get('says', []))
+        effect = level.get('effect')
+        near = [(f'view:{pos}:{l}:{n + 1}', f"vista {n + 1} · {view['id']}", view['membership']) for n, view in enumerate(level.get('lit', []))]
+        near.append((f'token:{pos}', f'token «{w(pos)}»', 1.))
+        if l > 1:
+            near.append((f'level:{pos}:{l - 1}', f'livello {l - 1}', .5))
+        if l < len(steps[pos]['levels']):
+            near.append((f'level:{pos}:{l + 1}', f'livello {l + 1}', .5))
+        card = [html.B(f'Livello {l}'), f" · dopo questo livello la rete direbbe: {says}. ",
+                ('' if effect is None else f"Chiudendolo, la probabilità del token {'scende' if effect >= 0 else 'sale'} di {abs(effect):.2f} in log. "),
+                'I suoi punti di vista: ognuno cade in un concetto e guarda alcune parole.']
+        return f'Livello {l}', card, near
+    if kind == 'view':
+        pos, l, h = int(parts[0]), int(parts[1]), int(parts[2]); view = steps[pos]['levels'][l - 1]['lit'][h - 1]
+        near = [(f"concept:{view['id']}", f"concetto {view['id']}", view['membership'])]
+        near += [(f'word:{j}', f'«{w(j)}»', weight) for j, weight in view.get('looked', [])]
+        near.append((f'level:{pos}:{l}', f'livello {l}', .5))
+        looked = ', '.join(f'«{w(j)}» {weight:.0%}' for j, weight in view.get('looked', [])) or 'nessuna parola in particolare'
+        card = [html.B(f'Punto di vista {h} del livello {l}'), f" · la posizione cade nel concetto {view['id']} ({view['membership']:.0%}); "
+                f'guarda: {looked}.']
+        return f'Vista {h} · livello {l}', card, near
+    if kind == 'concept':
+        cid = rest; node = names.get(cid, {})
+        held = next(([w(j) for j, _ in view.get('held', [])] for step in path['steps'] for level in step['levels']
+                     for view in level.get('lit', []) if view['id'] == cid), [])
+        near = [(f"concept:{e['source']}", f"sopra: {e['source']}", e['weight']) for e in edges
+                if e['target'] == cid and e.get('kind') != 'legge'][:5]
+        near += [(f"concept:{e['target']}", f"sotto: {e['target']}", e['weight']) for e in edges
+                 if e['source'] == cid and e.get('kind') != 'legge'][:5]
+        name = f"{' '.join(node.get('enters', []))} → {' '.join(node.get('follows', []))}" if node else 'non nella mappa dei concetti principali'
+        card = [html.B(f'Concetto {cid}'), f' · {name}. ', (f"Nel testo di questa risposta gli appartengono: {', '.join(f'«{x}»' for x in held)}. " if held else ''),
+                'Sopra e sotto: i concetti del livello precedente da cui arrivano le sue posizioni e quelli del successivo a cui portano.']
+        return f'Concetto {cid}', card, near
+    if kind == 'word':
+        j = int(parts[0]); near = []
+        for step in path['steps']:
+            used = max([weight for level in step['levels'] for jj, weight in level.get('looked', []) if jj == j]
+                       + [weight for jj, weight in step['memory']['sources'] if jj == j] + [0])
+            if used > .05:
+                near.append((f"token:{step['position']}", f"token «{w(step['position'])}»", used))
+        card = [html.B(f'Parola «{w(j)}»'), ' · i token della risposta che l\'hanno usata, letta da un punto di vista o copiata dalla memoria.']
+        return f'«{w(j)}»', card, near
+    if kind == 'memory':
+        pos = int(parts[0]); memory = steps[pos]['memory']
+        near = [(f'word:{j}', f'«{w(j)}»', weight) for j, weight in memory['sources']] + [(f'token:{pos}', f'token «{w(pos)}»', 1.)]
+        card = [html.B('Memoria del documento'), f" · pesa {memory['weight']:.0%} su questo token: copia il token che seguiva le "
+                'posizioni del testo più simili a quella attuale.']
+        return 'Memoria', card, near
+    return key, [key], []
+
+
+def walk_view(path, trail):
+    """The walk: the trail of the nodes visited (each a step back), the card of the current node and its neighbours
+    on a small graph: a click on one walks there."""
+    if not path or not trail:
+        return None
+    title, card, near = _walk_node(path, trail[-1])
+    import plotly.graph_objects as go
+    figure = go.Figure()
+    count = max(len(near), 1)
+    spots = [(math.cos(2 * math.pi * n / count + math.pi / 2), .8 * math.sin(2 * math.pi * n / count + math.pi / 2)) for n in range(len(near))]
+    for (x, y), (_, _, weight) in zip(spots, near):
+        figure.add_scatter(x=[0, x], y=[0, y], mode='lines', hoverinfo='skip', showlegend=False,
+                           line=dict(width=1 + 6 * max(0., min(1., weight)), color='rgba(44,111,187,.45)'))
+    figure.add_scatter(x=[0] + [x for x, _ in spots], y=[0] + [y for _, y in spots], mode='markers+text', showlegend=False,
+                       text=[title] + [label for _, label, _ in near], textposition=['middle center'] + ['bottom center'] * len(near),
+                       customdata=[''] + [key for key, _, _ in near], hoverinfo='text',
+                       marker=dict(size=[46] + [18 + 20 * max(0., min(1., weight)) for _, _, weight in near],
+                                   color=['#e76f51'] + ['#2c6fbb'] * len(near), opacity=.85))
+    figure.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10), xaxis=dict(visible=False, range=[-1.5, 1.5]),
+                         yaxis=dict(visible=False, range=[-1.2, 1.2]), clickmode='event', uirevision=trail[-1])
+    crumbs = []
+    for n, key in enumerate(trail):
+        crumbs.append(dbc.Button(_walk_node(path, key)[0], id={'type': 'lm-walk-crumb', 'index': n}, size='sm', color='secondary',
+                                 outline=n != len(trail) - 1, className='me-1 mb-1'))
+        if n < len(trail) - 1:
+            crumbs.append(html.Span('→', className='me-1'))
+    return html.Div([html.H6('Cammina nel modello', className='mt-3'),
+                     html.Div(crumbs, className='mb-2'), html.P(card, className='small mb-1'),
+                     dcc.Graph(id='lm-walk-graph', figure=figure, config={'displaylogo': False}),
+                     html.P('Clicca un nodo intorno per andarci; clicca un passo della traccia per tornare indietro. Lo spessore '
+                            'dei collegamenti è quanto hanno pesato: lettura delle parole, peso della memoria, effetto di chiudere un '
+                            'livello, appartenenza ai concetti.', className='small text-muted')])
+
+
 def path_animation(path, pick=None):
     """The answer played token after token on the graph of the network: the concepts each view's position belongs to
     most light up (size: how much), the edges between lit concepts of consecutive levels with them; beside, how much
@@ -269,6 +378,7 @@ layout = dbc.Container([
             html.Div(id='lm-generation-metrics'),
             dcc.Store(id='lm-path-data', storage_type='session'), dcc.Store(id='lm-path-pick', storage_type='session'),
             html.Div(id='lm-path'), dcc.Store(id='lm-generation-path'),
+            dcc.Store(id='lm-walk', storage_type='session'), html.Div(id='lm-walk-view'),
             dbc.Button('Scarica questa copia del modello', id='lm-export-model', outline=True, color='primary', className='my-2'),
             html.Small('Contiene i concetti e il tokenizer: si ricarica senza altri file (istruzioni nel README del pacchetto).', className='text-muted d-block'),
             html.Div(id='lm-export-status', role='status'),
@@ -1553,12 +1663,36 @@ def register(app):
             return dash.no_update
         return path
 
-    @app.callback(Output('lm-path-pick', 'data'), Input({'type': 'lm-path-token', 'index': dash.ALL}, 'n_clicks'),
-                  prevent_initial_call=True)
+    @app.callback(Output('lm-path-pick', 'data'), Output('lm-walk', 'data', allow_duplicate=True),
+                  Input({'type': 'lm-path-token', 'index': dash.ALL}, 'n_clicks'), prevent_initial_call=True)
     def pick_token(clicks):
         if not dash.ctx.triggered_id or not any(clicks or []):
+            return dash.no_update, dash.no_update
+        index = dash.ctx.triggered_id['index']
+        return index, [f'token:{index}']                       # a token clicked: the walk starts from it
+
+    @app.callback(Output('lm-walk', 'data'), Input('lm-walk-graph', 'clickData'),
+                  Input({'type': 'lm-walk-crumb', 'index': dash.ALL}, 'n_clicks'), State('lm-walk', 'data'),
+                  prevent_initial_call=True)
+    def walk(click, crumbs, trail):
+        trail = list(trail or [])
+        if isinstance(dash.ctx.triggered_id, dict):           # a step of the trail: back there
+            if not any(crumbs or []):
+                return dash.no_update
+            return trail[:dash.ctx.triggered_id['index'] + 1]
+        key = ((click or {}).get('points') or [{}])[0].get('customdata')
+        if not key or (trail and trail[-1] == key):
             return dash.no_update
-        return dash.ctx.triggered_id['index']
+        return trail + [key]
+
+    @app.callback(Output('lm-walk-view', 'children'), Input('lm-path-data', 'data'), Input('lm-walk', 'data'))
+    def show_walk(path, trail):
+        if not path or not trail:
+            return None
+        try:
+            return walk_view(path, trail)
+        except (KeyError, IndexError, ValueError):
+            return None
 
     @app.callback(Output('lm-path', 'children'), Input('lm-path-data', 'data'), Input('lm-path-pick', 'data'))
     def show_path(path, pick):
