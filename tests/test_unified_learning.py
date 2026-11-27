@@ -1,5 +1,6 @@
 """Verification of the single learning rule uniting tabular EM and generative concept networks."""
 import importlib.util
+import types
 import unittest
 
 import numpy as np
@@ -363,6 +364,13 @@ class GradualTabularEMTest(unittest.TestCase):
         self.assertTrue(capped.races)
         self.assertEqual({c['choice'] for c in capped.races[0]['candidates']}, {"com'è", 'concetti'})
 
+        # Heads have no hidden ceiling: with only the width capped, doubling 8 heads stays a candidate.
+        only_width = NetText(31, eos, 1 << 22, max_context=32, growth=True,
+                             network=dict(dim=16, layers=2, heads=2, concepts=4, window=1, grouped=False, passes=False),
+                             limits=dict(max_dim=16))
+        eight_heads = types.SimpleNamespace(config=dict(dim=16, heads=8, concepts=[4, 4]), layers=[None, None])
+        self.assertIn('teste', only_width._allowed_kinds(eight_heads)[0])
+
         saturated = NetText(31, eos, 1 << 22, max_context=32, growth=True,
                             network=dict(dim=16, layers=2, heads=2, concepts=4, window=1, grouped=False, passes=False),
                             limits=dict(max_dim=16, max_layers=2, max_heads=2, max_concepts=4))
@@ -378,7 +386,7 @@ class GradualTabularEMTest(unittest.TestCase):
         restored = from_checkpoint_arrays(saturated.arrays())
         self.assertEqual(restored._saved_steps, 12_345)
         self.assertAlmostEqual(restored._saved_lr, 1.5e-3, places=6)
-        self.assertLessEqual(restored.race_gap, NetText.MAX_RACE_GAP * 4)
+        self.assertLessEqual(restored.race_gap, 1 << 60)                # no ceiling on the gap, but int64 safe
 
         restored.prepare_warm_start(growth=True, limits=dict(max_dim=32, max_layers=3, max_heads=4, max_concepts=16))
         self.assertEqual((restored.read, restored.next_race, restored.race_gap), (0, 0, 0))
