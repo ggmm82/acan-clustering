@@ -231,6 +231,8 @@ class ConceptNet:
         scores = np.einsum('thd,thdw->thw', q0, k_win) * np.float32(d ** -.5) + pos_bias[None, :, :]
         scores = np.where(valid_w[:, None, :], scores, -np.inf)
         attn = _softmax(scores, -1)
+        if getattr(self, '_views', None) is not None:            # a reading that wants to show what each view looked at
+            self._views.append(attn)
         tail_k = list((np.concatenate([pk, k0], axis=0))[-W_v:])
         tail_v = list((np.concatenate([pv, v], axis=0))[-W_v:])
         return np.einsum('thw,thdw->thd', attn, v_win), tail_k, tail_v

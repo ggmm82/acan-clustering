@@ -74,6 +74,53 @@ def _trace_segments(points, max_gap=1.05):
     return xs, ys
 
 
+def path_view(path, pick=None):
+    """The path of an answer: its tokens in a row (the prompt grey, the answer to click); for the chosen token, the
+    memory (its weight and the words it copied from), every level (how much closing it moves the token's
+    log-probability, the earlier words its views looked at, its concepts), as docs/MODEL.md measures them."""
+    if not path or not path.get('steps'):
+        return None
+    words, start = [word.replace('\n', '⏎') if word.strip() else (word.replace('\n', '⏎') or '·') for word in path['words']], path['prompt_length']
+    steps = {step['position']: step for step in path['steps']}
+    chosen = steps.get(pick) or path['steps'][0]
+    marks = {}                                                  # the earlier words this token came from, and how much
+    for j, weight in chosen['memory']['sources']:
+        marks[j] = max(marks.get(j, 0), weight)
+    for level in chosen['levels']:
+        for j, weight in level.get('looked', []):
+            marks[j] = max(marks.get(j, 0), weight)
+    row = []
+    for n, word in enumerate(words):
+        shown = word
+        style = {'background': f"rgba(255,193,7,{min(1, .2 + marks[n]):.2f})"} if n in marks else {}
+        if n < start:
+            row.append(html.Span(shown, style=dict(style, color='#666'), className='me-1'))
+        else:
+            row.append(dbc.Button(shown, id={'type': 'lm-path-token', 'index': n}, size='sm', className='me-1 mb-1',
+                                  color='primary', outline=n != chosen['position'], style=style or None))
+    memory = chosen['memory']
+    copied = ', '.join(f"«{words[j]}» ({weight:.0%})" for j, weight in memory['sources']) or 'nessuna parola in particolare'
+    rows = [html.Tr([html.Td('Memoria del documento'), html.Td(f"{memory['weight']:.0%}"), html.Td(f'copia da: {copied}')])]
+    for level in chosen['levels']:
+        effect = level.get('effect')
+        concepts = '; '.join(f"{concept['id']} {concept.get('name', '')} ({concept['membership']:.0%})" for concept in level.get('concepts', []))
+        looked = ', '.join(f"«{words[j]}»" for j, _ in level.get('looked', [])) or '—'
+        rows.append(html.Tr([html.Td(f"Livello {level['level']}"),
+                             html.Td('—' if effect is None else f'{effect:+.2f}'),
+                             html.Td([html.Div(f'guarda: {looked}'), html.Div(f'concetti: {concepts}', className='text-muted')])]))
+    return html.Div([
+        html.H6('Il percorso della risposta', className='mt-3'),
+        html.P('Clicca un token della risposta: in giallo le parole da cui viene. «Memoria» è quanto il token è stato '
+               'copiato dal testo letto; per ogni livello, quanto scende la probabilità del token se il livello si chiude '
+               '(in log: +1 vuol dire circa 2,7 volte meno probabile), le parole che ha guardato e i concetti a cui la '
+               'posizione apparteneva di più. Un concetto da solo pesa poco: la rete distribuisce la scelta su molti.',
+               className='small text-muted'),
+        html.Div(row, className='mb-2'),
+        html.P([html.B(f"«{chosen['token']}»"), f" · probabilità {math.exp(chosen['logp']):.0%}"], className='mb-1'),
+        dbc.Table([html.Thead(html.Tr([html.Th('Parte'), html.Th('Peso'), html.Th('Dettaglio')])), html.Tbody(rows)],
+                  size='sm', bordered=True, className='small')])
+
+
 def inside_figure(trace, uirevision=None):
     """The last step learned, opened up: its validation as the network reads the piece, token by token; in a race
     of growth every candidate learns the trial window and the winner completes the piece."""
@@ -147,10 +194,13 @@ layout = dbc.Container([
             dbc.Label('Quanto testo scrivere (token, circa pezzi di parola; fino a 256, fino a 4.096 per i modelli nativi: un\'immagine sono circa 1.060 token, iniziando con <|image|>)'), dbc.Input(id='lm-new-tokens', type='number', value=64, min=1, max=256),
             dbc.Checkbox(id='lm-full-length', value=True, label='Scrivi sempre fino alla lunghezza richiesta (senza fermarsi a fine paragrafo)'),
             dbc.Checkbox(id='lm-chat', value=False, label='Conversazione: il testo è una domanda e il modello risponde fino a fine turno (per i modelli addestrati sui dialoghi)'),
-            html.Div(dbc.Checkbox(id='lm-inspect-generation', value=False), style={'display': 'none'}),
+            dbc.Checkbox(id='lm-inspect-generation', value=False,
+                         label='Mostra il percorso: per ogni token scritto, da dove viene (fino a 32 token)'),
             dbc.Button('Continua la frase', id='lm-generate', className='my-2'),
             html.Div(id='lm-generation-status', role='status'), html.Div(id='lm-output'),
             html.Div(id='lm-generation-metrics'),
+            dcc.Store(id='lm-path-data', storage_type='session'), dcc.Store(id='lm-path-pick', storage_type='session'),
+            html.Div(id='lm-path'), dcc.Store(id='lm-generation-path'),
             dbc.Button('Scarica questa copia del modello', id='lm-export-model', outline=True, color='primary', className='my-2'),
             html.Small('Contiene i concetti e il tokenizer: si ricarica senza altri file (istruzioni nel README del pacchetto).', className='text-muted d-block'),
             html.Div(id='lm-export-status', role='status'),
@@ -1428,19 +1478,38 @@ def register(app):
         except ValueError as exc:
             return None, str(exc)
 
+    @app.callback(Output('lm-path-data', 'data'), Input('lm-generation-path', 'data'), State('lm-path-data', 'data'))
+    def keep_path(path, kept):
+        # The path changes only with a new generation: the page's own refresh leaves the open path as it is.
+        if not path or (kept and kept.get('generation') == path.get('generation')):
+            return dash.no_update
+        return path
+
+    @app.callback(Output('lm-path-pick', 'data'), Input({'type': 'lm-path-token', 'index': dash.ALL}, 'n_clicks'),
+                  prevent_initial_call=True)
+    def pick_token(clicks):
+        if not dash.ctx.triggered_id or not any(clicks or []):
+            return dash.no_update
+        return dash.ctx.triggered_id['index']
+
+    @app.callback(Output('lm-path', 'children'), Input('lm-path-data', 'data'), Input('lm-path-pick', 'data'))
+    def show_path(path, pick):
+        return path_view(path, pick)
+
     @app.callback(Output('lm-output','children'), Output('lm-generation-metrics','children'), Output('lm-inference-layers','data'),
+                  Output('lm-generation-path', 'data'),
                   Input('lm-poll','n_intervals'), Input('lm-generation-id','data'), Input('lm-job','value'), State('lm-workspace','data'))
     def generation_status(interval, generation, selected, workspace):
         if not generation or not workspace:
-            return '', [], None
+            return '', [], None, dash.no_update
         try:
             item = backend(workspace, '/generations/'+generation)
             if item['job'] != selected:
-                return '', [], None
+                return '', [], None, dash.no_update
             if item['status'] == 'failed':
-                return item['error'], [], None
+                return item['error'], [], None, dash.no_update
             if item['status'] != 'completed':
-                return 'Generazione in corso…', [], None
+                return 'Generazione in corso…', [], None, dash.no_update
             result = item['result']
             description = f"Copia del passo {result['step']} · {result['generated_tokens']} token scritti · {result['tokens_per_second']:.1f} token al secondo"
             if result.get('concept_model'):                    # the concept model: concepts per scale, no layers
@@ -1448,7 +1517,8 @@ def register(app):
                 memory = (f"Concetti: {sum(levels):,} fra token e tratti di 2, 4, 8… token ("
                           + ' · '.join(f'{count:,}' for count in levels) + f"), {result['cache_total_bytes']/1048576:,.1f} MB di conteggi. "
                           "Quello che il testo in corso ha già detto è ricordato a qualunque distanza.")
-                return media_view(result['text']), [html.P(description), html.P(memory)], None
+                path = dict(result['concept_path'], generation=generation) if result.get('concept_path') else dash.no_update
+                return media_view(result['text']), [html.P(description), html.P(memory)], None, path
             reduction = result['cache_reduction_fraction']
             memory = (f"Memoria per ricordare il testo letto: {result['cache_dense_layers_bytes']/1048576:.2f} MB nei layer normali, "
                       f"{result['cache_acan_layers_bytes']/1048576:.2f} MB nei layer a concetti. ")
@@ -1458,9 +1528,9 @@ def register(app):
             panels = [html.P(description), html.P(memory),
                       dbc.Accordion([dbc.AccordionItem([html.P('Quali concetti e canali interni erano più attivi. Sono riassunti del testo, non parole con un significato preciso.', className='small text-muted'),
                                                         html.Pre(json.dumps(result['explanations'], indent=2))], title='Per esperti · concetti e canali più attivi')], start_collapsed=True)]
-            return media_view(result['text']), panels, result.get('layer_inspection')
+            return media_view(result['text']), panels, result.get('layer_inspection'), dash.no_update
         except ValueError as exc:
-            return str(exc), [], None
+            return str(exc), [], None, dash.no_update
 
     @app.callback(Output('lm-layer-request-status','children'), Input('lm-layer-capture','n_clicks'),
                   State('lm-workspace','data'), State('lm-job','value'), prevent_initial_call=True)

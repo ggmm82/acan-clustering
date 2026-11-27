@@ -543,6 +543,73 @@ class NetText:
             out[a:b] = np.log(np.maximum(self.model.net.targets(doc), 1e-300))
         return out[pos]
 
+    def explain(self, prompt, produced, decode=None, top=3):
+        """How the network wrote every token of an answer, from what verified measures can say (docs/MODEL.md):
+        the memory of the document (its weight, and the earlier tokens it copied from), every level (how much the
+        chosen token's log-probability falls when the level is closed), the earlier tokens every level's views looked
+        at, and the concepts each level's position belonged to most. Positions are indices in prompt + produced."""
+        from .concept_net import ConceptNet
+        if self.model is None or not len(produced):
+            return []
+        net = self.model.net
+        prompt, produced = [int(t) for t in prompt], [int(t) for t in produced]
+
+        def follow(reader):
+            """The chosen tokens' log-probabilities as generation reads them (own words out of the memory)."""
+            cursor = NetCursor(reader, self.eos, prompt)
+            out, memory = [], []
+            for token in produced:
+                p = cursor.distribution()
+                out.append(float(np.log(max(p[token], 1e-300))))
+                inner = cursor.cursor
+                if reader is net:
+                    if inner.keys:
+                        q = net._addresses(inner.state)[0]
+                        g, a = net._share(inner.state, np.array(inner.keys) @ q / np.sqrt(len(q)))
+                        a = np.asarray(a, float)
+                        sources = [(int(j), float(a[j])) for j in np.argsort(-a)[:top] if a[j] > .01]
+                        memory.append(dict(weight=float(g), sources=sources))
+                    else:
+                        memory.append(dict(weight=0., sources=[]))
+                cursor.observe(token, remember=False)
+            return out, memory
+
+        full, memory = follow(net)
+        closed = []
+        for i in range(net.layers):                             # every level closed in turn: what it did
+            p = dict(net.p)
+            key = f'layers.{i}.gate'
+            if key not in p:
+                closed.append(None); continue
+            p[key] = np.zeros_like(p[key])
+            closed.append(follow(ConceptNet(net.config, p))[0])
+        sequence = np.asarray([self.eos] + prompt + produced, np.int64)
+        member = []
+        net._views = []
+        try:
+            net.states(sequence[:-1], member)
+            views = net._views
+        finally:
+            net._views = None
+        words = [decode([t]) if decode else str(t) for t in prompt + produced]
+        steps = []
+        for n, token in enumerate(produced):
+            at = len(prompt) + n                                # the position of sequence[:-1] that predicts this token
+            levels = []
+            for i in range(net.layers):
+                entry = dict(level=i + 1, effect=None if closed[i] is None else float(full[n] - closed[i][n]))
+                if i < len(views):                              # T x H x W: the last W positions, oldest first
+                    w = views[i][at].mean(0); W = len(w)
+                    looked = [(at - (W - 1 - k) - 1, float(w[k])) for k in np.argsort(-w)[:top] if at - (W - 1 - k) >= 1]
+                    entry['looked'] = [(where, weight) for where, weight in looked if weight > .05]
+                if i < len(member):
+                    t = member[i][at]                           # H x K
+                    best = np.dstack(np.unravel_index(np.argsort(-t, axis=None)[:2], t.shape))[0]
+                    entry['concepts'] = [dict(id=f'{i + 1}.{h + 1}.{k + 1}', membership=float(t[h, k])) for h, k in best]
+                levels.append(entry)
+            steps.append(dict(position=len(prompt) + n, token=words[len(prompt) + n], logp=full[n], memory=memory[n], levels=levels))
+        return dict(words=words, prompt_length=len(prompt), steps=steps)
+
     def prediction_cursor(self, ids):
         if self.model is None:
             return None
