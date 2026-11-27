@@ -74,6 +74,230 @@ def _trace_segments(points, max_gap=1.05):
     return xs, ys
 
 
+def _walk_node(path, key):
+    """A node of the walk through the model: its title, its card (what was measured there) and its neighbours,
+    each (key, label, weight). Keys: token:p, level:p:l, view:p:l:h, concept:id, word:j, memory:p."""
+    words, steps = path['words'], {step['position']: step for step in path['steps']}
+    names = {node['id']: node for node in (path.get('graph') or {}).get('nodes', [])}
+    edges = (path.get('graph') or {}).get('edges', [])
+    w = lambda j: (words[j].replace('\n', '⏎') if 0 <= j < len(words) else '?') or '·'
+    kind, _, rest = key.partition(':')
+    parts = rest.split(':')
+    if kind == 'token':
+        step = steps[int(parts[0])]; pos = step['position']
+        near = [(f'level:{pos}:{level["level"]}', f"livello {level['level']}: «{(level.get('says') or [('?', 0)])[0][0].strip()}»",
+                 min(1., abs(level.get('effect') or 0) / 5)) for level in step['levels']]
+        near.append((f'memoria:{pos}'.replace('memoria', 'memory'), f"memoria {step['memory']['weight']:.0%}", step['memory']['weight']))
+        seen = {}
+        for level in step['levels']:
+            for j, weight in level.get('looked', []):
+                seen[j] = max(seen.get(j, 0), weight)
+        near += [(f'word:{j}', f'«{w(j)}»', weight) for j, weight in sorted(seen.items(), key=lambda x: -x[1])[:4]]
+        card = [html.B(f"Token «{w(pos)}»"), f" · probabilità {math.exp(step['logp']):.0%}. ",
+                'Viene dai livelli della rete e dalla memoria del documento: scegli un nodo per entrarci.']
+        return f"«{w(pos)}»", card, near
+    if kind == 'level':
+        pos, l = int(parts[0]), int(parts[1]); level = steps[pos]['levels'][l - 1]
+        says = ', '.join(f"«{t.strip() or t}» {q:.0%}" for t, q in level.get('says', []))
+        effect = level.get('effect')
+        near = [(f'view:{pos}:{l}:{n + 1}', f"vista {n + 1} · {view['id']}", view['membership']) for n, view in enumerate(level.get('lit', []))]
+        near.append((f'token:{pos}', f'token «{w(pos)}»', 1.))
+        if l > 1:
+            near.append((f'level:{pos}:{l - 1}', f'livello {l - 1}', .5))
+        if l < len(steps[pos]['levels']):
+            near.append((f'level:{pos}:{l + 1}', f'livello {l + 1}', .5))
+        card = [html.B(f'Livello {l}'), f" · dopo questo livello la rete direbbe: {says}. ",
+                ('' if effect is None else f"Chiudendolo, la probabilità del token {'scende' if effect >= 0 else 'sale'} di {abs(effect):.2f} in log. "),
+                'I suoi punti di vista: ognuno cade in un concetto e guarda alcune parole.']
+        return f'Livello {l}', card, near
+    if kind == 'view':
+        pos, l, h = int(parts[0]), int(parts[1]), int(parts[2]); view = steps[pos]['levels'][l - 1]['lit'][h - 1]
+        near = [(f"concept:{view['id']}", f"concetto {view['id']}", view['membership'])]
+        near += [(f'word:{j}', f'«{w(j)}»', weight) for j, weight in view.get('looked', [])]
+        near.append((f'level:{pos}:{l}', f'livello {l}', .5))
+        looked = ', '.join(f'«{w(j)}» {weight:.0%}' for j, weight in view.get('looked', [])) or 'nessuna parola in particolare'
+        card = [html.B(f'Punto di vista {h} del livello {l}'), f" · la posizione cade nel concetto {view['id']} ({view['membership']:.0%}); "
+                f'guarda: {looked}.']
+        return f'Vista {h} · livello {l}', card, near
+    if kind == 'concept':
+        cid = rest; node = names.get(cid, {})
+        held = next(([w(j) for j, _ in view.get('held', [])] for step in path['steps'] for level in step['levels']
+                     for view in level.get('lit', []) if view['id'] == cid), [])
+        near = [(f"concept:{e['source']}", f"sopra: {e['source']}", e['weight']) for e in edges
+                if e['target'] == cid and e.get('kind') != 'legge'][:5]
+        near += [(f"concept:{e['target']}", f"sotto: {e['target']}", e['weight']) for e in edges
+                 if e['source'] == cid and e.get('kind') != 'legge'][:5]
+        name = f"{' '.join(node.get('enters', []))} → {' '.join(node.get('follows', []))}" if node else 'non nella mappa dei concetti principali'
+        card = [html.B(f'Concetto {cid}'), f' · {name}. ', (f"Nel testo di questa risposta gli appartengono: {', '.join(f'«{x}»' for x in held)}. " if held else ''),
+                'Sopra e sotto: i concetti del livello precedente da cui arrivano le sue posizioni e quelli del successivo a cui portano.']
+        return f'Concetto {cid}', card, near
+    if kind == 'word':
+        j = int(parts[0]); near = []
+        for step in path['steps']:
+            used = max([weight for level in step['levels'] for jj, weight in level.get('looked', []) if jj == j]
+                       + [weight for jj, weight in step['memory']['sources'] if jj == j] + [0])
+            if used > .05:
+                near.append((f"token:{step['position']}", f"token «{w(step['position'])}»", used))
+        card = [html.B(f'Parola «{w(j)}»'), ' · i token della risposta che l\'hanno usata, letta da un punto di vista o copiata dalla memoria.']
+        return f'«{w(j)}»', card, near
+    if kind == 'memory':
+        pos = int(parts[0]); memory = steps[pos]['memory']
+        near = [(f'word:{j}', f'«{w(j)}»', weight) for j, weight in memory['sources']] + [(f'token:{pos}', f'token «{w(pos)}»', 1.)]
+        card = [html.B('Memoria del documento'), f" · pesa {memory['weight']:.0%} su questo token: copia il token che seguiva le "
+                'posizioni del testo più simili a quella attuale.']
+        return 'Memoria', card, near
+    return key, [key], []
+
+
+def walk_view(path, trail):
+    """The walk: the trail of the nodes visited (each a step back), the card of the current node and its neighbours
+    on a small graph: a click on one walks there."""
+    if not path or not trail:
+        return None
+    title, card, near = _walk_node(path, trail[-1])
+    import plotly.graph_objects as go
+    figure = go.Figure()
+    count = max(len(near), 1)
+    spots = [(math.cos(2 * math.pi * n / count + math.pi / 2), .8 * math.sin(2 * math.pi * n / count + math.pi / 2)) for n in range(len(near))]
+    for (x, y), (_, _, weight) in zip(spots, near):
+        figure.add_scatter(x=[0, x], y=[0, y], mode='lines', hoverinfo='skip', showlegend=False,
+                           line=dict(width=1 + 6 * max(0., min(1., weight)), color='rgba(44,111,187,.45)'))
+    figure.add_scatter(x=[0] + [x for x, _ in spots], y=[0] + [y for _, y in spots], mode='markers+text', showlegend=False,
+                       text=[title] + [label for _, label, _ in near], textposition=['middle center'] + ['bottom center'] * len(near),
+                       customdata=[''] + [key for key, _, _ in near], hoverinfo='text',
+                       marker=dict(size=[46] + [18 + 20 * max(0., min(1., weight)) for _, _, weight in near],
+                                   color=['#e76f51'] + ['#2c6fbb'] * len(near), opacity=.85))
+    figure.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10), xaxis=dict(visible=False, range=[-1.5, 1.5]),
+                         yaxis=dict(visible=False, range=[-1.2, 1.2]), clickmode='event', uirevision=trail[-1])
+    crumbs = []
+    for n, key in enumerate(trail):
+        crumbs.append(dbc.Button(_walk_node(path, key)[0], id={'type': 'lm-walk-crumb', 'index': n}, size='sm', color='secondary',
+                                 outline=n != len(trail) - 1, className='me-1 mb-1'))
+        if n < len(trail) - 1:
+            crumbs.append(html.Span('→', className='me-1'))
+    return html.Div([html.H6('Cammina nel modello', className='mt-3'),
+                     html.Div(crumbs, className='mb-2'), html.P(card, className='small mb-1'),
+                     dcc.Graph(id='lm-walk-graph', figure=figure, config={'displaylogo': False}),
+                     html.P('Clicca un nodo intorno per andarci; clicca un passo della traccia per tornare indietro. Lo spessore '
+                            'dei collegamenti è quanto hanno pesato: lettura delle parole, peso della memoria, effetto di chiudere un '
+                            'livello, appartenenza ai concetti.', className='small text-muted')])
+
+
+def path_animation(path, pick=None):
+    """The answer played token after token on the graph of the network: the concepts each view's position belongs to
+    most light up (size: how much), the edges between lit concepts of consecutive levels with them; beside, how much
+    the memory and every level counted for that token. Lit says where the position is, the bars what weighed."""
+    from plotly.subplots import make_subplots
+    steps = path.get('steps') or []
+    if not steps:
+        return None
+    graph = path.get('graph') or {}
+    names = {node['id']: f"{' '.join(node.get('enters', []))} → {' '.join(node.get('follows', []))}" for node in graph.get('nodes', [])}
+    ids = set(names) | {lit['id'] for step in steps for level in step['levels'] for lit in level.get('lit', [])}
+    parse = lambda key: tuple(int(x) for x in key.split('.'))
+    levels = sorted({parse(key)[0] for key in ids})
+    place = {}
+    for level in levels:
+        row = sorted((key for key in ids if parse(key)[0] == level), key=lambda key: parse(key)[1:])
+        for n, key in enumerate(row):
+            place[key] = ((n + .5) / max(len(row), 1), -level)
+    keys = sorted(place)
+    words = path['words']
+    colors = ['#2c6fbb', '#2a9d8f', '#e76f51', '#8e44ad', '#f4a261', '#264653']
+
+    def frame_data(step):
+        lit = {item['id']: item['membership'] for level in step['levels'] for item in level.get('lit', [])}
+        sizes = [6 + 30 * lit[key] if key in lit else 5 for key in keys]
+        tint = [colors[(parse(key)[0] - 1) % len(colors)] if key in lit else '#d0d0d0' for key in keys]
+        xs, ys = [], []
+        # one path per view: its lit concept of a level to its lit concept of the next level
+        pairs = [(a, b) for a in lit for b in lit if parse(b)[0] == parse(a)[0] + 1 and parse(b)[1] == parse(a)[1]]
+        for a, b in pairs:
+            xs += [place[a][0], place[b][0], None]; ys += [place[a][1], place[b][1], None]
+        parts = ['memoria'] + [f"livello {level['level']}" for level in step['levels']]
+        weights = [step['memory']['weight']] + [max(0., min(1., (level.get('effect') or 0) / 5)) for level in step['levels']]
+        return [dict(type='scatter', x=xs, y=ys), dict(type='scatter', marker=dict(size=sizes, color=tint)),
+                dict(type='bar', x=parts, y=weights)]
+
+    figure = make_subplots(rows=1, cols=2, column_widths=[.8, .2], horizontal_spacing=.06)
+    first = next((n for n, step in enumerate(steps) if step['position'] == pick), 0)
+    start = frame_data(steps[first])
+    figure.add_scatter(x=start[0]['x'], y=start[0]['y'], mode='lines', line=dict(color='rgba(231,111,81,.6)', width=2),
+                       hoverinfo='skip', showlegend=False, row=1, col=1)
+    figure.add_scatter(x=[place[key][0] for key in keys], y=[place[key][1] for key in keys], mode='markers', showlegend=False,
+                       marker=start[1]['marker'], hovertext=[f"{key} · {names.get(key, '')}" for key in keys], hoverinfo='text',
+                       row=1, col=1)
+    figure.add_bar(x=start[2]['x'], y=start[2]['y'], marker_color=['#f4a261'] + ['#2c6fbb'] * (len(start[2]['x']) - 1),
+                   showlegend=False, row=1, col=2)
+    label = lambda step: words[step['position']].replace('\n', '⏎') or '·'
+    figure.frames = [dict(name=str(n), data=frame_data(step), traces=[0, 1, 2]) for n, step in enumerate(steps)]
+    play = dict(frame=dict(duration=1100, redraw=True), transition=dict(duration=300), fromcurrent=True)
+    figure.update_layout(
+        height=420 + 40 * len(levels), margin=dict(l=20, r=20, t=50, b=90), uirevision='path',
+        title=f"La risposta, token dopo token: in colore i concetti accesi in ogni punto di vista",
+        updatemenus=[dict(type='buttons', x=0, y=-.12, xanchor='left', yanchor='top', direction='left', showactive=False,
+                          buttons=[dict(label='▶ Riproduci', method='animate', args=[None, play]),
+                                   dict(label='⏸ Pausa', method='animate', args=[[None], dict(mode='immediate', frame=dict(duration=0))])])],
+        sliders=[dict(active=first, x=.22, len=.75, y=-.04, currentvalue=dict(prefix='token: '),
+                      steps=[dict(label=label(step), method='animate',
+                                  args=[[str(n)], dict(mode='immediate', frame=dict(duration=0, redraw=True))]) for n, step in enumerate(steps)])])
+    figure.update_xaxes(visible=False, row=1, col=1)
+    figure.update_yaxes(tickvals=[-level for level in levels], ticktext=[f'livello {level}' for level in levels], row=1, col=1)
+    figure.update_yaxes(range=[0, 1], title='peso', row=1, col=2)
+    return figure
+
+
+def path_view(path, pick=None):
+    """The path of an answer: its tokens in a row (the prompt grey, the answer to click); for the chosen token, the
+    memory (its weight and the words it copied from), every level (how much closing it moves the token's
+    log-probability, the earlier words its views looked at, its concepts), as acan/MODEL.md describes them."""
+    if not path or not path.get('steps'):
+        return None
+    words, start = [word.replace('\n', '⏎') if word.strip() else (word.replace('\n', '⏎') or '·') for word in path['words']], path['prompt_length']
+    steps = {step['position']: step for step in path['steps']}
+    chosen = steps.get(pick) or path['steps'][0]
+    marks = {}                                                  # the earlier words this token came from, and how much
+    for j, weight in chosen['memory']['sources']:
+        marks[j] = max(marks.get(j, 0), weight)
+    for level in chosen['levels']:
+        for j, weight in level.get('looked', []):
+            marks[j] = max(marks.get(j, 0), weight)
+    row = []
+    for n, word in enumerate(words):
+        shown = word
+        style = {'background': f"rgba(255,193,7,{min(1, .2 + marks[n]):.2f})"} if n in marks else {}
+        if n < start:
+            row.append(html.Span(shown, style=dict(style, color='#666'), className='me-1'))
+        else:
+            row.append(dbc.Button(shown, id={'type': 'lm-path-token', 'index': n}, size='sm', className='me-1 mb-1',
+                                  color='primary', outline=n != chosen['position'], style=style or None))
+    memory = chosen['memory']
+    copied = ', '.join(f"«{words[j]}» ({weight:.0%})" for j, weight in memory['sources']) or 'nessuna parola in particolare'
+    rows = [html.Tr([html.Td('Memoria del documento'), html.Td(f"{memory['weight']:.0%}"), html.Td(f'copia da: {copied}')])]
+    for level in chosen['levels']:
+        effect = level.get('effect')
+        concepts = '; '.join(f"{concept['id']} {concept.get('name', '')} ({concept['membership']:.0%})" for concept in level.get('concepts', []))
+        looked = ', '.join(f"«{words[j]}»" for j, _ in level.get('looked', [])) or '—'
+        rows.append(html.Tr([html.Td(f"Livello {level['level']}"),
+                             html.Td('—' if effect is None else f'{effect:+.2f}'),
+                             html.Td([html.Div(f'guarda: {looked}'), html.Div(f'concetti: {concepts}', className='text-muted')])]))
+    return html.Div([
+        html.H6('Il percorso della risposta', className='mt-3'),
+        html.P('Clicca un token della risposta: in giallo le parole da cui viene. «Memoria» è quanto il token è stato '
+               'copiato dal testo letto; per ogni livello, quanto scende la probabilità del token se il livello si chiude '
+               '(in log: +1 vuol dire circa 2,7 volte meno probabile), le parole che ha guardato e i concetti a cui la '
+               'posizione apparteneva di più. Un concetto da solo pesa poco: la rete distribuisce la scelta su molti.',
+               className='small text-muted'),
+        html.Div(row, className='mb-2'),
+        html.P([html.B(f"«{chosen['token']}»"), f" · probabilità {math.exp(chosen['logp']):.0%}"], className='mb-1'),
+        dbc.Table([html.Thead(html.Tr([html.Th('Parte'), html.Th('Peso'), html.Th('Dettaglio')])), html.Tbody(rows)],
+                  size='sm', bordered=True, className='small'),
+        dcc.Graph(figure=path_animation(path, chosen['position']), config={'displaylogo': False}),
+        html.P('Il grafo mostra dove si trova ogni posizione (la grandezza del nodo è quanto le appartiene), non che cosa ha '
+               'deciso il token: quello lo dicono le barre a destra, la memoria e l\'effetto di chiudere ogni livello '
+               '(1 = la probabilità del token scende di e⁵ volte o più).', className='small text-muted')])
+
+
 def inside_figure(trace, uirevision=None):
     """The last step learned, opened up: its validation as the network reads the piece, token by token; in a race
     of growth every candidate learns the trial window and the winner completes the piece."""
@@ -147,10 +371,14 @@ layout = dbc.Container([
             dbc.Label('Quanto testo scrivere (token, circa pezzi di parola; fino a 256, fino a 4.096 per i modelli nativi: un\'immagine sono circa 1.060 token, iniziando con <|image|>)'), dbc.Input(id='lm-new-tokens', type='number', value=64, min=1, max=256),
             dbc.Checkbox(id='lm-full-length', value=True, label='Scrivi sempre fino alla lunghezza richiesta (senza fermarsi a fine paragrafo)'),
             dbc.Checkbox(id='lm-chat', value=False, label='Conversazione: il testo è una domanda e il modello risponde fino a fine turno (per i modelli addestrati sui dialoghi)'),
-            html.Div(dbc.Checkbox(id='lm-inspect-generation', value=False), style={'display': 'none'}),
+            dbc.Checkbox(id='lm-inspect-generation', value=False,
+                         label='Mostra il percorso: per ogni token scritto, da dove viene (fino a 32 token)'),
             dbc.Button('Continua la frase', id='lm-generate', className='my-2'),
             html.Div(id='lm-generation-status', role='status'), html.Div(id='lm-output'),
             html.Div(id='lm-generation-metrics'),
+            dcc.Store(id='lm-path-data', storage_type='session'), dcc.Store(id='lm-path-pick', storage_type='session'),
+            html.Div(id='lm-path'), dcc.Store(id='lm-generation-path'),
+            dcc.Store(id='lm-walk', storage_type='session'), html.Div(id='lm-walk-view'),
             dbc.Button('Scarica questa copia del modello', id='lm-export-model', outline=True, color='primary', className='my-2'),
             html.Small('Contiene i concetti e il tokenizer: si ricarica senza altri file (istruzioni nel README del pacchetto).', className='text-muted d-block'),
             html.Div(id='lm-export-status', role='status'),
@@ -522,7 +750,7 @@ def series_table(jobs, job, tests):
 
 KIND_LABELS = {'dense': 'Rete con attenzione normale', 'window': 'Rete con le sole ultime 16 parole', 'concepts': 'Modello a concetti'}
 VALIDATION_NAME = 'Validazione'
-# Thresholds of the validation path, explained in docs/CONTROLLED-LM.md.
+# Thresholds of the validation path.
 MEMORY_SHARE = .8          # concepts must keep at least 80% of what ordinary attention recalls
 TEXT_MARGIN = .05          # and lose at most 0.05 bits per character on the text
 REAL_MARGIN = .15          # on the native micro model, within the noise of the measurement
@@ -1428,19 +1656,62 @@ def register(app):
         except ValueError as exc:
             return None, str(exc)
 
+    @app.callback(Output('lm-path-data', 'data'), Input('lm-generation-path', 'data'), State('lm-path-data', 'data'))
+    def keep_path(path, kept):
+        # The path changes only with a new generation: the page's own refresh leaves the open path as it is.
+        if not path or (kept and kept.get('generation') == path.get('generation')):
+            return dash.no_update
+        return path
+
+    @app.callback(Output('lm-path-pick', 'data'), Output('lm-walk', 'data', allow_duplicate=True),
+                  Input({'type': 'lm-path-token', 'index': dash.ALL}, 'n_clicks'), prevent_initial_call=True)
+    def pick_token(clicks):
+        if not dash.ctx.triggered_id or not any(clicks or []):
+            return dash.no_update, dash.no_update
+        index = dash.ctx.triggered_id['index']
+        return index, [f'token:{index}']                       # a token clicked: the walk starts from it
+
+    @app.callback(Output('lm-walk', 'data'), Input('lm-walk-graph', 'clickData'),
+                  Input({'type': 'lm-walk-crumb', 'index': dash.ALL}, 'n_clicks'), State('lm-walk', 'data'),
+                  prevent_initial_call=True)
+    def walk(click, crumbs, trail):
+        trail = list(trail or [])
+        if isinstance(dash.ctx.triggered_id, dict):           # a step of the trail: back there
+            if not any(crumbs or []):
+                return dash.no_update
+            return trail[:dash.ctx.triggered_id['index'] + 1]
+        key = ((click or {}).get('points') or [{}])[0].get('customdata')
+        if not key or (trail and trail[-1] == key):
+            return dash.no_update
+        return trail + [key]
+
+    @app.callback(Output('lm-walk-view', 'children'), Input('lm-path-data', 'data'), Input('lm-walk', 'data'))
+    def show_walk(path, trail):
+        if not path or not trail:
+            return None
+        try:
+            return walk_view(path, trail)
+        except (KeyError, IndexError, ValueError):
+            return None
+
+    @app.callback(Output('lm-path', 'children'), Input('lm-path-data', 'data'), Input('lm-path-pick', 'data'))
+    def show_path(path, pick):
+        return path_view(path, pick)
+
     @app.callback(Output('lm-output','children'), Output('lm-generation-metrics','children'), Output('lm-inference-layers','data'),
+                  Output('lm-generation-path', 'data'),
                   Input('lm-poll','n_intervals'), Input('lm-generation-id','data'), Input('lm-job','value'), State('lm-workspace','data'))
     def generation_status(interval, generation, selected, workspace):
         if not generation or not workspace:
-            return '', [], None
+            return '', [], None, dash.no_update
         try:
             item = backend(workspace, '/generations/'+generation)
             if item['job'] != selected:
-                return '', [], None
+                return '', [], None, dash.no_update
             if item['status'] == 'failed':
-                return item['error'], [], None
+                return item['error'], [], None, dash.no_update
             if item['status'] != 'completed':
-                return 'Generazione in corso…', [], None
+                return 'Generazione in corso…', [], None, dash.no_update
             result = item['result']
             description = f"Copia del passo {result['step']} · {result['generated_tokens']} token scritti · {result['tokens_per_second']:.1f} token al secondo"
             if result.get('concept_model'):                    # the concept model: concepts per scale, no layers
@@ -1448,7 +1719,8 @@ def register(app):
                 memory = (f"Concetti: {sum(levels):,} fra token e tratti di 2, 4, 8… token ("
                           + ' · '.join(f'{count:,}' for count in levels) + f"), {result['cache_total_bytes']/1048576:,.1f} MB di conteggi. "
                           "Quello che il testo in corso ha già detto è ricordato a qualunque distanza.")
-                return media_view(result['text']), [html.P(description), html.P(memory)], None
+                path = dict(result['concept_path'], generation=generation) if result.get('concept_path') else dash.no_update
+                return media_view(result['text']), [html.P(description), html.P(memory)], None, path
             reduction = result['cache_reduction_fraction']
             memory = (f"Memoria per ricordare il testo letto: {result['cache_dense_layers_bytes']/1048576:.2f} MB nei layer normali, "
                       f"{result['cache_acan_layers_bytes']/1048576:.2f} MB nei layer a concetti. ")
@@ -1458,9 +1730,9 @@ def register(app):
             panels = [html.P(description), html.P(memory),
                       dbc.Accordion([dbc.AccordionItem([html.P('Quali concetti e canali interni erano più attivi. Sono riassunti del testo, non parole con un significato preciso.', className='small text-muted'),
                                                         html.Pre(json.dumps(result['explanations'], indent=2))], title='Per esperti · concetti e canali più attivi')], start_collapsed=True)]
-            return media_view(result['text']), panels, result.get('layer_inspection')
+            return media_view(result['text']), panels, result.get('layer_inspection'), dash.no_update
         except ValueError as exc:
-            return str(exc), [], None
+            return str(exc), [], None, dash.no_update
 
     @app.callback(Output('lm-layer-request-status','children'), Input('lm-layer-capture','n_clicks'),
                   State('lm-workspace','data'), State('lm-job','value'), prevent_initial_call=True)

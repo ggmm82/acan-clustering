@@ -441,12 +441,25 @@ def generate(store, job, request, directory):
     produced = model.generate(ids, request['max_new_tokens'], stop=stop, temperature=request['temperature'], seed=request['seed'])
     elapsed = time.perf_counter()-started
     statistics = model.nbytes()
+    path = None
+    if request.get('inspect_layers') and hasattr(model, 'explain'):   # the path of every written token, on request
+        path = model.explain(ids, produced, tokenizer.decode)
+        graph = state.get('network_graph') or {}
+        names = {node['id']: node for node in graph.get('nodes', [])}
+        if path:
+            path['graph'] = graph                                 # the map the path lights up, token after token
+        for step in path.get('steps', []) if path else []:
+            for level in step['levels']:
+                for concept in level.get('concepts', []):
+                    node = names.get(concept['id'])
+                    if node:
+                        concept['name'] = f"{' '.join(node['enters'])} → {' '.join(node['follows'])}"
     return dict(text=readable(tokenizer, produced), checkpoint=request['checkpoint'], step=state['step'],
                 generated_tokens=len(produced), seconds=elapsed, tokens_per_second=len(produced)/max(elapsed, 1e-6),
                 cache_dense_layers_bytes=0, cache_acan_layers_bytes=statistics, cache_total_bytes=statistics,
                 dense_gqa_reference_bytes=None, cache_reduction_fraction=None, cache_tokens=len(ids)+len(produced),
                 explanations=[], layer_inspection=None, gpu_peak_bytes=None, concept_model=True,
-                concepts_per_level=model.concepts())
+                concepts_per_level=model.concepts(), concept_path=path)
 
 
 def evaluate(store, job, request, directory, check):
