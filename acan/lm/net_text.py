@@ -54,9 +54,7 @@ class NetText:
     LANGUAGE_GROWING = dict(dim=32, layers=2, heads=4, concepts=[16, 64], window=1, view_window=16, cache=16,
                             grouped=True, tabular_hierarchy=True, linear_concepts=True, sentinel=True)
     KINDS = ("com'è", 'larghezza', 'strato', 'concetti', 'teste')
-    RACE_TRIAL = 65_536
     MAX_ROUNDS = 4
-    MAX_RACE_GAP = 4_000_000
 
     @staticmethod
     def _clean_limits(limits):
@@ -251,10 +249,9 @@ class NetText:
             self._race_began = time.monotonic()
             all_docs = cut_documents(ids, self.eos, self._learner.learner.longest, begin=True)
             all_tokens = sum(map(len, all_docs))
-            cap = (self.RACE_TRIAL // 2 if self.tokens < 2_000_000
-                   else (2 * self.RACE_TRIAL if self.tokens >= 8_000_000 else self.RACE_TRIAL))
-            trial_limit = (min(cap, max(2048, all_tokens // len(self.KINDS)))
-                           if all_tokens >= 8192 else all_tokens)
+            # The race is the whole new piece: a grown copy pays at first for what it changed (concepts split apart)
+            # and earns it back only after enough text, so a short window would let the network as it is always win.
+            trial_limit = all_tokens
             def take_trial(start_idx):
                 picked, total_tok = [], 0
                 for d in all_docs[start_idx:]:
@@ -264,7 +261,7 @@ class NetText:
                 return picked, total_tok, start_idx + len(picked)
             trial_docs, trial_size, cursor = take_trial(0)
             has_rest = cursor < len(all_docs)
-            max_rounds = 2 if has_rest else self.MAX_ROUNDS
+            max_rounds = 2 if has_rest else self.MAX_ROUNDS     # it races again on the piece while a growth wins
             self._race_offset = 0
             self._race_piece = len(ids) if not has_rest else max(1, int(len(ids) * trial_size / max(all_tokens, 1)))
             round_number = 1
@@ -307,8 +304,9 @@ class NetText:
                     self._learner.learned += rest_size
             counted.update(seen=self._learner.learner.seen, total=len(ids))  # a rereading does not advance the queue
             grew_any = any(not r['retained'] and r['choice'] != "com'è" for r in self.races[first_race:])
-            max_gap = max(self.MAX_RACE_GAP, 4 * max(len(ids), 1))
-            self.race_gap = len(ids) if grew_any else min(max_gap, max(2 * self.race_gap, len(ids)))
+            # a growth won: the next piece races again; else the next race further away, 1, 2, 4... pieces, without
+            # a ceiling: a network that stops improving races sooner anyway (below)
+            self.race_gap = len(ids) if grew_any else max(2 * self.race_gap, len(ids))
             self.next_race = end + self.race_gap
             if again and len(self.races) > first_race:
                 self._learner._keep(best, self._learner.best_scores)   # restore the stabilized winner if rereading does not help
@@ -616,7 +614,7 @@ class NetText:
             raise ValueError("Versione del checkpoint della rete sconosciuta.")
         text = cls(vocabulary, eos, budget or limit, context, growth=bool(growth))
         text.next_race = min(max(0, next_race), 1 << 60)
-        text.race_gap = min(max(0, values[9] if len(values) > 9 else 0), cls.MAX_RACE_GAP * 4)
+        text.race_gap = min(max(0, values[9] if len(values) > 9 else 0), 1 << 60)
         text._saved_steps = values[10] if len(values) > 10 else max(0, tokens // 4096)
         text._saved_lr = (values[11] / 1e7) if len(values) > 11 and values[11] > 0 else 3e-3
         text.tokens, text.tail, text.network_done = tokens, np.asarray(data["tail"], np.int64), bool(done)
