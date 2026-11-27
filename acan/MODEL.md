@@ -276,7 +276,7 @@ Su code multi-dominio reali da decine di milioni di simboli ($V = 32.000$, dialo
 - **Apertura immediata dei livelli di sotto-concetti e coerenza domanda–risposta:** la residualizzazione gerarchica tabulare su lettura e scrittura unita all'aggiornamento a pre-normalizzazione apre immediatamente le valvole dei livelli di sotto-concetti ($\gamma_2, \gamma_3 > 0{,}5$ già dai primi cicli, portando la NLL di validazione intorno a $5{,}0\text{–}5{,}4$ nat già ai primi due passi), mentre teste di attenzione multi-vista sulla domanda, concetti per ciascun token e memoria sentinella si combinano nella previsione.
 - **Grafo multi-padre orientato per punto di vista:** partendo già da centinaia di concetti articolati su $4$ punti di vista complementari e ramificandosi in migliaia di sotto-concetti condivisi fra più concetti padre, il passo accoppiato di Fisher-EM preserva l'attività dell'intera piramide rendendo ogni astrazione, concetto intermedio e sotto-concetto direttamente ispezionabile per singola testa di attenzione.
 
-#### 6.3 · Una coda completa sul server e i limiti misurati
+#### 6.3 · Una coda completa sul server
 
 Coda di dialoghi, testi e comandi (45 passi da un milione di simboli, $V = 32.000$, crescita attiva con larghezza massima $D = 64$), al termine:
 
@@ -286,22 +286,3 @@ Coda di dialoghi, testi e comandi (45 passi da un milione di simboli, $V = 32.00
 | Velocità media | circa $4.400$ simboli/s su CPU, gare comprese |
 | Rete | $D = 64$, $L = 2$, $H = 4$, $K = [32, 128]$ |
 | Parametri | $2{,}2$ milioni, di cui $2{,}05$ milioni nei concetti dei token e circa $88.000$ nei livelli concettuali |
-
-Tre limiti, misurati sul modello finale e in prove ridotte sugli stessi oggetti:
-
-1. **Copia a catena dalla domanda.** In generazione la memoria episodica pesa fino a $0{,}97$ e copia la domanda simbolo dopo simbolo, mentre la rete da sola proporrebbe altro; il punto interrogativo copiato porta alla fine del turno. Sulla verosimiglianza la memoria ha ragione (pesarla con la plausibilità della rete peggiora la validazione da $4{,}918$ a $5{,}232$ nat): la catena nasce solo quando il modello legge le proprie parole, che in addestramento non vede mai.
-2. **Gare di crescita brevi.** Su una rete allenata, raddoppiare i concetti di un livello costa $0{,}0145$ nat dopo $65.536$ simboli e guadagna $0{,}0012$ nat (più di un errore standard) dopo circa $1{,}3$ milioni: con finestre brevi la rete com'è vince sempre. Per questo le gare usano l'intero pezzo.
-3. **Capacità dei livelli concettuali.** Nella stessa prova, raddoppiare i concetti guadagna $0{,}001$ nat e raddoppiare i punti di vista $0{,}006$; raddoppiare la larghezza guadagna $0{,}12$ nat, ma moltiplica le matrici dense dei livelli (da $77.000$ a $285.000$ parametri). Con concetti di $d = 16$ coordinate la quantità di informazione che i concetti portano alla previsione resta il collo di bottiglia.
-4. **Crescita su un modello del sito già allenato.** Sul modello di una coda del server (passo 15 di 45, $D = 64$, $L = 3$, $H = 8$, $K = [32, 64, 64]$), riallenato su un testo di prova per un pezzo e poi per altri quattro pezzi da $200.000$ simboli per variante, l'errore sul test finale vale:
-
-   | Variante | Errore dopo 4 pezzi |
-   |---|---:|
-   | La rete com'è | $4{,}8129$ |
-   | Nuovo strato | $4{,}8107$ (la sua porta resta fra $0{,}001$ e $0{,}045$) |
-   | Concetti del livello 3 raddoppiati | $4{,}8129$ |
-   | Punti di vista da 8 a 16 | sempre dietro la rete com'è (al terzo pezzo $4{,}8646$ contro $4{,}8593$) |
-   | Livello 3 letto due volte con gli stessi pesi | $4{,}8117$, con circa il $12\%$ di tempo in più |
-   | Livello 2 letto due volte / tre volte | $4{,}8142$ / $4{,}8161$ |
-
-   Le copie nate da una crescita restano vicine: dopo quattro pezzi i concetti scissi distano il $22\%$ della distanza tipica fra due concetti della stessa testa, i punti di vista duplicati meno del $5\%$. Far muovere i concetti più in fretta le separa: con un passo di gradiente dieci volte maggiore sui concetti la distanza sale al $40\%$ per i concetti e al $36$–$63\%$ per i punti di vista; con un passo EM più forte, che li avvicina all'aggiornamento tabulare, al $53\%$ e al $45$–$61\%$. L'errore però non migliora: $4{,}8194$ per la rete com'è con il passo maggiore e $4{,}8590$ con l'EM più forte, con le crescite a meno di $0{,}012$ nat dalla rispettiva rete com'è. La posizione dei concetti si può infatti ottenere anche spostando la proiezione che porta il simbolo fra i concetti, e questa impara già di suo. A questa scala né la profondità, né i concetti, né i punti di vista in più portano un guadagno misurabile: le gare che scelgono la rete com'è hanno ragione, e la rete migliora alla velocità consueta, un guadagno sempre minore a ogni raddoppio dei dati.
-

@@ -55,7 +55,6 @@ class NetText:
                             grouped=True, tabular_hierarchy=True, linear_concepts=True, sentinel=True)
     KINDS = ("com'è", 'larghezza', 'strato', 'concetti', 'teste')
     MAX_ROUNDS = 4
-    ROUNDS_ON_PIECE = True                                     # while a growth wins, race again on the same piece
 
     @staticmethod
     def _clean_limits(limits):
@@ -262,11 +261,7 @@ class NetText:
                 return picked, total_tok, start_idx + len(picked)
             trial_docs, trial_size, cursor = take_trial(0)
             has_rest = cursor < len(all_docs)
-            more_text = end < len(train)
-            if not self.ROUNDS_ON_PIECE and more_text:          # a growth that won races again on the next, new piece
-                max_rounds = 1
-            else:
-                max_rounds = 2 if has_rest else self.MAX_ROUNDS     # it races again on the piece while a growth wins
+            max_rounds = 2 if has_rest else self.MAX_ROUNDS         # it races again on the piece while a growth wins
             self._race_offset = 0
             self._race_piece = len(ids) if not has_rest else max(1, int(len(ids) * trial_size / max(all_tokens, 1)))
             round_number = 1
