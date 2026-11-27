@@ -54,7 +54,6 @@ class NetText:
     LANGUAGE_GROWING = dict(dim=32, layers=2, heads=4, concepts=[16, 64], window=1, view_window=16, cache=16,
                             grouped=True, tabular_hierarchy=True, linear_concepts=True, sentinel=True)
     KINDS = ("com'è", 'larghezza', 'strato', 'concetti', 'teste')
-    RACE_TRIAL = 65_536
     MAX_ROUNDS = 4
     MAX_RACE_GAP = 4_000_000
 
@@ -251,10 +250,9 @@ class NetText:
             self._race_began = time.monotonic()
             all_docs = cut_documents(ids, self.eos, self._learner.learner.longest, begin=True)
             all_tokens = sum(map(len, all_docs))
-            cap = (self.RACE_TRIAL // 2 if self.tokens < 2_000_000
-                   else (2 * self.RACE_TRIAL if self.tokens >= 8_000_000 else self.RACE_TRIAL))
-            trial_limit = (min(cap, max(2048, all_tokens // len(self.KINDS)))
-                           if all_tokens >= 8192 else all_tokens)
+            # The race is the whole new piece: a grown copy pays at first for what it changed (concepts split apart)
+            # and earns it back only after enough text, so a short window would let the network as it is always win.
+            trial_limit = all_tokens
             def take_trial(start_idx):
                 picked, total_tok = [], 0
                 for d in all_docs[start_idx:]:
@@ -264,7 +262,7 @@ class NetText:
                 return picked, total_tok, start_idx + len(picked)
             trial_docs, trial_size, cursor = take_trial(0)
             has_rest = cursor < len(all_docs)
-            max_rounds = 2 if has_rest else self.MAX_ROUNDS
+            max_rounds = 2 if has_rest else self.MAX_ROUNDS     # it races again on the piece while a growth wins
             self._race_offset = 0
             self._race_piece = len(ids) if not has_rest else max(1, int(len(ids) * trial_size / max(all_tokens, 1)))
             round_number = 1
