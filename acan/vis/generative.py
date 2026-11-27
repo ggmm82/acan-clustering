@@ -312,7 +312,7 @@ La chiave si vede solo quando la crei: conservala; se la perdi, revocala e crean
             html.Div(id='lm-eval-status',role='status'),html.Div(id='lm-eval-view'),
     ], title='Verifica finale e memoria su testi lunghi'),
     dbc.AccordionItem([
-            dbc.Accordion([dbc.AccordionItem([html.Pre(id='lm-debug-view', style={'whiteSpace':'pre-wrap'}),
+            dbc.Accordion(id='lm-debug-accordion', children=[dbc.AccordionItem(item_id='debug', children=[html.Pre(id='lm-debug-view', style={'whiteSpace':'pre-wrap'}),
                 dbc.Button('Scarica la diagnostica', id='lm-debug-download', outline=True, color='primary'), dcc.Download(id='lm-debug-file'),
                 dcc.Store(id='lm-debug-data')], title='Per esperti · configurazione e registro del progetto')], start_collapsed=True),
             html.Div(            dbc.Accordion([dbc.AccordionItem([
@@ -522,7 +522,7 @@ def series_table(jobs, job, tests):
 
 KIND_LABELS = {'dense': 'Rete con attenzione normale', 'window': 'Rete con le sole ultime 16 parole', 'concepts': 'Modello a concetti'}
 VALIDATION_NAME = 'Validazione'
-# Thresholds of the validation path, explained in docs/CONTROLLED-LM.md.
+# Thresholds of the validation path.
 MEMORY_SHARE = .8          # concepts must keep at least 80% of what ordinary attention recalls
 TEXT_MARGIN = .05          # and lose at most 0.05 bits per character on the text
 REAL_MARGIN = .15          # on the native micro model, within the noise of the measurement
@@ -1389,8 +1389,10 @@ def register(app):
         return dict(content=json.dumps(report,indent=2),filename='acan-lm-comparison.json') if report else dash.no_update
 
     @app.callback(Output('lm-debug-view','children'),Output('lm-debug-data','data'),
-                  Input('lm-state','data'),Input('lm-job','value'),State('lm-workspace','data'))
-    def debug_project(state,job,workspace):
+                  Input('lm-debug-accordion','active_item'),Input('lm-job','value'),State('lm-workspace','data'))
+    def debug_project(opened,job,workspace):
+        if opened != 'debug':                                # read only when opened: the report can be megabytes
+            return '',None
         if not job or not workspace:
             return 'Seleziona un progetto.',None
         try:

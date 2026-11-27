@@ -151,7 +151,7 @@ def local(name):
 
 @unittest.skipUnless(local('titanic.csv'), 'Needs the project datasets (.data/ or ACAN_DATA); skipped in CI')
 class ProjectDatasetsTest(unittest.TestCase):
-    """The longer measurements of docs/MODEL-RESULTS.md, ten splits each (a few minutes)."""
+    """The longer measurements, ten splits each (a few minutes)."""
 
     def test_sonar_ten_splits(self):
         self.assertGreaterEqual(accuracy(DATA/'sonar.csv', range(1, 11)), .83)       # (0.864)
