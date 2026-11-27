@@ -522,7 +522,7 @@ def series_table(jobs, job, tests):
 
 KIND_LABELS = {'dense': 'Rete con attenzione normale', 'window': 'Rete con le sole ultime 16 parole', 'concepts': 'Modello a concetti'}
 VALIDATION_NAME = 'Validazione'
-# Thresholds of the validation path, explained in docs/CONTROLLED-LM.md.
+# Thresholds of the validation path.
 MEMORY_SHARE = .8          # concepts must keep at least 80% of what ordinary attention recalls
 TEXT_MARGIN = .05          # and lose at most 0.05 bits per character on the text
 REAL_MARGIN = .15          # on the native micro model, within the noise of the measurement

@@ -345,6 +345,12 @@ def create_app(root=None, token=None):
         store.job(identifier, request.workspace)
         return jsonify(read_answers(store.directory('jobs', identifier)))
 
+    @app.get('/jobs/<identifier>/answer-paths')
+    def job_answer_paths(identifier):
+        store.job(identifier, request.workspace)
+        path = store.directory('jobs', identifier)/'answer_paths.json'
+        return jsonify(json.loads(path.read_text(encoding='utf-8')) if path.exists() else {})
+
     @app.get('/dialogue-data')
     def dialogue_catalog():
         from .dialogue_data import catalog

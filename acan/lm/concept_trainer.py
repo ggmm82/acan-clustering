@@ -156,16 +156,42 @@ def record_answers(directory, model, tokenizer, state, questions=None, new_token
     from .probes import QUESTIONS, chat_prompt, stop_tokens
     started = time.monotonic()
     stop = set(stop_tokens(tokenizer))
-    answers = []
+    answers, paths = [], []
     for question in (questions or QUESTIONS):
         ids = tokenizer(chat_prompt(question))['input_ids']
         produced = model.generate(ids, new_tokens, stop=stop, temperature=.7, seed=0)
         answers.append(dict(question=question, answer=readable(tokenizer, produced).strip()))
+        paths.append(answer_path(model, ids, produced, tokenizer, state))
     entry = dict(step=state['step'], tokens_trained=state.get('tokens_trained'), validation_nll=state.get('validation_nll'),
                  seconds=time.monotonic()-started, answers=answers)
     with (Path(directory)/'answers.jsonl').open('a', encoding='utf-8') as stream:
         stream.write(json.dumps(entry, ensure_ascii=False)+'\n')
+    if any(paths):                                       # how the last answers were written: only the latest save, apart
+        target = Path(directory)/'answer_paths.json'
+        try:
+            target.with_suffix('.tmp').write_text(json.dumps(dict(step=state['step'], questions=[a['question'] for a in answers],
+                                                                  paths=paths), ensure_ascii=False))
+            target.with_suffix('.tmp').replace(target)
+        except (OSError, TypeError, ValueError):         # the answers are saved all the same
+            pass
     return entry
+
+
+def answer_path(model, ids, produced, tokenizer, state):
+    """How the network wrote an answer, token after token (NetText.explain), with the names of its concepts; None
+    for a model without a concept network or if reading it fails (the answers are saved all the same)."""
+    if not produced or not hasattr(model, 'explain') or getattr(getattr(model, 'model', None), 'net', None) is None:
+        return None
+    try:
+        path = model.explain(ids, produced, tokenizer.decode)
+    except Exception:
+        return None
+    names = {node['id']: f"{' '.join(node['enters'])} → {' '.join(node['follows'])}"
+             for node in (state.get('network_graph') or {}).get('nodes', [])}
+    path['names'] = {cid: names[cid] for cid in {view['id'] for step in path['steps'] for level in step['levels']
+                                                 for view in level.get('lit', [])} if cid in names}
+    # Plain numbers only: the path is written as JSON next to the answers.
+    return json.loads(json.dumps(path, default=lambda value: value.tolist() if hasattr(value, 'tolist') else str(value)))
 
 
 def quantities(model, config):
@@ -296,6 +322,9 @@ def run_training(root, identifier, stop_event=None):
                 return
             target = state if dest is None else dest
             target['network_concepts'] = net.describe(docs, tokenizer.decode)
+            # Concepts each level really uses (effective number, mean over its heads): kept step by step.
+            target['concepts_used'] = [round(sum(layer['active']) / max(len(layer['active']), 1), 1)
+                                       for layer in target['network_concepts']]
             target['network_graph'] = net.graph(docs, tokenizer.decode)
 
         model.device = state['device'] = device

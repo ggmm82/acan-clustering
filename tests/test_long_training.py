@@ -490,6 +490,18 @@ class StructureProgressTest(unittest.TestCase):
         progress['structure'].update(race=4, candidate='concetti · strato 2')
         text = str(concept_summary(progress, dict(total_steps=45), status='running'))
         self.assertIn('4° di 5, concetti · strato 2', text)
+        # Perplexity and the concepts each level really uses, out of those it has.
+        measured = dict(graft=dict(vocabulary=8), step=20, validation_nll=4.95, validation_perplexity=141.2, baseline_nll=10.37,
+                        network=dict(dim=64, layers=3, groups=[[8, 32], [8, 64], [8, 64]], parameters=2318542, bytes=9_000_000),
+                        concepts_used=[19.3, 44.1, 25.0])
+        text = str(concept_summary(measured, dict(total_steps=45), status='running'))
+        self.assertIn('Perplessità', text)
+        self.assertIn('141', text)
+        self.assertIn('19 di 32 · 44 di 64 · 25 di 64', text)
+        del measured['concepts_used']                     # a job saved before: read from its description of the concepts
+        measured['network_concepts'] = [dict(layer=1, active=[18., 20.], tied=None, concepts=[]),
+                                        dict(layer=2, active=[40., 48.], tied=None, concepts=[])]
+        self.assertIn('19 di 32 · 44 di 64', str(concept_summary(measured, dict(total_steps=45), status='paused')))
 
     def test_growth_panel_shows_completed_scores_and_what_would_happen(self):
         from acan.vis.long_training import concept_summary
