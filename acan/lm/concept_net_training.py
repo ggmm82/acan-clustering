@@ -120,11 +120,183 @@ class _GroupedTokenLogProb(torch.autograd.Function):
 
 def memberships_logits(q, g, log_s, log_c):
     """log C_k + log N(q; g_k, s_k) up to a constant, for every position and concept of every head, with the square
-    expanded into products of matrices (no table position x concept x dimension). q: ... x H x d; g, log_s: H x K x d."""
+    expanded into batched BLAS matrix products (no table position x concept x dimension). q: ... x H x d; g, log_s: H x K x d."""
     inv = torch.exp(-2 * log_s)                                              # H K d
+    if q.ndim >= 3:
+        shape = q.shape[:-2]
+        H, K, d = g.shape
+        qf = q.reshape(-1, H, d).transpose(0, 1)                             # H N d
+        ginv = (g * inv).transpose(1, 2)                                     # H d K
+        quad = torch.bmm(qf.square(), inv.transpose(1, 2)) - 2. * torch.bmm(qf, ginv) + (g.square() * inv).sum(-1)[:, None, :]
+        out = log_c[:, None, :] - .5 * quad - log_s.sum(-1)[:, None, :]
+        return out.transpose(0, 1).view(*shape, H, K)
     quad = torch.einsum('...hd,hkd->...hk', q * q, inv) - 2 * torch.einsum('...hd,hkd->...hk', q, g * inv) \
         + (g * g * inv).sum(-1)
     return log_c - .5 * quad - log_s.sum(-1)
+
+
+def _macro_clusters(g, log_s, log_c, res_var_div=1., G_c=16):
+    """Aggregate K = G_c * S_c fine Gaussian sub-concepts into G_c exact moment-matched macro-clusters,
+    preserving exact invariance under coordinate widening (res_var_div = 2 ** widens)."""
+    H, K, d = g.shape
+    S_c = K // G_c
+    r = float(res_var_div)
+    g_g = g.view(H, G_c, S_c, d)
+    ls_g = log_s.view(H, G_c, S_c, d)
+    lc_g = log_c.view(H, G_c, S_c)
+    true_lp = lc_g - (1. - 1. / r) * ls_g.sum(-1)
+    w_sub = torch.softmax(true_lp, dim=-1).unsqueeze(-1)
+    g_bar = (w_sub * g_g).sum(2)
+    var_unit = (w_sub * (torch.exp(2. * ls_g) / r + (g_g - g_bar.unsqueeze(2)).square())).sum(2).clamp_min(1e-5)
+    ls_bar = .5 * torch.log(var_unit * r)
+    l_bar = torch.logsumexp(true_lp, dim=-1) + (1. - 1. / r) * ls_bar.sum(-1)
+    return g_g, ls_g, lc_g, g_bar, ls_bar, l_bar, var_unit
+
+
+class _HybridRoutedSubConcepts(torch.autograd.Function):
+    """Evaluate S fine Gaussian sub-concepts inside each position's routed macro-cluster in O(N * S * d) BLAS
+    (splitting heavy buckets >= 32 from padded tail buckets < 32, with Top-m sparse activation and zero K^2)."""
+
+    @staticmethod
+    def forward(ctx, q, grp, g, log_s, log_c, top_m, valid_mask):
+        N, H, d = q.shape
+        _, G, S, _ = g.shape
+        BG = H * G
+        inv_raw = torch.exp(-2. * log_s)
+        inv = inv_raw.reshape(BG, S, d)
+        s2 = torch.exp(2. * log_s).reshape(BG, S, d)
+        gf = g.reshape(BG, S, d)
+        ginv = gf * inv
+        bias = (log_c - .5 * (g.square() * inv_raw).sum(-1) - log_s.sum(-1)).reshape(BG, S)
+
+        b_flat = (grp + (torch.arange(H, device=q.device) * G)[None, :]).reshape(-1)
+        q_flat = q.reshape(N * H, d)
+        m_flat = valid_mask[:, None].expand(N, H).reshape(-1)
+        order = torch.argsort(b_flat)
+        b_sorted = b_flat[order]
+        q_sorted = q_flat[order]
+        q2_sorted = q_sorted.square()
+        m_sorted = m_flat[order]
+        counts = torch.bincount(b_sorted, minlength=BG)
+        starts = torch.zeros(BG + 1, dtype=torch.long, device=q.device)
+        starts[1:] = counts.cumsum(0)
+
+        probs_sorted = q.new_empty(N * H, S)
+        proto_sorted = q.new_empty(N * H, d)
+        var_sorted = q.new_empty(N * H, d)
+        bc = q.new_zeros(BG, S)
+        bu = q.new_zeros(BG, S, d)
+        bq = q.new_zeros(BG, S, d)
+
+        counts_cpu = counts.tolist()
+        starts_cpu = starts.tolist()
+        heavy = [b for b, c in enumerate(counts_cpu) if c >= 32]
+        tail = [b for b, c in enumerate(counts_cpu) if 0 < c < 32]
+
+        for b in heavy:
+            a, e = starts_cpu[b], starts_cpu[b + 1]
+            qb, q2b, mb = q_sorted[a:e], q2_sorted[a:e], m_sorted[a:e, None]
+            logits = bias[b][None, :] - .5 * (q2b @ inv[b].T - 2. * (qb @ ginv[b].T))
+            if 0 < top_m < S:
+                tv, ti = logits.topk(top_m, dim=-1)
+                pb = logits.new_zeros(e - a, S).scatter_(1, ti, torch.softmax(tv, -1))
+            else:
+                pb = torch.softmax(logits, -1)
+            probs_sorted[a:e] = pb
+            proto_sorted[a:e] = pb @ gf[b]
+            var_sorted[a:e] = pb @ s2[b]
+            pbm = pb * mb
+            bc[b] = pbm.sum(0)
+            bu[b] = pbm.T @ qb
+            bq[b] = pbm.T @ q2b
+
+        tail_info = None
+        if tail:
+            tail_t = torch.tensor(tail, dtype=torch.long, device=q.device)
+            T_u = len(tail)
+            t_counts = counts[tail_t]
+            B_max = int(t_counts.max())
+            t_starts = starts[tail_t]
+            u_rep = torch.repeat_interleave(torch.arange(T_u, device=q.device), t_counts)
+            total_tail = int(t_counts.sum())
+            cum_t = torch.zeros(T_u + 1, dtype=torch.long, device=q.device)
+            cum_t[1:] = t_counts.cumsum(0)
+            slot = torch.arange(total_tail, device=q.device) - cum_t[:-1][u_rep]
+            src_pos = t_starts[u_rep] + slot
+            Q_pad = q.new_zeros(T_u, B_max, d); Q_pad[u_rep, slot] = q_sorted[src_pos]
+            Q2_pad = Q_pad.square()
+            M_pad = q.new_zeros(T_u, B_max, 1); M_pad[u_rep, slot, 0] = m_sorted[src_pos]
+            valid = torch.arange(B_max, device=q.device)[None, :] < t_counts[:, None]
+            inv_t, ginv_t, gf_t, s2_t, bias_t = inv[tail_t], ginv[tail_t], gf[tail_t], s2[tail_t], bias[tail_t]
+            logits = bias_t[:, None, :] - .5 * (torch.bmm(Q2_pad, inv_t.transpose(1, 2)) - 2. * torch.bmm(Q_pad, ginv_t.transpose(1, 2)))
+            if 0 < top_m < S:
+                tv, ti = logits.topk(top_m, dim=-1)
+                P_pad = logits.new_zeros(T_u, B_max, S).scatter_(2, ti, torch.softmax(tv, -1) * valid.unsqueeze(-1))
+            else:
+                P_pad = torch.softmax(logits, -1) * valid.unsqueeze(-1)
+            probs_sorted[src_pos] = P_pad[u_rep, slot]
+            proto_sorted[src_pos] = torch.bmm(P_pad, gf_t)[u_rep, slot]
+            var_sorted[src_pos] = torch.bmm(P_pad, s2_t)[u_rep, slot]
+            Pm = P_pad * M_pad
+            bc[tail_t] = Pm.sum(1)
+            bu[tail_t] = torch.bmm(Pm.transpose(1, 2), Q_pad)
+            bq[tail_t] = torch.bmm(Pm.transpose(1, 2), Q2_pad)
+            tail_info = (tail_t, u_rep, slot, src_pos, B_max, Q_pad, P_pad)
+
+        proto_flat = q.new_empty(N * H, d); proto_flat[order] = proto_sorted
+        var_flat = q.new_empty(N * H, d); var_flat[order] = var_sorted
+        ctx.save_for_backward(q_sorted, q2_sorted, probs_sorted, order, gf, inv)
+        ctx.heavy = [(b, starts_cpu[b], starts_cpu[b + 1]) for b in heavy]
+        ctx.tail_info = tail_info
+        ctx.shapes = (N, H, G, S, d)
+        return (proto_flat.view(N, H, d), var_flat.view(N, H, d).detach(),
+                bc.view(H, G * S).detach(), bu.view(H, G * S, d).detach(), bq.view(H, G * S, d).detach())
+
+    @staticmethod
+    def backward(ctx, grad_proto, *_):
+        q_sorted, q2_sorted, probs_sorted, order, gf, inv = ctx.saved_tensors
+        N, H, G, S, d = ctx.shapes
+        BG = H * G
+        gp_sorted = grad_proto.reshape(N * H, d)[order]
+        gq_sorted = q_sorted.new_empty(N * H, d)
+        gg = gf.new_zeros(BG, S, d)
+        gls = gf.new_zeros(BG, S, d)
+        glc = gf.new_zeros(BG, S)
+        ginv = gf * inv
+
+        for b, a, e in ctx.heavy:
+            qb, q2b, pb, gpb = q_sorted[a:e], q2_sorted[a:e], probs_sorted[a:e], gp_sorted[a:e]
+            gb, invb, ginvb = gf[b], inv[b], ginv[b]
+            gg[b] = pb.T @ gpb
+            dpb = gpb @ gb.T
+            dl = pb * (dpb - (pb * dpb).sum(-1, keepdim=True))
+            ms = dl.sum(0)
+            glc[b] = ms
+            gq_sorted[a:e] = dl @ ginvb - qb * (dl @ invb)
+            dl_q = dl.T @ qb
+            gg[b].add_((dl_q - ms[:, None] * gb) * invb)
+            gls[b] = (dl.T @ q2b - 2. * dl_q * gb + ms[:, None] * gb.square()) * invb - ms[:, None]
+
+        if ctx.tail_info is not None:
+            tail_t, u_rep, slot, src_pos, B_max, Q_pad, P_pad = ctx.tail_info
+            T_u = len(tail_t)
+            GP_pad = Q_pad.new_zeros(T_u, B_max, d); GP_pad[u_rep, slot] = gp_sorted[src_pos]
+            gf_t, inv_t, ginv_t = gf[tail_t], inv[tail_t], ginv[tail_t]
+            gg_t = torch.bmm(P_pad.transpose(1, 2), GP_pad)
+            dP = torch.bmm(GP_pad, gf_t.transpose(1, 2))
+            dL = P_pad * (dP - (P_pad * dP).sum(-1, keepdim=True))
+            ms_t = dL.sum(1)
+            glc[tail_t] = ms_t
+            gq_pad = torch.bmm(dL, ginv_t) - Q_pad * torch.bmm(dL, inv_t)
+            gq_sorted[src_pos] = gq_pad[u_rep, slot]
+            dL_Q = torch.bmm(dL.transpose(1, 2), Q_pad)
+            gg_t.add_((dL_Q - ms_t[:, :, None] * gf_t) * inv_t)
+            gg[tail_t] = gg_t
+            diff2 = torch.bmm(dL.transpose(1, 2), Q_pad.square()) - 2. * dL_Q * gf_t + ms_t[:, :, None] * gf_t.square()
+            gls[tail_t] = diff2 * inv_t - ms_t[:, :, None]
+
+        gq_flat = q_sorted.new_empty(N * H, d); gq_flat[order] = gq_sorted
+        return gq_flat.view(N, H, d), None, gg.view(H, G, S, d), gls.view(H, G, S, d), glc.view(H, G, S), None, None
 
 
 def causal_read(weight, t, v, chunk):
@@ -147,23 +319,29 @@ def causal_read(weight, t, v, chunk):
 
 class ConceptAttention(nn.Module):
     def __init__(self, dim, heads, concepts, window, head_dim=None, prev_concepts=0,
-                 pure_concepts=False, tabular=True, view_window=64, res_var_div=1.):
+                 pure_concepts=False, tabular=True, linear_concepts=True, subconcept_top_m=4,
+                 view_window=32, res_var_div=1.):
         super().__init__()
         self.h, self.d = heads, int(head_dim or max(1, dim // max(heads, 1)))
         self.pure_concepts = bool(pure_concepts)
         self.tabular = bool(tabular)
+        self.linear_concepts = bool(linear_concepts) and self.tabular
+        self.subconcept_top_m = int(subconcept_top_m)
         self.view_window = max(1, int(view_window))
         self.res_var_div = float(res_var_div)
         self.g = nn.Parameter(torch.randn(heads, concepts, self.d) * .5)
         self.log_s = nn.Parameter(torch.zeros(heads, concepts, self.d))
         self.log_c = nn.Parameter(torch.zeros(heads, concepts))
-        if prev_concepts > 0:
-            self.parent = nn.Parameter(torch.zeros(heads, prev_concepts, concepts))
-        else:
+        if self.linear_concepts:
             self.register_parameter('parent', None)
-        # Each concept starts by reading primarily its own summary (with A=0 every concept read the same uniform mean).
-        eye = torch.eye(concepts).unsqueeze(0).expand(heads, -1, -1).clone() if concepts > 1 else torch.zeros(heads, 1, 1)
-        self.A = nn.Parameter(1.5 * eye)
+            self.register_parameter('A', None)
+        else:
+            if prev_concepts > 0:
+                self.parent = nn.Parameter(torch.zeros(heads, prev_concepts, concepts))
+            else:
+                self.register_parameter('parent', None)
+            eye = torch.eye(concepts).unsqueeze(0).expand(heads, -1, -1).clone() if concepts > 1 else torch.zeros(heads, 1, 1)
+            self.A = nn.Parameter(1.5 * eye)
         self.query = nn.Linear(dim, heads * self.d, bias=False)
         self.value = nn.Linear(dim, heads * self.d, bias=False)
         if self.tabular:
@@ -185,7 +363,7 @@ class ConceptAttention(nn.Module):
         # how open the layer is: an existing layer is open (1); a layer just added starts closed (0) and opens by gradient.
         self.gate = nn.Parameter(torch.ones(()))
         self.window = window
-        self.chunk = 64
+        self.chunk = 128 if self.linear_concepts else 64
         self._em_stats = None
 
     def _local(self, h):
@@ -212,10 +390,8 @@ class ConceptAttention(nn.Module):
         if self.tabular:
             h_norm = self.norm1(h)
             q0 = self.query(h_norm).view(B, T, self.h, self.d)
-            if prev_ctx is not None:
-                q_prev, g_prev, s_prev, _ = prev_ctx
-                if q_prev.shape[-2:] == (self.h, self.d):
-                    return q0 + (q_prev - g_prev) / s_prev
+            if prev_ctx is not None and prev_ctx[0].shape[-2:] == (self.h, self.d):
+                return q0 + (prev_ctx[0] - prev_ctx[1]) / prev_ctx[2]
             return q0
         return self.query(self._local(h)).view(B, T, self.h, self.d)
 
@@ -259,9 +435,71 @@ class ConceptAttention(nn.Module):
         out = torch.matmul(attn, v_ctx).reshape(B, H, nb * W_v, d)[:, :, :T, :].transpose(1, 2)
         return out * mask[:, :, None, None]
 
+    def _record_em_dense(self, x_coord, t_masked, mask):
+        with torch.no_grad():
+            xd, td = x_coord.detach(), t_masked.detach()
+            tf = td.flatten(0, 1).permute(1, 2, 0)
+            xf = xd.flatten(0, 1).transpose(0, 1)
+            bc = tf.sum(-1)
+            bu = torch.bmm(tf, xf)
+            x2 = xf.square()
+            bq = torch.bmm(tf, x2)
+            mv = mask.reshape(1, -1, 1)
+            n_valid = mv.sum().clamp_min(1.)
+            mean_x = (xf * mv).sum(1, keepdim=True) / n_valid
+            root_v = ((x2 * mv).sum(1, keepdim=True) / n_valid - mean_x.square()).clamp_min(1e-4)
+            self._em_stats = (bc, bu, bq, root_v)
+
     def forward(self, h, mask, prev_ctx=None, return_context=False):
         B, T, D = h.shape
         near = sum(F.pad(h, (0, 0, w, 0))[:, :T] @ self.near[w - 1] for w in range(1, self.window + 1))
+        if self.linear_concepts:
+            H, d, K = self.h, self.d, self.g.shape[1]
+            h_norm = self.norm1(h)
+            w_qkv = torch.cat([self.query.weight, self.key.weight, self.value.weight], 0)
+            q0, k0, v = F.linear(h_norm, w_qkv).view(B, T, 3, H, d).unbind(2)
+            q = q0 + (prev_ctx[0] - prev_ctx[1]) / prev_ctx[2] if (prev_ctx is not None and prev_ctx[0].shape[-2:] == (H, d)) else q0
+            direction = F.normalize(h, dim=-1) * math.sqrt(D)
+            strength = .5 + torch.sigmoid(F.linear(direction, self.write))
+            if K <= 32 or K % 16 != 0:
+                t_prob = torch.softmax(memberships_logits(q, self.g, self.log_s, self.log_c), -1)
+                t = t_prob * mask[:, :, None, None]
+                if self.training:
+                    self._record_em_dense(q, t, mask)
+                written = t * strength[..., None]
+                mass = torch.cumsum(written, 1) + 1e-6
+                read = causal_read(t / mass, written, v, self.chunk).reshape(B, T, H * d)
+                g_bar, s_bar = self._above_stats(t_prob)
+            else:
+                g_g, ls_g, lc_g, g_bar_c, ls_bar_c, l_bar, _ = _macro_clusters(
+                    self.g, self.log_s, self.log_c, self.res_var_div, 16
+                )
+                l_c = memberships_logits(q, g_bar_c, ls_bar_c, l_bar)
+                t_c_prob = torch.softmax(l_c, -1)
+                t_c = t_c_prob * mask[:, :, None, None]
+                written = t_c * strength[..., None]
+                mass = torch.cumsum(written, 1) + 1e-6
+                read = causal_read(t_c / mass, written, v, self.chunk).reshape(B, T, H * d)
+                grp = l_c.detach().argmax(-1).reshape(B * T, H)
+                g_bar_f, var_f, bc, bu, bq = _HybridRoutedSubConcepts.apply(
+                    q.reshape(B * T, H, d), grp, g_g, ls_g, lc_g, self.subconcept_top_m, mask.reshape(-1)
+                )
+                if self.training:
+                    with torch.no_grad():
+                        qf = q.detach().flatten(0, 1).transpose(0, 1)
+                        mv = mask.reshape(1, -1, 1)
+                        n_valid = mv.sum().clamp_min(1.)
+                        mean_q = (qf * mv).sum(1, keepdim=True) / n_valid
+                        root_v = ((qf.square() * mv).sum(1, keepdim=True) / n_valid - mean_q.square()).clamp_min(1e-4)
+                        self._em_stats = (bc, bu, bq, root_v)
+                g_bar = g_bar_f.view(B, T, H, d)
+                s_bar = torch.sqrt(var_f.view(B, T, H, d) / self.res_var_div + 1e-4)
+            view = self._view_read(q0, k0, v, mask).reshape(B, T, H * d)
+            proto = (g_bar * mask[:, :, None, None]).reshape(B, T, H * d)
+            delta = self.norm2(self.out(torch.cat([read, view, proto, near], -1)))
+            out_h = h + self.gate * delta
+            return (out_h, (q, g_bar, s_bar, None)) if return_context else out_h
+
         t_prev = prev_ctx[3] if prev_ctx is not None else None
         if self.tabular:
             h_norm = self.norm1(h)
@@ -279,19 +517,7 @@ class ConceptAttention(nn.Module):
         t_prob = torch.softmax(self._logits(q, t_prev), -1)
         t = t_prob * mask[:, :, None, None]
         if self.training:
-            with torch.no_grad():
-                qd, td = q.detach(), t.detach()
-                tf = td.flatten(0, 1).permute(1, 2, 0)
-                qf = qd.flatten(0, 1).transpose(0, 1)
-                bc = tf.sum(-1)
-                bu = torch.bmm(tf, qf)
-                q2 = qf.square()
-                bq = torch.bmm(tf, q2)
-                mv = mask.reshape(1, -1, 1)
-                n_valid = mv.sum().clamp_min(1.)
-                mean_q = (qf * mv).sum(1, keepdim=True) / n_valid
-                root_v = ((q2 * mv).sum(1, keepdim=True) / n_valid - mean_q.square()).clamp_min(1e-4)
-                self._em_stats = (bc, bu, bq, root_v)
+            self._record_em_dense(q, t, mask)
         direction = F.normalize(h, dim=-1) * math.sqrt(D)
         strength = .5 + torch.sigmoid(F.linear(direction, self.write))
         written = t * strength[..., None]
@@ -331,16 +557,18 @@ class Network(nn.Module):
         self.config.setdefault('head_dim', max(1, dim // max(int(config['heads']), 1)))
         tabular = bool(config.get('tabular_hierarchy', True))
         pure = bool(config.get('pure_concepts', False)) and not tabular
-        default_view = int(config['window']) if (pure or config.get('cache', dim) == 0) else 32
+        linear_concepts = bool(config.get('linear_concepts', True)) and tabular
+        subconcept_top_m = int(config.get('subconcept_top_m', 4))
+        default_view = int(config['window']) if (pure or config.get('cache', dim) == 0) else 24
         view_window = max(1, int(config.get('view_window', default_view)))
         res_var_div = float(config.get('res_var_div', 1.))
-        self.config.update(tabular_hierarchy=tabular, pure_concepts=pure,
-                           view_window=view_window, res_var_div=res_var_div)
+        self.config.update(tabular_hierarchy=tabular, pure_concepts=pure, linear_concepts=linear_concepts,
+                           subconcept_top_m=subconcept_top_m, view_window=view_window, res_var_div=res_var_div)
         self.layers = nn.ModuleList([
             ConceptAttention(dim, config['heads'], k, config['window'], self.config['head_dim'],
                              prev_concepts=(concepts[idx - 1] if idx > 0 else 0),
-                             pure_concepts=pure, tabular=tabular,
-                             view_window=view_window, res_var_div=res_var_div)
+                             pure_concepts=pure, tabular=tabular, linear_concepts=linear_concepts,
+                             subconcept_top_m=subconcept_top_m, view_window=view_window, res_var_div=res_var_div)
             for idx, k in enumerate(concepts)
         ])
         self.final = nn.Linear(dim, dim)
@@ -348,7 +576,7 @@ class Network(nn.Module):
         # the token that followed it; a position reads the tokens that followed the addresses most like its own. One
         # more address, "none is like mine" (its likeness learned from the state), stands for the reading of the
         # network: the memory counts only as far as some address is more alike than that one.
-        self.config.setdefault('cache', 0 if pure else dim)
+        self.config.setdefault('cache', 0 if pure else min(dim, 16 if linear_concepts else dim))
         self.config.setdefault('sentinel', True)
         c = self.config['cache']
         if c:
@@ -436,8 +664,7 @@ class Network(nn.Module):
     # ---- growth: a bigger network that reads exactly as the smaller one did -----------------------------------------
     def split_concepts(self, i, scale=.16):
         """Every concept of layer i becomes two with half the mass each, moment-matched around the parent so the reading
-        at step zero stays nearly identical while narrower dispersions, antipodal shifts and diagonal attention preference
-        pull the two halves cleanly apart."""
+        at step zero stays nearly identical while narrower dispersions and antipodal shifts pull the two halves apart."""
         layer = self.layers[i]
         was_single = layer.g.shape[1] == 1
         with torch.no_grad():
@@ -455,27 +682,36 @@ class Network(nn.Module):
             else:
                 e = torch.zeros_like(base_g)
                 child_log_s = base_log_s
-            g = torch.cat([base_g + e, base_g - e], 1)
-            log_s = torch.cat([child_log_s, child_log_s], 1)
-            log_c = torch.cat([layer.log_c, layer.log_c], 1) - math.log(2)
-            A = torch.cat([torch.cat([layer.A, layer.A], 2)] * 2, 1) - math.log(2)
-            if scale:
-                p_self = .5 + min(.5 * float(scale), .12)
-                idx = torch.arange(K, device=self.device)
-                stay, cross = math.log(2. * p_self), math.log(2. * (1. - p_self))
-                A[:, idx, idx] += stay
-                A[:, idx + K, idx + K] += stay
-                A[:, idx, idx + K] += cross
-                A[:, idx + K, idx] += cross
-            new_parent = None
-            if layer.parent is not None:
-                p_eps = torch.randn_like(layer.parent) * (float(scale) * .04) if scale else 0.
-                new_parent = torch.cat([layer.parent + p_eps, layer.parent - p_eps], 2)
-            next_parent = None
-            if i + 1 < len(self.layers) and self.layers[i + 1].parent is not None:
-                nxt_p = self.layers[i + 1].parent
-                next_parent = torch.cat([nxt_p, nxt_p], 1)
-        layer.g, layer.log_s, layer.log_c, layer.A = (nn.Parameter(x.contiguous()) for x in (g, log_s, log_c, A))
+            if layer.A is None:
+                # Interleave children (2k, 2k+1) so each macro-cluster preserves exact mass, mean, and total variance!
+                g = torch.stack([base_g + e, base_g - e], dim=2).reshape(layer.h, 2 * K, layer.d)
+                log_s = torch.stack([child_log_s, child_log_s], dim=2).reshape(layer.h, 2 * K, layer.d)
+                log_c = torch.stack([layer.log_c, layer.log_c], dim=2).reshape(layer.h, 2 * K) - math.log(2)
+                A = new_parent = next_parent = None
+            else:
+                g = torch.cat([base_g + e, base_g - e], 1)
+                log_s = torch.cat([child_log_s, child_log_s], 1)
+                log_c = torch.cat([layer.log_c, layer.log_c], 1) - math.log(2)
+                A = torch.cat([torch.cat([layer.A, layer.A], 2)] * 2, 1) - math.log(2)
+                if scale:
+                    p_self = .5 + min(.5 * float(scale), .12)
+                    idx = torch.arange(K, device=self.device)
+                    stay, cross = math.log(2. * p_self), math.log(2. * (1. - p_self))
+                    A[:, idx, idx] += stay
+                    A[:, idx + K, idx + K] += stay
+                    A[:, idx, idx + K] += cross
+                    A[:, idx + K, idx] += cross
+                new_parent = None
+                if layer.parent is not None:
+                    p_eps = torch.randn_like(layer.parent) * (float(scale) * .04) if scale else 0.
+                    new_parent = torch.cat([layer.parent + p_eps, layer.parent - p_eps], 2)
+                next_parent = None
+                if i + 1 < len(self.layers) and self.layers[i + 1].parent is not None:
+                    nxt_p = self.layers[i + 1].parent
+                    next_parent = torch.cat([nxt_p, nxt_p], 1)
+        layer.g, layer.log_s, layer.log_c = (nn.Parameter(x.contiguous()) for x in (g, log_s, log_c))
+        if A is not None:
+            layer.A = nn.Parameter(A.contiguous())
         if new_parent is not None:
             layer.parent = nn.Parameter(new_parent.contiguous())
         if next_parent is not None:
@@ -504,7 +740,8 @@ class Network(nn.Module):
             mass = torch.zeros_like(values[prefix+'log_c'])
             mass[heads, selected] = mass[:, -1] = math.log(2)
             values[prefix+'log_c'] -= mass
-            values[prefix+'A'] -= mass[:, None, :]
+            if prefix + 'A' in values:
+                values[prefix+'A'] -= mass[:, None, :]
             if noise:
                 scale = values[prefix+'log_s'][heads, selected].exp()
                 offset = torch.randn_like(values[prefix+'g'][heads, selected]) * scale * noise
@@ -512,14 +749,17 @@ class Network(nn.Module):
                 values[prefix+'g'][:, -1] -= offset
                 values[prefix+'log_s'][heads, selected] -= .15
                 values[prefix+'log_s'][:, -1] -= .15
-                nudge = min(float(noise) * 4., .25)
-                values[prefix+'A'][heads, selected, selected] += nudge
-                values[prefix+'A'][heads, selected, -1] -= nudge
-                values[prefix+'A'][heads, -1, -1] += nudge
-                values[prefix+'A'][heads, -1, selected] -= nudge
+                if prefix + 'A' in values:
+                    nudge = min(float(noise) * 4., .25)
+                    values[prefix+'A'][heads, selected, selected] += nudge
+                    values[prefix+'A'][heads, selected, -1] -= nudge
+                    values[prefix+'A'][heads, -1, -1] += nudge
+                    values[prefix+'A'][heads, -1, selected] -= nudge
         was_single = layer.g.shape[1] == 1
-        for name in ('g', 'log_s', 'log_c', 'A'):
+        for name in ('g', 'log_s', 'log_c'):
             setattr(layer, name, nn.Parameter(values[prefix+name].contiguous()))
+        if layer.A is not None and prefix + 'A' in values:
+            layer.A = nn.Parameter(values[prefix+'A'].contiguous())
         if layer.parent is not None and prefix + 'parent' in values:
             layer.parent = nn.Parameter(values[prefix + 'parent'].contiguous())
         if layer_index + 1 < len(self.layers) and next_prefix + 'parent' in values:
@@ -588,7 +828,8 @@ class Network(nn.Module):
             for previous in self.layers[:layer_index]:
                 hidden, prev_ctx = previous(hidden, mask, prev_ctx=prev_ctx, return_context=True)
             q = layer.query_state(hidden, prev_ctx)
-            logits = layer._logits(q, prev_ctx[3] if prev_ctx is not None else None)
+            t_prev = prev_ctx[3] if (prev_ctx is not None and len(prev_ctx) == 4) else None
+            logits = layer._logits(q, t_prev)
             usage += logits.softmax(-1)[0].sum(0)
         return usage.argmax(dim=-1)
 
@@ -598,15 +839,20 @@ class Network(nn.Module):
         prev_k = int(last.g.shape[1])
         tabular = bool(self.config.get('tabular_hierarchy', True))
         pure = bool(self.config.get('pure_concepts', False)) and not tabular
+        linear_concepts = bool(self.config.get('linear_concepts', True)) and tabular
         layer = ConceptAttention(dim, self.config['heads'], prev_k, self.config['window'], self.config['head_dim'],
                                  prev_concepts=prev_k, pure_concepts=pure, tabular=tabular,
-                                 view_window=int(self.config.get('view_window', 32)),
+                                 linear_concepts=linear_concepts,
+                                 subconcept_top_m=int(self.config.get('subconcept_top_m', 4)),
+                                 view_window=int(self.config.get('view_window', 24)),
                                  res_var_div=float(self.config.get('res_var_div', 1.))).to(self.device)
         with torch.no_grad():
             if tabular:
                 # Residualized coordinates (q_prev - g_prev) / s_prev are already centred at 0 per parent concept.
                 nn.init.normal_(layer.query.weight, std=.02)
-                if layer.key.weight.shape == last.key.weight.shape:
+                if linear_concepts:
+                    nn.init.normal_(layer.key.weight, std=.02)
+                elif layer.key.weight.shape == last.key.weight.shape:
                     layer.key.weight.copy_(last.key.weight)
                 if layer.value.weight.shape == last.value.weight.shape:
                     layer.value.weight.copy_(last.value.weight)
@@ -655,6 +901,7 @@ class Network(nn.Module):
         """The map of ``widened`` on a dictionary of tensors named as the parameters: the parameters themselves, or
         (``moments``) the statistics the optimizer keeps for them."""
         D, H, d = self.config['dim'], self.config['heads'], self.config['head_dim']
+        linear_c = bool(self.config.get('linear_concepts', True)) and bool(self.config.get('tabular_hierarchy', True))
         half = (lambda W: W) if moments else (lambda W: W / 2)
         def apart(W, dim):                                     # two copies along dim, perturbed in opposite ways
             e = 0. if moments or not noise else torch.randn_like(W) * noise * (W.std() + 1e-6)
@@ -681,7 +928,7 @@ class Network(nn.Module):
                 elif part in ('query.weight', 'value.weight'):
                     v = half_in(heads_rows(v))
                 elif part == 'key.weight':
-                    v = half_in(heads_rows(v)) * (1 / math.sqrt(2) if not moments else 1.)
+                    v = half_in(heads_rows(v)) * (1. if moments else 1 / math.sqrt(2))
                 elif part == 'write':
                     v = half_in(v)
                 elif part == 'near':
@@ -795,12 +1042,15 @@ class Network(nn.Module):
         groups = net.p['group'].astype(np.int64) if 'group' in net.p else None
         has_key = 'layers.0.key.weight' in net.p
         tabular = bool(net.config.get('tabular_hierarchy', has_key)) and has_key
+        has_A = 'layers.0.A' in net.p
+        linear_concepts = bool(net.config.get('linear_concepts', not has_A)) and tabular and not has_A
         pure_default = (not tabular and 'layers.0.out.weight' in net.p and 'layers.0.g' in net.p
                         and net.p['layers.0.out.weight'].shape[1] == net.p['layers.0.g'].shape[0] * net.p['layers.0.g'].shape[2])
         pure = bool(net.config.get('pure_concepts', pure_default)) and not tabular
         view_window = (int(net.p['layers.0.pos_bias'].shape[1]) if 'layers.0.pos_bias' in net.p
                        else int(net.config.get('view_window', 64)))
-        config = dict(net.config, tabular_hierarchy=tabular, pure_concepts=pure, view_window=view_window,
+        config = dict(net.config, tabular_hierarchy=tabular, linear_concepts=linear_concepts,
+                      pure_concepts=pure, view_window=view_window,
                       cache=net.config.get('cache', 0) if 'cache_query.weight' in net.p else 0)
         config.setdefault('sentinel', False)                   # older networks: the memory with its valve
         model = cls(config, groups=groups)
@@ -905,7 +1155,7 @@ def lexical_concepts(sample, vocabulary, dim, eos=None):
     logits_all = log_c[None, :] - .5 * quad_all - log_s.sum(-1)[None, :]
     classes = np.full(vocabulary, n_clusters, dtype=np.int64)
     classes[seen_idx] = logits_all.argmax(axis=1)
-    limit = max(16, int(math.ceil(2. * math.sqrt(vocabulary))))
+    limit = max(16, int(math.ceil(1.25 * math.sqrt(vocabulary))))
     return coords.astype(np.float32), output_groups(classes, frequency, limit=limit)
 
 
@@ -1012,8 +1262,8 @@ class Learner:
             was_layer = getattr(layer, '_layer_boost', False)
             layer._awakened = layer._parent_boost = layer._layer_boost = False
             if was_awakened:
-                extra = [layer.parent] if layer.parent is not None else []
-                add_unique(awakened, [layer.query.weight, layer.g, layer.log_s, layer.log_c, layer.A, *extra])
+                cand = (layer.query.weight, layer.g, layer.log_s, layer.log_c, layer.A, layer.parent)
+                add_unique(awakened, [p for p in cand if p is not None])
             elif was_parent and layer.parent is not None:
                 add_unique(awakened, [layer.parent])
             if was_layer:
@@ -1136,15 +1386,20 @@ class Learner:
                 values = before.network._copy_split(values, *split)
             elif kind == 'concetti':
                 m_scale, a_scale = .5 ** power, .25 ** power
+                def dup_k(v, interleaved):
+                    if interleaved:
+                        return torch.stack([v * m_scale, v * m_scale], dim=2).reshape(v.shape[0], 2 * v.shape[1], *v.shape[2:])
+                    return torch.cat([v * m_scale] * 2, 1)
                 if isinstance(split, int):
                     prefix = f'layers.{split}.'
+                    interleaved = f'layers.{split}.A' not in old
                     next_parent = f'layers.{split + 1}.parent'
                     for name in list(values):
                         if name == next_parent:
                             values[name] = torch.cat([values[name] * m_scale] * 2, 1)
                         elif name.startswith(prefix):
                             if name.endswith(('.g', '.log_s', '.log_c')):
-                                values[name] = torch.cat([values[name] * m_scale] * 2, 1)
+                                values[name] = dup_k(values[name], interleaved)
                             elif name.endswith('.parent'):
                                 values[name] = torch.cat([values[name] * m_scale] * 2, 2)
                             elif name.endswith('.A'):
@@ -1153,8 +1408,10 @@ class Learner:
                     for name in list(values):
                         if not name.startswith('layers.'):
                             continue
+                        idx = int(name.split('.', 2)[1])
+                        interleaved = f'layers.{idx}.A' not in old
                         if name.endswith(('.g', '.log_s', '.log_c')):
-                            values[name] = torch.cat([values[name] * m_scale] * 2, 1)
+                            values[name] = dup_k(values[name], interleaved)
                         elif name.endswith(('.A', '.parent')):
                             values[name] = torch.cat([torch.cat([values[name] * a_scale] * 2, 2)] * 2, 1)
             maps[moment] = values
@@ -1176,8 +1433,9 @@ class Learner:
     def _pull_back(self, lr):
         with torch.no_grad():
             if self.anchor is None:
-                # Only regularize linear projections; never pull priors, dispersions, norms, gates or K=1 queries toward zero.
-                single_k = {f'layers.{i}.query.weight' for i, layer in enumerate(self.network.layers) if layer.g.shape[1] <= 1}
+                # Only regularize linear projections; never pull priors, dispersions, norms, gates or K=1 queries/keys toward zero.
+                single_k = {f'layers.{i}.{part}' for i, layer in enumerate(self.network.layers)
+                            if layer.g.shape[1] <= 1 for part in ('query.weight', 'key.weight')}
                 for name, p in self.network.named_parameters():
                     if name.endswith(self._DECAYED) and name not in single_k:
                         p.mul_(1 - lr * self.decay)
