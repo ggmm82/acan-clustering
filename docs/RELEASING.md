@@ -8,7 +8,7 @@ real runtime, seal its immutable digest, and promote that same image.
 
 1. Open a PR into `main`. Python 3.10, 3.11 and 3.12 tests and package builds run.
    A dedicated CPU PyTorch job audits numerical gradients/backend parity and
-   reruns the historical synthetic benchmark suite. See [Paper audit](PAPER-AUDIT.md).
+   reruns the historical synthetic benchmark suite.
 2. Build the CPU UI container using a digest-pinned official Python base and a
    hash-verified dependency lock. Test its installed package as a non-root user.
 3. Start the image with a read-only filesystem and exercise model reload,
@@ -63,8 +63,8 @@ access or change package visibility before expecting anonymous pulls.
 
 Releases also attach `paper-audit.json` and `paper-benchmarks.zip`. The runtime
 manifest binds their checksums and rejects missing, skipped, failed or mismatched
-evidence. These receipts explicitly record **partial** paper correspondence and
-synthetic benchmark provenance; they are not a full scientific certification.
+evidence. They record the passing software contracts and the synthetic benchmark
+provenance; they are not a scientific certification.
 
 For a local source build use `docker compose up --build -d`. The production
 command uses Gunicorn with one worker and threads, not Dash's development server.
@@ -119,4 +119,4 @@ The generative extension uses runtime schema 4. In addition to the web image,
 that worker, without optional profiles. Hostinger validates this file by itself. Missing, stale,
 skipped or altered LM evidence blocks release. Neither the overlay nor opening
 the GUI starts training. CUDA builds/hardware are explicitly separate from the
-CPU mechanics certification; see [GENERATIVE.md](GENERATIVE.md).
+CPU mechanics certification.

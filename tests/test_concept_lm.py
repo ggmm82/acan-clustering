@@ -126,6 +126,9 @@ class ConceptLongLearningTests(unittest.TestCase):
             self.assertEqual(measured[0], 0)                                              # the error before reading
             self.assertEqual(measured[-1], progress['step'])
             self.assertGreater(len(measured), 2)                                          # measured along the way, not only at saves
+            used = [row['concepts_used'] for row in history if 'concepts_used' in row]   # concepts used, step by step
+            self.assertTrue(used and len(used[-1]) == len(graph.model.net.config['concepts']))
+            self.assertTrue(all(0 < u <= k for u, k in zip(used[-1], graph.model.net.config['concepts'])))
             self.assertLess(len(measured), len(history)+1)
             answers = [json.loads(line) for line in (store.directory('jobs', job['id'])/'answers.jsonl').read_text().splitlines()]
             self.assertTrue(answers and answers[-1]['answers'][0]['question'] == 'Ciao!')
