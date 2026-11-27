@@ -63,8 +63,8 @@ access or change package visibility before expecting anonymous pulls.
 
 Releases also attach `paper-audit.json` and `paper-benchmarks.zip`. The runtime
 manifest binds their checksums and rejects missing, skipped, failed or mismatched
-evidence. These receipts explicitly record **partial** paper correspondence and
-synthetic benchmark provenance; they are not a full scientific certification.
+evidence. They record the passing software contracts and the synthetic benchmark
+provenance; they are not a scientific certification.
 
 For a local source build use `docker compose up --build -d`. The production
 command uses Gunicorn with one worker and threads, not Dash's development server.

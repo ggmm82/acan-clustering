@@ -109,8 +109,9 @@ apprendimento e generazione dei token.
 Docker, CI e rilasci: [docs/RELEASING.md](docs/RELEASING.md) e
 [CONTRIBUTING.md](CONTRIBUTING.md). Per il VPS si usa il file
 `compose.hostinger.yaml` allegato a un rilascio verificato:
-[docs/HOSTINGER.md](docs/HOSTINGER.md). Ogni rilascio richiede l'audit del
-paper, le ricevute dei benchmark sintetici e le prove HTTP dell'immagine.
+[docs/HOSTINGER.md](docs/HOSTINGER.md). Ogni rilascio richiede i controlli
+del software (gradienti, parità fra backend, algebra condivisa), le ricevute dei benchmark
+sintetici e le prove HTTP dell'immagine.
 
 ## Contenuto del repository
 
@@ -118,10 +119,8 @@ paper, le ricevute dei benchmark sintetici e le prove HTTP dell'immagine.
   `acan/lm/concept_net.py` e `acan/lm/concept_net_training.py` rete a concetti generativa,
   `acan/lm/graph_scan.py` strato di attenzione innestato, `acan/concept_algebra.py` algebra e regola `natural_em_step` condivisa)
 - `tests/`: test unitari e, in `tests/browser/`, test nel browser
-- `scripts/`: controlli del rilascio (paper, benchmark, modello linguistico, prova HTTP)
+- `scripts/`: controlli del rilascio (software, benchmark, modello linguistico, prova HTTP)
 - `benchmarks/`: suite sintetica storica, eseguita dai controlli del rilascio
-- `references/`: pacchetto di riferimento per il controllo del modello linguistico
-- `paper/`: sorgenti dei paper
 
 La suite sintetica storica si esegue senza toccare i risultati archiviati:
 

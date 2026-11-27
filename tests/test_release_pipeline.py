@@ -221,12 +221,12 @@ def seal(directory, image, metadata):
     with zipfile.ZipFile(directory / 'paper-benchmarks.zip', 'w') as archive:
         archive.writestr('fixture.txt', 'Unit-test fixture, not an executed benchmark.')
     (directory / 'paper-audit.json').write_text(json.dumps(dict(
-        contract_version=2, status='passed', conformance='partial', full_paper_conformance=False,
+        contract_version=2, status='passed',
         tree=metadata['tree'], commit=metadata['source_commit'], run_id=metadata['run_id'], source_clean=True,
         torch_verified=True, shared_algebra_verified=True, tests_run=18, failures=0, errors=0, skipped=0,
         benchmarks=dict(status='passed', archive_sha256=hashlib.sha256((directory / 'paper-benchmarks.zip').read_bytes()).hexdigest()))))
     (directory / 'lm-audit.json').write_text(json.dumps(dict(status='passed', skipped=0, tests_run=36, controlled_protocol='controlled-v1', controls_verified=True,
-        profile='acan-lm-causal-prefix-v1', gpu_verified=False, full_paper_conformance=False,
+        profile='acan-lm-causal-prefix-v1', gpu_verified=False,
         pretrained_general_quality_verified=False, tree=metadata['tree'], commit=metadata['source_commit'], run_id=metadata['run_id'])))
     (directory / 'generative-runtime.json').write_text(json.dumps(dict(image=f'ghcr.io/{REPO}-generative@sha256:'+'2'*64,
         tree=metadata['tree'], source_commit=metadata['source_commit'], run_id=metadata['run_id'],run_attempt=metadata['run_attempt'],
