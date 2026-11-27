@@ -119,10 +119,10 @@ class NetText:
         limits = getattr(self, 'limits', None) or {}
         max_dim = int(limits.get('max_dim') or 0)
         capped = bool(max_dim or limits.get('max_layers') or limits.get('max_heads') or limits.get('max_concepts'))
-        # Capacity safety guardrails (analogous to tabular ConceptModel.max_concepts / max_levels), not requested sizes.
-        max_layers = int(limits.get('max_layers') or (6 if capped else 0))
-        max_heads = int(limits.get('max_heads') or 0)        # heads: only the configured ceiling (0: none)
-        max_concepts = int(limits.get('max_concepts') or (1024 if capped else 0))
+        # Only the configured ceilings (0: none), no hidden ones.
+        max_layers = int(limits.get('max_layers') or 0)
+        max_heads = int(limits.get('max_heads') or 0)
+        max_concepts = int(limits.get('max_concepts') or 0)
         dim = int(network.config['dim'])
         n_layers = len(network.layers)
         heads = int(network.config['heads'])

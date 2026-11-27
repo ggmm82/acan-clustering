@@ -370,6 +370,10 @@ class GradualTabularEMTest(unittest.TestCase):
                              limits=dict(max_dim=16))
         eight_heads = types.SimpleNamespace(config=dict(dim=16, heads=8, concepts=[4, 4]), layers=[None, None])
         self.assertIn('teste', only_width._allowed_kinds(eight_heads)[0])
+        deep = types.SimpleNamespace(config=dict(dim=16, heads=2, concepts=[1024] * 6), layers=[None] * 6)
+        kinds, layer = only_width._allowed_kinds(deep)                # nor on layers (6) or concepts (1024)
+        self.assertIn('strato', kinds)
+        self.assertIn('concetti', kinds)
 
         saturated = NetText(31, eos, 1 << 22, max_context=32, growth=True,
                             network=dict(dim=16, layers=2, heads=2, concepts=4, window=1, grouped=False, passes=False),
