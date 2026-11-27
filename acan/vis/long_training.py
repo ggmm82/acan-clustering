@@ -970,7 +970,7 @@ layout = html.Div([
              dcc.Store(id='lm-long-upload-state'),
          ], title='Aggiungi un testo alla coda')], start_collapsed=True, className='my-2'),
          html.H5('Il modello mentre impara', className='mt-3'),
-         html.Div(id='lm-long-footprint'),
+         html.Div(id='lm-long-footprint'), dcc.Store(id='lm-long-footprint-key'),
          html.H5('Cosa risponde', className='mt-3'),
          html.P("Le stesse domande a ogni salvataggio, con la stessa estrazione casuale: le differenze vengono solo da ciò che il modello ha "
                 "imparato. Per fargli domande libere e scaricarlo: passo 4.", className='small'),
@@ -1287,14 +1287,26 @@ def register(app):
         saved = [item for item in items if item['checkpoint']]
         return (saved[-1] if saved else current_item(items))['id']
 
-    @app.callback(Output('lm-long-footprint', 'children'), Input('lm-state', 'data'), Input('lm-long-queue', 'value'),
-                  State('lm-workspace', 'data'))
-    def footprint(state, queue, workspace):
+    @app.callback(Output('lm-long-footprint', 'children'), Output('lm-long-footprint-key', 'data'),
+                  Input('lm-state', 'data'), Input('lm-long-queue', 'value'),
+                  State('lm-workspace', 'data'), State('lm-long-footprint-key', 'data'))
+    def footprint(state, queue, workspace, shown):
         items = [job for job in queues((state or {}).get('jobs', [])).get(queue) or [] if job['status'] != 'created']
         if not items:
-            return html.P('Compaiono quando il primo testo comincia a imparare.', className='small text-muted')
+            return html.P('Compaiono quando il primo testo comincia a imparare.', className='small text-muted'), None
+        current = current_item(items)
+        progress = current['progress'] or {}
+        structure = progress.get('structure') or {}
+        # Redrawn when the model changes, not at every poll: the view carries the graph of concepts (megabytes).
+        key = [current['id'], current['status'], current.get('checkpoint'), progress.get('step'), progress.get('validation_nll'),
+               structure.get('phase'), structure.get('race'), structure.get('race_round'), (structure.get('done') or 0) // 100_000,
+               (structure.get('learned') or 0) // 100_000]
+        if key == shown:
+            return dash.no_update, dash.no_update
+        return footprint_of(items, current, workspace), key
+
+    def footprint_of(items, current, workspace):
         try:
-            current = current_item(items)
             learned = [job for job in items if job['checkpoint'] and (job['progress'] or {}).get('graft')]
             if not (current['progress'] or {}).get('graft') and learned:
                 # The next text is still preparing its tokens: the model is the one learned so far.

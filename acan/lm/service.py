@@ -131,6 +131,8 @@ def create_app(root=None, token=None):
             detailed=not summaries or job['id']==selected
             if not detailed:
                 job['progress']={key:job['progress'][key] for key in ('step','tokens_trained','validation_nll','best_validation_nll','tokens_per_second','graft') if key in job['progress']}
+            else:                                               # polled every few seconds: the graph of concepts goes with the footprint
+                job['progress']={key:value for key,value in job['progress'].items() if key!='network_graph'}
             job['snapshots'] = snapshots(store, job) if detailed else []
             job['history'] = [{key:row[key] for key in ('step','training_nll','validation_nll') if key in row}
                               for row in store.history(job['id'],request.workspace,overview=True)] if detailed else []
