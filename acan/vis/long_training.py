@@ -803,8 +803,13 @@ def guide(state, builds):
         return [html.B('Adesso: '), now, tail]
     if running:
         return [html.B('Adesso: '), 'si stanno preparando i dati (passo 1). Quando sono pronti, crea la coda al passo 2.']
-    if any(job['status'] in ('paused', 'interrupted') for items in found.values() for job in items):
-        return [html.B('Adesso: '), 'la coda è in pausa. Per continuare premi «Riprendi» al passo 3.']
+    waiting = [job for items in found.values() for job in items if job['status'] in ('paused', 'interrupted')]
+    if waiting:                                                 # which queue is waiting, among the others
+        job = max(waiting, key=lambda job: job.get('updated') or 0)
+        label = (job['config'].get('series') or {}).get('label') or job['config'].get('name', '')
+        where = f"passo {(job['progress'] or {}).get('step', 0):,} di {job['config'].get('total_steps') or 0:,}"
+        return [html.B('Adesso: '), f"la coda «{label}» (#{job['id'][:4]}, {where}) è in pausa. Per continuare "
+                "sceglila e premi «Riprendi» al passo 3."]
     if paused:
         return [html.B('Adesso: '), 'la preparazione dei dati è in pausa: premi «Riprendi» al passo 1.']
     if found and all(job['status'] == 'completed' for items in found.values() for job in items):
