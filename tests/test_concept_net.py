@@ -414,7 +414,8 @@ class NetTextPathTest(unittest.TestCase):
         for trail in ([f'token:{len(prompt)}'], [f'token:{len(prompt)}', f'level:{len(prompt)}:1'],
                       [f'token:{len(prompt)}', f'level:{len(prompt)}:1', f'view:{len(prompt)}:1:1'],
                       [f'memory:{len(prompt)}']):
-            self.assertIsNotNone(answer_walk_view(data, dict(question=0, trail=trail)))
+            head, figure, detail = answer_walk_view(data, dict(question=0, trail=trail))
+            self.assertTrue(head is not None and figure is not None and detail is not None)
 
 
 @unittest.skipUnless(TORCH, 'torch is needed to learn the network')

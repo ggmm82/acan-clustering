@@ -177,16 +177,79 @@ def answer_node(path, key):
     raise KeyError(key)
 
 
+def token_graph(path, pos, current=None):
+    """The way to one written token, left to right: the words read (of the question and of the answer so far), the
+    concept each view of every layer falls into, and the token; the document memory beside. A click on a node opens it."""
+    import plotly.graph_objects as go
+    words, step = path['words'], next(s for s in path['steps'] if s['position'] == pos)
+    levels = step['levels']
+    read = {}
+    for level in levels:
+        for view in level.get('lit', []):
+            for j, w in view.get('looked', []):
+                read[j] = max(read.get(j, 0.), w)
+    for j, w in step['memory']['sources']:
+        read[j] = max(read.get(j, 0.), w)
+    shown = sorted(sorted(read, key=lambda j: -read[j])[:12])            # in the order of the text
+    nodes, edges = {}, []                                                 # key -> (x, y, label, hover, kind)
+    for n, j in enumerate(shown):
+        where = 'domanda' if j < path['prompt_length'] else 'risposta'
+        nodes[f'word:{j}'] = (0, 1 - 2 * (n + .5) / max(len(shown), 1), f'«{_word(words, j)}»', f'parola della {where}', 'word')
+    names = path.get('names') or {}
+    for l, level in enumerate(levels, 1):
+        lit = level.get('lit', [])
+        for h, view in enumerate(lit, 1):
+            key = f'view:{pos}:{l}:{h}'
+            nodes[key] = (l, 1 - 2 * (h - .5) / max(len(lit), 1), view['id'],
+                          f"strato {l}, vista {h}: concetto {view['id']} ({view['membership']:.0%})"
+                          + (f"<br>{names[view['id']]}" if view['id'] in names else ''), 'concept')
+            for j, w in view.get('looked', []):
+                if f'word:{j}' in nodes:
+                    edges.append((f'word:{j}', key, w, 'read'))
+            if l > 1 and h <= len(levels[l - 2].get('lit', [])):
+                edges.append((f'view:{pos}:{l - 1}:{h}', key, view['membership'], 'down'))
+    last = len(levels) + 1
+    nodes[f'token:{pos}'] = (last, 0., f'«{_word(words, pos)}»', f"token scritto, probabilità {math.exp(step['logp']):.0%}", 'token')
+    nodes[f'memory:{pos}'] = (last - .5, -.9, 'memoria', f"memoria del documento: pesa {step['memory']['weight']:.0%}", 'memory')
+    for h, view in enumerate(levels[-1].get('lit', []) if levels else [], 1):
+        edges.append((f'view:{pos}:{len(levels)}:{h}', f'token:{pos}', view['membership'] * (1 - step['memory']['weight']), 'out'))
+    edges.append((f'memory:{pos}', f'token:{pos}', step['memory']['weight'], 'out'))
+    for j, w in step['memory']['sources']:
+        if f'word:{j}' in nodes:
+            edges.append((f'word:{j}', f'memory:{pos}', w, 'copy'))
+    colors = dict(read='rgba(44,111,187,.45)', down='rgba(120,120,120,.45)', out='rgba(231,111,81,.6)', copy='rgba(42,157,143,.6)')
+    figure = go.Figure()
+    for a, b, w, kind in edges:
+        (xa, ya), (xb, yb) = nodes[a][:2], nodes[b][:2]
+        figure.add_scatter(x=[xa, xb], y=[ya, yb], mode='lines', hoverinfo='skip', showlegend=False,
+                           line=dict(width=.5 + 6 * max(0., min(1., w)), color=colors[kind]))
+    fill = dict(word='#2c6fbb', concept='#6c757d', token='#e76f51', memory='#2a9d8f')
+    keys = list(nodes)
+    figure.add_scatter(x=[nodes[k][0] for k in keys], y=[nodes[k][1] for k in keys], mode='markers+text', showlegend=False,
+                       text=[nodes[k][2] for k in keys], hovertext=[nodes[k][3] for k in keys], hoverinfo='text', customdata=keys,
+                       textposition=['middle left' if nodes[k][4] == 'word' else 'middle right' if nodes[k][4] == 'token'
+                                     else 'top center' for k in keys],
+                       marker=dict(size=[22 if k == current else 14 for k in keys],
+                                   color=[fill[nodes[k][4]] for k in keys],
+                                   line=dict(width=[3 if k == current else 0 for k in keys], color='#000')))
+    ticks = ['parole lette'] + [f'strato {l}' for l in range(1, len(levels) + 1)] + ['token scritto']
+    figure.update_layout(height=460, margin=dict(l=90, r=90, t=30, b=10), clickmode='event', plot_bgcolor='white',
+                         xaxis=dict(tickvals=list(range(len(ticks))), ticktext=ticks, side='top', showgrid=False, zeroline=False,
+                                    range=[-.6, len(ticks) - .4]),
+                         yaxis=dict(visible=False, range=[-1.1, 1.1]), uirevision=f'{pos}')
+    return figure
+
+
 def answer_walk_view(data, walk):
-    """How an answer was written, as a walk: the answer's tokens, the trail of nodes visited and the current node with
-    the nodes it leads to. Text and buttons only."""
+    """How an answer was written, as a walk: (the answer's tokens above, the graph from the question to the token
+    or None, the trail and the open node below)."""
     if not data or not walk:
-        return None
+        return None, None, None
     paths = data.get('paths') or []
     index = walk.get('question', 0)
     if index >= len(paths) or not paths[index]:
         return dbc.Alert('Questo modello non ha il percorso delle risposte: compare al prossimo salvataggio.', color='info',
-                         className='small py-2')
+                         className='small py-2'), None, None
     path, trail = paths[index], walk.get('trail') or []
     words, start = path['words'], path['prompt_length']
     current = trail[-1] if trail else None
@@ -197,6 +260,7 @@ def answer_walk_view(data, walk):
                       dbc.Button('Chiudi', id={'type': 'lm-walk-go', 'index': 'close'}, size='sm', color='link', className='ms-2')]),
             html.Div('Risposta, token per token: clicca un token per vedere da dove viene.', className='small text-muted mt-1'),
             html.Div(tokens, className='mb-2')]
+    figure, detail = None, None
     if current:
         crumbs = []
         for n, key in enumerate(trail):
@@ -207,10 +271,15 @@ def answer_walk_view(data, walk):
         title, text, near = answer_node(path, current)
         links = [dbc.Button(f'{label} · {weight:.0%}', id={'type': 'lm-walk-go', 'index': key}, size='sm', outline=True,
                             color='secondary', className='me-1 mb-1') for key, label, weight in near]
-        body += [html.Div(crumbs), dbc.Card(dbc.CardBody([html.H6(title), html.P(text, className='small mb-2'),
-                                                          html.Div(links or html.Span('Nessun passo oltre.', className='small text-muted'))]),
-                                            className='mb-2')]
-    return dbc.Card(dbc.CardBody(body), className='my-2')
+        pos = int(trail[0].split(':')[1])
+        body.append(html.Div('Dalla domanda al token: le parole lette (blu), il concetto in cui cade ogni vista di ogni strato '
+                             '(grigio), la memoria del documento (verde) e il token scritto (arancio). Lo spessore è quanto ha '
+                             'pesato; un clic su un nodo lo apre qui sotto.', className='small text-muted'))
+        figure = token_graph(path, pos, current)
+        detail = html.Div([html.Div(crumbs), dbc.Card(dbc.CardBody([html.H6(title), html.P(text, className='small mb-2'),
+                                                                    html.Div(links or html.Span('Nessun passo oltre.', className='small text-muted'))]),
+                                                      className='mb-2')])
+    return html.Div(body, className='mt-2'), figure, detail
 
 
 def _bytes(value):
@@ -907,6 +976,8 @@ layout = html.Div([
                 "imparato. Per fargli domande libere e scaricarlo: passo 4.", className='small'),
          html.Div(id='lm-long-answers'),
          html.Div(id='lm-answer-walk'),
+         html.Div(dcc.Graph(id='lm-answer-graph', config={'displaylogo': False}), id='lm-answer-graph-box', style={'display': 'none'}),
+         html.Div(id='lm-answer-walk-detail'),
          dcc.Store(id='lm-answer-paths', storage_type='session'), dcc.Store(id='lm-answer-walk-state', storage_type='session')),
     dcc.Store(id='lm-long-catalog'), dcc.Store(id='lm-long-builds'), dcc.Store(id='lm-steps-folded'), dcc.Store(id='lm-network-selected', storage_type='session'), dcc.Interval(id='lm-long-poll', interval=5000),
 ])
@@ -1275,12 +1346,19 @@ def register(app):
 
     @app.callback(Output('lm-answer-walk-state', 'data', allow_duplicate=True),
                   Input({'type': 'lm-walk-go', 'index': dash.ALL}, 'n_clicks'),
-                  Input({'type': 'lm-walk-back', 'index': dash.ALL}, 'n_clicks'),
+                  Input({'type': 'lm-walk-back', 'index': dash.ALL}, 'n_clicks'), Input('lm-answer-graph', 'clickData'),
                   State('lm-answer-walk-state', 'data'), prevent_initial_call=True)
-    def walk_answer(go, back, walk):
-        if not walk or not isinstance(dash.ctx.triggered_id, dict) or not dash.ctx.triggered[0].get('value'):
+    def walk_answer(go, back, click, walk):
+        if not walk:
             return dash.no_update
         trail = list(walk.get('trail') or [])
+        if dash.ctx.triggered_id == 'lm-answer-graph':      # a node of the graph: opened below it, on the same token
+            key = ((click or {}).get('points') or [{}])[0].get('customdata')
+            if not key or not trail or trail[-1] == key:
+                return dash.no_update
+            return dict(walk, trail=trail + [key]) if not key.startswith('token:') else dash.no_update
+        if not isinstance(dash.ctx.triggered_id, dict) or not dash.ctx.triggered[0].get('value'):
+            return dash.no_update
         if dash.ctx.triggered_id['type'] == 'lm-walk-back':
             return dict(walk, trail=trail[:dash.ctx.triggered_id['index'] + 1])
         key = dash.ctx.triggered_id['index']
@@ -1290,9 +1368,12 @@ def register(app):
             return dict(walk, trail=[key])
         return dict(walk, trail=trail + [key]) if not trail or trail[-1] != key else dash.no_update
 
-    @app.callback(Output('lm-answer-walk', 'children'), Input('lm-answer-paths', 'data'), Input('lm-answer-walk-state', 'data'))
+    @app.callback(Output('lm-answer-walk', 'children'), Output('lm-answer-graph', 'figure'), Output('lm-answer-graph-box', 'style'),
+                  Output('lm-answer-walk-detail', 'children'), Input('lm-answer-paths', 'data'), Input('lm-answer-walk-state', 'data'))
     def show_answer_walk(data, walk):
         try:
-            return answer_walk_view(data, walk)
-        except (KeyError, IndexError, ValueError, TypeError):
-            return None
+            head, figure, detail = answer_walk_view(data, walk)
+        except (KeyError, IndexError, ValueError, TypeError, StopIteration):
+            head, figure, detail = None, None, None
+        hidden = {'display': 'none'}
+        return head, figure if figure is not None else {}, hidden if figure is None else {}, detail
