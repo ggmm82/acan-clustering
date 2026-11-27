@@ -334,7 +334,9 @@ def create_app(root=None, token=None):
         latest = root/job['checkpoint'] if job['checkpoint'] else None
         corpus = store.directory('corpora', job['config']['corpus_id'])/'corpus'
         disk = shutil.disk_usage(store.root)
-        return jsonify(progress=job['progress'], config=job['config'], status=job['status'],
+        progress = job['progress'] if request.args.get('graph') == '1' else {   # the graph of concepts (megabytes) only when asked
+            key: value for key, value in (job['progress'] or {}).items() if key != 'network_graph'}
+        return jsonify(progress=progress, config=job['config'], status=job['status'],
                        checkpoint_bytes=size(latest) if latest and latest.exists() else 0,
                        checkpoints={kind: dict(count=len(paths), bytes=sum(size(path) for path in paths)) for kind, paths in kinds.items()},
                        token_bytes=sum(path.stat().st_size for path in directory.glob('*.bin')),

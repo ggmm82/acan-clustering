@@ -542,20 +542,23 @@ def concept_footprint_view(item):
               for title, values in rows]
     note = html.P("Gli errori sono in nat per token: e elevato all'errore è fra quanti token, in media, il modello è incerto. "
                   "Si misurano solo su testo che il modello non ha letto.", className='small text-muted')
+    details = folded('Tutti i dettagli: vocabolario, concetti, contesto, memoria e disco',
+                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note],
+                     'lm-long-details')
+    return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')), details])
+
+
+def graph_section(item):
+    """The inspectable graph of the concept network, or what it is waiting for."""
+    progress = item['progress'] or {}
     graph = network_graph_view(progress.get('network_graph'))
     if graph is None:
         waiting = ('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti compare appena i token sono pronti e la rete legge il primo brano.'
                    if item.get('status') in ('queued', 'preparing') or not progress.get('graft') else
                    'Il grafo ispezionabile di concetti, astrazioni e sotto-concetti si sta popolando sul testo di validazione…')
-        graph_section = html.Div([html.H6('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti', className='mt-3'),
-                                  html.P(waiting, className='small text-muted')])
-    else:
-        graph_section = graph
-    details = folded('Tutti i dettagli: vocabolario, concetti, contesto, memoria e disco',
-                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note],
-                     'lm-long-details')
-    return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')),
-                     graph_section, details])
+        return html.Div([html.H6('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti', className='mt-3'),
+                         html.P(waiting, className='small text-muted')])
+    return graph
 
 
 MAX_GRAPH_CONCEPTS_PER_LEVEL = 8
@@ -970,7 +973,7 @@ layout = html.Div([
              dcc.Store(id='lm-long-upload-state'),
          ], title='Aggiungi un testo alla coda')], start_collapsed=True, className='my-2'),
          html.H5('Il modello mentre impara', className='mt-3'),
-         html.Div(id='lm-long-footprint'), dcc.Store(id='lm-long-footprint-key'),
+         html.Div(id='lm-long-footprint'), html.Div(id='lm-long-graph'), dcc.Store(id='lm-long-graph-key'),
          html.H5('Cosa risponde', className='mt-3'),
          html.P("Le stesse domande a ogni salvataggio, con la stessa estrazione casuale: le differenze vengono solo da ciò che il modello ha "
                 "imparato. Per fargli domande libere e scaricarlo: passo 4.", className='small'),
@@ -1287,25 +1290,39 @@ def register(app):
         saved = [item for item in items if item['checkpoint']]
         return (saved[-1] if saved else current_item(items))['id']
 
-    @app.callback(Output('lm-long-footprint', 'children'), Output('lm-long-footprint-key', 'data'),
+    def shown_item(items, workspace):
+        # The model of the queue to show: the one learning, or the last learned while the next prepares its tokens.
+        current = current_item(items)
+        learned = [job for job in items if job['checkpoint'] and (job['progress'] or {}).get('graft')]
+        if not (current['progress'] or {}).get('graft') and learned:
+            return current, learned[-1], backend(workspace, f"/jobs/{learned[-1]['id']}/footprint?graph=1")
+        return current, None, backend(workspace, f"/jobs/{current['id']}/footprint?graph=1")
+
+    @app.callback(Output('lm-long-graph', 'children'), Output('lm-long-graph-key', 'data'),
                   Input('lm-state', 'data'), Input('lm-long-queue', 'value'),
-                  State('lm-workspace', 'data'), State('lm-long-footprint-key', 'data'))
-    def footprint(state, queue, workspace, shown):
+                  State('lm-workspace', 'data'), State('lm-long-graph-key', 'data'))
+    def network_graph(state, queue, workspace, shown):
+        # The graph of concepts weighs megabytes: drawn again only when the model it describes changes.
         items = [job for job in queues((state or {}).get('jobs', [])).get(queue) or [] if job['status'] != 'created']
         if not items:
-            return html.P('Compaiono quando il primo testo comincia a imparare.', className='small text-muted'), None
+            return None, None
         current = current_item(items)
         progress = current['progress'] or {}
-        structure = progress.get('structure') or {}
-        # Redrawn when the model changes, not at every poll: the view carries the graph of concepts (megabytes).
-        key = [current['id'], current['status'], current.get('checkpoint'), progress.get('step'), progress.get('validation_nll'),
-               structure.get('phase'), structure.get('race'), structure.get('race_round'), (structure.get('done') or 0) // 100_000,
-               (structure.get('learned') or 0) // 100_000]
+        key = [current['id'], current['status'], current.get('checkpoint'), progress.get('step'), bool(progress.get('graft'))]
         if key == shown:
             return dash.no_update, dash.no_update
-        return footprint_of(items, current, workspace), key
+        try:
+            return graph_section(shown_item(items, workspace)[2]), key
+        except ValueError as exc:
+            return html.P(str(exc), className='small text-muted'), None
 
-    def footprint_of(items, current, workspace):
+    @app.callback(Output('lm-long-footprint', 'children'), Input('lm-state', 'data'), Input('lm-long-queue', 'value'),
+                  State('lm-workspace', 'data'))
+    def footprint(state, queue, workspace):
+        items = [job for job in queues((state or {}).get('jobs', [])).get(queue) or [] if job['status'] != 'created']
+        if not items:
+            return html.P('Compaiono quando il primo testo comincia a imparare.', className='small text-muted')
+        current = current_item(items)
         try:
             learned = [job for job in items if job['checkpoint'] and (job['progress'] or {}).get('graft')]
             if not (current['progress'] or {}).get('graft') and learned:
