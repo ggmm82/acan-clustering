@@ -681,8 +681,16 @@ def build_view(build):
 FORMATS = 'testo, Markdown, Python, ZIP, EPUB, DOCX, PDF'
 
 
-def step(number, title, *children):
-    return dbc.Card(dbc.CardBody([html.H4(f'{number} · {title}'), *children]), className='my-3', color='primary', outline=True)
+def step(number, title, *children, folding=False):
+    """A step of the page. A folding step (preparing texts, creating a queue) closes by itself once a queue exists:
+    it is needed rarely then, and its heading stays, with the button that opens it."""
+    if not folding:
+        return dbc.Card(dbc.CardBody([html.H4(f'{number} · {title}'), *children]), className='my-3', color='primary', outline=True)
+    head = html.Div([html.H4(f'{number} · {title}', className='mb-0 me-3'),
+                     dbc.Button('Apri', id=f'lm-step{number}-toggle', size='sm', outline=True, color='primary')],
+                    className='d-flex align-items-center')
+    return dbc.Card(dbc.CardBody([head, dbc.Collapse(html.Div(list(children), className='mt-2'), id=f'lm-step{number}-body',
+                                                     is_open=True)]), className='my-3', color='primary', outline=True)
 
 
 layout = html.Div([
@@ -707,7 +715,7 @@ layout = html.Div([
          html.H6('I tuoi documenti', className='mt-3'),
          html.P(f"Scegli un file ({FORMATS}, oppure .jsonl con un campo «text» per riga) e premi il pulsante: viene caricato a pezzi e "
                 "convertito in testo. Quando è pronto compare fra i testi del passo 2.", className='small text-muted mb-1'),
-         html.Div(id='lm-file-upload'), html.Div(id='lm-upload-status', role='status', className='small')),
+         html.Div(id='lm-file-upload'), html.Div(id='lm-upload-status', role='status', className='small'), folding=True),
     step(2, 'Crea la coda e avvia',
          html.P("La coda impara i testi uno dopo l'altro: ognuno parte da ciò che hanno imparato i precedenti e aggiunge il suo, senza "
                 "dimenticare nulla. Il vocabolario (32.000 token) si impara una volta, all'avvio, dai testi che sono in coda in quel momento: "
@@ -743,7 +751,7 @@ layout = html.Div([
                    dbc.Input(id='lm-long-passes', type='number', value=1), dbc.Input(id='lm-long-length', type='number', value=256)],
                   style={'display': 'none'}),
          dbc.Button('Crea la coda e avvia', id='lm-long-start', color='primary', className='mt-2'),
-         html.Div(id='lm-long-start-status', role='status', className='small mt-1')),
+         html.Div(id='lm-long-start-status', role='status', className='small mt-1'), folding=True),
     step(3, 'Segui la coda',
          html.P("Qui vedi a che punto è ogni testo, come cresce il modello e cosa risponde. Il server fa una cosa alla volta: mentre la coda "
                 "impara, la preparazione dei dati e la scrittura aspettano.", className='small'),
@@ -775,7 +783,7 @@ layout = html.Div([
          html.P("Le stesse domande a ogni salvataggio, con la stessa estrazione casuale: le differenze vengono solo da ciò che il modello ha "
                 "imparato. Per fargli domande libere e scaricarlo: passo 4.", className='small'),
          html.Div(id='lm-long-answers')),
-    dcc.Store(id='lm-long-catalog'), dcc.Store(id='lm-long-builds'), dcc.Store(id='lm-network-selected', storage_type='session'), dcc.Interval(id='lm-long-poll', interval=5000),
+    dcc.Store(id='lm-long-catalog'), dcc.Store(id='lm-long-builds'), dcc.Store(id='lm-steps-folded'), dcc.Store(id='lm-network-selected', storage_type='session'), dcc.Interval(id='lm-long-poll', interval=5000),
 ])
 
 
@@ -821,6 +829,25 @@ def guide(state, builds):
 
 
 def register(app):
+    @app.callback(Output('lm-step1-body', 'is_open'), Output('lm-step2-body', 'is_open'),
+                  Output('lm-step1-toggle', 'children'), Output('lm-step2-toggle', 'children'), Output('lm-steps-folded', 'data'),
+                  Input('lm-step1-toggle', 'n_clicks'), Input('lm-step2-toggle', 'n_clicks'), Input('lm-state', 'data'),
+                  State('lm-step1-body', 'is_open'), State('lm-step2-body', 'is_open'), State('lm-steps-folded', 'data'))
+    def fold_steps(first, second, state, open1, open2, decided):
+        # Once, when the projects arrive: steps 1 and 2 close if a queue exists. Then only the buttons change them.
+        trigger = dash.ctx.triggered_id
+        if trigger == 'lm-step1-toggle':
+            open1 = not open1
+        elif trigger == 'lm-step2-toggle':
+            open2 = not open2
+        elif state and not decided:
+            open1 = open2 = not (state.get('jobs') or [])
+            decided = True
+        else:
+            return (dash.no_update,) * 5
+        label = lambda shown: 'Chiudi' if shown else 'Apri'
+        return open1, open2, label(open1), label(open2), decided
+
     @app.callback(Output('lm-network-graph', 'figure'), Output('lm-network-info', 'children'), Output('lm-network-selected', 'data'),
                   Input('lm-network-graph', 'clickData'), Input('lm-network-data', 'data'), Input('lm-network-head', 'value'),
                   State('lm-network-selected', 'data'), prevent_initial_call=True)
