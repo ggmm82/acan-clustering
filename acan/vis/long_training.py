@@ -4,6 +4,8 @@ Every layer reads through concepts (graft fraction 1.0). The page drives the gen
 through the same ``backend`` helper as the rest of the generative tab, and reads the projects from
 ``lm-state``, which that tab refreshes every five seconds.
 """
+import math
+
 import dash
 import numpy as np
 from dash import Input, Output, State, dcc, html
@@ -147,6 +149,17 @@ def _candidate_label(kind):
             'strato': 'uno strato in più', "com'è": "la rete com'è"}.get(kind, kind)
 
 
+def _concepts_used_tile(used, shape):
+    """How many concepts each level really uses (effective number, mean over its heads) out of those it has:
+    near the total, the level could use more; far below, it already has enough."""
+    if not used:
+        return _tile('Concetti usati', '—', 'si misura sul testo di validazione')
+    have = [concepts for _, concepts in (shape or {}).get('groups', [])]
+    parts = [f'{u:.0f} di {have[i]}' if i < len(have) else f'{u:.0f}' for i, u in enumerate(used)]
+    return _tile('Concetti usati', ' · '.join(parts),
+                 'per testa in ogni strato: vicino al totale ne servirebbero di più, molto sotto ne ha già abbastanza')
+
+
 def _network_details(shape):
     groups = ', '.join(f'{heads}×{concepts}' for heads, concepts in shape['groups'])
     return f"{shape['dim']} numeri di stato · {groups} (teste × concetti per testa, per strato) · {shape['parameters']:,} parametri"
@@ -256,7 +269,12 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
               f'un passo è {piece:,} token' + ('' if speed else ' · nel passo in corso' if network and network.get('speed')
                                                   else ' · si misura mentre la rete impara')),
         _tile('Errore su testo mai visto', '—' if error is None else f'{error:.3f}',
-              (f'esita fra circa {perplexity:,.0f} token' if perplexity else '') + (f' · prima di leggere {before:.3f}' if before is not None else '')),
+              'NLL di validazione' + (f' · prima di leggere {before:.3f}' if before is not None else '')),
+        _tile('Perplessità', '—' if not perplexity else f'{perplexity:,.0f}',
+              'fra quanti token il modello esita in media, sul testo mai visto'
+              + (f' · prima di leggere {math.exp(before):,.0f}' if before is not None and before < 700 else '')),
+        _concepts_used_tile(progress.get('concepts_used') or [sum(layer['active']) / max(len(layer['active']), 1)
+                                                             for layer in progress.get('network_concepts') or []], shape),
         _tile('Dimensione del modello', _bytes(size) if size else '—',
               'i parametri della rete' + (f' · file scaricabile {_bytes(checkpoint_bytes)}' if checkpoint_bytes else '')),
         _tile('Rete corrente', f"{shape['layers']} {'strato' if shape['layers'] == 1 else 'strati'}" if shape else '—',

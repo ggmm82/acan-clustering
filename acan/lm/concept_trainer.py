@@ -296,6 +296,9 @@ def run_training(root, identifier, stop_event=None):
                 return
             target = state if dest is None else dest
             target['network_concepts'] = net.describe(docs, tokenizer.decode)
+            # Concepts each level really uses (effective number, mean over its heads): kept step by step.
+            target['concepts_used'] = [round(sum(layer['active']) / max(len(layer['active']), 1), 1)
+                                       for layer in target['network_concepts']]
             target['network_graph'] = net.graph(docs, tokenizer.decode)
 
         model.device = state['device'] = device
