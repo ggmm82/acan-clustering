@@ -283,7 +283,6 @@ jobs:
         run: |
           docker run --rm --network=none --entrypoint python \
             --mount "type=bind,src=$PWD/tests,dst=/tests,readonly" \
-            --mount "type=bind,src=$PWD/experiments,dst=/app/experiments,readonly" \
             --mount "type=bind,src=$PWD/scripts,dst=/app/scripts,readonly" \
             --mount "type=bind,src=$PWD/config,dst=/app/config,readonly" \
             "$IMAGE" -m unittest discover -s /tests -v

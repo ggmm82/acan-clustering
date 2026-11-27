@@ -539,7 +539,7 @@ class NetText:
         return out[pos]
 
     def explain(self, prompt, produced, decode=None, top=3):
-        """How the network wrote every token of an answer, from what verified measures can say (docs/MODEL.md):
+        """How the network wrote every token of an answer, from what verified measures can say (acan/MODEL.md):
         the memory of the document (its weight, and the earlier tokens it copied from), every level (how much the
         chosen token's log-probability falls when the level is closed), the earlier tokens every level's views looked
         at, and the concepts each level's position belonged to most. Positions are indices in prompt + produced."""

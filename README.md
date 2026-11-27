@@ -14,7 +14,7 @@ Fisher $S_k' = (1 - \rho)\,S_k + \rho\,\widehat{S}_k$. Sulle righe fisse di una
 tabella il passo $\rho = 1$ coincide con il passo M esatto dell'EM; sul testo la
 rete a concetti aggiorna i concetti di ogni strato con $0 < \rho < 1$ (EM naturale
 online secondo Robbins-Monro) mentre il gradiente predittivo plasma le proiezioni
-fra gli strati e i centri dei token. [Guida matematica e informatica](acan/MODEL.md) · [Protocolli e ricevute](experiments/text_table/README.md).
+fra gli strati e i centri dei token. [Guida matematica e informatica](acan/MODEL.md).
 
 I concetti sono disposti in **livelli**: sotto la radice i concetti generali,
 poi i comportamenti particolari. Ogni livello toglie alle osservazioni il
@@ -25,20 +25,18 @@ nodo con più genitori, non un frammento per ramo. A ricerca finita, il livello
 che fa le previsioni può descrivere insieme gli attributi che variano insieme,
 se così legge meglio righe non viste.
 
-- Riferimento unico, con proposizioni e limiti: [docs/MODEL.md](docs/MODEL.md)
-- Misure, compresi gli esiti negativi: [docs/MODEL-RESULTS.md](docs/MODEL-RESULTS.md)
-- Affermazioni dei paper da non citare: [docs/ERRATA.md](docs/ERRATA.md)
+La documentazione del modello è una sola: [acan/MODEL.md](acan/MODEL.md), la stessa
+delle schede Matematica e Informatica.
 
 Stato, in breve:
 
 - **Tabelle.** Letter 97,9%, Sonar 85,5%, Titanic 81,7% (venti split per gli
   ultimi due), confrontati con KNN, Random Forest e HistGradientBoosting nello
-  stesso protocollo. I numeri e i limiti sono in MODEL-RESULTS.
+  stesso protocollo.
 - **Linguaggio.** Con SmolLM2-135M a pesi invariati, 64 token esatti più 64
   concetti danno NLL 3,01 contro 3,23 del controllo a pari memoria e 2,76
   dell'attenzione densa. Lo strato v1 è più lento della densa ai contesti provati;
-  lo strato v2 (struttura fissa, `docs/ALGEBRAIC-CONCEPTS.md`) la supera sui
-  contesti lunghi.
+  lo strato v2 (struttura fissa) la supera sui contesti lunghi.
   Che un modello addestrato con lo strato a concetti eguagli la densa non è
   ancora dimostrato: il laboratorio generativo serve a misurarlo.
 
@@ -94,8 +92,6 @@ Per avviarla senza il debugger di Dash:
 python -c "from acan.vis.render import app; app.run(debug=False, port=4000)"
 ```
 
-Guida dettagliata della scheda Modello e della valutazione: [docs/GUI.md](docs/GUI.md).
-
 ## Laboratorio generativo
 
 La scheda **Generativo** allena la rete a concetti (`acan/lm/net_text.py`) con la stessa regola di apprendimento delle tabelle ($0 < \rho < 1$ sui concetti di ogni strato e gradiente predittivo sulle proiezioni, crescita automatica su finestra di prova e uscita analitica raggruppata per frequenza). Prepara una miscela di dati italiani e inglesi per conversare da dataset
@@ -107,11 +103,6 @@ grandezze del modello mentre impara. Sotto c'è il **laboratorio di
 validazione**, che verifica il meccanismo in piccolo prima di un addestramento
 su GPU. La scheda **Informatica** spiega in parole semplici obiettivo,
 apprendimento e generazione dei token.
-
-- Apprendimento lungo, dati e coda: [docs/LONG-TRAINING.md](docs/LONG-TRAINING.md)
-- Percorso passo per passo e cosa misurare: [docs/CONTROLLED-LM.md](docs/CONTROLLED-LM.md)
-- Funzionamento e persistenza: [docs/GENERATIVE.md](docs/GENERATIVE.md)
-- Differenze dal paper e dal pacchetto di riferimento: [docs/LM-AUDIT.md](docs/LM-AUDIT.md)
 
 ## Rilascio e installazione sul server
 
@@ -127,8 +118,9 @@ paper, le ricevute dei benchmark sintetici e le prove HTTP dell'immagine.
   `acan/lm/concept_net.py` e `acan/lm/concept_net_training.py` rete a concetti generativa,
   `acan/lm/graph_scan.py` strato di attenzione innestato, `acan/concept_algebra.py` algebra e regola `natural_em_step` condivisa)
 - `tests/`: test unitari e, in `tests/browser/`, test nel browser
-- `scripts/`: valutazioni e sonde che rigenerano le misure dei documenti
-- `benchmarks/`, `experiments/`: suite sintetica storica e risultati archiviati
+- `scripts/`: controlli del rilascio (paper, benchmark, modello linguistico, prova HTTP)
+- `benchmarks/`: suite sintetica storica, eseguita dai controlli del rilascio
+- `references/`: pacchetto di riferimento per il controllo del modello linguistico
 - `paper/`: sorgenti dei paper
 
 La suite sintetica storica si esegue senza toccare i risultati archiviati:
@@ -139,24 +131,7 @@ OPENBLAS_NUM_THREADS=1 python benchmarks/run_benchmarks.py --output-dir .runs/pa
 
 I casi «tipo UCI» di quella suite sono sintetici, non i dataset UCI reali.
 
-## Storia
-
-I documenti seguenti descrivono versioni precedenti e restano per memoria; dove
-differiscono da [MODEL.md](docs/MODEL.md), vale MODEL.md. I modelli salvati con
-i profili precedenti (`cp-v9`, `cp-joint-v1`, `legacy-v8`) restano caricabili.
-
-- Paper originale e corrispondenza con il codice: [PAPER-AUDIT.md](docs/PAPER-AUDIT.md),
-  [SCIENTIFIC-ALIGNMENT.md](docs/SCIENTIFIC-ALIGNMENT.md)
-- CP congiunta e selezione: [JOINT-CP.md](docs/JOINT-CP.md),
-  [CP-SELECTION.md](docs/CP-SELECTION.md), [CP-PAIR-SUPPORT.md](docs/CP-PAIR-SUPPORT.md),
-  [LETTER-DIAGNOSIS.md](docs/LETTER-DIAGNOSIS.md)
-- Fondamento e revisioni verso il modello unico:
-  [MATHEMATICAL-FOUNDATION.md](docs/MATHEMATICAL-FOUNDATION.md),
-  [CONCEPT-GRAPH.md](docs/CONCEPT-GRAPH.md), [CP-V9-RESULTS.md](docs/CP-V9-RESULTS.md),
-  [CP-GRAPH-RESULTS.md](docs/CP-GRAPH-RESULTS.md), [REVISION-PLAN.md](docs/REVISION-PLAN.md),
-  [NEXT-PR-PLAN.md](docs/NEXT-PR-PLAN.md)
-- Prime verifiche sui dataset: [DATASET-EVALUATION.md](docs/DATASET-EVALUATION.md),
-  [HISTORICAL-VERSION-COMPARISON.md](docs/HISTORICAL-VERSION-COMPARISON.md)
+I modelli salvati con i profili precedenti (`cp-v9`, `cp-joint-v1`, `legacy-v8`) restano caricabili.
 
 ## Licenza
 

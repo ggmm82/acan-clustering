@@ -250,7 +250,7 @@ def path_animation(path, pick=None):
 def path_view(path, pick=None):
     """The path of an answer: its tokens in a row (the prompt grey, the answer to click); for the chosen token, the
     memory (its weight and the words it copied from), every level (how much closing it moves the token's
-    log-probability, the earlier words its views looked at, its concepts), as docs/MODEL.md measures them."""
+    log-probability, the earlier words its views looked at, its concepts), as acan/MODEL.md describes them."""
     if not path or not path.get('steps'):
         return None
     words, start = [word.replace('\n', '⏎') if word.strip() else (word.replace('\n', '⏎') or '·') for word in path['words']], path['prompt_length']
@@ -750,7 +750,7 @@ def series_table(jobs, job, tests):
 
 KIND_LABELS = {'dense': 'Rete con attenzione normale', 'window': 'Rete con le sole ultime 16 parole', 'concepts': 'Modello a concetti'}
 VALIDATION_NAME = 'Validazione'
-# Thresholds of the validation path, explained in docs/CONTROLLED-LM.md.
+# Thresholds of the validation path.
 MEMORY_SHARE = .8          # concepts must keep at least 80% of what ordinary attention recalls
 TEXT_MARGIN = .05          # and lose at most 0.05 bits per character on the text
 REAL_MARGIN = .15          # on the native micro model, within the noise of the measurement
