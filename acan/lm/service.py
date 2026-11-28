@@ -540,9 +540,11 @@ def create_app(root=None, token=None):
 
     @app.get('/jobs/<identifier>/export')
     def export_model(identifier):
-        from .exporting import export_bundle
+        from .exporting import export_bundle, export_huggingface
         job = store.job(identifier, request.workspace)
-        path = export_bundle(store, job, request.args.get('checkpoint', ''))
+        checkpoint = request.args.get('checkpoint', '')
+        path = (export_huggingface(store, job, checkpoint) if request.args.get('format') == 'huggingface'
+                else export_bundle(store, job, checkpoint))
         response = send_file(path, mimetype='application/zip', as_attachment=True,
                              download_name='acan-model-'+path.name)
         response.headers['Cache-Control'] = 'no-store'

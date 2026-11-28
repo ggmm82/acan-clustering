@@ -42,6 +42,15 @@ class DocumentMemoryTests(unittest.TestCase):
                 expected = (len(earlier), sum(ids[u] == ids[t] for u in earlier), len({ids[u] for u in earlier}))
                 self.assertEqual(tuple(fast[:, t]), expected)
 
+    def test_an_answer_ends_where_a_new_turn_would_start(self):
+        # A model that has not learned to close its turn opens the next one: «<|im_start|>assistant» shown as
+        # «assistantassistant» once the markers are dropped. The answer ends there.
+        from acan.lm.probes import stop_tokens
+        class Tokens:
+            eos_token_id, unk_token_id = 0, 3
+            convert_tokens_to_ids = staticmethod({'<|im_start|>': 1, '<|im_end|>': 2}.get)
+        self.assertEqual(sorted(stop_tokens(Tokens())), [0, 1, 2])
+
     def test_checkpoints_of_removed_models_say_so(self):
         for arrays in ({'level0.keys': np.zeros(1)}, {'text_graph': np.zeros(1)}):
             with self.assertRaisesRegex(ValueError, 'non fa più parte del prodotto'):
@@ -158,6 +167,29 @@ class ConceptLongLearningTests(unittest.TestCase):
                                          capture_output=True, text=True, timeout=120)
                 self.assertEqual(written.returncode, 0, written.stderr[-2000:])
                 self.assertTrue(written.stdout.strip())
+            # The folder for the Hugging Face Hub: model card, clean configuration, tokenizer at the top, and code that
+            # runs the model with numpy alone, without the acan package.
+            from acan.lm.exporting import export_huggingface
+            hub = zipfile.ZipFile(export_huggingface(store, done, done['checkpoint']))
+            names = set(hub.namelist())
+            self.assertTrue({'README.md', 'config.json', 'concepts.safetensors', 'tokenizer.json', 'tokenizer_config.json',
+                             'acan_lm/__init__.py', 'acan_lm/concept_net.py', 'acan_lm/net_text.py'} <= names)
+            card = hub.read('README.md').decode()
+            self.assertTrue(card.startswith('---\nlicense: other'))                 # an uploaded text: licence to check by hand
+            self.assertIn('source and licence not recorded', card)
+            self.assertIn('**test** error', card)
+            hub_config = json.loads(hub.read('config.json'))
+            self.assertEqual(hub_config['model_type'], 'acan-concepts')
+            self.assertNotIn('corpus_id', json.dumps(hub_config))                    # no internal identifiers
+            self.assertIn('chat_template', json.loads(hub.read('tokenizer_config.json')))
+            with tempfile.TemporaryDirectory() as unpacked:
+                hub.extractall(unpacked)
+                import subprocess, sys
+                code = ("import sys; sys.path.insert(0, '.'); from acan_lm import load, answer; m, t = load('.'); "
+                        "print(answer(m, t, 'Ciao!', max_new_tokens=8)); "
+                        "assert not [n for n in sys.modules if n == 'acan' or n.startswith('acan.')], 'uses the acan package'")
+                written = subprocess.run([sys.executable, '-c', code], cwd=unpacked, capture_output=True, text=True, timeout=120)
+                self.assertEqual(written.returncode, 0, written.stderr[-2000:])
             # The next text of the queue starts from the network of the first and goes on learning.
             config = validate_options(dict(base, corpus_id=second['id'], name='Coda · 2', warm_start=True))
             config['series'] = dict(id='q', order=1, variant='queue', label='due')
