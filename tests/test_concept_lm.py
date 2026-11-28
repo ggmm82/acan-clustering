@@ -193,7 +193,11 @@ class ConceptLongLearningTests(unittest.TestCase):
                         "out = m.generate(x, max_new_tokens=8, do_sample=False); assert out.shape[1] > x.shape[1]; "
                         "p = m(x).logits[0, -1].softmax(-1); assert abs(float(p.sum()) - 1) < 1e-3; "
                         "assert not [n for n in sys.modules if n == 'acan' or n.startswith('acan.')], 'uses the acan package'")
-                written = subprocess.run([sys.executable, '-c', code], cwd=unpacked, capture_output=True, text=True, timeout=300)
+                import os                                          # transformers copies the model's code to its cache: a writable one
+                cache = Path(unpacked)/'.cache'
+                env = dict(os.environ, HF_HOME=str(cache), HF_MODULES_CACHE=str(cache/'modules'), HF_HUB_OFFLINE='1')
+                written = subprocess.run([sys.executable, '-c', code], cwd=unpacked, capture_output=True, text=True, timeout=300,
+                                         env=env)
                 self.assertEqual(written.returncode, 0, written.stderr[-3000:])
             # The next text of the queue starts from the network of the first and goes on learning.
             config = validate_options(dict(base, corpus_id=second['id'], name='Coda · 2', warm_start=True))
