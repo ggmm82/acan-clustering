@@ -140,10 +140,15 @@ def piece_from_bundles(train, bundles, offsets, start, stop):
     return np.concatenate(parts) if parts else np.empty(0, np.int64)
 
 
-def measure(model, pieces):
-    """Mean error (nats per token) on pieces of text the model never counted, every position read causally."""
-    values = np.concatenate([model.logp(piece, np.arange(1, len(piece))) for piece in pieces])
-    return float(-values.mean())
+def measure(model, pieces, kinds=None, state=None):
+    """Mean error (nats per token) on pieces of text the model never counted, every position read causally. With the
+    kinds of the tokens, the error of each kind (text, conversation markers, images and videos, audio) goes in the state."""
+    values = [model.logp(piece, np.arange(1, len(piece))) for piece in pieces]
+    every = np.concatenate(values)
+    if kinds is not None and state is not None:
+        from .media import error_by_kind
+        state['nll_by_kind'] = error_by_kind(every, np.concatenate([np.asarray(piece)[1:] for piece in pieces]), kinds)
+    return float(-every.mean())
 
 
 def record_answers(directory, model, tokenizer, state, questions=None, new_tokens=64):
@@ -326,6 +331,8 @@ def run_training(root, identifier, stop_event=None):
             state.update(quantities(model, config))
             previous = save(root_checkpoints, model, state, identity)
             store.record(identifier, 0, dict(state))           # the chart starts from the error before reading
+        from .media import token_kinds
+        kinds = token_kinds(tokenizer)
         sample_docs = [p[:512] for p in tune[:8] if len(p) >= 2]
         quick_docs = [p[:256] for p in tune[:4] if len(p) >= 2]
 
@@ -417,7 +424,7 @@ def run_training(root, identifier, stop_event=None):
             measured = last or isinstance(model, NetText) or state['step'] % measure_every(config['total_steps']) == 0
             if measured:                                         # the error on unseen text, about twenty times per text
                 model.judge(tune, final=state['step'] == config['total_steps'])
-                state['validation_nll'] = measure(model, judge)
+                state['validation_nll'] = measure(model, judge, kinds, state)
                 state['validation_perplexity'] = math.exp(state['validation_nll']) if state['validation_nll'] < 700 else None
                 next_begin = state['step']*piece
                 following = piece_from_bundles(train, bundles, bundle_offsets, next_begin, min(next_begin+4096, read))
@@ -449,7 +456,7 @@ def run_training(root, identifier, stop_event=None):
             if getattr(model.model, 'net', None) is not None:
                 refresh_graph(model.model.net)
                 state['network_stopped'] = bool(model.network_done)
-            state['validation_nll'] = measure(model, judge)
+            state['validation_nll'] = measure(model, judge, kinds, state)
             state['validation_perplexity'] = math.exp(state['validation_nll'])
             state['best_validation_nll'] = min(state['best_validation_nll'], state['validation_nll'])
             previous = save(root_checkpoints, model, state, identity)
@@ -501,15 +508,22 @@ def evaluate(store, job, request, directory, check):
     folder = store.directory('jobs', job['id'])
     blocks = Blocks(folder, job['config']['sequence_length'], job['config']['seed'], job['config']['validation_batches'])
     limit = int(request.get('test_batches', 32))
-    values, correct = [], 0
+    values, targets, correct = [], [], 0
     for index in blocks.evaluation_indices('test', limit):
         check()
         piece = np.asarray(blocks._block('test', index), np.int64)
         values.append(model.logp(piece, np.arange(1, len(piece))))
+        targets.append(piece[1:])
     every = np.concatenate(values)
     nll = float(-every.mean())
     quality = dict(nll=nll, perplexity=math.exp(nll) if nll < 700 else None, tokens=len(every), batches=len(values),
                    block_indices=blocks.evaluation_indices('test', limit), step=state['step'], concept_model=True)
+    tokenizer_path = folder/'tokenizer'
+    if tokenizer_path.exists():                                 # the error of text, images and videos, audio apart
+        from transformers import AutoTokenizer
+        from .media import error_by_kind, token_kinds
+        kinds = token_kinds(AutoTokenizer.from_pretrained(str(tokenizer_path), local_files_only=True))
+        quality['by_kind'] = error_by_kind(every, np.concatenate(targets), kinds)
     performance = []
     tokens = blocks.tokens['test']  # keep multi-GB test files memory-mapped
     for length in request.get('context_lengths', ()):

@@ -151,7 +151,12 @@ layout = dbc.Container([
             dbc.Button('Continua la frase', id='lm-generate', className='my-2'),
             html.Div(id='lm-generation-status', role='status'), html.Div(id='lm-output'),
             html.Div(id='lm-generation-metrics'),
-            dbc.Button('Scarica questa copia del modello', id='lm-export-model', outline=True, color='primary', className='my-2'),
+            dbc.Button('Scarica questa copia del modello', id='lm-export-model', outline=True, color='primary', className='my-2 me-2'),
+            dbc.Button('Scarica per Hugging Face', id='lm-export-hf', outline=True, color='secondary', className='my-2'),
+            html.Small(' Una cartella da caricare su Hugging Face: pesi, tokenizer, il codice per usarlo con solo numpy e la scheda '
+                       'del modello con fonti, licenze, errore sul test (anche per tipo: testo, immagini e video, audio) e limiti. '
+                       'Rileggi la scheda prima di pubblicare.', className='text-muted'),
+            html.Div(id='lm-export-hf-status', role='status'),
             html.Small('Contiene i concetti e il tokenizer: si ricarica senza altri file (istruzioni nel README del pacchetto).', className='text-muted d-block'),
             html.Div(id='lm-export-status', role='status'),
     dbc.Accordion([dbc.AccordionItem([
@@ -877,6 +882,7 @@ def register(app):
 
     @app.server.get('/generative-export/<identifier>/<checkpoint>')
     def export_proxy(identifier, checkpoint):
+        form = 'huggingface' if flask_request.args.get('format') == 'huggingface' else ''
         if not re.fullmatch('[0-9a-f]{32}', identifier) or not re.fullmatch('[a-z0-9-]{1,128}', checkpoint):
             return jsonify(error='Identificatore non valido.'), 400
         workspace = flask_request.headers.get('X-ACAN-Workspace', '')
@@ -887,8 +893,8 @@ def register(app):
         if not endpoint or not token:
             return jsonify(error='Worker non configurato.'), 400
         try:
-            upstream = urlopen(Request(endpoint+f'/jobs/{identifier}/export?checkpoint={checkpoint}',
-                headers={'Authorization':'Bearer '+token, 'X-ACAN-Workspace':workspace}), timeout=60)
+            upstream = urlopen(Request(endpoint+f'/jobs/{identifier}/export?checkpoint={checkpoint}'+(f'&format={form}' if form else ''),
+                headers={'Authorization':'Bearer '+token, 'X-ACAN-Workspace':workspace}), timeout=300)
         except (HTTPError, URLError):
             return jsonify(error='Export non disponibile: aggiorna il worker e verifica il checkpoint.'), 400
         def chunks():
@@ -916,6 +922,21 @@ def register(app):
             return 'Scaricato: pesi appresi, struttura e riferimento esatto alla base. I pesi originali saranno scaricati al primo caricamento.';
         } catch(error) {return 'Export non disponibile: '+error.message;}
     }""", Output('lm-export-status','children'), Input('lm-export-model','n_clicks'),
+       State('lm-workspace','data'), State('lm-job','value'), State('lm-checkpoint','value'), prevent_initial_call=True)
+
+    app.clientside_callback("""async function(click, workspace, job, checkpoint) {
+        if (!click) return window.dash_clientside.no_update;
+        if (!workspace || !job || !checkpoint) return 'Scegli un progetto e un checkpoint.';
+        try {
+            const response = await fetch('/generative-export/'+encodeURIComponent(job)+'/'+encodeURIComponent(checkpoint)+'?format=huggingface',
+                {headers:{'X-ACAN-Workspace':workspace}});
+            if (!response.ok) throw new Error((await response.json()).error);
+            const url = URL.createObjectURL(await response.blob());
+            const link = document.createElement('a'); link.href=url; link.download='acan-huggingface-'+checkpoint+'.zip';
+            document.body.appendChild(link); link.click(); link.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
+            return 'Scaricato: estrai la cartella, rileggi README.md (fonti, licenze, misure) e caricala su Hugging Face.';
+        } catch(error) {return 'Export non disponibile: '+error.message;}
+    }""", Output('lm-export-hf-status','children'), Input('lm-export-hf','n_clicks'),
        State('lm-workspace','data'), State('lm-job','value'), State('lm-checkpoint','value'), prevent_initial_call=True)
 
     app.clientside_callback('''function(tab, workspace) {
