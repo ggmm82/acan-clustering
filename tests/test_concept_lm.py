@@ -42,6 +42,15 @@ class DocumentMemoryTests(unittest.TestCase):
                 expected = (len(earlier), sum(ids[u] == ids[t] for u in earlier), len({ids[u] for u in earlier}))
                 self.assertEqual(tuple(fast[:, t]), expected)
 
+    def test_an_answer_ends_where_a_new_turn_would_start(self):
+        # A model that has not learned to close its turn opens the next one: «<|im_start|>assistant» shown as
+        # «assistantassistant» once the markers are dropped. The answer ends there.
+        from acan.lm.probes import stop_tokens
+        class Tokens:
+            eos_token_id, unk_token_id = 0, 3
+            convert_tokens_to_ids = staticmethod({'<|im_start|>': 1, '<|im_end|>': 2}.get)
+        self.assertEqual(sorted(stop_tokens(Tokens())), [0, 1, 2])
+
     def test_checkpoints_of_removed_models_say_so(self):
         for arrays in ({'level0.keys': np.zeros(1)}, {'text_graph': np.zeros(1)}):
             with self.assertRaisesRegex(ValueError, 'non fa più parte del prodotto'):
