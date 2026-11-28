@@ -280,3 +280,30 @@ def readable(tokenizer, ids):
     for marker in ('<|endoftext|>', '<|im_start|>', '<|im_end|>'):
         text = text.replace(marker, '')
     return text
+
+
+KINDS = ('testo', 'segni del dialogo', 'immagini e video', 'audio')
+
+
+def token_kinds(tokenizer):
+    """What every token of the vocabulary is: 0 text, 1 conversation markers, 2 pixels of images and videos (with
+    their markers), 3 sound samples (with their markers). The error is then measured apart for each kind."""
+    import numpy as np
+    kinds = np.zeros(len(tokenizer), np.int8)
+    def mark(tokens, kind):
+        for token in tokens:
+            index = tokenizer.convert_tokens_to_ids(token)
+            if isinstance(index, int) and index != tokenizer.unk_token_id and 0 <= index < len(kinds):
+                kinds[index] = kind
+    mark(['<|endoftext|>', '<|im_start|>', '<|im_end|>'], 1)
+    mark(['<|image|>', '<|/image|>', '<|row|>', '<|video|>', '<|/video|>', '<|frame|>'] + [f'<|p{n}|>' for n in range(256)], 2)
+    mark(['<|audio|>', '<|/audio|>', '<|audio4|>', '<|/audio4|>'] + [f'<|a{n}|>' for n in range(256)], 3)
+    return kinds
+
+
+def error_by_kind(values, targets, kinds):
+    """Mean error (nats) and share of the tokens of every kind present, from the log-probabilities of the targets."""
+    import numpy as np
+    values, kind = np.asarray(values, np.float64), kinds[np.asarray(targets, np.int64)]
+    return {KINDS[k]: dict(nll=float(-values[kind == k].mean()), share=float((kind == k).mean()))
+            for k in range(len(KINDS)) if (kind == k).any()}

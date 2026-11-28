@@ -513,6 +513,10 @@ class StructureProgressTest(unittest.TestCase):
         self.assertIn('Perplessità', text)
         self.assertIn('141', text)
         self.assertIn('19 di 32 · 44 di 64 · 25 di 64', text)
+        measured['nll_by_kind'] = {'testo': dict(nll=3.4, share=.6), 'segni del dialogo': dict(nll=.3, share=.02),
+                                   'audio': dict(nll=1.9, share=.38)}                # the error of each kind of token
+        self.assertIn('per tipo: testo 3.40 (60% dei token), audio 1.90 (38% dei token)',
+                      str(concept_summary(measured, dict(total_steps=45), status='running')))
         del measured['concepts_used']                     # a job saved before: read from its description of the concepts
         measured['network_concepts'] = [dict(layer=1, active=[18., 20.], tied=None, concepts=[]),
                                         dict(layer=2, active=[40., 48.], tied=None, concepts=[])]

@@ -42,6 +42,15 @@ class DocumentMemoryTests(unittest.TestCase):
                 expected = (len(earlier), sum(ids[u] == ids[t] for u in earlier), len({ids[u] for u in earlier}))
                 self.assertEqual(tuple(fast[:, t]), expected)
 
+    def test_an_answer_ends_where_a_new_turn_would_start(self):
+        # A model that has not learned to close its turn opens the next one: «<|im_start|>assistant» shown as
+        # «assistantassistant» once the markers are dropped. The answer ends there.
+        from acan.lm.probes import stop_tokens
+        class Tokens:
+            eos_token_id, unk_token_id = 0, 3
+            convert_tokens_to_ids = staticmethod({'<|im_start|>': 1, '<|im_end|>': 2}.get)
+        self.assertEqual(sorted(stop_tokens(Tokens())), [0, 1, 2])
+
     def test_checkpoints_of_removed_models_say_so(self):
         for arrays in ({'level0.keys': np.zeros(1)}, {'text_graph': np.zeros(1)}):
             with self.assertRaisesRegex(ValueError, 'non fa più parte del prodotto'):
@@ -158,6 +167,38 @@ class ConceptLongLearningTests(unittest.TestCase):
                                          capture_output=True, text=True, timeout=120)
                 self.assertEqual(written.returncode, 0, written.stderr[-2000:])
                 self.assertTrue(written.stdout.strip())
+            # The folder for the Hugging Face Hub: used as any model of the Hub (AutoModelForCausalLM, generate) without the
+            # acan package, named neutrally, with model card, clean configuration and the tokenizer at the top.
+            from acan.lm.exporting import export_huggingface
+            hub = zipfile.ZipFile(export_huggingface(store, done, done['checkpoint']))
+            names = set(hub.namelist())
+            self.assertTrue({'README.md', 'config.json', 'generation_config.json', 'concepts.safetensors', 'tokenizer.json',
+                             'tokenizer_config.json', 'modeling_concept_lm.py', 'configuration_concept_lm.py', 'concept_net.py'} <= names)
+            texts = {name: hub.read(name).decode() for name in names if name.endswith(('.md', '.json', '.py')) and 'tokenizer' not in name}
+            self.assertFalse([name for name, text in texts.items() if 'acan' in text.lower()])   # not called acan anywhere
+            card = texts['README.md']
+            self.assertTrue(card.startswith('---\nlicense: other'))                 # an uploaded text: licence to check by hand
+            self.assertIn('source and licence not recorded', card)
+            self.assertIn('**test** error', card)
+            hub_config = json.loads(texts['config.json'])
+            self.assertEqual((hub_config['model_type'], hub_config['auto_map']['AutoModelForCausalLM']),
+                             ('concept-lm', 'modeling_concept_lm.ConceptLMForCausalLM'))
+            self.assertIn('chat_template', json.loads(hub.read('tokenizer_config.json')))
+            with tempfile.TemporaryDirectory() as unpacked:
+                hub.extractall(unpacked)
+                import subprocess, sys
+                code = ("import sys, numpy as np; from transformers import AutoModelForCausalLM, AutoTokenizer; "
+                        "m = AutoModelForCausalLM.from_pretrained('.', trust_remote_code=True); t = AutoTokenizer.from_pretrained('.'); "
+                        "x = t('<|im_start|>user\\nCiao!<|im_end|>\\n<|im_start|>assistant\\n', return_tensors='pt')['input_ids']; "
+                        "out = m.generate(x, max_new_tokens=8, do_sample=False); assert out.shape[1] > x.shape[1]; "
+                        "p = m(x).logits[0, -1].softmax(-1); assert abs(float(p.sum()) - 1) < 1e-3; "
+                        "assert not [n for n in sys.modules if n == 'acan' or n.startswith('acan.')], 'uses the acan package'")
+                import os                                          # transformers copies the model's code to its cache: a writable one
+                cache = Path(unpacked)/'.cache'
+                env = dict(os.environ, HF_HOME=str(cache), HF_MODULES_CACHE=str(cache/'modules'), HF_HUB_OFFLINE='1')
+                written = subprocess.run([sys.executable, '-c', code], cwd=unpacked, capture_output=True, text=True, timeout=300,
+                                         env=env)
+                self.assertEqual(written.returncode, 0, written.stderr[-3000:])
             # The next text of the queue starts from the network of the first and goes on learning.
             config = validate_options(dict(base, corpus_id=second['id'], name='Coda · 2', warm_start=True))
             config['series'] = dict(id='q', order=1, variant='queue', label='due')

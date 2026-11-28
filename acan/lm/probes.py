@@ -25,10 +25,13 @@ def chat_prompt(question):
 
 
 def stop_tokens(tokenizer):
+    """Where an answer ends: the end of the text, the end of the turn, or the start of a new turn (a model that has
+    not learned to close its turn opens the next one, «<|im_start|>assistant», and would write it again and again)."""
     ids = [tokenizer.eos_token_id]
-    end = tokenizer.convert_tokens_to_ids('<|im_end|>')
-    if isinstance(end, int) and end != tokenizer.unk_token_id:
-        ids.append(end)
+    for marker in ('<|im_end|>', '<|im_start|>'):
+        value = tokenizer.convert_tokens_to_ids(marker)
+        if isinstance(value, int) and value != tokenizer.unk_token_id:
+            ids.append(value)
     return [value for value in ids if value is not None]
 
 

@@ -324,6 +324,14 @@ def _candidate_label(kind):
             'strato': 'uno strato in più', "com'è": "la rete com'è"}.get(kind, kind)
 
 
+def _by_kind(by_kind):
+    """The error of each kind of token, when there is more than one: text apart from images, videos and audio."""
+    shown = {kind: value for kind, value in (by_kind or {}).items() if kind != 'segni del dialogo'}
+    if len(shown) < 2:
+        return ''
+    return ' · per tipo: ' + ', '.join(f"{kind} {value['nll']:.2f} ({value['share']:.0%} dei token)" for kind, value in shown.items())
+
+
 def _concepts_used_tile(used, shape):
     """How many concepts each level really uses (effective number, mean over its heads) out of those it has:
     near the total, the level could use more; far below, it already has enough."""
@@ -444,7 +452,8 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
               f'un passo è {piece:,} token' + ('' if speed else ' · nel passo in corso' if network and network.get('speed')
                                                   else ' · si misura mentre la rete impara')),
         _tile('Errore su testo mai visto', '—' if error is None else f'{error:.3f}',
-              'NLL di validazione' + (f' · prima di leggere {before:.3f}' if before is not None else '')),
+              'NLL di validazione' + (f' · prima di leggere {before:.3f}' if before is not None else '')
+              + _by_kind(progress.get('nll_by_kind'))),
         _tile('Perplessità', '—' if not perplexity else f'{perplexity:,.0f}',
               'fra quanti token il modello esita in media, sul testo mai visto'
               + (f' · prima di leggere {math.exp(before):,.0f}' if before is not None and before < 700 else '')),
