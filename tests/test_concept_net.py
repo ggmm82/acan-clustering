@@ -385,6 +385,40 @@ class NetTextTest(unittest.TestCase):
 
 
 @unittest.skipUnless(TORCH, 'torch is needed to learn the network')
+class NetTextPathTest(unittest.TestCase):
+    def test_the_path_of_an_answer_says_memory_levels_words_and_concepts(self):
+        from acan.lm.net_text import NetText
+        from acan.vis.long_training import answer_walk_view
+        rng = np.random.default_rng(3)
+        eos = 40
+        ids = np.array([int(t) for _ in range(40) for t in list(rng.integers(1, 39, 10)) + [eos]])
+        model = NetText(41, eos, 1 << 22, max_context=32, network=dict(dim=8, layers=2, heads=2, concepts=[2, 4], window=1,
+                                                                       view_window=4, passes=False))
+        model.add(ids, ids, [ids[:110]], lambda: None)
+        prompt = [int(t) for t in ids[:6]]
+        produced = model.generate(prompt, 5, temperature=0.)
+        path = model.explain(prompt, produced)
+        self.assertEqual(len(path['steps']), len(produced))
+        step = path['steps'][0]
+        self.assertEqual(step['position'], len(prompt))
+        self.assertTrue(0 <= step['memory']['weight'] <= 1)
+        self.assertTrue(all(0 <= j < len(prompt) for j, _ in step['memory']['sources']))   # copies come from the prompt
+        self.assertEqual([level['level'] for level in step['levels']], [1, 2])
+        self.assertTrue(all(j < step['position'] for level in step['levels'] for j, _ in level.get('looked', [])))
+        # the generation's own log-probability of every token is the one the path reports
+        cursor = model.prediction_cursor(prompt)
+        for n, token in enumerate(produced):
+            self.assertAlmostEqual(np.log(cursor.distribution()[token]), path['steps'][n]['logp'], places=5)
+            cursor.observe(token, remember=False)
+        data = dict(step=1, questions=['?'], paths=[path])           # the walk of the page, from a token to a concept
+        for trail in ([f'token:{len(prompt)}'], [f'token:{len(prompt)}', f'level:{len(prompt)}:1'],
+                      [f'token:{len(prompt)}', f'level:{len(prompt)}:1', f'view:{len(prompt)}:1:1'],
+                      [f'memory:{len(prompt)}']):
+            head, figure, detail = answer_walk_view(data, dict(question=0, trail=trail))
+            self.assertTrue(head is not None and figure is not None and detail is not None)
+
+
+@unittest.skipUnless(TORCH, 'torch is needed to learn the network')
 class NetTextGrowthTest(unittest.TestCase):
     def test_growth_starts_with_one_head_and_can_select_more_heads(self):
         from unittest.mock import patch

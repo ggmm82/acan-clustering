@@ -131,6 +131,8 @@ def create_app(root=None, token=None):
             detailed=not summaries or job['id']==selected
             if not detailed:
                 job['progress']={key:job['progress'][key] for key in ('step','tokens_trained','validation_nll','best_validation_nll','tokens_per_second','graft') if key in job['progress']}
+            else:                                               # polled every few seconds: the graph of concepts goes with the footprint
+                job['progress']={key:value for key,value in job['progress'].items() if key!='network_graph'}
             job['snapshots'] = snapshots(store, job) if detailed else []
             job['history'] = [{key:row[key] for key in ('step','training_nll','validation_nll') if key in row}
                               for row in store.history(job['id'],request.workspace,overview=True)] if detailed else []
@@ -287,6 +289,28 @@ def create_app(root=None, token=None):
         config['series'] = dict(id=queue, order=order, variant='queue', label=corpus['name'])
         return config
 
+    @app.post('/queues/<queue>/growth')
+    def queue_growth(queue):
+        """Growth options of a queue while it learns: whether it grows, which growths may race and the ceilings.
+        They apply to the text learning now, from its next piece, and to the texts still to learn."""
+        from .research_options import validate_options
+        payload = request.get_json() or {}
+        members = [job for job in store.jobs(request.workspace) if (job['config'].get('series') or {}).get('id') == queue]
+        if not members:
+            raise KeyError(queue)
+        keys = ('concept_network_growth', 'concept_growth_kinds', 'concept_max_dim', 'concept_max_layers',
+                'concept_max_heads', 'concept_max_concepts')
+        changed = []
+        for job in members:
+            if job['status'] == 'completed':
+                continue
+            config = dict(job['config'], **{key: payload[key] for key in keys if key in payload})
+            checked = validate_options({key: value for key, value in config.items() if key != 'series'})
+            changed.append((job['id'], dict(checked, series=config['series'])))   # nothing changes if an option is invalid
+        for identifier, config in changed:
+            store.set_config(identifier, config)
+        return jsonify(changed=len(changed))
+
     @app.post('/series')
     def create_series():
         """Several projects on the same text, run one after the other by the worker."""
@@ -332,7 +356,9 @@ def create_app(root=None, token=None):
         latest = root/job['checkpoint'] if job['checkpoint'] else None
         corpus = store.directory('corpora', job['config']['corpus_id'])/'corpus'
         disk = shutil.disk_usage(store.root)
-        return jsonify(progress=job['progress'], config=job['config'], status=job['status'],
+        progress = job['progress'] if request.args.get('graph') == '1' else {   # the graph of concepts (megabytes) only when asked
+            key: value for key, value in (job['progress'] or {}).items() if key != 'network_graph'}
+        return jsonify(progress=progress, config=job['config'], status=job['status'],
                        checkpoint_bytes=size(latest) if latest and latest.exists() else 0,
                        checkpoints={kind: dict(count=len(paths), bytes=sum(size(path) for path in paths)) for kind, paths in kinds.items()},
                        token_bytes=sum(path.stat().st_size for path in directory.glob('*.bin')),
@@ -344,6 +370,12 @@ def create_app(root=None, token=None):
         from .probes import read_answers
         store.job(identifier, request.workspace)
         return jsonify(read_answers(store.directory('jobs', identifier)))
+
+    @app.get('/jobs/<identifier>/answer-paths')
+    def job_answer_paths(identifier):
+        store.job(identifier, request.workspace)
+        path = store.directory('jobs', identifier)/'answer_paths.json'
+        return jsonify(json.loads(path.read_text(encoding='utf-8')) if path.exists() else {})
 
     @app.get('/dialogue-data')
     def dialogue_catalog():
