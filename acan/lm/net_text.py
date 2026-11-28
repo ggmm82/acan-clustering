@@ -61,7 +61,8 @@ class NetText:
         raw = limits or {}
         return {k: max(0, int(raw.get(k) or 0)) for k in ('max_dim', 'max_layers', 'max_heads', 'max_concepts')}
 
-    def __init__(self, vocabulary, eos, budget, max_context=512, network=None, growth=False, weight=None, limits=None):
+    def __init__(self, vocabulary, eos, budget, max_context=512, network=None, growth=False, weight=None, limits=None,
+                 start_dim=0):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), int(eos), int(budget)
         self.max_context = int(max_context)
         self.growth = bool(growth)
@@ -69,6 +70,8 @@ class NetText:
         self.weight = None if weight is None else np.asarray(weight, np.float32)
         if self.growth and network is None and self.vocabulary >= 2048:
             base = dict(self.LANGUAGE_GROWING, concepts=list(self.LANGUAGE_GROWING['concepts']))
+            if start_dim and int(start_dim) > 0:                 # the width it starts from, if chosen; growth may widen it
+                base['dim'] = int(start_dim)
             if 0 < self.limits['max_dim'] < base['dim']:
                 base['dim'] = self.limits['max_dim']
             if 0 < self.limits['max_heads'] < base['heads']:

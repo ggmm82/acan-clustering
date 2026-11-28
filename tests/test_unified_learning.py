@@ -370,6 +370,19 @@ class GradualTabularEMTest(unittest.TestCase):
                              limits=dict(max_dim=16))
         eight_heads = types.SimpleNamespace(config=dict(dim=16, heads=8, concepts=[4, 4]), layers=[None, None])
         self.assertIn('teste', only_width._allowed_kinds(eight_heads)[0])
+        # The width it starts from, chosen apart from the ceiling: it starts there and can still widen.
+        narrow = NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_dim=64), start_dim=16)
+        self.assertEqual(narrow.network['dim'], 16)
+        self.assertIn('larghezza', narrow._allowed_kinds(types.SimpleNamespace(
+            config=dict(dim=16, heads=4, concepts=[16, 64]), layers=[None, None]))[0])
+        self.assertEqual(NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_dim=64)).network['dim'], 32)
+        from acan.lm.research_options import validate_options
+        from acan.vis.long_training import profile
+        queue = dict(profile(False), name='coda', passes=1., save_steps=10, concept_start_dim=16)
+        self.assertEqual(validate_options(queue)['concept_start_dim'], 16)
+        for bad in (12, 4, 128):                                  # not a multiple of 8, too small, above the ceiling
+            with self.assertRaisesRegex(ValueError, 'arghezza iniziale'):
+                validate_options(dict(queue, concept_start_dim=bad))
         deep = types.SimpleNamespace(config=dict(dim=16, heads=2, concepts=[1024] * 6), layers=[None] * 6)
         kinds, layer = only_width._allowed_kinds(deep)                # nor on layers (6) or concepts (1024)
         self.assertIn('strato', kinds)

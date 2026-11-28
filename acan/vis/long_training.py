@@ -31,7 +31,7 @@ def profile(cuda, size=None):
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='auto',
                 chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000,
-                concept_max_dim=64, concept_max_layers=0, concept_max_heads=0, concept_max_concepts=0)
+                concept_max_dim=64, concept_max_layers=0, concept_max_heads=0, concept_max_concepts=0, concept_start_dim=0)
 
 
 def queues(jobs):
@@ -488,7 +488,8 @@ def concept_footprint_view(item):
     levels = [heads * concepts for heads, concepts in shape['groups']] if shape else progress.get('concepts_per_level') or []
     size = shape.get('bytes', progress.get('statistics_bytes')) if shape else None
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
-    cap_parts = [f"{label} {int(config.get(key) or 0) or 'illimitato'}" for label, key in (
+    cap_parts = ([f"larghezza iniziale {int(config['concept_start_dim'])}"] if config.get('concept_start_dim') else []) + [
+        f"{label} {int(config.get(key) or 0) or 'illimitato'}" for label, key in (
         ('larghezza', 'concept_max_dim'), ('livelli', 'concept_max_layers'),
         ('gruppi', 'concept_max_heads'), ('concetti/gruppo', 'concept_max_concepts'))]
     layer_p = (shape or {}).get('layer_parameters') or 0
@@ -932,12 +933,15 @@ layout = html.Div([
                         "mantenendo il modello decine di volte più leggero di un LLM (fino a 64 coordinate, senza matrici quadratiche).",
                         className='text-muted d-block mb-2'),
              dbc.Row([
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza iniziale'), dbc.Input(id='lm-long-start-dim', type='number', value=0, min=0, max=2048, step=8)]), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=64, min=0, max=2048, step=16)]), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=0, min=0, max=32, step=1)]), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-max-heads', type='number', value=0, min=0, max=64, step=1)]), md=3, className='mb-1'),
                  dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=0, min=0, max=1024, step=1)]), md=3, className='mb-1'),
              ], className='mb-1'),
-             html.Small("Tetti hardware facoltativi: «0» = automatico dai dati senza tetto utente; un valore > 0 impone un massimale esplicito "
+             html.Small("Larghezza iniziale: da quanti numeri parte lo stato della rete (multiplo di 8; «0» = 32), poi cresce se vince le gare, "
+                        "fino alla larghezza massima. Conta per il primo testo: i successivi ripartono dalla rete appresa. "
+                        "Tetti facoltativi: «0» = automatico dai dati senza tetto utente; un valore > 0 impone un massimale esplicito "
                         "(o fissa direttamente la piramide iniziale se si disattiva la crescita).",
                         className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
@@ -1173,10 +1177,10 @@ def register(app):
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
                   State('lm-long-length', 'value'), State('lm-long-growth', 'value'),
                   State('lm-long-max-dim', 'value'), State('lm-long-max-layers', 'value'),
-                  State('lm-long-max-heads', 'value'), State('lm-long-max-concepts', 'value'),
+                  State('lm-long-max-heads', 'value'), State('lm-long-max-concepts', 'value'), State('lm-long-start-dim', 'value'),
                   prevent_initial_call=True)
     def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, growth=False,
-              max_dim=0, max_layers=0, max_heads=0, max_concepts=0):
+              max_dim=0, max_layers=0, max_heads=0, max_concepts=0, start_dim=0):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
@@ -1187,6 +1191,7 @@ def register(app):
                         concept_max_layers=max(0, int(max_layers or 0)),
                         concept_max_heads=max(0, int(max_heads or 0)),
                         concept_max_concepts=max(0, int(max_concepts or 0)),
+                        concept_start_dim=max(0, int(start_dim or 0)),
                         probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             first_job = (result.get('jobs') or [{}])[0].get('id', dash.no_update)
