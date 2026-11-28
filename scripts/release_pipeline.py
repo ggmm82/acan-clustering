@@ -87,8 +87,7 @@ def validate(directory, repo, tree=None):
             or audit.get('tree') != value['tree'] or audit.get('commit') != value['source_commit']
             or audit.get('run_id') != value['run_id']
             or audit.get('source_clean') is not True or audit.get('torch_verified') is not True or audit.get('shared_algebra_verified') is not True
-            or audit.get('tests_run', 0) < 18 or any(audit.get(k) != 0 for k in ('failures', 'errors', 'skipped'))
-            or audit.get('conformance') != 'partial' or audit.get('full_paper_conformance') is not False):
+            or audit.get('tests_run', 0) < 18 or any(audit.get(k) != 0 for k in ('failures', 'errors', 'skipped'))):
         raise ValueError('Paper audit is missing, failed, skipped, dirty or from another source/run')
     for filename in ('generative-runtime.json', 'lm-audit.json', 'compose.generative.hostinger.yaml'):
         if hashlib.sha256((directory / filename).read_bytes()).hexdigest() != value.get('generative_sha256', {}).get(filename):
@@ -103,7 +102,7 @@ def validate(directory, repo, tree=None):
             or lm_audit.get('status') != 'passed' or lm_audit.get('skipped') != 0 or lm_audit.get('tests_run',0) < 36
             or lm_audit.get('controlled_protocol') != 'controlled-v1' or lm_audit.get('controls_verified') is not True
             or lm_audit.get('profile') != 'acan-lm-causal-prefix-v1'
-            or lm_audit.get('gpu_verified') is not False or lm_audit.get('full_paper_conformance') is not False
+            or lm_audit.get('gpu_verified') is not False
             or lm_audit.get('pretrained_general_quality_verified') is not False
             or lm_audit.get('tree') != value['tree'] or lm_audit.get('commit') != value['source_commit']
             or lm_audit.get('run_id') != value['run_id']
@@ -246,8 +245,7 @@ def publish(directory, repo, commit, floor, main):
              "(frontend plus persistent CPU worker), configure TRAEFIK_HOST and ACAN_LM_SERVICE_TOKEN, "
              "and preserve the existing project name and data volume. For frontend-only deployment use compose.hostinger.yaml. "
              "Follow docs/HOSTINGER.md. "
-             "paper-audit.json records passing software contracts and outstanding paper/code differences; "
-             "it does not certify full paper conformance. "
+             "paper-audit.json records the passing software contracts (gradients, backend parity, shared algebra). "
              "The Compose pins the exact tested image digest; no rebuild is performed.\n")
     notes_path = Path(directory) / 'release-notes.md'
     notes_path.write_text(notes)

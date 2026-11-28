@@ -1,5 +1,6 @@
 """Verification of the single learning rule uniting tabular EM and generative concept networks."""
 import importlib.util
+import types
 import unittest
 
 import numpy as np
@@ -363,6 +364,53 @@ class GradualTabularEMTest(unittest.TestCase):
         self.assertTrue(capped.races)
         self.assertEqual({c['choice'] for c in capped.races[0]['candidates']}, {"com'è", 'concetti'})
 
+        # Heads have no hidden ceiling: with only the width capped, doubling 8 heads stays a candidate.
+        only_width = NetText(31, eos, 1 << 22, max_context=32, growth=True,
+                             network=dict(dim=16, layers=2, heads=2, concepts=4, window=1, grouped=False, passes=False),
+                             limits=dict(max_dim=16))
+        eight_heads = types.SimpleNamespace(config=dict(dim=16, heads=8, concepts=[4, 4]), layers=[None, None])
+        self.assertIn('teste', only_width._allowed_kinds(eight_heads)[0])
+        # Growths switched off from the page do not race; the trainer reads the options of the queue at every piece.
+        from acan.lm.concept_trainer import apply_growth_options
+        apply_growth_options(only_width, dict(concept_network_growth=True, concept_growth_kinds=['concetti'], concept_max_dim=16))
+        kinds, layer = only_width._allowed_kinds(types.SimpleNamespace(config=dict(dim=16, heads=8, concepts=[4, 4]), layers=[None, None]))
+        self.assertEqual(kinds, ("com'è", 'concetti'))
+        apply_growth_options(only_width, dict(concept_network_growth=True, concept_growth_kinds=['teste']))
+        kinds, layer = only_width._allowed_kinds(types.SimpleNamespace(config=dict(dim=16, heads=8, concepts=[4, 4]), layers=[None, None]))
+        self.assertEqual((kinds, layer), (("com'è", 'teste'), None))
+        apply_growth_options(only_width, dict(concept_network_growth=False))
+        self.assertFalse(only_width.growth)
+
+        # The width it starts from, chosen apart from the ceiling: it starts there and can still widen.
+        narrow = NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_dim=64), start_dim=16)
+        self.assertEqual(narrow.network['dim'], 16)
+        self.assertIn('larghezza', narrow._allowed_kinds(types.SimpleNamespace(
+            config=dict(dim=16, heads=4, concepts=[16, 64]), layers=[None, None]))[0])
+        self.assertEqual(NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_dim=64)).network['dim'], 32)
+        small = NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_dim=64),
+                        start=dict(dim=16, layers=3, heads=2, concepts=8))     # every starting size chosen
+        self.assertEqual({k: small.network[k] for k in ('dim', 'layers', 'heads', 'concepts')},
+                         dict(dim=16, layers=3, heads=2, concepts=[8, 32, 32]))
+        capped = NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_concepts=16), start=dict(concepts=8))
+        self.assertEqual(capped.network['concepts'], [8, 16])                    # the ceiling still holds
+        from acan.lm.research_options import validate_options
+        from acan.vis.long_training import profile
+        queue = dict(profile(False), name='coda', passes=1., save_steps=10, concept_start_dim=16)
+        self.assertEqual(validate_options(queue)['concept_start_dim'], 16)
+        for bad in (12, 4, 128):                                  # not a multiple of 8, too small, above the ceiling
+            with self.assertRaisesRegex(ValueError, 'arghezza iniziale'):
+                validate_options(dict(queue, concept_start_dim=bad))
+        self.assertEqual(validate_options(dict(queue, concept_start_layers=3, concept_start_heads=2,
+                                               concept_start_concepts=8))['concept_start_heads'], 2)
+        for bad in (dict(concept_start_heads=3), dict(concept_start_layers=40), dict(concept_start_concepts=1),
+                    dict(concept_start_heads=8, concept_max_heads=4)):
+            with self.assertRaises(ValueError):
+                validate_options(dict(queue, **bad))
+        deep = types.SimpleNamespace(config=dict(dim=16, heads=2, concepts=[1024] * 6), layers=[None] * 6)
+        kinds, layer = only_width._allowed_kinds(deep)                # nor on layers (6) or concepts (1024)
+        self.assertIn('strato', kinds)
+        self.assertIn('concetti', kinds)
+
         saturated = NetText(31, eos, 1 << 22, max_context=32, growth=True,
                             network=dict(dim=16, layers=2, heads=2, concepts=4, window=1, grouped=False, passes=False),
                             limits=dict(max_dim=16, max_layers=2, max_heads=2, max_concepts=4))
@@ -378,7 +426,7 @@ class GradualTabularEMTest(unittest.TestCase):
         restored = from_checkpoint_arrays(saturated.arrays())
         self.assertEqual(restored._saved_steps, 12_345)
         self.assertAlmostEqual(restored._saved_lr, 1.5e-3, places=6)
-        self.assertLessEqual(restored.race_gap, NetText.MAX_RACE_GAP * 4)
+        self.assertLessEqual(restored.race_gap, 1 << 60)                # no ceiling on the gap, but int64 safe
 
         restored.prepare_warm_start(growth=True, limits=dict(max_dim=32, max_layers=3, max_heads=4, max_concepts=16))
         self.assertEqual((restored.read, restored.next_race, restored.race_gap), (0, 0, 0))

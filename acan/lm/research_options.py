@@ -6,7 +6,7 @@ EXTRA=dict(protocol='controlled-v1',routing_profile='shared-algebra-v1',architec
            early_stop_patience=3,early_stop_min_delta=.01,validation_batches=8,cp_weight=0.,
            milestone_steps=0,chat_probes=False,probe_prompts=[],auto_resume=False,passes=0,warm_start=False,native_size='micro',vocabulary=32000,native_attention='concepts',
            concept_memory_mb=0,concept_piece=1_000_000,concept_context=512,concept_network=False,concept_network_only=False,concept_network_growth=True,
-           concept_max_dim=0,concept_max_layers=0,concept_max_heads=0,concept_max_concepts=0)
+           concept_max_dim=0,concept_max_layers=0,concept_max_heads=0,concept_max_concepts=0,concept_start_dim=0,concept_start_layers=0,concept_start_heads=0,concept_start_concepts=0,concept_growth_kinds=['larghezza','strato','concetti','teste'])
 # Options of the earlier generative models: accepted from older clients and ignored.
 RETIRED=('context_refinement','concept_depth','concept_document','concept_paths')
 
@@ -57,6 +57,25 @@ def validate_options(options):
         value=extra[key]
         if isinstance(value,bool) or not isinstance(value,int) or (value!=0 and not lo<=value<=hi):
             raise ValueError('Parametro non valido: '+key)
+    kinds=extra['concept_growth_kinds']
+    if not isinstance(kinds,list) or any(kind not in ('larghezza','strato','concetti','teste') for kind in kinds):
+        raise ValueError('Crescite ammesse: larghezza, strato, concetti, teste.')
+    start=extra['concept_start_dim']                    # the width the network starts from (0: automatic, 32)
+    if isinstance(start,bool) or not isinstance(start,int) or (start!=0 and not (8<=start<=2048 and start%8==0)):
+        raise ValueError('Larghezza iniziale: 0 (automatica) oppure un multiplo di 8 fra 8 e 2048.')
+    if start and extra['concept_max_dim'] and start>extra['concept_max_dim']:
+        raise ValueError('La larghezza iniziale non può superare la larghezza massima.')
+    for key,lo,hi,ceiling,label in [('concept_start_layers',1,32,'concept_max_layers','Strati iniziali'),
+                                    ('concept_start_heads',1,64,'concept_max_heads','Teste iniziali'),
+                                    ('concept_start_concepts',2,1024,'concept_max_concepts','Concetti iniziali')]:
+        value=extra[key]
+        if isinstance(value,bool) or not isinstance(value,int) or (value!=0 and not lo<=value<=hi):
+            raise ValueError(f'{label}: 0 (automatico) oppure da {lo} a {hi}.')
+        if value and extra[ceiling] and value>extra[ceiling]:
+            raise ValueError(f'{label}: non può superare il massimo.')
+    heads=extra['concept_start_heads'] or 4
+    if (start or 32)%heads:
+        raise ValueError('La larghezza iniziale deve essere divisibile per le teste iniziali.')
     if any(not isinstance(extra[key],bool) for key in ('chat_probes','auto_resume','warm_start','concept_network','concept_network_only','concept_network_growth')):
         raise ValueError('Parametro non valido: chat_probes, auto_resume, warm_start, concept_network, concept_network_only o concept_network_growth')
     if isinstance(extra['passes'],bool) or not isinstance(extra['passes'],(int,float)) or not 0<=extra['passes']<=1000:

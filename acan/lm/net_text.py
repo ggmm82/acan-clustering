@@ -61,14 +61,29 @@ class NetText:
         raw = limits or {}
         return {k: max(0, int(raw.get(k) or 0)) for k in ('max_dim', 'max_layers', 'max_heads', 'max_concepts')}
 
-    def __init__(self, vocabulary, eos, budget, max_context=512, network=None, growth=False, weight=None, limits=None):
+    def __init__(self, vocabulary, eos, budget, max_context=512, network=None, growth=False, weight=None, limits=None,
+                 start_dim=0, start=None):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), int(eos), int(budget)
         self.max_context = int(max_context)
         self.growth = bool(growth)
         self.limits = self._clean_limits(limits)
+        self.kinds_allowed = None                              # growths that may race (None: all); can change while it learns
         self.weight = None if weight is None else np.asarray(weight, np.float32)
         if self.growth and network is None and self.vocabulary >= 2048:
             base = dict(self.LANGUAGE_GROWING, concepts=list(self.LANGUAGE_GROWING['concepts']))
+            # The network it starts from, where chosen (0: as above); growth may enlarge it up to the ceilings.
+            start = dict(start or {})
+            if start_dim and int(start_dim) > 0:
+                start.setdefault('dim', int(start_dim))
+            if int(start.get('dim') or 0) > 0:
+                base['dim'] = int(start['dim'])
+            if int(start.get('heads') or 0) > 0:
+                base['heads'] = int(start['heads'])
+            if int(start.get('layers') or 0) > 0 or int(start.get('concepts') or 0) > 0:
+                layers = int(start.get('layers') or 0) or base['layers']
+                first = int(start.get('concepts') or 0) or base['concepts'][0]
+                base['layers'] = layers                          # the pyramid: the first layer, then four times as many
+                base['concepts'] = [first] + [4 * first] * (layers - 1)
             if 0 < self.limits['max_dim'] < base['dim']:
                 base['dim'] = self.limits['max_dim']
             if 0 < self.limits['max_heads'] < base['heads']:
@@ -118,10 +133,10 @@ class NetText:
         limits = getattr(self, 'limits', None) or {}
         max_dim = int(limits.get('max_dim') or 0)
         capped = bool(max_dim or limits.get('max_layers') or limits.get('max_heads') or limits.get('max_concepts'))
-        # Capacity safety guardrails (analogous to tabular ConceptModel.max_concepts / max_levels), not requested sizes.
-        max_layers = int(limits.get('max_layers') or (6 if capped else 0))
-        max_heads = int(limits.get('max_heads') or (8 if capped else 0))
-        max_concepts = int(limits.get('max_concepts') or (1024 if capped else 0))
+        # Only the configured ceilings (0: none), no hidden ones.
+        max_layers = int(limits.get('max_layers') or 0)
+        max_heads = int(limits.get('max_heads') or 0)
+        max_concepts = int(limits.get('max_concepts') or 0)
         dim = int(network.config['dim'])
         n_layers = len(network.layers)
         heads = int(network.config['heads'])
@@ -143,6 +158,11 @@ class NetText:
             kinds.append('concetti')
         if not max_heads or 2 * heads <= max_heads:
             kinds.append('teste')
+        allowed = getattr(self, 'kinds_allowed', None)
+        if allowed is not None:                                 # the growths switched off do not race
+            kinds = [kind for kind in kinds if kind == "com'è" or kind in allowed]
+            if 'concetti' not in kinds:
+                next_layer = None
         return tuple(kinds), next_layer
 
     # ---- learning ------------------------------------------------------------------------------------
@@ -261,7 +281,7 @@ class NetText:
                 return picked, total_tok, start_idx + len(picked)
             trial_docs, trial_size, cursor = take_trial(0)
             has_rest = cursor < len(all_docs)
-            max_rounds = 2 if has_rest else self.MAX_ROUNDS     # it races again on the piece while a growth wins
+            max_rounds = 2 if has_rest else self.MAX_ROUNDS         # it races again on the piece while a growth wins
             self._race_offset = 0
             self._race_piece = len(ids) if not has_rest else max(1, int(len(ids) * trial_size / max(all_tokens, 1)))
             round_number = 1
@@ -307,7 +327,7 @@ class NetText:
             # a growth won: the next piece races again; else the next race further away, 1, 2, 4... pieces, without
             # a ceiling: a network that stops improving races sooner anyway (below)
             self.race_gap = len(ids) if grew_any else max(2 * self.race_gap, len(ids))
-            self.next_race = end + self.race_gap
+            self.next_race = end if grew_any else end + self.race_gap   # it grew: the very next piece races again
             if again and len(self.races) > first_race:
                 self._learner._keep(best, self._learner.best_scores)   # restore the stabilized winner if rereading does not help
             self._previous = self._learner.best_scores
@@ -537,6 +557,95 @@ class NetText:
             doc = np.r_[self.eos, ids[a:b]]                     # every document is read after an eos
             out[a:b] = np.log(np.maximum(self.model.net.targets(doc), 1e-300))
         return out[pos]
+
+    def explain(self, prompt, produced, decode=None, top=3):
+        """How the network wrote every token of an answer, from what verified measures can say (acan/MODEL.md):
+        the memory of the document (its weight, and the earlier tokens it copied from), every level (how much the
+        chosen token's log-probability falls when the level is closed), the earlier tokens every level's views looked
+        at, and the concepts each level's position belonged to most. Positions are indices in prompt + produced."""
+        from .concept_net import ConceptNet
+        if self.model is None or not len(produced):
+            return []
+        net = self.model.net
+        prompt, produced = [int(t) for t in prompt], [int(t) for t in produced]
+
+        def follow(reader):
+            """The chosen tokens' log-probabilities as generation reads them (own words out of the memory)."""
+            cursor = NetCursor(reader, self.eos, prompt)
+            out, memory = [], []
+            for token in produced:
+                p = cursor.distribution()
+                out.append(float(np.log(max(p[token], 1e-300))))
+                inner = cursor.cursor
+                if reader is net:
+                    if inner.keys:
+                        q = net._addresses(inner.state)[0]
+                        g, a = net._share(inner.state, np.array(inner.keys) @ q / np.sqrt(len(q)))
+                        a = np.asarray(a, float)
+                        sources = [(int(j), float(a[j])) for j in np.argsort(-a)[:top] if a[j] > .01]
+                        memory.append(dict(weight=float(g), sources=sources))
+                    else:
+                        memory.append(dict(weight=0., sources=[]))
+                cursor.observe(token, remember=False)
+            return out, memory
+
+        full, memory = follow(net)
+        closed = []
+        for i in range(net.layers):                             # every level closed in turn: what it did
+            p = dict(net.p)
+            key = f'layers.{i}.gate'
+            if key not in p:
+                closed.append(None); continue
+            p[key] = np.zeros_like(p[key])
+            closed.append(follow(ConceptNet(net.config, p))[0])
+        sequence = np.asarray([self.eos] + prompt + produced, np.int64)
+        member, after = [], []
+        net._views = []
+        finish = net._finish_tabular
+
+        def kept(*args, **kwargs):                             # the state after every level, read with the token concepts
+            state = finish(*args, **kwargs); after.append(state); return state
+        net._finish_tabular = kept
+        try:
+            net.states(sequence[:-1], member)
+            views = net._views
+        finally:
+            net._views = None
+            net._finish_tabular = finish
+        words = [decode([t]) if decode else str(t) for t in prompt + produced]
+        steps = []
+        for n, token in enumerate(produced):
+            at = len(prompt) + n                                # the position of sequence[:-1] that predicts this token
+            levels = []
+            for i in range(net.layers):
+                entry = dict(level=i + 1, effect=None if closed[i] is None else float(full[n] - closed[i][n]))
+                if i < len(after):                              # what the network would say after this level
+                    p = net.probabilities(after[i][at] @ net.p['final.weight'].T + net.p['final.bias'])[0]
+                    entry['says'] = [(decode([int(t)]) if decode else str(int(t)), float(p[t])) for t in np.argsort(-p)[:5]]
+                if i < len(views):                              # T x H x W: the last W positions, oldest first
+                    w = views[i][at].mean(0); W = len(w)
+                    looked = [(at - (W - 1 - k) - 1, float(w[k])) for k in np.argsort(-w)[:top] if at - (W - 1 - k) >= 1]
+                    entry['looked'] = [(where, weight) for where, weight in looked if weight > .05]
+                if i < len(member):
+                    t = member[i][at]                           # H x K
+                    best = np.dstack(np.unravel_index(np.argsort(-t, axis=None)[:2], t.shape))[0]
+                    entry['concepts'] = [dict(id=f'{i + 1}.{h + 1}.{k + 1}', membership=float(t[h, k])) for h, k in best]
+                    # every view's most held concept: what lights up in the graph, token after token
+                    heads = []
+                    for h in range(t.shape[0]):
+                        k = int(np.argmax(t[h]))
+                        column = member[i][:, h, k]             # the positions of this text that belong to it most
+                        held = [(int(q) - 1, float(column[q])) for q in np.argsort(-column)[:top] if q >= 1]
+                        looked_h = []
+                        if i < len(views):
+                            w = views[i][at][h]; W = len(w)
+                            looked_h = [(at - (W - 1 - j) - 1, float(w[j])) for j in np.argsort(-w)[:top]
+                                        if at - (W - 1 - j) >= 1 and w[j] > .05]
+                        heads.append(dict(id=f'{i + 1}.{h + 1}.{k + 1}', membership=float(t[h, k]), held=held, looked=looked_h))
+                    entry['lit'] = heads
+                levels.append(entry)
+            steps.append(dict(position=len(prompt) + n, token=words[len(prompt) + n], logp=full[n], memory=memory[n], levels=levels))
+        return dict(words=words, prompt_length=len(prompt), steps=steps)
 
     def prediction_cursor(self, ids):
         if self.model is None:

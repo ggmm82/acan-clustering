@@ -1,6 +1,6 @@
 """The concept graph on tables (profile ``concept-graph-v1``).
 
-One model, defined in acan/concept_algebra.py and docs/MODEL.md, shared with the
+One model, defined in acan/concept_algebra.py and acan/MODEL.md, shared with the
 attention layer (acan/lm/concept_attention.py):
 
 * a concept is a node holding additive statistics of its members;

@@ -1,4 +1,4 @@
-"""Numerical evidence for docs/MATHEMATICAL-FOUNDATION.md.
+"""Numerical evidence for the mathematics of acan/MODEL.md.
 
 Every check calls the production operator in acan/algebra.py (NumPy backend) or
 states a closed-form identity. Nothing here trains a model or reads user data.
