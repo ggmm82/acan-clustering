@@ -198,7 +198,7 @@ arrays = load_file(str(here/'concepts.safetensors'))
 model = from_checkpoint_arrays(arrays)
 tokenizer = AutoTokenizer.from_pretrained(str(here/'tokenizer'), local_files_only=True)
 prompt = args.testo if args.testo else f"<|im_start|>user\\n{args.domanda.strip()}<|im_end|>\\n<|im_start|>assistant\\n"
-stop = {tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids('<|im_end|>')} - {None, tokenizer.unk_token_id}
+stop = {tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids('<|im_end|>'), tokenizer.convert_tokens_to_ids('<|im_start|>')} - {None, tokenizer.unk_token_id}
 produced = model.generate(tokenizer(prompt)['input_ids'], args.token, stop=stop, temperature=args.temperatura, seed=args.seme)
 print(tokenizer.decode(produced, skip_special_tokens=True))
 """
