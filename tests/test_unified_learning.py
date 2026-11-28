@@ -387,6 +387,12 @@ class GradualTabularEMTest(unittest.TestCase):
         self.assertIn('larghezza', narrow._allowed_kinds(types.SimpleNamespace(
             config=dict(dim=16, heads=4, concepts=[16, 64]), layers=[None, None]))[0])
         self.assertEqual(NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_dim=64)).network['dim'], 32)
+        small = NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_dim=64),
+                        start=dict(dim=16, layers=3, heads=2, concepts=8))     # every starting size chosen
+        self.assertEqual({k: small.network[k] for k in ('dim', 'layers', 'heads', 'concepts')},
+                         dict(dim=16, layers=3, heads=2, concepts=[8, 32, 32]))
+        capped = NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_concepts=16), start=dict(concepts=8))
+        self.assertEqual(capped.network['concepts'], [8, 16])                    # the ceiling still holds
         from acan.lm.research_options import validate_options
         from acan.vis.long_training import profile
         queue = dict(profile(False), name='coda', passes=1., save_steps=10, concept_start_dim=16)
@@ -394,6 +400,12 @@ class GradualTabularEMTest(unittest.TestCase):
         for bad in (12, 4, 128):                                  # not a multiple of 8, too small, above the ceiling
             with self.assertRaisesRegex(ValueError, 'arghezza iniziale'):
                 validate_options(dict(queue, concept_start_dim=bad))
+        self.assertEqual(validate_options(dict(queue, concept_start_layers=3, concept_start_heads=2,
+                                               concept_start_concepts=8))['concept_start_heads'], 2)
+        for bad in (dict(concept_start_heads=3), dict(concept_start_layers=40), dict(concept_start_concepts=1),
+                    dict(concept_start_heads=8, concept_max_heads=4)):
+            with self.assertRaises(ValueError):
+                validate_options(dict(queue, **bad))
         deep = types.SimpleNamespace(config=dict(dim=16, heads=2, concepts=[1024] * 6), layers=[None] * 6)
         kinds, layer = only_width._allowed_kinds(deep)                # nor on layers (6) or concepts (1024)
         self.assertIn('strato', kinds)

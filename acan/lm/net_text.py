@@ -62,7 +62,7 @@ class NetText:
         return {k: max(0, int(raw.get(k) or 0)) for k in ('max_dim', 'max_layers', 'max_heads', 'max_concepts')}
 
     def __init__(self, vocabulary, eos, budget, max_context=512, network=None, growth=False, weight=None, limits=None,
-                 start_dim=0):
+                 start_dim=0, start=None):
         self.vocabulary, self.eos, self.budget_bytes = int(vocabulary), int(eos), int(budget)
         self.max_context = int(max_context)
         self.growth = bool(growth)
@@ -71,8 +71,19 @@ class NetText:
         self.weight = None if weight is None else np.asarray(weight, np.float32)
         if self.growth and network is None and self.vocabulary >= 2048:
             base = dict(self.LANGUAGE_GROWING, concepts=list(self.LANGUAGE_GROWING['concepts']))
-            if start_dim and int(start_dim) > 0:                 # the width it starts from, if chosen; growth may widen it
-                base['dim'] = int(start_dim)
+            # The network it starts from, where chosen (0: as above); growth may enlarge it up to the ceilings.
+            start = dict(start or {})
+            if start_dim and int(start_dim) > 0:
+                start.setdefault('dim', int(start_dim))
+            if int(start.get('dim') or 0) > 0:
+                base['dim'] = int(start['dim'])
+            if int(start.get('heads') or 0) > 0:
+                base['heads'] = int(start['heads'])
+            if int(start.get('layers') or 0) > 0 or int(start.get('concepts') or 0) > 0:
+                layers = int(start.get('layers') or 0) or base['layers']
+                first = int(start.get('concepts') or 0) or base['concepts'][0]
+                base['layers'] = layers                          # the pyramid: the first layer, then four times as many
+                base['concepts'] = [first] + [4 * first] * (layers - 1)
             if 0 < self.limits['max_dim'] < base['dim']:
                 base['dim'] = self.limits['max_dim']
             if 0 < self.limits['max_heads'] < base['heads']:
