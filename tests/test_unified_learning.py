@@ -370,6 +370,17 @@ class GradualTabularEMTest(unittest.TestCase):
                              limits=dict(max_dim=16))
         eight_heads = types.SimpleNamespace(config=dict(dim=16, heads=8, concepts=[4, 4]), layers=[None, None])
         self.assertIn('teste', only_width._allowed_kinds(eight_heads)[0])
+        # Growths switched off from the page do not race; the trainer reads the options of the queue at every piece.
+        from acan.lm.concept_trainer import apply_growth_options
+        apply_growth_options(only_width, dict(concept_network_growth=True, concept_growth_kinds=['concetti'], concept_max_dim=16))
+        kinds, layer = only_width._allowed_kinds(types.SimpleNamespace(config=dict(dim=16, heads=8, concepts=[4, 4]), layers=[None, None]))
+        self.assertEqual(kinds, ("com'è", 'concetti'))
+        apply_growth_options(only_width, dict(concept_network_growth=True, concept_growth_kinds=['teste']))
+        kinds, layer = only_width._allowed_kinds(types.SimpleNamespace(config=dict(dim=16, heads=8, concepts=[4, 4]), layers=[None, None]))
+        self.assertEqual((kinds, layer), (("com'è", 'teste'), None))
+        apply_growth_options(only_width, dict(concept_network_growth=False))
+        self.assertFalse(only_width.growth)
+
         # The width it starts from, chosen apart from the ceiling: it starts there and can still widen.
         narrow = NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_dim=64), start_dim=16)
         self.assertEqual(narrow.network['dim'], 16)

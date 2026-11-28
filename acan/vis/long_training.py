@@ -488,7 +488,9 @@ def concept_footprint_view(item):
     levels = [heads * concepts for heads, concepts in shape['groups']] if shape else progress.get('concepts_per_level') or []
     size = shape.get('bytes', progress.get('statistics_bytes')) if shape else None
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
-    cap_parts = ([f"larghezza iniziale {int(config['concept_start_dim'])}"] if config.get('concept_start_dim') else []) + [
+    kinds = config.get('concept_growth_kinds')
+    cap_parts = ([f"larghezza iniziale {int(config['concept_start_dim'])}"] if config.get('concept_start_dim') else []) + (
+        [f"crescite ammesse: {', '.join(kinds) or 'nessuna'}"] if kinds is not None and len(kinds) < 4 else []) + [
         f"{label} {int(config.get(key) or 0) or 'illimitato'}" for label, key in (
         ('larghezza', 'concept_max_dim'), ('livelli', 'concept_max_layers'),
         ('gruppi', 'concept_max_heads'), ('concetti/gruppo', 'concept_max_concepts'))]
@@ -962,6 +964,23 @@ layout = html.Div([
          html.Div(id='lm-long-queue-view'),
          html.Div(id='lm-long-queue-status', role='status', className='small'),
          dbc.Accordion([dbc.AccordionItem([
+             html.Small("Si possono cambiare mentre la coda impara: valgono dal prossimo pezzo del testo in corso e per i testi "
+                        "che restano. Una crescita spenta non partecipa più alle gare; i massimi «0» non hanno tetto.",
+                        className='text-muted d-block mb-2'),
+             dbc.Checkbox(id='lm-growth-on', value=True, label='Il grafo di concetti cresce con i dati', className='mb-1'),
+             dbc.Checklist(id='lm-growth-kinds', inline=True, className='mb-2', value=['larghezza', 'strato', 'concetti', 'teste'],
+                           options=[dict(label='larghezza', value='larghezza'), dict(label='strato in più', value='strato'),
+                                    dict(label='concetti divisi', value='concetti'), dict(label='teste raddoppiate', value='teste')]),
+             dbc.Row([
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-growth-max-dim', type='number', min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-growth-max-layers', type='number', min=0, max=32, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-growth-max-heads', type='number', min=0, max=64, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-growth-max-concepts', type='number', min=0, max=1024, step=1)], size='sm'), md=3, className='mb-1'),
+             ], className='mb-2'),
+             dbc.Button('Applica alla coda', id='lm-growth-apply', size='sm', color='primary'),
+             html.Div(id='lm-growth-status', role='status', className='small mt-1'), dcc.Store(id='lm-growth-queue'),
+         ], title='Crescita della coda (si cambia mentre impara)')], start_collapsed=True, className='my-2'),
+         dbc.Accordion([dbc.AccordionItem([
              dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-add-corpus', placeholder='Un testo già preparato'), md=8),
                       dbc.Col(dbc.Button('Aggiungi in fondo alla coda', id='lm-long-add', outline=True, color='primary'), md=4)], className='mb-2'),
              dbc.Checkbox(id='lm-long-add-growth', value=True, label='Continua a far crescere il grafo di concetti sul nuovo testo', className='small mb-1'),
@@ -1240,6 +1259,45 @@ def register(app):
             return 'Ripreso dall\'ultimo salvataggio.', job['id']
         except ValueError as exc:
             return dbc.Alert(str(exc), color='warning'), dash.no_update
+
+    @app.callback(Output('lm-growth-on', 'value'), Output('lm-growth-kinds', 'value'), Output('lm-growth-max-dim', 'value'),
+                  Output('lm-growth-max-layers', 'value'), Output('lm-growth-max-heads', 'value'), Output('lm-growth-max-concepts', 'value'),
+                  Output('lm-growth-queue', 'data'),
+                  Input('lm-long-queue', 'value'), Input('lm-growth-status', 'children'), State('lm-state', 'data'),
+                  State('lm-growth-queue', 'data'))
+    def growth_options(queue, applied, state, filled):
+        # The options as the queue has them, when another queue is chosen or after applying: not at every refresh of
+        # the page, which would undo what is being edited.
+        if queue == filled and dash.ctx.triggered_id == 'lm-long-queue':
+            return (dash.no_update,) * 7
+        items = queues((state or {}).get('jobs', [])).get(queue) or []
+        if not items:
+            return (dash.no_update,) * 7
+        config = current_item(items)['config']
+        if dash.ctx.triggered_id == 'lm-growth-status':          # just applied: the state of the page may be a refresh behind
+            return (dash.no_update,) * 6 + (queue,)
+        return (bool(config.get('concept_network_growth', True)),
+                list(config.get('concept_growth_kinds') or ['larghezza', 'strato', 'concetti', 'teste']),
+                *[int(config.get(key) or 0) for key in ('concept_max_dim', 'concept_max_layers', 'concept_max_heads', 'concept_max_concepts')],
+                queue)
+
+    @app.callback(Output('lm-growth-status', 'children'), Input('lm-growth-apply', 'n_clicks'),
+                  State('lm-workspace', 'data'), State('lm-long-queue', 'value'), State('lm-growth-on', 'value'),
+                  State('lm-growth-kinds', 'value'), State('lm-growth-max-dim', 'value'), State('lm-growth-max-layers', 'value'),
+                  State('lm-growth-max-heads', 'value'), State('lm-growth-max-concepts', 'value'), prevent_initial_call=True)
+    def apply_growth(clicks, workspace, queue, grows, kinds, max_dim, max_layers, max_heads, max_concepts):
+        try:
+            if not queue:
+                raise ValueError('Scegli prima una coda.')
+            payload = dict(concept_network_growth=bool(grows), concept_growth_kinds=list(kinds or []),
+                           concept_max_dim=max(0, int(max_dim or 0)), concept_max_layers=max(0, int(max_layers or 0)),
+                           concept_max_heads=max(0, int(max_heads or 0)), concept_max_concepts=max(0, int(max_concepts or 0)))
+            result = backend(workspace, f'/queues/{queue}/growth', 'POST', payload)
+            texts = '1 testo' if result['changed'] == 1 else f"{result['changed']} testi"
+            return (f"Applicato a {texts} della coda: vale dal prossimo pezzo." if result['changed']
+                    else 'La coda ha già finito tutti i testi: niente da cambiare.')
+        except ValueError as exc:
+            return dbc.Alert(str(exc), color='warning', className='small py-2')
 
     @app.callback(Output('lm-long-queue-status', 'children', allow_duplicate=True), Input('lm-long-upload-state', 'data'),
                   State('lm-workspace', 'data'), State('lm-long-queue', 'value'), State('lm-state', 'data'),

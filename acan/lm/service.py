@@ -289,6 +289,28 @@ def create_app(root=None, token=None):
         config['series'] = dict(id=queue, order=order, variant='queue', label=corpus['name'])
         return config
 
+    @app.post('/queues/<queue>/growth')
+    def queue_growth(queue):
+        """Growth options of a queue while it learns: whether it grows, which growths may race and the ceilings.
+        They apply to the text learning now, from its next piece, and to the texts still to learn."""
+        from .research_options import validate_options
+        payload = request.get_json() or {}
+        members = [job for job in store.jobs(request.workspace) if (job['config'].get('series') or {}).get('id') == queue]
+        if not members:
+            raise KeyError(queue)
+        keys = ('concept_network_growth', 'concept_growth_kinds', 'concept_max_dim', 'concept_max_layers',
+                'concept_max_heads', 'concept_max_concepts')
+        changed = []
+        for job in members:
+            if job['status'] == 'completed':
+                continue
+            config = dict(job['config'], **{key: payload[key] for key in keys if key in payload})
+            checked = validate_options({key: value for key, value in config.items() if key != 'series'})
+            changed.append((job['id'], dict(checked, series=config['series'])))   # nothing changes if an option is invalid
+        for identifier, config in changed:
+            store.set_config(identifier, config)
+        return jsonify(changed=len(changed))
+
     @app.post('/series')
     def create_series():
         """Several projects on the same text, run one after the other by the worker."""

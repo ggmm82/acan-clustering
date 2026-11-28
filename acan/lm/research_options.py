@@ -6,7 +6,7 @@ EXTRA=dict(protocol='controlled-v1',routing_profile='shared-algebra-v1',architec
            early_stop_patience=3,early_stop_min_delta=.01,validation_batches=8,cp_weight=0.,
            milestone_steps=0,chat_probes=False,probe_prompts=[],auto_resume=False,passes=0,warm_start=False,native_size='micro',vocabulary=32000,native_attention='concepts',
            concept_memory_mb=0,concept_piece=1_000_000,concept_context=512,concept_network=False,concept_network_only=False,concept_network_growth=True,
-           concept_max_dim=0,concept_max_layers=0,concept_max_heads=0,concept_max_concepts=0,concept_start_dim=0)
+           concept_max_dim=0,concept_max_layers=0,concept_max_heads=0,concept_max_concepts=0,concept_start_dim=0,concept_growth_kinds=['larghezza','strato','concetti','teste'])
 # Options of the earlier generative models: accepted from older clients and ignored.
 RETIRED=('context_refinement','concept_depth','concept_document','concept_paths')
 
@@ -57,6 +57,9 @@ def validate_options(options):
         value=extra[key]
         if isinstance(value,bool) or not isinstance(value,int) or (value!=0 and not lo<=value<=hi):
             raise ValueError('Parametro non valido: '+key)
+    kinds=extra['concept_growth_kinds']
+    if not isinstance(kinds,list) or any(kind not in ('larghezza','strato','concetti','teste') for kind in kinds):
+        raise ValueError('Crescite ammesse: larghezza, strato, concetti, teste.')
     start=extra['concept_start_dim']                    # the width the network starts from (0: automatic, 32)
     if isinstance(start,bool) or not isinstance(start,int) or (start!=0 and not (8<=start<=2048 and start%8==0)):
         raise ValueError('Larghezza iniziale: 0 (automatica) oppure un multiplo di 8 fra 8 e 2048.')

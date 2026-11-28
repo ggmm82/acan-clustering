@@ -67,6 +67,7 @@ class NetText:
         self.max_context = int(max_context)
         self.growth = bool(growth)
         self.limits = self._clean_limits(limits)
+        self.kinds_allowed = None                              # growths that may race (None: all); can change while it learns
         self.weight = None if weight is None else np.asarray(weight, np.float32)
         if self.growth and network is None and self.vocabulary >= 2048:
             base = dict(self.LANGUAGE_GROWING, concepts=list(self.LANGUAGE_GROWING['concepts']))
@@ -146,6 +147,11 @@ class NetText:
             kinds.append('concetti')
         if not max_heads or 2 * heads <= max_heads:
             kinds.append('teste')
+        allowed = getattr(self, 'kinds_allowed', None)
+        if allowed is not None:                                 # the growths switched off do not race
+            kinds = [kind for kind in kinds if kind == "com'è" or kind in allowed]
+            if 'concetti' not in kinds:
+                next_layer = None
         return tuple(kinds), next_layer
 
     # ---- learning ------------------------------------------------------------------------------------

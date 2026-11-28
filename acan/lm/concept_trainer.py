@@ -177,6 +177,15 @@ def record_answers(directory, model, tokenizer, state, questions=None, new_token
     return entry
 
 
+def apply_growth_options(model, config):
+    """The growth options of the queue, as they are now: whether it grows, which growths may race, the ceilings."""
+    model.growth = bool(config.get('concept_network_growth', True))
+    kinds = config.get('concept_growth_kinds')
+    model.kinds_allowed = None if kinds is None else set(kinds)
+    model.limits = model._clean_limits(dict(max_dim=config.get('concept_max_dim'), max_layers=config.get('concept_max_layers'),
+                                            max_heads=config.get('concept_max_heads'), max_concepts=config.get('concept_max_concepts')))
+
+
 def answer_path(model, ids, produced, tokenizer, state):
     """How the network wrote an answer, token after token (NetText.explain), with the names of its concepts; None
     for a model without a concept network or if reading it fails (the answers are saved all the same)."""
@@ -354,6 +363,8 @@ def run_training(root, identifier, stop_event=None):
         last_save = time.monotonic()
         saved_step = state['step']
         while state['step'] < config['total_steps'] and not should_pause():
+            if isinstance(model, NetText):                      # growth options changed from the page apply from this piece
+                apply_growth_options(model, store.job(identifier)['config'])
             begin = state['step']*piece
             ids = piece_from_bundles(train, bundles, bundle_offsets, begin, min(begin+piece, read))
             # Commit a whole piece or keep the previous sums intact on pause.

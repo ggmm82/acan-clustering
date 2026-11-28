@@ -130,6 +130,21 @@ class QueueTest(unittest.TestCase):
                           added['config']['concept_max_heads'], added['config']['concept_max_concepts']),
                          (192, 4, 4, 32))
         self.assertTrue(added['config']['name'].startswith('Dialogo · 3 · tre.txt'))
+        # Growth options changed while the queue learns: every text not finished takes them, an invalid one changes nothing.
+        from acan.lm.store import Store as _Store
+        _Store(self.root).update(jobs[0]['id'], status='completed')
+        changed = self.client.post(f"/queues/{body['queue']}/growth", headers=self.headers,
+                                   json=dict(concept_growth_kinds=['concetti', 'teste'], concept_max_dim=128,
+                                             concept_network_growth=True)).get_json()
+        self.assertEqual(changed['changed'], 2)                                   # the finished first text keeps its options
+        configs = {job['id']: _Store(self.root).job(job['id'])['config'] for job in jobs + [added]}
+        self.assertEqual([configs[job['id']].get('concept_growth_kinds') for job in jobs[1:] + [added]], [['concetti', 'teste']] * 2)
+        self.assertEqual(configs[added['id']]['concept_max_dim'], 128)
+        self.assertEqual(configs[added['id']]['series']['order'], 2)
+        self.assertNotEqual(configs[jobs[0]['id']].get('concept_growth_kinds'), ['concetti', 'teste'])
+        refused = self.client.post(f"/queues/{body['queue']}/growth", headers=self.headers, json=dict(concept_growth_kinds=['volare']))
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(_Store(self.root).job(added['id'])['config']['concept_growth_kinds'], ['concetti', 'teste'])
         from acan.lm.research_trainer import warm_source
         from acan.lm.store import Store
         store = Store(self.root)
