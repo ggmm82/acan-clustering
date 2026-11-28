@@ -4,6 +4,8 @@ Every layer reads through concepts (graft fraction 1.0). The page drives the gen
 through the same ``backend`` helper as the rest of the generative tab, and reads the projects from
 ``lm-state``, which that tab refreshes every five seconds.
 """
+import math
+
 import dash
 import numpy as np
 from dash import Input, Output, State, dcc, html
@@ -29,7 +31,8 @@ def profile(cuda, size=None):
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='auto',
                 chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000,
-                concept_max_dim=64, concept_max_layers=0, concept_max_heads=0, concept_max_concepts=0)
+                concept_max_dim=64, concept_max_layers=32, concept_max_heads=64, concept_max_concepts=1024, concept_start_dim=32,
+                concept_start_layers=2, concept_start_heads=4, concept_start_concepts=16)
 
 
 def queues(jobs):
@@ -83,7 +86,7 @@ def folded(title, children, key, class_name='mt-2'):
                          persistence=True, persistence_type='session', className=class_name)
 
 
-def answers_view(entries):
+def answers_view(entries, job=None):
     if not entries:
         return html.P('Ancora nessuna risposta: compaiono al primo salvataggio (ogni 10 passi, ogni 5 minuti e alla fine).', className='small text-muted')
     first, last = entries[0], entries[-1]
@@ -94,9 +97,11 @@ def answers_view(entries):
     for index, item in enumerate(last['answers']):
         before = first['answers'][index]['answer'] if len(entries) > 1 and index < len(first['answers']) else None
         from .generative import media_view
+        how = (dbc.Button('Come l\'ha scritta', id={'type': 'lm-answer-open', 'index': f'{job}|{index}'}, size='sm',
+                          outline=True, color='primary') if job else None)
         rows.append(html.Tr([html.Td(item['question']),
                              html.Td(media_view(before or '—', small=True)),
-                             html.Td(media_view(item['answer'] or '(nessuna risposta)', small=True))]))
+                             html.Td([media_view(item['answer'] or '(nessuna risposta)', small=True), how])]))
     history = [html.Li(f"passo {entry['step']:,}" + ('' if entry.get('validation_nll') is None else f": {entry['validation_nll']:.3f}"))
                for entry in entries[-10:]]
     return html.Div([html.P(header, className='small'),
@@ -104,6 +109,178 @@ def answers_view(entries):
                                bordered=True, size='sm', responsive=True),
                      folded('Errore sul riferimento agli ultimi salvataggi', html.Ul(history, className='small'),
                             'lm-long-answers-history')])
+
+
+def _word(words, j):
+    return (words[j].replace('\n', '⏎') if 0 <= j < len(words) else '?').strip() or '·'
+
+
+def answer_node(path, key):
+    """A node of the walk through how an answer was written: its title, what was measured there and the nodes it
+    leads to, each (key, label, weight 0-1). Keys: token:p, level:p:l, view:p:l:h, concept:id, word:j, memory:p."""
+    words, steps = path['words'], {step['position']: step for step in path['steps']}
+    names = path.get('names') or {}
+    kind, _, rest = key.partition(':')
+    parts = rest.split(':')
+    if kind == 'token':
+        step = steps[int(parts[0])]; pos = step['position']
+        near = [(f"level:{pos}:{level['level']}", f"strato {level['level']}: direbbe «{(level.get('says') or [('?', 0)])[0][0].strip()}»",
+                 min(1., abs(level.get('effect') or 0) / 5)) for level in step['levels']]
+        near.append((f'memory:{pos}', 'memoria del documento', step['memory']['weight']))
+        text = (f"«{_word(words, pos)}», scritto con probabilità {math.exp(step['logp']):.0%}. Viene dagli strati della rete e dalla "
+                f"memoria del documento: il peso accanto a ogni strato è quanto la probabilità scende chiudendolo.")
+        return f"«{_word(words, pos)}»", text, near
+    if kind == 'level':
+        pos, l = int(parts[0]), int(parts[1]); level = steps[pos]['levels'][l - 1]
+        says = ', '.join(f"«{t.strip() or t}» {q:.0%}" for t, q in level.get('says', []))
+        effect = level.get('effect')
+        near = [(f"view:{pos}:{l}:{n + 1}", f"vista {n + 1} → concetto {view['id']}", view['membership'])
+                for n, view in enumerate(level.get('lit', []))]
+        text = (f"Dopo lo strato {l} la rete direbbe: {says}. "
+                + ('' if effect is None else f"Chiudendolo, la probabilità del token {'scende' if effect >= 0 else 'sale'} di "
+                   f"{abs(effect):.2f} in log. ")
+                + 'Ogni vista dello strato cade in un concetto e guarda alcune parole.')
+        return f'Strato {l}', text, near
+    if kind == 'view':
+        pos, l, h = int(parts[0]), int(parts[1]), int(parts[2]); view = steps[pos]['levels'][l - 1]['lit'][h - 1]
+        near = [(f"concept:{view['id']}", f"concetto {view['id']}", view['membership'])]
+        near += [(f'word:{j}', f'«{_word(words, j)}»', weight) for j, weight in view.get('looked', [])]
+        text = (f"La posizione cade nel concetto {view['id']} ({view['membership']:.0%}) e guarda le parole: "
+                + (', '.join(f"«{_word(words, j)}» {w:.0%}" for j, w in view.get('looked', [])) or 'nessuna in particolare') + '.')
+        return f'Vista {h} dello strato {l}', text, near
+    if kind == 'concept':
+        cid = rest
+        held = next(([j for j, _ in view.get('held', [])] for step in path['steps'] for level in step['levels']
+                     for view in level.get('lit', []) if view['id'] == cid), [])
+        lit = [step['position'] for step in path['steps'] if any(view['id'] == cid for level in step['levels']
+                                                                 for view in level.get('lit', []))]
+        near = [(f'token:{p}', f'token «{_word(words, p)}»', 1.) for p in lit if p in steps]
+        name = names.get(cid)
+        text = ((f'Nel grafo dei concetti: {name}. ' if name else '')
+                + (f"Le parole di questo testo che gli appartengono di più: {', '.join(f'«{_word(words, j)}»' for j in held)}. " if held else '')
+                + 'Qui accanto i token della risposta in cui si accende.')
+        return f'Concetto {cid}', text, near
+    if kind == 'word':
+        j = int(parts[0]); near = []
+        for step in path['steps']:
+            used = max([w for level in step['levels'] for view in level.get('lit', []) for jj, w in view.get('looked', []) if jj == j]
+                       + [w for jj, w in step['memory']['sources'] if jj == j] + [0])
+            if used > .05:
+                near.append((f"token:{step['position']}", f"token «{_word(words, step['position'])}»", used))
+        where = 'della domanda' if j < path['prompt_length'] else 'della risposta'
+        return f'Parola «{_word(words, j)}»', f'Una parola {where}. Qui accanto i token che l\'hanno letta o copiata.', near
+    if kind == 'memory':
+        pos = int(parts[0]); memory = steps[pos]['memory']
+        near = [(f'word:{j}', f'«{_word(words, j)}»', w) for j, w in memory['sources']]
+        text = (f"La memoria del documento pesa {memory['weight']:.0%} su questo token: copia la parola che seguiva i punti del "
+                'testo più simili a quello attuale. Qui accanto le parole da cui copia.')
+        return 'Memoria', text, near
+    raise KeyError(key)
+
+
+def token_graph(path, pos, current=None):
+    """The way to one written token, left to right: the words read (of the question and of the answer so far), the
+    concept each view of every layer falls into, and the token; the document memory beside. A click on a node opens it."""
+    import plotly.graph_objects as go
+    words, step = path['words'], next(s for s in path['steps'] if s['position'] == pos)
+    levels = step['levels']
+    read = {}
+    for level in levels:
+        for view in level.get('lit', []):
+            for j, w in view.get('looked', []):
+                read[j] = max(read.get(j, 0.), w)
+    for j, w in step['memory']['sources']:
+        read[j] = max(read.get(j, 0.), w)
+    shown = sorted(sorted(read, key=lambda j: -read[j])[:12])            # in the order of the text
+    nodes, edges = {}, []                                                 # key -> (x, y, label, hover, kind)
+    for n, j in enumerate(shown):
+        where = 'domanda' if j < path['prompt_length'] else 'risposta'
+        nodes[f'word:{j}'] = (0, 1 - 2 * (n + .5) / max(len(shown), 1), f'«{_word(words, j)}»', f'parola della {where}', 'word')
+    names = path.get('names') or {}
+    for l, level in enumerate(levels, 1):
+        lit = level.get('lit', [])
+        for h, view in enumerate(lit, 1):
+            key = f'view:{pos}:{l}:{h}'
+            nodes[key] = (l, 1 - 2 * (h - .5) / max(len(lit), 1), view['id'],
+                          f"strato {l}, vista {h}: concetto {view['id']} ({view['membership']:.0%})"
+                          + (f"<br>{names[view['id']]}" if view['id'] in names else ''), 'concept')
+            for j, w in view.get('looked', []):
+                if f'word:{j}' in nodes:
+                    edges.append((f'word:{j}', key, w, 'read'))
+            if l > 1 and h <= len(levels[l - 2].get('lit', [])):
+                edges.append((f'view:{pos}:{l - 1}:{h}', key, view['membership'], 'down'))
+    last = len(levels) + 1
+    nodes[f'token:{pos}'] = (last, 0., f'«{_word(words, pos)}»', f"token scritto, probabilità {math.exp(step['logp']):.0%}", 'token')
+    nodes[f'memory:{pos}'] = (last - .5, -.9, 'memoria', f"memoria del documento: pesa {step['memory']['weight']:.0%}", 'memory')
+    for h, view in enumerate(levels[-1].get('lit', []) if levels else [], 1):
+        edges.append((f'view:{pos}:{len(levels)}:{h}', f'token:{pos}', view['membership'] * (1 - step['memory']['weight']), 'out'))
+    edges.append((f'memory:{pos}', f'token:{pos}', step['memory']['weight'], 'out'))
+    for j, w in step['memory']['sources']:
+        if f'word:{j}' in nodes:
+            edges.append((f'word:{j}', f'memory:{pos}', w, 'copy'))
+    colors = dict(read='rgba(44,111,187,.45)', down='rgba(120,120,120,.45)', out='rgba(231,111,81,.6)', copy='rgba(42,157,143,.6)')
+    figure = go.Figure()
+    for a, b, w, kind in edges:
+        (xa, ya), (xb, yb) = nodes[a][:2], nodes[b][:2]
+        figure.add_scatter(x=[xa, xb], y=[ya, yb], mode='lines', hoverinfo='skip', showlegend=False,
+                           line=dict(width=.5 + 6 * max(0., min(1., w)), color=colors[kind]))
+    fill = dict(word='#2c6fbb', concept='#6c757d', token='#e76f51', memory='#2a9d8f')
+    keys = list(nodes)
+    figure.add_scatter(x=[nodes[k][0] for k in keys], y=[nodes[k][1] for k in keys], mode='markers+text', showlegend=False,
+                       text=[nodes[k][2] for k in keys], hovertext=[nodes[k][3] for k in keys], hoverinfo='text', customdata=keys,
+                       textposition=['middle left' if nodes[k][4] == 'word' else 'middle right' if nodes[k][4] == 'token'
+                                     else 'top center' for k in keys],
+                       marker=dict(size=[22 if k == current else 14 for k in keys],
+                                   color=[fill[nodes[k][4]] for k in keys],
+                                   line=dict(width=[3 if k == current else 0 for k in keys], color='#000')))
+    ticks = ['parole lette'] + [f'strato {l}' for l in range(1, len(levels) + 1)] + ['token scritto']
+    figure.update_layout(height=460, margin=dict(l=90, r=90, t=30, b=10), clickmode='event', plot_bgcolor='white',
+                         xaxis=dict(tickvals=list(range(len(ticks))), ticktext=ticks, side='top', showgrid=False, zeroline=False,
+                                    range=[-.6, len(ticks) - .4]),
+                         yaxis=dict(visible=False, range=[-1.1, 1.1]), uirevision=f'{pos}')
+    return figure
+
+
+def answer_walk_view(data, walk):
+    """How an answer was written, as a walk: (the answer's tokens above, the graph from the question to the token
+    or None, the trail and the open node below)."""
+    if not data or not walk:
+        return None, None, None
+    paths = data.get('paths') or []
+    index = walk.get('question', 0)
+    if index >= len(paths) or not paths[index]:
+        return dbc.Alert('Questo modello non ha il percorso delle risposte: compare al prossimo salvataggio.', color='info',
+                         className='small py-2'), None, None
+    path, trail = paths[index], walk.get('trail') or []
+    words, start = path['words'], path['prompt_length']
+    current = trail[-1] if trail else None
+    tokens = [dbc.Button(_word(words, step['position']), id={'type': 'lm-walk-go', 'index': f"token:{step['position']}"},
+                         size='sm', className='me-1 mb-1', color='primary',
+                         outline=current != f"token:{step['position']}") for step in path['steps']]
+    body = [html.Div([html.B(f"Domanda: {data['questions'][index]}"), html.Span(f" · salvataggio del passo {data['step']:,}", className='text-muted'),
+                      dbc.Button('Chiudi', id={'type': 'lm-walk-go', 'index': 'close'}, size='sm', color='link', className='ms-2')]),
+            html.Div('Risposta, token per token: clicca un token per vedere da dove viene.', className='small text-muted mt-1'),
+            html.Div(tokens, className='mb-2')]
+    figure, detail = None, None
+    if current:
+        crumbs = []
+        for n, key in enumerate(trail):
+            crumbs.append(dbc.Button(answer_node(path, key)[0], id={'type': 'lm-walk-back', 'index': n}, size='sm', color='secondary',
+                                     outline=n != len(trail) - 1, className='me-1 mb-1'))
+            if n < len(trail) - 1:
+                crumbs.append(html.Span('›', className='me-1'))
+        title, text, near = answer_node(path, current)
+        links = [dbc.Button(f'{label} · {weight:.0%}', id={'type': 'lm-walk-go', 'index': key}, size='sm', outline=True,
+                            color='secondary', className='me-1 mb-1') for key, label, weight in near]
+        pos = int(trail[0].split(':')[1])
+        body.append(html.Div('Dalla domanda al token: le parole lette (blu), il concetto in cui cade ogni vista di ogni strato '
+                             '(grigio), la memoria del documento (verde) e il token scritto (arancio). Lo spessore è quanto ha '
+                             'pesato; un clic su un nodo lo apre qui sotto.', className='small text-muted'))
+        figure = token_graph(path, pos, current)
+        detail = html.Div([html.Div(crumbs), dbc.Card(dbc.CardBody([html.H6(title), html.P(text, className='small mb-2'),
+                                                                    html.Div(links or html.Span('Nessun passo oltre.', className='small text-muted'))]),
+                                                      className='mb-2')])
+    return html.Div(body, className='mt-2'), figure, detail
 
 
 def _bytes(value):
@@ -145,6 +322,17 @@ def structure_progress(learning):
 def _candidate_label(kind):
     return {'teste': 'il doppio delle teste', 'larghezza': 'il doppio della larghezza',
             'strato': 'uno strato in più', "com'è": "la rete com'è"}.get(kind, kind)
+
+
+def _concepts_used_tile(used, shape):
+    """How many concepts each level really uses (effective number, mean over its heads) out of those it has:
+    near the total, the level could use more; far below, it already has enough."""
+    if not used:
+        return _tile('Concetti usati', '—', 'si misura sul testo di validazione')
+    have = [concepts for _, concepts in (shape or {}).get('groups', [])]
+    parts = [f'{u:.0f} di {have[i]}' if i < len(have) else f'{u:.0f}' for i, u in enumerate(used)]
+    return _tile('Concetti usati', ' · '.join(parts),
+                 'per testa in ogni strato: vicino al totale ne servirebbero di più, molto sotto ne ha già abbastanza')
 
 
 def _network_details(shape):
@@ -256,7 +444,12 @@ def concept_summary(progress, config, checkpoint_bytes=None, status=None):
               f'un passo è {piece:,} token' + ('' if speed else ' · nel passo in corso' if network and network.get('speed')
                                                   else ' · si misura mentre la rete impara')),
         _tile('Errore su testo mai visto', '—' if error is None else f'{error:.3f}',
-              (f'esita fra circa {perplexity:,.0f} token' if perplexity else '') + (f' · prima di leggere {before:.3f}' if before is not None else '')),
+              'NLL di validazione' + (f' · prima di leggere {before:.3f}' if before is not None else '')),
+        _tile('Perplessità', '—' if not perplexity else f'{perplexity:,.0f}',
+              'fra quanti token il modello esita in media, sul testo mai visto'
+              + (f' · prima di leggere {math.exp(before):,.0f}' if before is not None and before < 700 else '')),
+        _concepts_used_tile(progress.get('concepts_used') or [sum(layer['active']) / max(len(layer['active']), 1)
+                                                             for layer in progress.get('network_concepts') or []], shape),
         _tile('Dimensione del modello', _bytes(size) if size else '—',
               'i parametri della rete' + (f' · file scaricabile {_bytes(checkpoint_bytes)}' if checkpoint_bytes else '')),
         _tile('Rete corrente', f"{shape['layers']} {'strato' if shape['layers'] == 1 else 'strati'}" if shape else '—',
@@ -296,7 +489,12 @@ def concept_footprint_view(item):
     levels = [heads * concepts for heads, concepts in shape['groups']] if shape else progress.get('concepts_per_level') or []
     size = shape.get('bytes', progress.get('statistics_bytes')) if shape else None
     number = lambda value, digits=3: '—' if value is None else f'{value:.{digits}f}'
-    cap_parts = [f"{label} {int(config.get(key) or 0) or 'illimitato'}" for label, key in (
+    kinds = config.get('concept_growth_kinds')
+    cap_parts = [f"{label} iniziale {int(config[key])}" for label, key in (
+        ('larghezza', 'concept_start_dim'), ('strati', 'concept_start_layers'), ('teste', 'concept_start_heads'),
+        ('concetti', 'concept_start_concepts')) if config.get(key)] + (
+        [f"crescite ammesse: {', '.join(kinds) or 'nessuna'}"] if kinds is not None and len(kinds) < 4 else []) + [
+        f"{label} {int(config.get(key) or 0) or 'illimitato'}" for label, key in (
         ('larghezza', 'concept_max_dim'), ('livelli', 'concept_max_layers'),
         ('gruppi', 'concept_max_heads'), ('concetti/gruppo', 'concept_max_concepts'))]
     layer_p = (shape or {}).get('layer_parameters') or 0
@@ -350,20 +548,23 @@ def concept_footprint_view(item):
               for title, values in rows]
     note = html.P("Gli errori sono in nat per token: e elevato all'errore è fra quanti token, in media, il modello è incerto. "
                   "Si misurano solo su testo che il modello non ha letto.", className='small text-muted')
+    details = folded('Tutti i dettagli: vocabolario, concetti, contesto, memoria e disco',
+                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note],
+                     'lm-long-details')
+    return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')), details])
+
+
+def graph_section(item):
+    """The inspectable graph of the concept network, or what it is waiting for."""
+    progress = item['progress'] or {}
     graph = network_graph_view(progress.get('network_graph'))
     if graph is None:
         waiting = ('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti compare appena i token sono pronti e la rete legge il primo brano.'
                    if item.get('status') in ('queued', 'preparing') or not progress.get('graft') else
                    'Il grafo ispezionabile di concetti, astrazioni e sotto-concetti si sta popolando sul testo di validazione…')
-        graph_section = html.Div([html.H6('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti', className='mt-3'),
-                                  html.P(waiting, className='small text-muted')])
-    else:
-        graph_section = graph
-    details = folded('Tutti i dettagli: vocabolario, concetti, contesto, memoria e disco',
-                     [dbc.Row([dbc.Col(table, md=6) for table in tables]), note],
-                     'lm-long-details')
-    return html.Div([concept_summary(progress, config, item.get('checkpoint_bytes'), item.get('status')),
-                     graph_section, details])
+        return html.Div([html.H6('Il grafo ispezionabile di concetti, astrazioni e sotto-concetti', className='mt-3'),
+                         html.P(waiting, className='small text-muted')])
+    return graph
 
 
 MAX_GRAPH_CONCEPTS_PER_LEVEL = 8
@@ -737,13 +938,23 @@ layout = html.Div([
                         "mantenendo il modello decine di volte più leggero di un LLM (fino a 64 coordinate, senza matrici quadratiche).",
                         className='text-muted d-block mb-2'),
              dbc.Row([
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=64, min=0, max=2048, step=16)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=0, min=0, max=32, step=1)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-max-heads', type='number', value=0, min=0, max=64, step=1)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=0, min=0, max=1024, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza iniziale'), dbc.Input(id='lm-long-start-dim', type='number', value=32, min=0, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati iniziali'), dbc.Input(id='lm-long-start-layers', type='number', value=2, min=0, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste iniziali'), dbc.Input(id='lm-long-start-heads', type='number', value=4, min=0, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti iniziali'), dbc.Input(id='lm-long-start-concepts', type='number', value=16, min=0, step=1)]), md=3, className='mb-1'),
              ], className='mb-1'),
-             html.Small("Tetti hardware facoltativi: «0» = automatico dai dati senza tetto utente; un valore > 0 impone un massimale esplicito "
-                        "(o fissa direttamente la piramide iniziale se si disattiva la crescita).",
+             dbc.Row([
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=64, min=0, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=32, min=0, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-max-heads', type='number', value=64, min=0, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=1024, min=0, step=1)]), md=3, className='mb-1'),
+             ], className='mb-1'),
+             html.Small("Valori iniziali: la rete da cui parte il primo testo della coda (i successivi ripartono dalla rete appresa); "
+                        "«0» = automatico (larghezza 32, 2 strati, 4 teste, 16 concetti). La larghezza deve essere divisibile per le teste; "
+                        "i concetti iniziali sono quelli del primo strato e raddoppiano a ogni strato. "
+                        "Da lì la rete cresce se vince le gare, fino ai massimi. "
+                        "Massimi: fin dove la rete può crescere; i valori proposti tengono il modello leggero, «0» = nessun limite. "
+                        "Non ci sono altri limiti oltre a questi (con la crescita spenta, i massimi fissano la rete).",
                         className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
@@ -763,14 +974,31 @@ layout = html.Div([
          html.Div(id='lm-long-queue-view'),
          html.Div(id='lm-long-queue-status', role='status', className='small'),
          dbc.Accordion([dbc.AccordionItem([
+             html.Small("Si possono cambiare mentre la coda impara: valgono dal prossimo pezzo del testo in corso e per i testi "
+                        "che restano. Una crescita spenta non partecipa più alle gare; i massimi «0» non hanno tetto.",
+                        className='text-muted d-block mb-2'),
+             dbc.Checkbox(id='lm-growth-on', value=True, label='Il grafo di concetti cresce con i dati', className='mb-1'),
+             dbc.Checklist(id='lm-growth-kinds', inline=True, className='mb-2', value=['larghezza', 'strato', 'concetti', 'teste'],
+                           options=[dict(label='larghezza', value='larghezza'), dict(label='strato in più', value='strato'),
+                                    dict(label='concetti divisi', value='concetti'), dict(label='teste raddoppiate', value='teste')]),
+             dbc.Row([
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-growth-max-dim', type='number', min=0, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-growth-max-layers', type='number', min=0, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-growth-max-heads', type='number', min=0, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-growth-max-concepts', type='number', min=0, step=1)], size='sm'), md=3, className='mb-1'),
+             ], className='mb-2'),
+             dbc.Button('Applica alla coda', id='lm-growth-apply', size='sm', color='primary'),
+             html.Div(id='lm-growth-status', role='status', className='small mt-1'), dcc.Store(id='lm-growth-queue'),
+         ], title='Crescita della coda (si cambia mentre impara)')], start_collapsed=True, className='my-2'),
+         dbc.Accordion([dbc.AccordionItem([
              dbc.Row([dbc.Col(dcc.Dropdown(id='lm-long-add-corpus', placeholder='Un testo già preparato'), md=8),
                       dbc.Col(dbc.Button('Aggiungi in fondo alla coda', id='lm-long-add', outline=True, color='primary'), md=4)], className='mb-2'),
              dbc.Checkbox(id='lm-long-add-growth', value=True, label='Continua a far crescere il grafo di concetti sul nuovo testo', className='small mb-1'),
              dbc.Row([
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=64, min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-add-max-layers', type='number', value=0, min=0, max=32, step=1)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-add-max-heads', type='number', value=0, min=0, max=64, step=1)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-add-max-concepts', type='number', value=0, min=0, max=1024, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=64, min=0, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-add-max-layers', type='number', value=32, min=0, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-add-max-heads', type='number', value=64, min=0, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-add-max-concepts', type='number', value=1024, min=0, step=1)], size='sm'), md=3, className='mb-1'),
              ], className='mb-2'),
              html.Small(f'Oppure un documento dal computer ({FORMATS}): viene caricato, convertito in testo e aggiunto in fondo alla coda scelta. '
                         'Usa il vocabolario della coda, imparato all\'avvio («0» = automatico dai dati senza tetto utente).', className='text-muted d-block'),
@@ -778,11 +1006,15 @@ layout = html.Div([
              dcc.Store(id='lm-long-upload-state'),
          ], title='Aggiungi un testo alla coda')], start_collapsed=True, className='my-2'),
          html.H5('Il modello mentre impara', className='mt-3'),
-         html.Div(id='lm-long-footprint'),
+         html.Div(id='lm-long-footprint'), html.Div(id='lm-long-graph'), dcc.Store(id='lm-long-graph-key'),
          html.H5('Cosa risponde', className='mt-3'),
          html.P("Le stesse domande a ogni salvataggio, con la stessa estrazione casuale: le differenze vengono solo da ciò che il modello ha "
                 "imparato. Per fargli domande libere e scaricarlo: passo 4.", className='small'),
-         html.Div(id='lm-long-answers')),
+         html.Div(id='lm-long-answers'),
+         html.Div(id='lm-answer-walk'),
+         html.Div(dcc.Graph(id='lm-answer-graph', config={'displaylogo': False}), id='lm-answer-graph-box', style={'display': 'none'}),
+         html.Div(id='lm-answer-walk-detail'),
+         dcc.Store(id='lm-answer-paths', storage_type='session'), dcc.Store(id='lm-answer-walk-state', storage_type='session')),
     dcc.Store(id='lm-long-catalog'), dcc.Store(id='lm-long-builds'), dcc.Store(id='lm-steps-folded'), dcc.Store(id='lm-network-selected', storage_type='session'), dcc.Interval(id='lm-long-poll', interval=5000),
 ])
 
@@ -974,10 +1206,11 @@ def register(app):
                   State('lm-long-milestone', 'value'), State('lm-long-questions', 'value'), State('lm-state', 'data'),
                   State('lm-long-length', 'value'), State('lm-long-growth', 'value'),
                   State('lm-long-max-dim', 'value'), State('lm-long-max-layers', 'value'),
-                  State('lm-long-max-heads', 'value'), State('lm-long-max-concepts', 'value'),
+                  State('lm-long-max-heads', 'value'), State('lm-long-max-concepts', 'value'), State('lm-long-start-dim', 'value'),
+                  State('lm-long-start-layers', 'value'), State('lm-long-start-heads', 'value'), State('lm-long-start-concepts', 'value'),
                   prevent_initial_call=True)
     def start(clicks, workspace, corpora, model, passes, save, milestone, questions, state, length=256, growth=False,
-              max_dim=0, max_layers=0, max_heads=0, max_concepts=0):
+              max_dim=0, max_layers=0, max_heads=0, max_concepts=0, start_dim=0, start_layers=0, start_heads=0, start_concepts=0):
         try:
             if not corpora:
                 raise ValueError('Scegli almeno un testo da imparare.')
@@ -988,6 +1221,10 @@ def register(app):
                         concept_max_layers=max(0, int(max_layers or 0)),
                         concept_max_heads=max(0, int(max_heads or 0)),
                         concept_max_concepts=max(0, int(max_concepts or 0)),
+                        concept_start_dim=max(0, int(start_dim or 0)),
+                        concept_start_layers=max(0, int(start_layers or 0)),
+                        concept_start_heads=max(0, int(start_heads or 0)),
+                        concept_start_concepts=max(0, int(start_concepts or 0)),
                         probe_prompts=[line.strip() for line in (questions or '').splitlines() if line.strip()][:6])
             result = backend(workspace, '/queues', 'POST', dict(base=base, corpora=list(corpora)), timeout=120)
             first_job = (result.get('jobs') or [{}])[0].get('id', dash.no_update)
@@ -1036,6 +1273,45 @@ def register(app):
             return 'Ripreso dall\'ultimo salvataggio.', job['id']
         except ValueError as exc:
             return dbc.Alert(str(exc), color='warning'), dash.no_update
+
+    @app.callback(Output('lm-growth-on', 'value'), Output('lm-growth-kinds', 'value'), Output('lm-growth-max-dim', 'value'),
+                  Output('lm-growth-max-layers', 'value'), Output('lm-growth-max-heads', 'value'), Output('lm-growth-max-concepts', 'value'),
+                  Output('lm-growth-queue', 'data'),
+                  Input('lm-long-queue', 'value'), Input('lm-growth-status', 'children'), State('lm-state', 'data'),
+                  State('lm-growth-queue', 'data'))
+    def growth_options(queue, applied, state, filled):
+        # The options as the queue has them, when another queue is chosen or after applying: not at every refresh of
+        # the page, which would undo what is being edited.
+        if queue == filled and dash.ctx.triggered_id == 'lm-long-queue':
+            return (dash.no_update,) * 7
+        items = queues((state or {}).get('jobs', [])).get(queue) or []
+        if not items:
+            return (dash.no_update,) * 7
+        config = current_item(items)['config']
+        if dash.ctx.triggered_id == 'lm-growth-status':          # just applied: the state of the page may be a refresh behind
+            return (dash.no_update,) * 6 + (queue,)
+        return (bool(config.get('concept_network_growth', True)),
+                list(config.get('concept_growth_kinds') or ['larghezza', 'strato', 'concetti', 'teste']),
+                *[int(config.get(key) or 0) for key in ('concept_max_dim', 'concept_max_layers', 'concept_max_heads', 'concept_max_concepts')],
+                queue)
+
+    @app.callback(Output('lm-growth-status', 'children'), Input('lm-growth-apply', 'n_clicks'),
+                  State('lm-workspace', 'data'), State('lm-long-queue', 'value'), State('lm-growth-on', 'value'),
+                  State('lm-growth-kinds', 'value'), State('lm-growth-max-dim', 'value'), State('lm-growth-max-layers', 'value'),
+                  State('lm-growth-max-heads', 'value'), State('lm-growth-max-concepts', 'value'), prevent_initial_call=True)
+    def apply_growth(clicks, workspace, queue, grows, kinds, max_dim, max_layers, max_heads, max_concepts):
+        try:
+            if not queue:
+                raise ValueError('Scegli prima una coda.')
+            payload = dict(concept_network_growth=bool(grows), concept_growth_kinds=list(kinds or []),
+                           concept_max_dim=max(0, int(max_dim or 0)), concept_max_layers=max(0, int(max_layers or 0)),
+                           concept_max_heads=max(0, int(max_heads or 0)), concept_max_concepts=max(0, int(max_concepts or 0)))
+            result = backend(workspace, f'/queues/{queue}/growth', 'POST', payload)
+            texts = '1 testo' if result['changed'] == 1 else f"{result['changed']} testi"
+            return (f"Applicato a {texts} della coda: vale dal prossimo pezzo." if result['changed']
+                    else 'La coda ha già finito tutti i testi: niente da cambiare.')
+        except ValueError as exc:
+            return dbc.Alert(str(exc), color='warning', className='small py-2')
 
     @app.callback(Output('lm-long-queue-status', 'children', allow_duplicate=True), Input('lm-long-upload-state', 'data'),
                   State('lm-workspace', 'data'), State('lm-long-queue', 'value'), State('lm-state', 'data'),
@@ -1091,14 +1367,40 @@ def register(app):
         saved = [item for item in items if item['checkpoint']]
         return (saved[-1] if saved else current_item(items))['id']
 
+    def shown_item(items, workspace):
+        # The model of the queue to show: the one learning, or the last learned while the next prepares its tokens.
+        current = current_item(items)
+        learned = [job for job in items if job['checkpoint'] and (job['progress'] or {}).get('graft')]
+        if not (current['progress'] or {}).get('graft') and learned:
+            return current, learned[-1], backend(workspace, f"/jobs/{learned[-1]['id']}/footprint?graph=1")
+        return current, None, backend(workspace, f"/jobs/{current['id']}/footprint?graph=1")
+
+    @app.callback(Output('lm-long-graph', 'children'), Output('lm-long-graph-key', 'data'),
+                  Input('lm-state', 'data'), Input('lm-long-queue', 'value'),
+                  State('lm-workspace', 'data'), State('lm-long-graph-key', 'data'))
+    def network_graph(state, queue, workspace, shown):
+        # The graph of concepts weighs megabytes: drawn again only when the model it describes changes.
+        items = [job for job in queues((state or {}).get('jobs', [])).get(queue) or [] if job['status'] != 'created']
+        if not items:
+            return None, None
+        current = current_item(items)
+        progress = current['progress'] or {}
+        key = [current['id'], current['status'], current.get('checkpoint'), progress.get('step'), bool(progress.get('graft'))]
+        if key == shown:
+            return dash.no_update, dash.no_update
+        try:
+            return graph_section(shown_item(items, workspace)[2]), key
+        except ValueError as exc:
+            return html.P(str(exc), className='small text-muted'), None
+
     @app.callback(Output('lm-long-footprint', 'children'), Input('lm-state', 'data'), Input('lm-long-queue', 'value'),
                   State('lm-workspace', 'data'))
     def footprint(state, queue, workspace):
         items = [job for job in queues((state or {}).get('jobs', [])).get(queue) or [] if job['status'] != 'created']
         if not items:
             return html.P('Compaiono quando il primo testo comincia a imparare.', className='small text-muted')
+        current = current_item(items)
         try:
-            current = current_item(items)
             learned = [job for job in items if job['checkpoint'] and (job['progress'] or {}).get('graft')]
             if not (current['progress'] or {}).get('graft') and learned:
                 # The next text is still preparing its tokens: the model is the one learned so far.
@@ -1129,8 +1431,55 @@ def register(app):
                         order = lambda item: (item['config'].get('series') or {}).get('order', 0)+1
                         return html.Div([dbc.Alert(f"Il testo {order(current)} non ha ancora salvato: qui sotto le risposte del modello "
                                                    f"appreso fino al testo {order(job)}.", color='info', className='small py-2'),
-                                         answers_view(found)])
-                    return answers_view(found)
+                                         answers_view(found, job['id'])])
+                    return answers_view(found, job['id'])
             return answers_view([])
         except ValueError as exc:
             return html.P(str(exc), className='small text-muted')
+
+    @app.callback(Output('lm-answer-paths', 'data'), Output('lm-answer-walk-state', 'data'),
+                  Input({'type': 'lm-answer-open', 'index': dash.ALL}, 'n_clicks'), State('lm-workspace', 'data'),
+                  prevent_initial_call=True)
+    def open_answer_walk(clicks, workspace):
+        if not isinstance(dash.ctx.triggered_id, dict) or not dash.ctx.triggered[0].get('value'):
+            return dash.no_update, dash.no_update             # the table redrawn, not a click
+        job, index = dash.ctx.triggered_id['index'].rsplit('|', 1)
+        try:
+            data = backend(workspace, f'/jobs/{job}/answer-paths') or {}
+        except ValueError:
+            data = {}
+        return dict(data, job=job), dict(question=int(index), trail=[])
+
+    @app.callback(Output('lm-answer-walk-state', 'data', allow_duplicate=True),
+                  Input({'type': 'lm-walk-go', 'index': dash.ALL}, 'n_clicks'),
+                  Input({'type': 'lm-walk-back', 'index': dash.ALL}, 'n_clicks'), Input('lm-answer-graph', 'clickData'),
+                  State('lm-answer-walk-state', 'data'), prevent_initial_call=True)
+    def walk_answer(go, back, click, walk):
+        if not walk:
+            return dash.no_update
+        trail = list(walk.get('trail') or [])
+        if dash.ctx.triggered_id == 'lm-answer-graph':      # a node of the graph: opened below it, on the same token
+            key = ((click or {}).get('points') or [{}])[0].get('customdata')
+            if not key or not trail or trail[-1] == key:
+                return dash.no_update
+            return dict(walk, trail=trail + [key]) if not key.startswith('token:') else dash.no_update
+        if not isinstance(dash.ctx.triggered_id, dict) or not dash.ctx.triggered[0].get('value'):
+            return dash.no_update
+        if dash.ctx.triggered_id['type'] == 'lm-walk-back':
+            return dict(walk, trail=trail[:dash.ctx.triggered_id['index'] + 1])
+        key = dash.ctx.triggered_id['index']
+        if key == 'close':
+            return None
+        if key.startswith('token:'):                         # a token of the answer: the walk starts again from it
+            return dict(walk, trail=[key])
+        return dict(walk, trail=trail + [key]) if not trail or trail[-1] != key else dash.no_update
+
+    @app.callback(Output('lm-answer-walk', 'children'), Output('lm-answer-graph', 'figure'), Output('lm-answer-graph-box', 'style'),
+                  Output('lm-answer-walk-detail', 'children'), Input('lm-answer-paths', 'data'), Input('lm-answer-walk-state', 'data'))
+    def show_answer_walk(data, walk):
+        try:
+            head, figure, detail = answer_walk_view(data, walk)
+        except (KeyError, IndexError, ValueError, TypeError, StopIteration):
+            head, figure, detail = None, None, None
+        hidden = {'display': 'none'}
+        return head, figure if figure is not None else {}, hidden if figure is None else {}, detail

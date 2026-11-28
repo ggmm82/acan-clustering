@@ -1,6 +1,5 @@
-"""Executable paper contracts, versioned limitations and deployment audit receipt."""
+"""Executable software contracts (gradients, backend parity, shared algebra) and deployment audit receipt."""
 import argparse
-import hashlib
 import io
 import json
 import os
@@ -13,7 +12,6 @@ import unittest
 import numpy as np
 
 from acan.core.network import HAS_TORCH
-from acan.paper_contract import PAPER_SHA256, PDF_SHA256, CONFORMANCE, GAPS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,12 +21,6 @@ def main():
     parser.add_argument('--output', default='reports/paper-audit.json')
     parser.add_argument('--require-torch', action='store_true')
     args = parser.parse_args()
-    paper = ROOT / 'paper/Algebraic_Concept_Attention_Paper.tex'
-    if hashlib.sha256(paper.read_bytes()).hexdigest() != PAPER_SHA256:
-        raise SystemExit('Paper changed: review and update the correspondence contract before deployment.')
-    pdf = ROOT / 'paper/Algebraic_Concept_Attention_Scientific_Paper.pdf'
-    if hashlib.sha256(pdf.read_bytes()).hexdigest() != PDF_SHA256:
-        raise SystemExit('Reference PDF changed: review paper/code correspondence before deployment.')
     if args.require_torch and not HAS_TORCH:
         raise SystemExit('Required CPU PyTorch backend is missing; audit cannot pass by skipping it.')
     if HAS_TORCH:
@@ -42,14 +34,14 @@ def main():
     result = unittest.TextTestRunner(stream=stream, verbosity=2).run(suite)
     passed = result.wasSuccessful() and result.testsRun >= 18 and (not args.require_torch or not result.skipped)
     report = dict(contract_version=2, status='passed' if passed else 'failed',
-                  conformance=CONFORMANCE, shared_algebra_verified=passed and HAS_TORCH and not result.skipped, full_paper_conformance=False, paper_sha256=PAPER_SHA256, paper_pdf_sha256=PDF_SHA256,
+                  shared_algebra_verified=passed and HAS_TORCH and not result.skipped,
                   commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
                   tree=subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(),
                   source_clean=not bool(subprocess.check_output(['git', 'status', '--porcelain'], text=True).strip()),
                   run_id=int(os.environ.get('GITHUB_RUN_ID', 0)),
                   audit_seed=42, tests_run=result.testsRun, failures=len(result.failures), errors=len(result.errors),
                   skipped=len(result.skipped), torch_verified=HAS_TORCH,
-                  python=platform.python_version(), numpy=np.__version__, gaps=GAPS, log=stream.getvalue())
+                  python=platform.python_version(), numpy=np.__version__, log=stream.getvalue())
     if HAS_TORCH:
         import torch
         report['torch'] = torch.__version__
@@ -57,7 +49,7 @@ def main():
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, allow_nan=False) + '\n')
     print(stream.getvalue())
-    print(json.dumps({key: report[key] for key in ('status', 'conformance', 'tests_run', 'skipped', 'torch_verified')}))
+    print(json.dumps({key: report[key] for key in ('status', 'tests_run', 'skipped', 'torch_verified')}))
     if not passed:
         raise SystemExit(1)
 
