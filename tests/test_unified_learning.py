@@ -396,17 +396,21 @@ class GradualTabularEMTest(unittest.TestCase):
         pyramid = NetText(4096, eos, 1 << 22, growth=True, start=dict(layers=3, concepts=16)).network['concepts']
         self.assertEqual(pyramid, [16, 32, 64])                                  # every layer twice the one above
         self.assertEqual(NetText(4096, eos, 1 << 22, growth=True, start=dict(layers=3, concepts=1024)).network['concepts'],
-                         [1024, 1024, 1024])                                     # never more than 1024 a head
+                         [1024, 2048, 4096])                                     # no hidden ceiling: 0 means none
+        self.assertEqual(NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_concepts=1024),
+                                 start=dict(layers=3, concepts=1024)).network['concepts'], [1024, 1024, 1024])
         from acan.lm.research_options import validate_options
         from acan.vis.long_training import profile
         queue = dict(profile(False), name='coda', passes=1., save_steps=10, concept_start_dim=16)
         self.assertEqual(validate_options(queue)['concept_start_dim'], 16)
-        for bad in (12, 4, 128):                                  # not a multiple of 8, too small, above the ceiling
+        for bad in (-8, 128, 30):                                 # negative, above the ceiling, not divisible by the 4 heads
             with self.assertRaisesRegex(ValueError, 'arghezza iniziale'):
                 validate_options(dict(queue, concept_start_dim=bad))
+        self.assertEqual(validate_options(dict(queue, concept_start_dim=12, concept_max_concepts=0, concept_max_dim=0,
+                                               concept_max_layers=500, concept_max_heads=0))['concept_max_layers'], 500)
         self.assertEqual(validate_options(dict(queue, concept_start_layers=3, concept_start_heads=2,
                                                concept_start_concepts=8))['concept_start_heads'], 2)
-        for bad in (dict(concept_start_heads=3), dict(concept_start_layers=40), dict(concept_start_concepts=1),
+        for bad in (dict(concept_start_heads=3), dict(concept_start_layers=-1), dict(concept_start_concepts=1),
                     dict(concept_start_heads=8, concept_max_heads=4)):
             with self.assertRaises(ValueError):
                 validate_options(dict(queue, **bad))

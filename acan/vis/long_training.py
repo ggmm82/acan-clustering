@@ -31,8 +31,8 @@ def profile(cuda, size=None):
     return dict(protocol='controlled-v1', architecture='concepts', routing_profile='concept-pairs-v1', vocabulary=32000,
                 distillation_weight=0., early_stop_patience=0, validation_batches=16, save_seconds=300, device='auto',
                 chat_probes=True, auto_resume=True, sequence_length=256, concept_memory_mb=0, concept_piece=1_000_000,
-                concept_max_dim=64, concept_max_layers=0, concept_max_heads=0, concept_max_concepts=0, concept_start_dim=0,
-                concept_start_layers=0, concept_start_heads=0, concept_start_concepts=0)
+                concept_max_dim=64, concept_max_layers=32, concept_max_heads=64, concept_max_concepts=1024, concept_start_dim=32,
+                concept_start_layers=2, concept_start_heads=4, concept_start_concepts=16)
 
 
 def queues(jobs):
@@ -938,23 +938,23 @@ layout = html.Div([
                         "mantenendo il modello decine di volte più leggero di un LLM (fino a 64 coordinate, senza matrici quadratiche).",
                         className='text-muted d-block mb-2'),
              dbc.Row([
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza iniziale'), dbc.Input(id='lm-long-start-dim', type='number', value=0, min=0, max=2048, step=8)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati iniziali'), dbc.Input(id='lm-long-start-layers', type='number', value=0, min=0, max=32, step=1)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste iniziali'), dbc.Input(id='lm-long-start-heads', type='number', value=0, min=0, max=64, step=1)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti iniziali'), dbc.Input(id='lm-long-start-concepts', type='number', value=0, min=0, max=1024, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza iniziale'), dbc.Input(id='lm-long-start-dim', type='number', value=32, min=0, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati iniziali'), dbc.Input(id='lm-long-start-layers', type='number', value=2, min=0, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste iniziali'), dbc.Input(id='lm-long-start-heads', type='number', value=4, min=0, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti iniziali'), dbc.Input(id='lm-long-start-concepts', type='number', value=16, min=0, step=1)]), md=3, className='mb-1'),
              ], className='mb-1'),
              dbc.Row([
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=64, min=0, max=2048, step=16)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=0, min=0, max=32, step=1)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-max-heads', type='number', value=0, min=0, max=64, step=1)]), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=0, min=0, max=1024, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-max-dim', type='number', value=64, min=0, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-max-layers', type='number', value=32, min=0, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-max-heads', type='number', value=64, min=0, step=1)]), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-max-concepts', type='number', value=1024, min=0, step=1)]), md=3, className='mb-1'),
              ], className='mb-1'),
-             html.Small("Valori iniziali: la rete da cui parte il primo testo della coda (i successivi ripartono dalla rete appresa). "
-                        "«0» = automatico: larghezza 32, 2 strati, 4 teste, 16 concetti per testa nel primo strato. La larghezza è un "
-                        "multiplo di 8 divisibile per le teste; i concetti formano una piramide, ogni strato il doppio di quello sopra (al massimo 1024). "
+             html.Small("Valori iniziali: la rete da cui parte il primo testo della coda (i successivi ripartono dalla rete appresa); "
+                        "«0» = automatico (larghezza 32, 2 strati, 4 teste, 16 concetti). La larghezza deve essere divisibile per le teste; "
+                        "i concetti iniziali sono quelli del primo strato e raddoppiano a ogni strato. "
                         "Da lì la rete cresce se vince le gare, fino ai massimi. "
-                        "Tetti facoltativi: «0» = automatico dai dati senza tetto utente; un valore > 0 impone un massimale esplicito "
-                        "(o fissa direttamente la piramide iniziale se si disattiva la crescita).",
+                        "Massimi: fin dove la rete può crescere; i valori proposti tengono il modello leggero, «0» = nessun limite. "
+                        "Non ci sono altri limiti oltre a questi (con la crescita spenta, i massimi fissano la rete).",
                         className='text-muted d-block mb-2'),
          ], title='Impostazioni (facoltative: i valori proposti vanno bene)')], start_collapsed=True, className='my-2'),
          # Earlier controls kept for the callbacks they feed: a concept model has no size, no passes and no piece length to choose.
@@ -982,10 +982,10 @@ layout = html.Div([
                            options=[dict(label='larghezza', value='larghezza'), dict(label='strato in più', value='strato'),
                                     dict(label='concetti divisi', value='concetti'), dict(label='teste raddoppiate', value='teste')]),
              dbc.Row([
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-growth-max-dim', type='number', min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-growth-max-layers', type='number', min=0, max=32, step=1)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-growth-max-heads', type='number', min=0, max=64, step=1)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-growth-max-concepts', type='number', min=0, max=1024, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-growth-max-dim', type='number', min=0, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-growth-max-layers', type='number', min=0, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-growth-max-heads', type='number', min=0, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-growth-max-concepts', type='number', min=0, step=1)], size='sm'), md=3, className='mb-1'),
              ], className='mb-2'),
              dbc.Button('Applica alla coda', id='lm-growth-apply', size='sm', color='primary'),
              html.Div(id='lm-growth-status', role='status', className='small mt-1'), dcc.Store(id='lm-growth-queue'),
@@ -995,10 +995,10 @@ layout = html.Div([
                       dbc.Col(dbc.Button('Aggiungi in fondo alla coda', id='lm-long-add', outline=True, color='primary'), md=4)], className='mb-2'),
              dbc.Checkbox(id='lm-long-add-growth', value=True, label='Continua a far crescere il grafo di concetti sul nuovo testo', className='small mb-1'),
              dbc.Row([
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=64, min=0, max=2048, step=16)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-add-max-layers', type='number', value=0, min=0, max=32, step=1)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-add-max-heads', type='number', value=0, min=0, max=64, step=1)], size='sm'), md=3, className='mb-1'),
-                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-add-max-concepts', type='number', value=0, min=0, max=1024, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Larghezza max'), dbc.Input(id='lm-long-add-max-dim', type='number', value=64, min=0, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Strati max'), dbc.Input(id='lm-long-add-max-layers', type='number', value=32, min=0, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Teste max'), dbc.Input(id='lm-long-add-max-heads', type='number', value=64, min=0, step=1)], size='sm'), md=3, className='mb-1'),
+                 dbc.Col(dbc.InputGroup([dbc.InputGroupText('Concetti/testa max'), dbc.Input(id='lm-long-add-max-concepts', type='number', value=1024, min=0, step=1)], size='sm'), md=3, className='mb-1'),
              ], className='mb-2'),
              html.Small(f'Oppure un documento dal computer ({FORMATS}): viene caricato, convertito in testo e aggiunto in fondo alla coda scelta. '
                         'Usa il vocabolario della coda, imparato all\'avvio («0» = automatico dai dati senza tetto utente).', className='text-muted d-block'),

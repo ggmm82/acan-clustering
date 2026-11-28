@@ -53,24 +53,25 @@ def validate_options(options):
         value=extra[key]
         if isinstance(value,bool) or not isinstance(value,int) or not lo<=value<=hi:
             raise ValueError('Parametro non valido: '+key)
-    for key,lo,hi in [('concept_max_dim',16,2048),('concept_max_layers',1,32),('concept_max_heads',1,64),('concept_max_concepts',1,1024)]:
+    # Ceilings: only those chosen (0: none), no hidden range; a whole number not below zero.
+    for key in ('concept_max_dim','concept_max_layers','concept_max_heads','concept_max_concepts'):
         value=extra[key]
-        if isinstance(value,bool) or not isinstance(value,int) or (value!=0 and not lo<=value<=hi):
-            raise ValueError('Parametro non valido: '+key)
+        if isinstance(value,bool) or not isinstance(value,int) or value<0:
+            raise ValueError('Parametro non valido: '+key+' (un numero intero, 0 = nessun limite).')
     kinds=extra['concept_growth_kinds']
     if not isinstance(kinds,list) or any(kind not in ('larghezza','strato','concetti','teste') for kind in kinds):
         raise ValueError('Crescite ammesse: larghezza, strato, concetti, teste.')
     start=extra['concept_start_dim']                    # the width the network starts from (0: automatic, 32)
-    if isinstance(start,bool) or not isinstance(start,int) or (start!=0 and not (8<=start<=2048 and start%8==0)):
-        raise ValueError('Larghezza iniziale: 0 (automatica) oppure un multiplo di 8 fra 8 e 2048.')
+    if isinstance(start,bool) or not isinstance(start,int) or start<0:
+        raise ValueError('Larghezza iniziale: un numero intero (0 = automatica).')
     if start and extra['concept_max_dim'] and start>extra['concept_max_dim']:
         raise ValueError('La larghezza iniziale non può superare la larghezza massima.')
-    for key,lo,hi,ceiling,label in [('concept_start_layers',1,32,'concept_max_layers','Strati iniziali'),
-                                    ('concept_start_heads',1,64,'concept_max_heads','Teste iniziali'),
-                                    ('concept_start_concepts',2,1024,'concept_max_concepts','Concetti iniziali')]:
-        value=extra[key]
-        if isinstance(value,bool) or not isinstance(value,int) or (value!=0 and not lo<=value<=hi):
-            raise ValueError(f'{label}: 0 (automatico) oppure da {lo} a {hi}.')
+    for key,lo,ceiling,label in [('concept_start_layers',1,'concept_max_layers','Strati iniziali'),
+                                 ('concept_start_heads',1,'concept_max_heads','Teste iniziali'),
+                                 ('concept_start_concepts',2,'concept_max_concepts','Concetti iniziali')]:
+        value=extra[key]                                # two concepts at least: with one a head tells nothing apart
+        if isinstance(value,bool) or not isinstance(value,int) or (value!=0 and value<lo):
+            raise ValueError(f'{label}: 0 (automatico) oppure almeno {lo}.')
         if value and extra[ceiling] and value>extra[ceiling]:
             raise ValueError(f'{label}: non può superare il massimo.')
     heads=extra['concept_start_heads'] or 4
