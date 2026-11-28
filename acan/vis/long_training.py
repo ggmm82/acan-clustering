@@ -951,7 +951,7 @@ layout = html.Div([
              ], className='mb-1'),
              html.Small("Valori iniziali: la rete da cui parte il primo testo della coda (i successivi ripartono dalla rete appresa). "
                         "«0» = automatico: larghezza 32, 2 strati, 4 teste, 16 concetti per testa nel primo strato. La larghezza è un "
-                        "multiplo di 8 divisibile per le teste; ogni strato dopo il primo parte con 4 volte i concetti del primo. "
+                        "multiplo di 8 divisibile per le teste; i concetti formano una piramide, ogni strato il doppio di quello sopra (al massimo 1024). "
                         "Da lì la rete cresce se vince le gare, fino ai massimi. "
                         "Tetti facoltativi: «0» = automatico dai dati senza tetto utente; un valore > 0 impone un massimale esplicito "
                         "(o fissa direttamente la piramide iniziale se si disattiva la crescita).",

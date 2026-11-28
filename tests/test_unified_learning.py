@@ -390,9 +390,13 @@ class GradualTabularEMTest(unittest.TestCase):
         small = NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_dim=64),
                         start=dict(dim=16, layers=3, heads=2, concepts=8))     # every starting size chosen
         self.assertEqual({k: small.network[k] for k in ('dim', 'layers', 'heads', 'concepts')},
-                         dict(dim=16, layers=3, heads=2, concepts=[8, 32, 32]))
+                         dict(dim=16, layers=3, heads=2, concepts=[8, 16, 32]))
         capped = NetText(4096, eos, 1 << 22, growth=True, limits=dict(max_concepts=16), start=dict(concepts=8))
         self.assertEqual(capped.network['concepts'], [8, 16])                    # the ceiling still holds
+        pyramid = NetText(4096, eos, 1 << 22, growth=True, start=dict(layers=3, concepts=16)).network['concepts']
+        self.assertEqual(pyramid, [16, 32, 64])                                  # every layer twice the one above
+        self.assertEqual(NetText(4096, eos, 1 << 22, growth=True, start=dict(layers=3, concepts=1024)).network['concepts'],
+                         [1024, 1024, 1024])                                     # never more than 1024 a head
         from acan.lm.research_options import validate_options
         from acan.vis.long_training import profile
         queue = dict(profile(False), name='coda', passes=1., save_steps=10, concept_start_dim=16)

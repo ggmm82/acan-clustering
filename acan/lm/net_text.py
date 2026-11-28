@@ -82,8 +82,8 @@ class NetText:
             if int(start.get('layers') or 0) > 0 or int(start.get('concepts') or 0) > 0:
                 layers = int(start.get('layers') or 0) or base['layers']
                 first = int(start.get('concepts') or 0) or base['concepts'][0]
-                base['layers'] = layers                          # the pyramid: the first layer, then four times as many
-                base['concepts'] = [first] + [4 * first] * (layers - 1)
+                base['layers'] = layers                          # the pyramid: every layer twice the one above, at most 1024
+                base['concepts'] = [min(first * 2 ** i, 1024) for i in range(layers)]
             if 0 < self.limits['max_dim'] < base['dim']:
                 base['dim'] = self.limits['max_dim']
             if 0 < self.limits['max_heads'] < base['heads']:
