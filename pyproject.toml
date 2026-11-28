@@ -38,4 +38,4 @@ namespaces = false
 [tool.setuptools.package-data]
 "acan.vis" = ["assets/*.js", "assets/*.css"]
 "acan" = ["MODEL.md", "export_template/*.tmpl"]
-"acan.lm" = ["dialogue_sources.json"]
+"acan.lm" = ["dialogue_sources.json", "hub/*.py"]

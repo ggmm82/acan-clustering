@@ -235,50 +235,45 @@ def _export_concepts(directory, snapshot, name, receipt, job):
     return destination
 
 
-HF_LOADER = '''"""ACAN concept language model: load and write with numpy alone (no PyTorch, no server).
+def hub_code_files():
+    """The files transformers loads with trust_remote_code: configuration, model and the numpy network, named neutrally."""
+    import re
+    here = Path(__file__).resolve().parent
+    network = re.sub(r'acan/[\w/.]+', 'the model documentation', (here/'concept_net.py').read_text())
+    return {'configuration_concept_lm.py': (here/'hub'/'configuration_concept_lm.py').read_bytes(),
+            'modeling_concept_lm.py': (here/'hub'/'modeling_concept_lm.py').read_bytes(), 'concept_net.py': network.encode()}
 
-    from acan_lm import load, answer
-    model, tokenizer = load(".")
-    print(answer(model, tokenizer, "Ciao! Chi sei?"))
-"""
-from pathlib import Path
-
-from .net_text import NetText
-
-
-def load(folder="."):
-    from safetensors.numpy import load_file
-    from transformers import AutoTokenizer
-    folder = Path(folder)
-    model = NetText.from_arrays(load_file(str(folder / "concepts.safetensors")))
-    return model, AutoTokenizer.from_pretrained(str(folder))
-
-
-def stop_tokens(tokenizer):
-    """Where an answer ends: end of text, end of the turn, or the start of a new turn."""
-    ids = {tokenizer.eos_token_id}
-    for marker in ("<|im_end|>", "<|im_start|>"):
-        value = tokenizer.convert_tokens_to_ids(marker)
-        if isinstance(value, int) and value != tokenizer.unk_token_id:
-            ids.add(value)
-    return ids - {None}
-
-
-def answer(model, tokenizer, question, max_new_tokens=128, temperature=0.7, seed=0):
-    """An answer in the chat format the model was trained on."""
-    prompt = f"<|im_start|>user\\n{question.strip()}<|im_end|>\\n<|im_start|>assistant\\n"
-    produced = model.generate(tokenizer(prompt)["input_ids"], max_new_tokens, stop=stop_tokens(tokenizer),
-                              temperature=temperature, seed=seed)
-    return tokenizer.decode(produced, skip_special_tokens=True).strip()
-
-
-def continue_text(model, tokenizer, text, max_new_tokens=128, temperature=0.7, seed=0):
-    produced = model.generate(tokenizer(text)["input_ids"], max_new_tokens, temperature=temperature, seed=seed)
-    return tokenizer.decode(produced, skip_special_tokens=True)
-'''
 
 CHAT_TEMPLATE = ("{% for message in messages %}<|im_start|>{{ message['role'] }}\n{{ message['content'] }}<|im_end|>\n"
                  "{% endfor %}{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}")
+
+
+def hub_files(weights, tokenizer_dir, net_config, eos, context, card, facts):
+    """The files of the Hub repository: weights, tokenizer with the chat format, configuration that transformers loads
+    (with the code that computes the network), generation defaults and the model card."""
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_dir), local_files_only=True)
+    stops = [tokenizer.convert_tokens_to_ids(marker) for marker in ('<|im_end|>', '<|im_start|>')]
+    stops = [value for value in stops if isinstance(value, int) and value != tokenizer.unk_token_id]
+    config = dict(model_type='concept-lm', architectures=['ConceptLMForCausalLM'],
+                  auto_map={'AutoConfig': 'configuration_concept_lm.ConceptLMConfig',
+                            'AutoModelForCausalLM': 'modeling_concept_lm.ConceptLMForCausalLM'},
+                  vocab_size=int(net_config['vocabulary']), eos_token_id=int(eos), pad_token_id=int(eos), stop_token_ids=stops,
+                  max_position_embeddings=int(context),
+                  network={key: net_config[key] for key in ('dim', 'layers', 'heads', 'head_dim', 'concepts') if key in net_config},
+                  **facts)
+    generation = dict(do_sample=True, temperature=0.7, top_p=1.0, max_new_tokens=128, eos_token_id=[int(eos)] + stops,
+                      pad_token_id=int(eos))
+    payloads = {'concepts.safetensors': weights, 'config.json': json.dumps(config, indent=2).encode(),
+                'generation_config.json': json.dumps(generation, indent=2).encode(), 'README.md': card.encode()}
+    for item in sorted(Path(tokenizer_dir).iterdir()):
+        content = item.read_bytes()
+        if item.name == 'tokenizer_config.json':                # the chat format, for apply_chat_template and pipelines
+            content = json.dumps(dict(json.loads(content), chat_template=CHAT_TEMPLATE), indent=2).encode()
+        payloads[item.name] = content
+    payloads.update(hub_code_files())
+    payloads['LICENSE-code'] = b'MIT License: the code of this repository (configuration_concept_lm.py, modeling_concept_lm.py, concept_net.py).\n'
+    return payloads
 
 
 def queue_provenance(store, job):
@@ -335,16 +330,16 @@ def model_card(job, state, net_config, texts, licence, test):
                         for language in SOURCES.get(key, {}).get('languages', []) if len(language) == 2})
     datasets = sorted({source['page'].split('huggingface.co/datasets/')[1] for text in texts for source in (text['sources'] or {}).values()
                        if 'huggingface.co/datasets/' in source.get('page', '')})
-    header = ['---', f'license: {licence}', 'library_name: acan', 'pipeline_tag: text-generation',
-              'tags:', '- acan', '- concept-network', '- numpy']
+    header = ['---', f'license: {licence}', 'library_name: transformers', 'pipeline_tag: text-generation',
+              'tags:', '- concept-network', '- custom_code']
     if languages:
         header += ['language:'] + [f'- {language}' for language in languages]
     if datasets:
         header += ['datasets:'] + [f'- {dataset}' for dataset in datasets]
     header.append('---')
     nll = state.get('validation_nll')
-    lines = ['# ACAN concept language model', '',
-             'A language model made of **concepts** (ACAN, Algebraic Concept Attention Network), not a transformer: every token '
+    lines = ['# Concept language model', '',
+             'A language model made of **concepts**, not a transformer: every token '
              'and every position of the text belong to Gaussian concepts organised in layers; each layer reads the concepts of '
              'the layer above, and a memory of the document can copy what followed similar positions. It runs with **numpy '
              'alone**.', '',
@@ -354,12 +349,13 @@ def model_card(job, state, net_config, texts, licence, test):
              f"- vocabulary {net_config.get('vocabulary', '?')} tokens (byte-level BPE learned on the training texts; images, sounds "
              'and videos are written with fixed tokens: 256 colours, 256 sound levels)',
              f"- trained on {state.get('tokens_trained', 0):,} tokens", '',
-             '## Use', '', '```python', 'from huggingface_hub import snapshot_download',
-             'import sys; folder = snapshot_download("<user>/<model>"); sys.path.insert(0, folder)',
-             'from acan_lm import load, answer', 'model, tokenizer = load(folder)',
-             'print(answer(model, tokenizer, "Ciao! Chi sei?"))', '```', '',
-             'Requirements: `numpy`, `safetensors`, `transformers` (only for the tokenizer). The code of the model is in '
-             '`acan_lm/` (MIT licence). The chat format is `<|im_start|>role\\n...<|im_end|>`.', '',
+             '## Use', '', 'As any model of the Hub (the code of the network comes with it: `trust_remote_code=True`):', '',
+             '```python', 'from transformers import pipeline', '',
+             'chat = pipeline("text-generation", model="<user>/<model>", trust_remote_code=True)',
+             'print(chat([{"role": "user", "content": "Ciao! Chi sei?"}], max_new_tokens=128)[0]["generated_text"][-1]["content"])', '```', '',
+             'or with `AutoModelForCausalLM.from_pretrained("<user>/<model>", trust_remote_code=True)` and `generate`. '
+             'Requirements: `transformers`, `torch`, `numpy`, `safetensors`. The network is computed with numpy; the code '
+             '(`modeling_concept_lm.py`, `concept_net.py`) is under the MIT licence.', '',
              '## Measures', '']
     if nll is not None:
         lines.append(f"- validation error {nll:.3f} nats per token (perplexity {math.exp(nll):,.1f})")
@@ -410,24 +406,10 @@ def export_huggingface(store, job, name):
     texts = queue_provenance(store, job)
     licence = weights_license(texts)
     test = test_error(store, job, model, directory/'tokenizer')
-    config = dict(model_type='acan-concepts', format=1, vocab_size=model.vocabulary, eos_token_id=model.eos,
-                  context_tokens=model.max_context, network={key: net_config[key] for key in ('dim', 'layers', 'heads', 'head_dim', 'concepts')
-                                                               if key in net_config},
-                  chat_format='<|im_start|>role\\n...<|im_end|>', tokens_trained=state.get('tokens_trained'),
-                  validation_nll=state.get('validation_nll'), test=test, weights_license=licence)
-    payloads = {'concepts.safetensors': (snapshot/'trainables.safetensors').read_bytes(),
-                'config.json': json.dumps(config, indent=2).encode(),
-                'README.md': model_card(job, state, net_config, texts, licence, test).encode()}
-    for item in sorted((directory/'tokenizer').iterdir()):
-        content = item.read_bytes()
-        if item.name == 'tokenizer_config.json':                # the chat format, for apply_chat_template
-            content = json.dumps(dict(json.loads(content), chat_template=CHAT_TEMPLATE), indent=2).encode()
-        payloads[item.name] = content
-    source = Path(__file__).resolve().parent
-    payloads['acan_lm/__init__.py'] = HF_LOADER.encode()
-    for module in ('concept_net.py', 'net_text.py'):
-        payloads['acan_lm/'+module] = (source/module).read_bytes()
-    payloads['acan_lm/LICENSE'] = b'MIT License - the code of the ACAN concept language model (acan-clustering).\n'
+    payloads = hub_files((snapshot/'trainables.safetensors').read_bytes(), directory/'tokenizer', net_config, model.eos,
+                         model.max_context, model_card(job, state, net_config, texts, licence, test),
+                         dict(tokens_trained=state.get('tokens_trained'), validation_nll=state.get('validation_nll'), test=test,
+                              weights_license=licence))
     manifest = dict(format=1, checkpoint=name, identity=receipt['identity'], weights_license=licence,
                     files_sha256={key: hashlib.sha256(value).hexdigest() for key, value in payloads.items()})
     temporary = exports/(uuid.uuid4().hex+'.tmp')
